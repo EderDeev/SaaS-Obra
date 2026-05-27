@@ -28,7 +28,12 @@ php artisan key:generate --show
 5. Ajuste `APP_URL` para a URL publica do Railway.
 6. Configure `DB_URL=${{Postgres.DATABASE_URL}}`.
 7. Configure `RAILPACK_PHP_ROOT_DIR=/app/public`.
-8. No primeiro deploy de teste, se quiser criar usuarios demo, use:
+8. Garanta PHP 8.4 no build. O projeto ja exige `php: ^8.4` no `composer.json`; se precisar, adicione tambem:
+
+```env
+RAILPACK_PHP_VERSION=8.4
+```
+9. No primeiro deploy de teste, se quiser criar usuarios demo, use:
 
 ```env
 RAILWAY_RUN_SEEDER=true
