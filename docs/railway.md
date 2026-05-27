@@ -10,6 +10,7 @@ Este projeto pode subir no Railway como um unico servico:
 ## Arquivos de apoio
 
 - `railway.toml`: configura build, pre-deploy e healthcheck.
+- `startCommand`: inicia o Laravel em `0.0.0.0` usando a variavel `${PORT}` do Railway.
 - `railway/init-app.sh`: roda migrations e, opcionalmente, seed.
 - `.env.railway.example`: lista das variaveis para copiar no Railway.
 
