@@ -1,0 +1,999 @@
+import ConfirmActionButton from '@/Components/ConfirmActionButton';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { CheckCircle2, Download, Eye, FileUp, Filter, FolderOpen, Search, Send, Trash2, UploadCloud, X } from 'lucide-react';
+import { useMemo, useRef } from 'react';
+import { useState } from 'react';
+
+const PROJECT_SEQUENCE_LENGTH = 3;
+
+function contractLabel(contract) {
+    return `${contract.code} - ${contract.name}`;
+}
+
+function normalizeCodePart(value) {
+    return String(value || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '')
+        .replace(/[^A-Z0-9]/g, '');
+}
+
+function buildProjectCode(contract, obra, disciplina, projectPhase, documentType, documentTypeCodes, documentNumber) {
+    const documentTypeCode = documentTypeCodes?.[documentType] || documentType;
+
+    return [contract?.code, obra?.codigo, disciplina?.sigla, projectPhase?.code, documentTypeCode, documentNumber]
+        .map(normalizeCodePart)
+        .filter(Boolean)
+        .join('-');
+}
+
+function normalizeDocumentNumber(value) {
+    const digits = String(value || '').replace(/\D+/g, '').slice(0, PROJECT_SEQUENCE_LENGTH);
+
+    return digits ? digits.padStart(PROJECT_SEQUENCE_LENGTH, '0') : '';
+}
+
+function nextRevisionLabel(revision) {
+    const match = String(revision || '').match(/^R?(\d+)$/i);
+
+    if (!match) {
+        return 'R00';
+    }
+
+    return `R${String(Number(match[1]) + 1).padStart(2, '0')}`;
+}
+
+function fileDisplayName(version) {
+    return version?.stored_name || version?.original_name || '';
+}
+
+function shouldShowOriginalName(version) {
+    return Boolean(version?.original_name && version?.stored_name && version.original_name !== version.stored_name);
+}
+
+const derivativeLabels = {
+    not_submitted: 'Aguardando APS',
+    queued: 'Na fila APS',
+    processing: 'Processando',
+    ready: 'Pronto para viewer',
+    failed: 'Erro no APS',
+};
+
+const MAX_PROJECT_FILE_SIZE = 50 * 1024 * 1024;
+
+const statusClasses = {
+    em_analise: 'sig-pill-blue',
+    em_aprovacao: 'sig-pill-amber',
+    ativo: 'sig-pill-green',
+    reprovado: 'sig-pill-red',
+};
+
+export default function ProjectsIndex({
+    tenant,
+    contracts,
+    obras,
+    disciplinas,
+    documents,
+    projectPhases = [],
+    documentTypes,
+    documentTypeCodes,
+    statusLabels,
+    capImpactLabels = {},
+    allowedExtensions,
+    canUploadProjects,
+    canAnalyzeProjects,
+    canDeleteProjects,
+}) {
+    const page = usePage();
+    const defaultContract = contracts[0] ?? null;
+    const defaultContractId = defaultContract?.id ?? '';
+    const defaultObra = obras.find((obra) => String(obra.contract_id) === String(defaultContractId)) ?? null;
+    const defaultObraId = defaultObra?.id ?? '';
+    const defaultDisciplina = disciplinas.find((disciplina) => String(disciplina.contract_id) === String(defaultContractId)) ?? null;
+    const defaultDisciplinaId = defaultDisciplina?.id ?? '';
+    const defaultProjectPhase = projectPhases[0] ?? null;
+    const defaultProjectPhaseId = defaultProjectPhase?.id ?? '';
+    const defaultDocumentType = Object.keys(documentTypes)[0] ?? 'projeto';
+    const [contractFilter, setContractFilter] = useState('todos');
+    const [obraFilter, setObraFilter] = useState('todos');
+    const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
+    const [query, setQuery] = useState('');
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const confirmedSubmitRef = useRef(false);
+    const form = useForm({
+        contract_id: defaultContractId,
+        obra_id: defaultObraId,
+        disciplina_id: defaultDisciplinaId,
+        project_phase_id: defaultProjectPhaseId,
+        title: '',
+        document_number: '001',
+        code: buildProjectCode(defaultContract, defaultObra, defaultDisciplina, defaultProjectPhase, defaultDocumentType, documentTypeCodes, '001'),
+        document_type: defaultDocumentType,
+        revision: 'Automatica',
+        revision_change_summary: '',
+        cap_reason: '',
+        cap_description: '',
+        cap_impacts: [],
+        file: null,
+    });
+
+    const selectedContract = useMemo(
+        () => contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null,
+        [contracts, form.data.contract_id],
+    );
+
+    const selectedObra = useMemo(
+        () => obras.find((obra) => String(obra.id) === String(form.data.obra_id)) ?? null,
+        [obras, form.data.obra_id],
+    );
+
+    const selectedDisciplina = useMemo(
+        () => disciplinas.find((disciplina) => String(disciplina.id) === String(form.data.disciplina_id)) ?? null,
+        [disciplinas, form.data.disciplina_id],
+    );
+
+    const selectedProjectPhase = useMemo(
+        () => projectPhases.find((phase) => String(phase.id) === String(form.data.project_phase_id)) ?? null,
+        [projectPhases, form.data.project_phase_id],
+    );
+
+    const selectedDocumentTypeLabel = documentTypes?.[form.data.document_type] || form.data.document_type;
+    const selectedProjectPhaseLabel = selectedProjectPhase ? `${selectedProjectPhase.code} - ${selectedProjectPhase.name}` : '';
+    const normalizedSequential = normalizeDocumentNumber(form.data.document_number);
+    const existingDocumentForEap = useMemo(
+        () => {
+            const legacyCodeWithNumber = buildProjectCode(selectedContract, selectedObra, selectedDisciplina, null, form.data.document_type, documentTypeCodes, normalizedSequential);
+            const legacyCodeWithoutNumber = buildProjectCode(selectedContract, selectedObra, selectedDisciplina, null, form.data.document_type, documentTypeCodes);
+
+            return documents.find((document) => {
+                const documentCode = String(document.code || '');
+
+                if (documentCode === String(form.data.code || '')) {
+                    return true;
+                }
+
+                return !document.project_phase_id
+                    && (documentCode === legacyCodeWithNumber || (normalizedSequential === '001' && documentCode === legacyCodeWithoutNumber));
+            }) ?? null;
+        },
+        [documents, form.data.code, form.data.document_type, selectedContract, selectedObra, selectedDisciplina, documentTypeCodes, normalizedSequential],
+    );
+    const isRevision = Boolean(existingDocumentForEap);
+    const revisionPreview = existingDocumentForEap
+        ? nextRevisionLabel(existingDocumentForEap.latest_version?.revision)
+        : 'R00';
+    const fullEapPreview = [form.data.code, revisionPreview].filter(Boolean).join('-');
+
+    const disciplinasForForm = useMemo(
+        () => disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(form.data.contract_id)),
+        [disciplinas, form.data.contract_id],
+    );
+
+    const obrasForForm = useMemo(
+        () => obras.filter((obra) => String(obra.contract_id) === String(form.data.contract_id)),
+        [obras, form.data.contract_id],
+    );
+    const canTrySubmit = Boolean(
+        canUploadProjects
+        && contracts.length > 0
+        && obrasForForm.length > 0
+        && disciplinasForForm.length > 0
+        && projectPhases.length > 0
+        && !form.processing,
+    );
+
+    const obrasForFilter = useMemo(
+        () => contractFilter === 'todos'
+            ? obras
+            : obras.filter((obra) => String(obra.contract_id) === String(contractFilter)),
+        [obras, contractFilter],
+    );
+
+    const disciplinasForFilter = useMemo(
+        () => contractFilter === 'todos'
+            ? disciplinas
+            : disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(contractFilter)),
+        [disciplinas, contractFilter],
+    );
+
+    const filteredDocuments = useMemo(() => {
+        const term = query.trim().toLowerCase();
+
+        return documents.filter((document) => {
+            if (contractFilter !== 'todos' && String(document.contract_id) !== String(contractFilter)) {
+                return false;
+            }
+
+            if (obraFilter !== 'todos' && String(document.obra_id) !== String(obraFilter)) {
+                return false;
+            }
+
+            if (disciplinaFilter !== 'todos' && String(document.disciplina_id) !== String(disciplinaFilter)) {
+                return false;
+            }
+
+            if (!term) {
+                return true;
+            }
+
+            return `${document.title} ${document.code || ''} ${fileDisplayName(document.latest_version)} ${document.latest_version?.original_name || ''} ${document.obra?.nome || ''} ${document.obra?.codigo || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''} ${document.phase?.code || ''}`
+                .toLowerCase()
+                .includes(term);
+        });
+    }, [documents, contractFilter, obraFilter, disciplinaFilter, query]);
+
+    const updateContract = (contractId) => {
+        const nextContract = contracts.find((contract) => String(contract.id) === String(contractId)) ?? null;
+        const nextObra = obras.find((obra) => String(obra.contract_id) === String(contractId)) ?? null;
+        const nextDisciplina = disciplinas.find((disciplina) => String(disciplina.contract_id) === String(contractId)) ?? null;
+
+        form.setData({
+            ...form.data,
+            contract_id: contractId,
+            obra_id: nextObra?.id ?? '',
+            disciplina_id: nextDisciplina?.id ?? '',
+            code: buildProjectCode(nextContract, nextObra, nextDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+        });
+    };
+
+    const updateObra = (obraId) => {
+        const currentContract = contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null;
+        const nextObra = obras.find((obra) => String(obra.id) === String(obraId)) ?? null;
+        const currentDisciplina = disciplinas.find((disciplina) => String(disciplina.id) === String(form.data.disciplina_id)) ?? null;
+
+        form.setData({
+            ...form.data,
+            obra_id: obraId,
+            code: buildProjectCode(currentContract, nextObra, currentDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+        });
+    };
+
+    const updateDisciplina = (disciplinaId) => {
+        const currentContract = contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null;
+        const currentObra = obras.find((obra) => String(obra.id) === String(form.data.obra_id)) ?? null;
+        const nextDisciplina = disciplinas.find((disciplina) => String(disciplina.id) === String(disciplinaId)) ?? null;
+
+        form.setData({
+            ...form.data,
+            disciplina_id: disciplinaId,
+            code: buildProjectCode(currentContract, currentObra, nextDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+        });
+    };
+
+    const updateProjectPhase = (projectPhaseId) => {
+        const currentContract = contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null;
+        const currentObra = obras.find((obra) => String(obra.id) === String(form.data.obra_id)) ?? null;
+        const currentDisciplina = disciplinas.find((disciplina) => String(disciplina.id) === String(form.data.disciplina_id)) ?? null;
+        const nextProjectPhase = projectPhases.find((phase) => String(phase.id) === String(projectPhaseId)) ?? null;
+
+        form.setData({
+            ...form.data,
+            project_phase_id: projectPhaseId,
+            code: buildProjectCode(currentContract, currentObra, currentDisciplina, nextProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+        });
+    };
+
+    const updateDocumentType = (documentType) => {
+        const currentContract = contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null;
+        const currentObra = obras.find((obra) => String(obra.id) === String(form.data.obra_id)) ?? null;
+        const currentDisciplina = disciplinas.find((disciplina) => String(disciplina.id) === String(form.data.disciplina_id)) ?? null;
+
+        form.setData({
+            ...form.data,
+            document_type: documentType,
+            code: buildProjectCode(currentContract, currentObra, currentDisciplina, selectedProjectPhase, documentType, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+        });
+    };
+
+    const updateDocumentNumber = (value) => {
+        const documentNumber = String(value || '').replace(/\D+/g, '').slice(0, PROJECT_SEQUENCE_LENGTH);
+        const codeDocumentNumber = normalizeDocumentNumber(documentNumber);
+        const currentContract = contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null;
+        const currentObra = obras.find((obra) => String(obra.id) === String(form.data.obra_id)) ?? null;
+        const currentDisciplina = disciplinas.find((disciplina) => String(disciplina.id) === String(form.data.disciplina_id)) ?? null;
+
+        form.setData({
+            ...form.data,
+            document_number: documentNumber,
+            code: buildProjectCode(currentContract, currentObra, currentDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, codeDocumentNumber),
+        });
+    };
+
+    const finishDocumentNumber = () => {
+        const documentNumber = normalizeDocumentNumber(form.data.document_number);
+
+        if (!documentNumber) {
+            return;
+        }
+
+        form.setData({
+            ...form.data,
+            document_number: documentNumber,
+        });
+    };
+
+    const updateContractFilter = (contractId) => {
+        setContractFilter(contractId);
+        setObraFilter('todos');
+        setDisciplinaFilter('todos');
+    };
+
+    const toggleCapImpact = (impact) => {
+        const impacts = Array.isArray(form.data.cap_impacts) ? form.data.cap_impacts : [];
+
+        form.setData('cap_impacts', impacts.includes(impact)
+            ? impacts.filter((current) => current !== impact)
+            : [...impacts, impact]);
+    };
+
+    const validateBeforeConfirmation = () => {
+        form.clearErrors(
+            'contract_id',
+            'obra_id',
+            'disciplina_id',
+            'project_phase_id',
+            'title',
+            'document_number',
+            'document_type',
+            'revision_change_summary',
+            'cap_reason',
+            'cap_description',
+            'cap_impacts',
+            'file',
+        );
+
+        const errors = {};
+
+        if (!form.data.contract_id) {
+            errors.contract_id = 'Selecione o contrato.';
+        }
+
+        if (!form.data.obra_id) {
+            errors.obra_id = 'Selecione a obra.';
+        }
+
+        if (!form.data.disciplina_id) {
+            errors.disciplina_id = 'Selecione a disciplina.';
+        }
+
+        if (!form.data.project_phase_id) {
+            errors.project_phase_id = 'Selecione a fase do projeto.';
+        }
+
+        if (!form.data.title.trim()) {
+            errors.title = 'Informe o titulo do projeto.';
+        }
+
+        if (!normalizedSequential) {
+            errors.document_number = 'Informe o sequencial do projeto.';
+        }
+
+        if (!form.data.document_type) {
+            errors.document_type = 'Selecione o tipo de documento.';
+        }
+
+        if (isRevision && !form.data.cap_reason.trim()) {
+            errors.cap_reason = 'Informe o motivo da alteracao desta revisao.';
+        }
+
+        if (isRevision && !form.data.cap_description.trim()) {
+            errors.cap_description = 'Descreva o que foi alterado nesta revisao.';
+        }
+
+        if (isRevision && !form.data.cap_impacts.length) {
+            errors.cap_impacts = 'Selecione ao menos um impacto da alteracao.';
+        }
+
+        if (!form.data.file) {
+            errors.file = 'Selecione um arquivo de projeto.';
+        } else if (form.data.file.size > MAX_PROJECT_FILE_SIZE) {
+            errors.file = 'O arquivo deve ter no maximo 50 MB.';
+        }
+
+        Object.entries(errors).forEach(([field, message]) => form.setError(field, message));
+
+        return Object.keys(errors).length === 0;
+    };
+
+    const submit = (event) => {
+        event.preventDefault();
+
+        if (!validateBeforeConfirmation()) {
+            setConfirmOpen(false);
+            confirmedSubmitRef.current = false;
+            return;
+        }
+
+        if (!confirmedSubmitRef.current) {
+            setConfirmOpen(true);
+            return;
+        }
+
+        confirmedSubmitRef.current = false;
+        form.post(route('tenant.projects.store', tenant.slug), {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: () => {
+                setConfirmOpen(false);
+                form.reset('title', 'revision_change_summary', 'cap_reason', 'cap_description', 'cap_impacts', 'file');
+            },
+            onError: () => setConfirmOpen(false),
+        });
+    };
+
+    const confirmSubmit = () => {
+        confirmedSubmitRef.current = true;
+        setConfirmOpen(false);
+        form.post(route('tenant.projects.store', tenant.slug), {
+            forceFormData: true,
+            preserveScroll: true,
+            onStart: () => setConfirmOpen(false),
+            onSuccess: () => {
+                form.reset('title', 'revision_change_summary', 'cap_reason', 'cap_description', 'cap_impacts', 'file');
+            },
+        });
+    };
+
+    const deleteDocument = (document) => {
+        router.delete(route('tenant.projects.destroy', [tenant.slug, document.id]), {
+            preserveScroll: true,
+        });
+    };
+
+    const processVersion = (version) => {
+        router.post(route('tenant.projects.process-aps', [tenant.slug, version.id]), {}, {
+            preserveScroll: true,
+        });
+    };
+
+    const updateFile = (file) => {
+        form.clearErrors('file');
+
+        if (file && file.size > MAX_PROJECT_FILE_SIZE) {
+            form.setError('file', 'O arquivo deve ter no maximo 50 MB.');
+            form.setData('file', null);
+            return;
+        }
+
+        form.setData('file', file);
+    };
+
+    return (
+        <AuthenticatedLayout>
+            <Head title="Submeter projeto" />
+
+            <section className="sig-content grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+                <form className="sig-card p-5" onSubmit={submit} noValidate>
+                    <div className="flex items-center gap-2 text-[var(--ink-500)]">
+                        <FolderOpen size={14} />
+                        <span className="eyebrow">Projetos</span>
+                    </div>
+                    <h1 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">Submeter projeto</h1>
+                    <p className="mt-1 text-sm text-[var(--ink-500)]">
+                        Envie arquivos tecnicos por contrato, obra, disciplina e revisao. Todo envio passa por analise e aprovacao antes de aparecer na arvore principal.
+                    </p>
+
+                    {page.props.flash.success && (
+                        <div className="mt-4 rounded-lg bg-[var(--green-50)] px-3 py-2 text-sm text-[var(--green)]">
+                            {page.props.flash.success}
+                        </div>
+                    )}
+                    {page.props.flash.error && (
+                        <div className="mt-4 rounded-lg bg-[var(--red-50)] px-3 py-2 text-sm text-[var(--red)]">
+                            {page.props.flash.error}
+                        </div>
+                    )}
+
+                    <div className="mt-5 grid gap-3">
+                        <Field label="Contrato" error={form.errors.contract_id}>
+                            <select value={form.data.contract_id} onChange={(event) => updateContract(event.target.value)} required>
+                                <option value="">Selecione o contrato</option>
+                                {contracts.map((contract) => (
+                                    <option key={contract.id} value={contract.id}>
+                                        {contractLabel(contract)}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
+                        <Field label="Obra" error={form.errors.obra_id}>
+                            <select value={form.data.obra_id} onChange={(event) => updateObra(event.target.value)} required>
+                                <option value="">Selecione a obra</option>
+                                {obrasForForm.map((obra) => (
+                                    <option key={obra.id} value={obra.id}>
+                                        {obra.codigo} - {obra.nome}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
+                        <Field label="Disciplina" error={form.errors.disciplina_id}>
+                            <select value={form.data.disciplina_id} onChange={(event) => updateDisciplina(event.target.value)} required>
+                                <option value="">Selecione a disciplina</option>
+                                {disciplinasForForm.map((disciplina) => (
+                                    <option key={disciplina.id} value={disciplina.id}>
+                                        {disciplina.sigla} - {disciplina.nome}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
+                        <Field label="Fase do projeto" error={form.errors.project_phase_id}>
+                            <select value={form.data.project_phase_id} onChange={(event) => updateProjectPhase(event.target.value)} required>
+                                <option value="">Selecione a fase</option>
+                                {projectPhases.map((phase) => (
+                                    <option key={phase.id} value={phase.id}>
+                                        {phase.code} - {phase.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
+                        <Field label="Titulo" error={form.errors.title}>
+                            <input value={form.data.title} onChange={(event) => form.setData('title', event.target.value)} placeholder="Ex: Projeto estrutural - Bloco A" required />
+                        </Field>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label="Sequencial" error={form.errors.document_number}>
+                                <input
+                                    value={form.data.document_number}
+                                    onChange={(event) => updateDocumentNumber(event.target.value)}
+                                    onBlur={finishDocumentNumber}
+                                    placeholder="001"
+                                    inputMode="numeric"
+                                    maxLength={PROJECT_SEQUENCE_LENGTH}
+                                    required
+                                />
+                            </Field>
+
+                            <Field label="Proxima revisao" error={form.errors.revision}>
+                                <input value={revisionPreview} readOnly placeholder="Automatica" maxLength={30} />
+                            </Field>
+                        </div>
+
+                        <Field label="Tipo de documento" error={form.errors.document_type}>
+                            <select value={form.data.document_type} onChange={(event) => updateDocumentType(event.target.value)} required>
+                                {Object.entries(documentTypes).map(([value, label]) => (
+                                    <option key={value} value={value}>{label}</option>
+                                ))}
+                            </select>
+                        </Field>
+
+                        <EapPreview fullEap={fullEapPreview} />
+
+                        {isRevision && (
+                            <CapFields
+                                capReason={form.data.cap_reason}
+                                capDescription={form.data.cap_description}
+                                capImpacts={form.data.cap_impacts}
+                                capImpactLabels={capImpactLabels}
+                                errors={form.errors}
+                                onReasonChange={(value) => form.setData('cap_reason', value)}
+                                onDescriptionChange={(value) => form.setData('cap_description', value)}
+                                onImpactToggle={toggleCapImpact}
+                            />
+                        )}
+
+                        <div>
+                            <span className="eyebrow mb-1 block">Arquivo</span>
+                            <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-4 py-6 text-center hover:bg-white">
+                                <UploadCloud size={28} className="text-[var(--primary)]" />
+                                <span className="mt-2 text-sm font-semibold text-[var(--ink-900)]">
+                                    {form.data.file?.name || 'Selecionar arquivo'}
+                                </span>
+                                <span className="mt-1 text-[12px] text-[var(--ink-500)]">
+                                    Formatos: {allowedExtensions.map((extension) => `.${extension}`).join(', ')}. Maximo 50 MB.
+                                </span>
+                                <input className="sr-only" type="file" onChange={(event) => updateFile(event.target.files?.[0] || null)} required />
+                            </label>
+                            {form.errors.file && <span className="mt-1 block text-xs text-[var(--red)]">{form.errors.file}</span>}
+                        </div>
+                    </div>
+
+                    <button
+                        className="sig-btn sig-btn-primary mt-5"
+                        disabled={!canTrySubmit}
+                    >
+                        <Send size={15} />
+                        Revisar e confirmar
+                    </button>
+                </form>
+
+                <section className="sig-card overflow-hidden">
+                    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+                        <div>
+                            <div className="flex items-center gap-2 text-[var(--ink-500)]">
+                                <FileUp size={14} />
+                                <span className="eyebrow">Projetos submetidos</span>
+                            </div>
+                            <h2 className="mt-1 text-[15px] font-semibold">{filteredDocuments.length} de {documents.length} documentos</h2>
+                        </div>
+                        {canAnalyzeProjects && (
+                            <Link href={route('tenant.projects.review.index', tenant.slug)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                                <Eye size={13} />
+                                Analisar projeto
+                            </Link>
+                        )}
+                    </header>
+
+                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 xl:grid-cols-4">
+                        <FilterSelect label="Contrato" value={contractFilter} onChange={updateContractFilter}>
+                            <option value="todos">Todos os contratos</option>
+                            {contracts.map((contract) => (
+                                <option key={contract.id} value={contract.id}>{contractLabel(contract)}</option>
+                            ))}
+                        </FilterSelect>
+
+                        <FilterSelect label="Obra" value={obraFilter} onChange={setObraFilter}>
+                            <option value="todos">Todas as obras</option>
+                            {obrasForFilter.map((obra) => (
+                                <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>
+                            ))}
+                        </FilterSelect>
+
+                        <FilterSelect label="Disciplina" value={disciplinaFilter} onChange={setDisciplinaFilter}>
+                            <option value="todos">Todas as disciplinas</option>
+                            {disciplinasForFilter.map((disciplina) => (
+                                <option key={disciplina.id} value={disciplina.id}>{disciplina.sigla} - {disciplina.nome}</option>
+                            ))}
+                        </FilterSelect>
+
+                        <label>
+                            <span className="eyebrow mb-1 flex items-center gap-1">
+                                <Search size={12} />
+                                Busca
+                            </span>
+                            <span className="sig-input bg-white">
+                                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar documento" />
+                            </span>
+                        </label>
+                    </div>
+
+                    {filteredDocuments.length > 0 ? (
+                        <div className="overflow-x-auto">
+                        <table className="sig-table min-w-[1280px]">
+                            <thead>
+                                <tr>
+                                    <th>Documento</th>
+                                    <th>Contrato</th>
+                                    <th>Obra</th>
+                                    <th>Disciplina</th>
+                                    <th>Revisao</th>
+                                    <th>Status</th>
+                                    <th>Arquivo</th>
+                                    <th>Status APS</th>
+                                    <th>Acoes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredDocuments.map((document) => {
+                                    const version = document.latest_version;
+
+                                    return (
+                                        <tr key={document.id}>
+                                            <td>
+                                                <div className="font-semibold">{document.title}</div>
+                                                <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                    Fase: {document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'}
+                                                </div>
+                                                <div className="mono mt-1 text-xs text-[var(--ink-500)]">{document.code || 'Sem codigo'} · {documentTypes[document.document_type] || document.document_type}</div>
+                                            </td>
+                                            <td>
+                                                <div className="mono text-xs">{document.contract?.code}</div>
+                                                <div className="text-xs text-[var(--ink-500)]">{document.contract?.name}</div>
+                                            </td>
+                                            <td>
+                                                <div className="mono text-xs">{document.obra?.codigo}</div>
+                                                <div className="text-xs text-[var(--ink-500)]">{document.obra?.nome || 'Sem obra'}</div>
+                                            </td>
+                                            <td>
+                                                <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ink-700)]">
+                                                    <span className="h-3.5 w-3.5 rounded-full border border-[var(--border)]" style={{ backgroundColor: document.disciplina?.cor || '#2563eb' }} />
+                                                    {document.disciplina?.sigla} - {document.disciplina?.nome}
+                                                </span>
+                                            </td>
+                                            <td className="font-semibold">{version?.revision}</td>
+                                            <td>
+                                                <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
+                                                    {statusLabels[document.status] || document.status}
+                                                </span>
+                                                {document.reviewed_at && (
+                                                    <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                        {document.reviewer?.name || 'Revisado'} em {new Date(document.reviewed_at).toLocaleDateString('pt-BR')}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <div className="max-w-[260px] truncate text-sm font-semibold">{fileDisplayName(version)}</div>
+                                                {shouldShowOriginalName(version) && (
+                                                    <div className="max-w-[260px] truncate text-xs text-[var(--ink-500)]">Original: {version.original_name}</div>
+                                                )}
+                                                <div className="text-xs text-[var(--ink-500)]">{version?.size_label}</div>
+                                            </td>
+                                            <td>
+                                                <span className="sig-pill sig-pill-blue">{derivativeLabels[version?.derivative_status] || version?.derivative_status}</span>
+                                            </td>
+                                            <td>
+                                                <div className="flex flex-wrap justify-end gap-2">
+                                                    {document.status === 'ativo' && version?.aps_urn ? (
+                                                        <a href={route('tenant.projects.viewer', [tenant.slug, version.id])} className="sig-btn sig-btn-primary sig-btn-sm">
+                                                            <Eye size={13} />
+                                                            Visualizar
+                                                        </a>
+                                                    ) : document.status === 'ativo' ? (
+                                                        <button type="button" onClick={() => processVersion(version)} className="sig-btn sig-btn-primary sig-btn-sm">
+                                                            <Eye size={13} />
+                                                            Visualizar
+                                                        </button>
+                                                    ) : (
+                                                        <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                                                            Fora da arvore
+                                                        </span>
+                                                    )}
+                                                    {version?.url && (
+                                                        <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                            <Download size={13} />
+                                                            Baixar
+                                                        </a>
+                                                    )}
+                                                    {canDeleteProjects && (
+                                                        <ConfirmActionButton
+                                                            title="Excluir projeto"
+                                                            message={`Deseja mesmo excluir ${document.title}? O registro e o arquivo ficarao preservados no historico.`}
+                                                            confirmLabel="Excluir projeto"
+                                                            onConfirm={() => deleteDocument(document)}
+                                                        >
+                                                            <Trash2 size={13} />
+                                                            Excluir
+                                                        </ConfirmActionButton>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                        </div>
+                    ) : (
+                        <div className="p-12 text-center text-sm text-[var(--ink-500)]">
+                            {documents.length === 0 ? 'Nenhum projeto enviado ainda.' : 'Nenhum projeto encontrado para os filtros selecionados.'}
+                        </div>
+                    )}
+                </section>
+            </section>
+
+            {confirmOpen && (
+                <ConfirmProjectSubmitModal
+                    title={form.data.title}
+                    fileName={form.data.file?.name}
+                    contractLabel={selectedContract ? contractLabel(selectedContract) : 'Contrato nao informado'}
+                    obraLabel={selectedObra ? `${selectedObra.codigo} - ${selectedObra.nome}` : 'Obra nao informada'}
+                    disciplinaLabel={selectedDisciplina ? `${selectedDisciplina.sigla} - ${selectedDisciplina.nome}` : 'Disciplina nao informada'}
+                    projectPhaseLabel={selectedProjectPhaseLabel}
+                    documentTypeLabel={selectedDocumentTypeLabel}
+                    eap={fullEapPreview}
+                    existingDocument={existingDocumentForEap}
+                    revision={revisionPreview}
+                    capReason={form.data.cap_reason}
+                    capDescription={form.data.cap_description}
+                    capImpacts={form.data.cap_impacts}
+                    capImpactLabels={capImpactLabels}
+                    processing={form.processing}
+                    onClose={() => setConfirmOpen(false)}
+                    onConfirm={confirmSubmit}
+                />
+            )}
+        </AuthenticatedLayout>
+    );
+}
+
+function EapPreview({ fullEap }) {
+    return (
+        <label>
+            <span className="eyebrow mb-1 block">EAP prevista</span>
+            <span className="sig-input">
+                <input
+                    className="mono font-semibold"
+                    value={fullEap || ''}
+                    readOnly
+                    placeholder="Contrato-Obra-Disciplina-Fase-Tipo-Sequencial-Revisao"
+                />
+            </span>
+        </label>
+    );
+}
+
+function CapFields({
+    capReason,
+    capDescription,
+    capImpacts,
+    capImpactLabels,
+    errors,
+    onReasonChange,
+    onDescriptionChange,
+    onImpactToggle,
+}) {
+    return (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+            <div className="flex items-center justify-between gap-2">
+                <div>
+                    <span className="eyebrow block">CAP</span>
+                    <h3 className="mt-1 text-sm font-semibold text-[var(--ink-900)]">Controle e Alteracao de Projetos</h3>
+                </div>
+                <span className="sig-pill sig-pill-amber">Revisao</span>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+                <Field label="Motivo da alteracao" error={errors.cap_reason}>
+                    <textarea
+                        value={capReason}
+                        onChange={(event) => onReasonChange(event.target.value)}
+                        placeholder="Informe o motivo da alteracao"
+                        rows={3}
+                        required
+                        className="min-h-20 resize-y"
+                    />
+                </Field>
+
+                <Field label="Descricao da alteracao" error={errors.cap_description}>
+                    <textarea
+                        value={capDescription}
+                        onChange={(event) => onDescriptionChange(event.target.value)}
+                        placeholder="Descreva o que foi alterado e quais pontos precisam de atencao"
+                        rows={4}
+                        required
+                        className="min-h-24 resize-y"
+                    />
+                </Field>
+
+                <div>
+                    <span className="eyebrow mb-2 block">Impactos</span>
+                    <div className="flex flex-wrap gap-2">
+                        {Object.entries(capImpactLabels).map(([value, label]) => {
+                            const active = capImpacts.includes(value);
+
+                            return (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    className={`sig-pill border ${active ? 'sig-pill-blue border-transparent' : 'border-[var(--border)] bg-white text-[var(--ink-600)]'}`}
+                                    onClick={() => onImpactToggle(value)}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    {errors.cap_impacts && <span className="mt-1 block text-xs text-[var(--red)]">{errors.cap_impacts}</span>}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ConfirmProjectSubmitModal({
+    title,
+    fileName,
+    contractLabel,
+    obraLabel,
+    disciplinaLabel,
+    projectPhaseLabel,
+    documentTypeLabel,
+    eap,
+    existingDocument,
+    revision,
+    capReason,
+    capDescription,
+    capImpacts,
+    capImpactLabels,
+    processing,
+    onClose,
+    onConfirm,
+}) {
+    return (
+        <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.48)] px-4 py-6"
+            role="presentation"
+            onClick={onClose}
+        >
+            <section
+                className="w-full max-w-2xl overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="confirm-project-submit-title"
+                onClick={(event) => event.stopPropagation()}
+            >
+                <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-[var(--ink-500)]">
+                            <CheckCircle2 size={15} />
+                            <span className="eyebrow">Confirmar submissao</span>
+                        </div>
+                        <h2 id="confirm-project-submit-title" className="mt-1 text-[17px] font-semibold text-[var(--ink-900)]">
+                            Conferir dados do projeto
+                        </h2>
+                        <p className="mt-1 text-[13px] text-[var(--ink-500)]">
+                            {existingDocument ? `Este envio sera registrado como revisao ${revision} do mesmo sequencial.` : `Este envio criara um novo projeto na revisao ${revision}.`}
+                        </p>
+                    </div>
+                    <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
+                        <X size={18} />
+                    </button>
+                </header>
+
+                <div className="grid gap-3 px-5 py-5 sm:grid-cols-2">
+                    <ConfirmInfo label="Titulo" value={title} />
+                    <ConfirmInfo label="Arquivo" value={fileName} />
+                    <ConfirmInfo label="Contrato" value={contractLabel} />
+                    <ConfirmInfo label="Obra" value={obraLabel} />
+                    <ConfirmInfo label="Disciplina" value={disciplinaLabel} />
+                    <ConfirmInfo label="Fase" value={projectPhaseLabel} />
+                    <ConfirmInfo label="Tipo" value={documentTypeLabel} />
+                    <div className="sm:col-span-2">
+                        <ConfirmInfo label="EAP da revisao" value={eap} mono />
+                    </div>
+                    {existingDocument && (
+                        <div className="grid gap-3 sm:col-span-2">
+                            <ConfirmInfo label="Numero CAP" value="Gerado automaticamente" />
+                            <ConfirmInfo label="Motivo da alteracao" value={capReason} />
+                            <ConfirmInfo label="Descricao da alteracao" value={capDescription} />
+                            <ConfirmInfo
+                                label="Impactos"
+                                value={(capImpacts || []).map((impact) => capImpactLabels[impact] || impact).join(', ')}
+                            />
+                        </div>
+                    )}
+                </div>
+
+                <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose} disabled={processing}>
+                        Cancelar
+                    </button>
+                    <button type="button" className="sig-btn sig-btn-primary" onClick={onConfirm} disabled={processing}>
+                        <Send size={15} />
+                        Confirmar submissao
+                    </button>
+                </footer>
+            </section>
+        </div>
+    );
+}
+
+function ConfirmInfo({ label, value, mono = false }) {
+    return (
+        <div className="rounded-lg border border-[var(--border)] bg-white p-3">
+            <div className="eyebrow">{label}</div>
+            <div className={`mt-1 text-sm font-semibold text-[var(--ink-900)] ${mono ? 'mono break-all' : ''}`}>
+                {value || 'Nao informado'}
+            </div>
+        </div>
+    );
+}
+
+function Field({ label, error, children }) {
+    return (
+        <label>
+            <span className="eyebrow mb-1 block">{label}</span>
+            <span className="sig-input">{children}</span>
+            {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
+        </label>
+    );
+}
+
+function FilterSelect({ label, value, onChange, children }) {
+    return (
+        <label>
+            <span className="eyebrow mb-1 flex items-center gap-1">
+                <Filter size={12} />
+                {label}
+            </span>
+            <span className="sig-input bg-white">
+                <select value={value} onChange={(event) => onChange(event.target.value)}>
+                    {children}
+                </select>
+            </span>
+        </label>
+    );
+}

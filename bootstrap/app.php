@@ -11,7 +11,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->web(append: [
+            \App\Http\Middleware\HandleInertiaRequests::class,
+            \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
+        ]);
+
+        $middleware->alias([
+            'platform.admin' => \App\Http\Middleware\EnsurePlatformAdmin::class,
+            'tenant.resolve' => \App\Http\Middleware\ResolveTenant::class,
+            'tenant.access' => \App\Http\Middleware\EnsureTenantAccess::class,
+            'tenant.admin' => \App\Http\Middleware\EnsureTenantAdmin::class,
+            'parametrizacao.permission' => \App\Http\Middleware\EnsureParametrizacaoPermission::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

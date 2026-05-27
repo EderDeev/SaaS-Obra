@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'autodesk_aps' => [
+        'client_id' => env('AUTODESK_APS_CLIENT_ID'),
+        'client_secret' => env('AUTODESK_APS_CLIENT_SECRET'),
+        'bucket_key' => env('AUTODESK_APS_BUCKET_KEY'),
+        'region' => env('AUTODESK_APS_REGION', 'US'),
+        'storage_limit_bytes' => (int) env('AUTODESK_APS_STORAGE_LIMIT_BYTES', 5368709120),
+        'scopes' => array_values(array_filter(explode(' ', (string) env('AUTODESK_APS_SCOPES', 'data:read data:write data:create bucket:create bucket:read viewables:read')))),
+        'verify_ssl' => env('AUTODESK_APS_VERIFY_SSL', true),
+        'ca_bundle' => env('AUTODESK_APS_CA_BUNDLE'),
+    ],
+
 ];

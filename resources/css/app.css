@@ -1,11 +1,502 @@
-@import 'tailwindcss';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
-@source '../**/*.blade.php';
-@source '../**/*.js';
+:root {
+    --primary: #0b5fff;
+    --primary-600: #0a55e6;
+    --primary-50: #eef4ff;
+    --primary-100: #dbe7ff;
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-muted: #fbfbfd;
+    --border: #e6e8ee;
+    --border-strong: #d3d7e0;
+    --ink-900: #0b1020;
+    --ink-700: #2b3145;
+    --ink-500: #5b6479;
+    --ink-400: #818aa0;
+    --ink-300: #aab0bf;
+    --ink-200: #cdd2dd;
+    --green: #0f9d63;
+    --green-50: #e6f7ee;
+    --amber: #b58105;
+    --amber-50: #fdf3d6;
+    --red: #c8364a;
+    --red-50: #fde7eb;
+    --blue: #1d68d8;
+    --blue-50: #e7efff;
+    --purple: #6a52d8;
+    --side-bg: #ffffff;
+    --side-fg: #2b3145;
+    --side-fg-dim: #818aa0;
+    --side-border: #e6e8ee;
+    --side-hover: #f3f5f9;
+    --side-active: var(--primary-50);
+    --side-active-fg: var(--primary);
+    --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
+    --shadow-sm: 0 1px 2px rgba(11, 16, 32, 0.06);
+    --shadow-md: 0 8px 24px -12px rgba(11, 16, 32, 0.18);
+}
 
-@theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+}
+
+body {
+    background: var(--bg);
+    color: var(--ink-900);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.mono {
+    font-family: var(--font-mono);
+}
+
+.eyebrow {
+    color: var(--ink-500);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.sig-shell {
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    min-height: 100vh;
+    background: var(--bg);
+}
+
+.sig-shell.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.sig-shell.sidebar-collapsed .sig-side {
+    display: none;
+}
+
+.sig-side {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100vh;
+    flex-direction: column;
+    border-right: 1px solid var(--side-border);
+    background: var(--side-bg);
+    color: var(--side-fg);
+}
+
+.sig-main {
+    min-width: 0;
+}
+
+.sig-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    min-height: 60px;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.92);
+    padding: 0 28px;
+    backdrop-filter: blur(12px);
+}
+
+.sig-content {
+    padding: 28px 32px 40px;
+}
+
+.sig-viewer-content {
+    display: grid;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+}
+
+.sig-viewer-header {
+    min-height: 76px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 14px 24px;
+}
+
+.sig-viewer-stage {
+    position: relative;
+    min-width: 0;
+    height: calc(100vh - 60px - 76px);
+    min-height: 420px;
+    max-height: calc(100vh - 60px - 76px);
+    overflow: hidden;
+    background: #f4f5f7;
+}
+
+.sig-viewer-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+    height: calc(100vh - 60px - 76px);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.sig-viewer-workspace .sig-viewer-stage {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+}
+
+.sig-viewer-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.sig-viewer-empty {
+    min-height: 420px;
+    height: calc(100vh - 60px - 76px - 32px);
+    margin: 16px;
+}
+
+.sig-review-panel {
+    min-width: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+}
+
+@media (max-width: 1120px) {
+    .sig-viewer-workspace {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(460px, 60vh) minmax(360px, auto);
+        height: auto;
+        overflow: visible;
+    }
+
+    .sig-review-panel {
+        border-left: 0;
+        border-top: 1px solid var(--border);
+    }
+}
+
+@media (max-width: 720px) {
+    .sig-viewer-workspace {
+        grid-template-rows: minmax(360px, 56vh) minmax(360px, auto);
+    }
+}
+
+.sig-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+}
+
+.sig-logo-mark {
+    color: var(--primary);
+}
+
+.sig-nav-item {
+    display: flex;
+    width: calc(100% - 16px);
+    align-items: center;
+    gap: 11px;
+    margin: 1px 8px;
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: var(--side-fg);
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+}
+
+.sig-nav-item:hover {
+    background: var(--side-hover);
+}
+
+.sig-nav-item.active {
+    background: var(--side-active);
+    color: var(--side-active-fg);
+    font-weight: 650;
+}
+
+.sig-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13.5px;
+    font-weight: 650;
+    line-height: 1.1;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.05s;
+    white-space: nowrap;
+}
+
+.sig-btn:active {
+    transform: translateY(0.5px);
+}
+
+.sig-btn-primary {
+    background: var(--primary);
+    color: #ffffff;
+}
+
+.sig-btn-primary:hover {
+    background: var(--primary-600);
+}
+
+.sig-btn-secondary {
+    border-color: var(--border);
+    background: var(--surface);
+    color: var(--ink-700);
+}
+
+.sig-btn-secondary:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-muted);
+}
+
+.sig-btn-ghost {
+    color: var(--ink-700);
+}
+
+.sig-btn-ghost:hover {
+    background: rgba(11, 16, 32, 0.05);
+}
+
+.sig-btn-sm {
+    min-height: 30px;
+    padding: 6px 10px;
+    font-size: 12.5px;
+}
+
+.sig-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.sig-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink-700);
+    padding: 8px 12px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sig-input:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-50);
+}
+
+.sig-input input,
+.sig-input select,
+.sig-input textarea {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    outline: 0;
+}
+
+.sig-input textarea {
+    min-height: 76px;
+    resize: vertical;
+}
+
+.sig-input input::placeholder,
+.sig-input textarea::placeholder {
+    color: var(--ink-400);
+}
+
+.sig-input input[type="checkbox"],
+.sig-input input[type="radio"] {
+    width: auto;
+}
+
+.sig-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    background: var(--ink-200);
+    color: var(--ink-700);
+    padding: 3px 9px;
+    font-size: 11.5px;
+    font-weight: 650;
+}
+
+.sig-pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.sig-pill-green {
+    background: var(--green-50);
+    color: var(--green);
+}
+
+.sig-pill-amber {
+    background: var(--amber-50);
+    color: var(--amber);
+}
+
+.sig-pill-blue {
+    background: var(--blue-50);
+    color: var(--blue);
+}
+
+.sig-pill-red {
+    background: var(--red-50);
+    color: var(--red);
+}
+
+.sig-pill-muted {
+    background: var(--surface-muted);
+    color: var(--ink-500);
+}
+
+.sig-progress {
+    position: relative;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--ink-200);
+}
+
+.sig-progress > i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--primary);
+}
+
+.sig-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.sig-table th {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-muted);
+    color: var(--ink-500);
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 11.5px;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.sig-table td {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px;
+    font-size: 13.5px;
+}
+
+.sig-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.sig-avatar {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #c5d2ff, #9ab1ff);
+    color: #1c2c5c;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+@media (max-width: 1024px) {
+    .sig-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .sig-side {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .sig-side nav,
+    .sig-side .sig-user-block {
+        display: none;
+    }
+
+    .sig-content {
+        padding: 20px 16px 32px;
+    }
+
+    .sig-topbar {
+        padding: 0 16px;
+    }
+}
+
+@media (max-width: 760px) {
+    .sig-login {
+        grid-template-columns: 1fr !important;
+    }
+
+    .sig-login-art {
+        display: none !important;
+    }
 }
