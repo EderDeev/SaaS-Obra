@@ -29,6 +29,7 @@ php artisan key:generate --show
 6. Configure `DB_URL=${{Postgres.DATABASE_URL}}`.
    - Esta variavel precisa ficar no servico da aplicacao, nao apenas no servico do banco.
    - Se o banco tiver outro nome no Railway, use a referencia do proprio painel, por exemplo `${{NomeDoBanco.DATABASE_URL}}`.
+   - Se preferir usar `DATABASE_URL` direto, o app tambem faz fallback para ela.
 7. Configure `RAILPACK_PHP_ROOT_DIR=/app/public`.
 8. Garanta PHP 8.4 no build. O projeto ja exige `php: ^8.4` no `composer.json`; se precisar, adicione tambem:
 
