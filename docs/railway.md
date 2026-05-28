@@ -13,6 +13,7 @@ Este projeto pode subir no Railway como um unico servico:
 - `startCommand`: inicia o Laravel em `0.0.0.0` usando a variavel `${PORT}` do Railway.
 - `healthcheckPath`: usa `/up`, uma rota leve do Laravel que nao depende de login ou sessao.
 - `railway/init-app.sh`: roda migrations e, opcionalmente, seed.
+- `railway/start-app.sh`: prepara o storage persistente e inicia o servidor web.
 - `.env.railway.example`: lista das variaveis para copiar no Railway.
 
 ## Passo a passo
@@ -51,9 +52,31 @@ Depois do primeiro deploy, volte para:
 RAILWAY_RUN_SEEDER=false
 ```
 
+## Volume persistente para uploads
+
+Use volume para persistir arquivos enviados pelo sistema, como fotos de perfil, logos de empresas, anexos de RNC e projetos.
+
+1. No canvas do projeto Railway, crie um novo Volume pelo menu do projeto ou Command Palette.
+2. Conecte o volume ao servico da aplicacao, nao ao PostgreSQL.
+3. Configure o mount path como:
+
+```text
+/app/storage/app/public
+```
+
+4. Mantenha no servico da aplicacao:
+
+```env
+FILESYSTEM_DISK=public
+```
+
+O Railway injeta automaticamente `RAILWAY_VOLUME_MOUNT_PATH` em runtime. O script `railway/start-app.sh` cria os diretorios necessarios e roda `php artisan storage:link` quando o container inicia.
+
+Evite montar o volume em `/app/storage` neste primeiro momento, porque isso cobre tambem diretorios internos do Laravel, como cache, sessoes, views compiladas e logs. O caminho `/app/storage/app/public` persiste apenas os uploads publicos do sistema.
+
 ## Observacoes
 
-Uploads locais funcionam para teste, mas o armazenamento do Railway e efemero. Para nao perder arquivos em redeploy/restart, use um Volume do Railway ou S3/Spaces antes de uso real.
+Sem volume ou S3, uploads locais funcionam para teste, mas o armazenamento do Railway e efemero e pode sumir em redeploy/restart.
 
 Se alterar variaveis `VITE_*`, faca redeploy porque elas entram no build do frontend.
 

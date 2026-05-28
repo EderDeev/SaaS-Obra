@@ -3,7 +3,7 @@ builder = "railpack"
 buildCommand = "npm run build && (php artisan storage:link || true)"
 
 [deploy]
-startCommand = "php -d upload_max_filesize=64M -d post_max_size=64M -d memory_limit=512M artisan serve --host=0.0.0.0 --port=${PORT}"
+startCommand = "sh ./railway/start-app.sh"
 preDeployCommand = ["sh ./railway/init-app.sh"]
 healthcheckPath = "/up"
 healthcheckTimeout = 300
