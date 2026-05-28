@@ -26,7 +26,9 @@ Este projeto pode subir no Railway como um unico servico:
 php artisan key:generate --show
 ```
 
-5. Ajuste `APP_URL` para a URL publica do Railway.
+5. Ajuste `APP_URL` para a URL publica do Railway, sempre com `https://`.
+   - Exemplo: `APP_URL=https://saas-obra-production.up.railway.app`.
+   - Tambem ajuste `APP_NAME=SIGWORKS` para o titulo da aba nao aparecer como Laravel.
 6. Configure `DB_URL=${{Postgres.DATABASE_URL}}`.
    - Esta variavel precisa ficar no servico da aplicacao, nao apenas no servico do banco.
    - Se o banco tiver outro nome no Railway, use a referencia do proprio painel, por exemplo `${{NomeDoBanco.DATABASE_URL}}`.
