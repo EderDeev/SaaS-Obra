@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessProjectVersionApsJob;
 use App\Models\Contract;
 use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectReviewChecklist;
@@ -21,12 +22,20 @@ use Throwable;
 class ProjectViewerController extends Controller
 {
     private const DEFAULT_REVIEW_CHECKLIST = [
+        'Verificar se a EAP está correta (contrato-obra-disciplina-fase-tipo-sequencial-revisão)',
+        'Verificar se o arquivo abre e carrega corretamente no APS',
+        'Verificar se há marcações e pendências técnicas.',
+    ];
+
+    private const OBSOLETE_REVIEW_CHECKLIST = [
         'Conferir EAP, revisao e sequencial do arquivo',
         'Confirmar contrato, obra, disciplina, fase e tipo do projeto',
-        'Verificar se o arquivo abre e carrega corretamente no APS',
-        'Registrar marcacoes tecnicas nas pendencias encontradas',
         'Conferir compatibilidade com o escopo do contrato',
         'Registrar conclusao da analise/aprovacao',
+    ];
+
+    private const RENAMED_REVIEW_CHECKLIST = [
+        'Registrar marcacoes tecnicas nas pendencias encontradas' => 'Verificar se há marcações e pendências técnicas.',
     ];
 
     public function show(Request $request, Tenant $tenant, ProjectDocumentVersion $version, AutodeskApsService $aps): Response
@@ -34,6 +43,9 @@ class ProjectViewerController extends Controller
         $version = $this->authorizedVersion($request, $tenant, $version);
         $contract = $version->document->contract;
         $canReviewProjects = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $contract);
+        $workspaceMode = $this->workspaceMode($request, $version, $canReviewProjects);
+        $showChecklistPanel = $workspaceMode === 'review' && $canReviewProjects;
+        $showCommentsPanel = in_array($workspaceMode, ['comments', 'review'], true);
 
         if ($version->aps_urn && in_array($version->derivative_status, ['queued', 'processing'], true)) {
             $version = $aps->syncManifestStatus($version);
@@ -45,7 +57,7 @@ class ProjectViewerController extends Controller
             ]);
         }
 
-        $checklist = $canReviewProjects
+        $checklist = $showChecklistPanel
             ? $this->ensureReviewChecklist($version, $request->user()->id)
             : $version->reviewChecklist()->with('items.checkedBy:id,name,email')->first();
 
@@ -54,6 +66,9 @@ class ProjectViewerController extends Controller
             'version' => $this->versionPayload($version),
             'apsConfigured' => $aps->isConfigured(),
             'canReviewProjects' => $canReviewProjects,
+            'workspaceMode' => $workspaceMode,
+            'showCommentsPanel' => $showCommentsPanel,
+            'showChecklistPanel' => $showChecklistPanel,
             'contractUsers' => $this->contractUsers($tenant, $contract),
             'reviewMarkups' => $version->reviewMarkups()
                 ->with([
@@ -71,19 +86,26 @@ class ProjectViewerController extends Controller
     {
         $version = $this->authorizedVersion($request, $tenant, $version);
 
-        try {
-            $version = $aps->submitVersion($version);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            $version->forceFill(['derivative_status' => 'failed'])->save();
-
-            return back()->with('error', 'Nao foi possivel enviar o arquivo para a APS: '.$exception->getMessage());
+        if (! $aps->isConfigured()) {
+            return back()->with('error', 'Configure AUTODESK_APS_CLIENT_ID, AUTODESK_APS_CLIENT_SECRET e AUTODESK_APS_BUCKET_KEY no .env para processar APS.');
         }
 
-        return redirect()
-            ->route('tenant.projects.viewer', [$tenant, $version])
-            ->with('success', 'Arquivo enviado para APS. A conversao para visualizacao foi iniciada.');
+        if (in_array($version->derivative_status, ['queued', 'processing'], true)) {
+            return back()->with('success', 'Este arquivo ja esta na fila/processamento APS.');
+        }
+
+        if ($version->derivative_status === 'ready') {
+            return back()->with('success', 'Este arquivo ja esta pronto para visualizacao APS.');
+        }
+
+        $version->forceFill([
+            'derivative_status' => 'queued',
+            'processed_at' => null,
+        ])->save();
+
+        ProcessProjectVersionApsJob::dispatch($version->id)->afterResponse();
+
+        return back()->with('success', 'Processamento APS iniciado em segundo plano.');
     }
 
     public function status(Request $request, Tenant $tenant, ProjectDocumentVersion $version, AutodeskApsService $aps): JsonResponse
@@ -150,6 +172,25 @@ class ProjectViewerController extends Controller
         return $version;
     }
 
+    private function workspaceMode(Request $request, ProjectDocumentVersion $version, bool $canReviewProjects): string
+    {
+        $requestedMode = (string) $request->query('workspace', '');
+
+        if (in_array($requestedMode, ['view', 'comments'], true)) {
+            return $requestedMode;
+        }
+
+        if ($requestedMode === 'review' && $canReviewProjects) {
+            return 'review';
+        }
+
+        if ($version->status !== 'ativo' && $canReviewProjects) {
+            return 'review';
+        }
+
+        return 'view';
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -198,8 +239,22 @@ class ProjectViewerController extends Controller
             ]
         );
 
-        if (! $checklist->items()->exists()) {
-            foreach (self::DEFAULT_REVIEW_CHECKLIST as $position => $label) {
+        $checklist->items()
+            ->whereIn('label', self::OBSOLETE_REVIEW_CHECKLIST)
+            ->delete();
+
+        foreach (self::RENAMED_REVIEW_CHECKLIST as $oldLabel => $newLabel) {
+            $checklist->items()
+                ->where('label', $oldLabel)
+                ->update(['label' => $newLabel]);
+        }
+
+        foreach (self::DEFAULT_REVIEW_CHECKLIST as $position => $label) {
+            $item = $checklist->items()->where('label', $label)->first();
+
+            if ($item) {
+                $item->forceFill(['position' => $position + 1])->save();
+            } else {
                 $checklist->items()->create([
                     'tenant_id' => $version->tenant_id,
                     'label' => $label,

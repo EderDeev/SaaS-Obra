@@ -8,8 +8,10 @@ use App\Models\ProjectDisciplineResponsavel;
 use App\Models\ProjectDocument;
 use App\Models\ProjectPhase;
 use App\Models\ProjectReviewChecklistItem;
+use App\Models\ProjectReviewMarkup;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Jobs\ProcessProjectVersionApsJob;
 use App\Notifications\ProjectApprovedNotification;
 use App\Notifications\ProjectReviewMarkupCreatedNotification;
 use App\Notifications\ProjectSubmittedForReviewNotification;
@@ -18,7 +20,9 @@ use App\Support\ProjectPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class TenantProjectTest extends TestCase
@@ -117,6 +121,58 @@ class TenantProjectTest extends TestCase
         $this->assertStringEndsWith('/001-001-ARQ-PB-PRJ-001-R00.pdf', str_replace('\\', '/', $document->latestVersion->file_path));
     }
 
+    public function test_project_submission_queues_aps_processing_when_configured(): void
+    {
+        Queue::fake();
+        Storage::fake('public');
+        config()->set('services.autodesk_aps.client_id', 'client-id');
+        config()->set('services.autodesk_aps.client_secret', 'client-secret');
+        config()->set('services.autodesk_aps.bucket_key', 'bucket-key');
+        config()->set('services.autodesk_aps.auto_process', true);
+
+        [$tenant, $user, $contract] = $this->tenantScenario('engineer');
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+        $disciplina = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Arquitetura',
+            'sigla' => 'ARQ',
+            'cor' => '#2563eb',
+        ]);
+        $obra = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Bloco A',
+            'codigo' => '001',
+            'tipo' => 'pai',
+        ]);
+        $phase = $this->projectPhase('PB');
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.store', $tenant), [
+                'contract_id' => $contract->id,
+                'obra_id' => $obra->id,
+                'disciplina_id' => $disciplina->id,
+                'project_phase_id' => $phase->id,
+                'title' => 'Projeto Arquitetonico',
+                'document_type' => 'projeto',
+                'document_number' => '001',
+                'file' => UploadedFile::fake()->create('planta.pdf', 120, 'application/pdf'),
+            ])
+            ->assertRedirect();
+
+        $document = ProjectDocument::with('latestVersion')->firstOrFail();
+
+        $this->assertSame('queued', $document->latestVersion->derivative_status);
+        Queue::assertPushed(ProcessProjectVersionApsJob::class);
+    }
+
     public function test_project_submission_reuses_same_eap_and_creates_next_revision(): void
     {
         Storage::fake('public');
@@ -167,6 +223,7 @@ class TenantProjectTest extends TestCase
         $this->actingAs($user)
             ->post(route('tenant.projects.store', $tenant), [
                 ...$payload,
+                'title' => 'Titulo que nao deve sobrescrever',
                 'cap_reason' => 'Compatibilizacao com estrutura.',
                 'cap_description' => 'Alteracao de layout e compatibilizacao com estrutura.',
                 'cap_impacts' => ['custo', 'prazo'],
@@ -177,6 +234,7 @@ class TenantProjectTest extends TestCase
         $document = ProjectDocument::with('versions')->firstOrFail();
 
         $this->assertDatabaseCount('project_documents', 1);
+        $this->assertSame('Projeto Arquitetonico', $document->title);
         $this->assertSame('001-001-ARQ-PB-PRJ-001', $document->code);
         $this->assertSame(['R00', 'R01'], $document->versions->pluck('revision')->all());
         $this->assertSame(['001-001-ARQ-PB-PRJ-001-R00.pdf', '001-001-ARQ-PB-PRJ-001-R01.pdf'], $document->versions->pluck('stored_name')->all());
@@ -307,13 +365,42 @@ class TenantProjectTest extends TestCase
             'document_type' => 'projeto',
             'status' => 'em_analise',
         ]);
+        $inactive = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'disciplina_id' => $disciplina->id,
+            'project_phase_id' => $phase->id,
+            'created_by_id' => $user->id,
+            'inactive_by_id' => $user->id,
+            'title' => 'Projeto aprovado inativo',
+            'code' => '001-001-ARQ-PE-PRJ-002',
+            'document_number' => '002',
+            'document_type' => 'projeto',
+            'status' => 'inativo',
+            'inactive_at' => now(),
+            'inactive_reason' => 'Substituido por outro projeto.',
+        ]);
+        $inactive->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'ativo',
+            'approved_by_id' => $user->id,
+            'approved_at' => now(),
+            'original_name' => 'inativo.pdf',
+            'file_path' => 'tenant-1/projects/inativo.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+        ]);
 
         $this->actingAs($user)
             ->get(route('tenant.projects.visualizar.index', $tenant))
             ->assertOk()
             ->assertSee('Tenant\/Projects\/Tree', false)
             ->assertSee('Projeto aprovado na arvore')
-            ->assertDontSee('Projeto ainda em analise');
+            ->assertDontSee('Projeto ainda em analise')
+            ->assertDontSee('Projeto aprovado inativo');
     }
 
     public function test_project_submission_notifies_discipline_reviewers_by_database_and_mail(): void
@@ -740,6 +827,15 @@ class TenantProjectTest extends TestCase
             'status' => 'active',
             'project_permissions' => [ProjectPermissions::REVIEW],
         ]);
+        $assignee = User::factory()->create();
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $assignee->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'project_permissions' => [ProjectPermissions::VIEW],
+        ]);
         $disciplina = Disciplina::create([
             'tenant_id' => $tenant->id,
             'contract_id' => $contract->id,
@@ -785,13 +881,48 @@ class TenantProjectTest extends TestCase
         $this->actingAs($user)
             ->get(route('tenant.projects.viewer', [$tenant, $version]))
             ->assertOk()
-            ->assertSee('Tenant\/Projects\/Viewer', false);
+            ->assertSee('Tenant\/Projects\/Viewer', false)
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Viewer')
+                ->where('workspaceMode', 'review')
+                ->where('showCommentsPanel', true)
+                ->where('showChecklistPanel', true)
+            );
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.viewer', [$tenant, $version]).'?workspace=view')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Viewer')
+                ->where('workspaceMode', 'view')
+                ->where('showCommentsPanel', false)
+                ->where('showChecklistPanel', false)
+            );
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.viewer', [$tenant, $version]).'?workspace=comments')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Viewer')
+                ->where('workspaceMode', 'comments')
+                ->where('showCommentsPanel', true)
+                ->where('showChecklistPanel', false)
+            );
 
         $this->assertDatabaseHas('project_review_checklists', [
             'tenant_id' => $tenant->id,
             'project_document_version_id' => $version->id,
         ]);
-        $this->assertDatabaseCount('project_review_checklist_items', 6);
+        $this->assertDatabaseCount('project_review_checklist_items', 3);
+        $this->assertDatabaseHas('project_review_checklist_items', [
+            'label' => 'Verificar se a EAP está correta (contrato-obra-disciplina-fase-tipo-sequencial-revisão)',
+        ]);
+        $this->assertDatabaseHas('project_review_checklist_items', [
+            'label' => 'Verificar se o arquivo abre e carrega corretamente no APS',
+        ]);
+        $this->assertDatabaseHas('project_review_checklist_items', [
+            'label' => 'Verificar se há marcações e pendências técnicas.',
+        ]);
 
         $this->actingAs($user)
             ->post(route('tenant.projects.markups.store', [$tenant, $version]), [
@@ -800,6 +931,15 @@ class TenantProjectTest extends TestCase
                 'assigned_to_id' => $user->id,
                 'priority' => 'alta',
                 'viewer_state' => ['viewport' => ['name' => 'teste']],
+                'markup_payload' => [
+                    'source' => 'aps_viewer',
+                    'visual_anchor' => [
+                        'type' => 'viewport',
+                        'viewport' => ['x' => 0.5, 'y' => 0.5],
+                    ],
+                    'markups_core_svg' => '<svg><path d="M 10 10 L 80 80" /></svg>',
+                    'markups_core_tool' => 'arrow',
+                ],
             ])
             ->assertRedirect();
 
@@ -812,6 +952,22 @@ class TenantProjectTest extends TestCase
             'status' => 'open',
         ]);
         Notification::assertSentTo($user, ProjectReviewMarkupCreatedNotification::class, function ($notification, array $channels): bool {
+            return in_array('database', $channels, true) && in_array('mail', $channels, true);
+        });
+
+        $markup = ProjectReviewMarkup::where('title', 'Ajustar detalhe')->firstOrFail();
+        $this->assertSame('aps_viewer', $markup->markup_payload['source']);
+        $this->assertSame('viewport', $markup->markup_payload['visual_anchor']['type']);
+        $this->assertSame('arrow', $markup->markup_payload['markups_core_tool']);
+        $this->assertStringContainsString('<svg>', $markup->markup_payload['markups_core_svg']);
+
+        $this->actingAs($user)
+            ->patch(route('tenant.projects.markups.update', [$tenant, $markup]), [
+                'assigned_to_id' => $assignee->id,
+            ])
+            ->assertRedirect();
+
+        Notification::assertSentTo($assignee, ProjectReviewMarkupCreatedNotification::class, function ($notification, array $channels): bool {
             return in_array('database', $channels, true) && in_array('mail', $channels, true);
         });
 
@@ -950,6 +1106,33 @@ class TenantProjectTest extends TestCase
         $this->assertSoftDeleted('project_documents', [
             'id' => $document->id,
         ]);
+    }
+
+    public function test_project_document_can_be_inactivated_with_reason(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto Arquitetonico',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('tenant.projects.inactivate', [$tenant, $document]), [
+                'inactive_reason' => 'Projeto substituido por nova solucao.',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('project_documents', [
+            'id' => $document->id,
+            'status' => 'inativo',
+            'inactive_by_id' => $user->id,
+            'inactive_reason' => 'Projeto substituido por nova solucao.',
+        ]);
+        $this->assertNotNull($document->fresh()->inactive_at);
     }
 
     private function projectPhase(string $code = 'PE'): ProjectPhase

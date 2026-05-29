@@ -7,12 +7,15 @@ use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\TipoEmpresa;
 use App\Models\User;
+use App\Notifications\UserTemporaryPasswordNotification;
 use App\Support\ActivityPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
 use App\Support\UserPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class TenantAccessTest extends TestCase
@@ -21,6 +24,8 @@ class TenantAccessTest extends TestCase
 
     public function test_platform_admin_can_create_tenant_with_formatted_cnpj(): void
     {
+        Notification::fake();
+
         $platformAdmin = User::factory()->create([
             'is_platform_admin' => true,
         ]);
@@ -42,6 +47,47 @@ class TenantAccessTest extends TestCase
             'slug' => 'tenant-demo',
             'cnpj' => '12.345.678/0001-90',
         ]);
+
+        $owner = User::where('email', 'owner-demo@example.com')->firstOrFail();
+
+        $this->assertTrue($owner->must_change_password);
+        Notification::assertSentTo($owner, UserTemporaryPasswordNotification::class);
+    }
+
+    public function test_platform_admin_sends_temporary_password_to_existing_owner_when_creating_tenant(): void
+    {
+        Notification::fake();
+
+        $platformAdmin = User::factory()->create([
+            'is_platform_admin' => true,
+        ]);
+        $owner = User::factory()->create([
+            'name' => 'Owner Existente',
+            'email' => 'owner-existente@example.com',
+            'password' => Hash::make('SenhaAntiga1!'),
+            'must_change_password' => false,
+        ]);
+
+        $this->actingAs($platformAdmin)
+            ->post(route('platform.tenants.store'), [
+                'name' => 'Tenant Existente',
+                'slug' => 'tenant-existente',
+                'cnpj' => '12345678000190',
+                'plan' => 'starter',
+                'status' => 'active',
+                'owner_name' => 'Owner Existente',
+                'owner_email' => 'owner-existente@example.com',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $owner->refresh();
+
+        $this->assertTrue($owner->must_change_password);
+        $this->assertNotNull($owner->temporary_password_created_at);
+        $this->assertFalse(Hash::check('SenhaAntiga1!', $owner->password));
+
+        Notification::assertSentTo($owner, UserTemporaryPasswordNotification::class);
     }
 
     public function test_platform_admin_cannot_create_tenant_with_incomplete_cnpj(): void

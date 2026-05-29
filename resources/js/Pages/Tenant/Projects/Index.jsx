@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { CheckCircle2, Download, Eye, FileUp, Filter, FolderOpen, Search, Send, Trash2, UploadCloud, X } from 'lucide-react';
+import { ArchiveX, CheckCircle2, Download, Eye, FileUp, Filter, FolderOpen, MessageSquare, Search, Send, Trash2, UploadCloud, X } from 'lucide-react';
 import { useMemo, useRef } from 'react';
 import { useState } from 'react';
 
@@ -52,6 +52,26 @@ function shouldShowOriginalName(version) {
     return Boolean(version?.original_name && version?.stored_name && version.original_name !== version.stored_name);
 }
 
+function isManuallyInactiveDocument(document) {
+    return Boolean(document?.inactive_at || document?.status === 'inativo');
+}
+
+function isTreeActiveDocument(document) {
+    return document?.status === 'ativo' && !isManuallyInactiveDocument(document);
+}
+
+function isInactiveDocument(document) {
+    return !isTreeActiveDocument(document);
+}
+
+function isApsWaiting(version) {
+    return ['queued', 'processing'].includes(version?.derivative_status);
+}
+
+function viewerWorkspaceUrl(tenant, version, workspace = 'view') {
+    return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}`;
+}
+
 const derivativeLabels = {
     not_submitted: 'Aguardando APS',
     queued: 'Na fila APS',
@@ -66,6 +86,7 @@ const statusClasses = {
     em_analise: 'sig-pill-blue',
     em_aprovacao: 'sig-pill-amber',
     ativo: 'sig-pill-green',
+    inativo: 'sig-pill-red',
     reprovado: 'sig-pill-red',
 };
 
@@ -95,11 +116,22 @@ export default function ProjectsIndex({
     const defaultProjectPhase = projectPhases[0] ?? null;
     const defaultProjectPhaseId = defaultProjectPhase?.id ?? '';
     const defaultDocumentType = Object.keys(documentTypes)[0] ?? 'projeto';
+    const acceptedProjectExtensions = useMemo(
+        () => allowedExtensions.map((extension) => `.${extension}`).join(','),
+        [allowedExtensions],
+    );
+    const allowedProjectExtensions = useMemo(
+        () => allowedExtensions.map((extension) => String(extension).toLowerCase()),
+        [allowedExtensions],
+    );
     const [contractFilter, setContractFilter] = useState('todos');
     const [obraFilter, setObraFilter] = useState('todos');
     const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
+    const [statusFilter, setStatusFilter] = useState('todos');
     const [query, setQuery] = useState('');
     const [confirmOpen, setConfirmOpen] = useState(false);
+    const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
+    const [inactivateDocument, setInactivateDocument] = useState(null);
     const confirmedSubmitRef = useRef(false);
     const form = useForm({
         contract_id: defaultContractId,
@@ -116,6 +148,9 @@ export default function ProjectsIndex({
         cap_description: '',
         cap_impacts: [],
         file: null,
+    });
+    const inactivateForm = useForm({
+        inactive_reason: '',
     });
 
     const selectedContract = useMemo(
@@ -164,6 +199,7 @@ export default function ProjectsIndex({
         ? nextRevisionLabel(existingDocumentForEap.latest_version?.revision)
         : 'R00';
     const fullEapPreview = [form.data.code, revisionPreview].filter(Boolean).join('-');
+    const submissionTitle = existingDocumentForEap?.title || form.data.title;
 
     const disciplinasForForm = useMemo(
         () => disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(form.data.contract_id)),
@@ -213,6 +249,14 @@ export default function ProjectsIndex({
                 return false;
             }
 
+            if (statusFilter === 'ativo' && !isTreeActiveDocument(document)) {
+                return false;
+            }
+
+            if (statusFilter === 'inativo' && isTreeActiveDocument(document)) {
+                return false;
+            }
+
             if (!term) {
                 return true;
             }
@@ -221,7 +265,7 @@ export default function ProjectsIndex({
                 .toLowerCase()
                 .includes(term);
         });
-    }, [documents, contractFilter, obraFilter, disciplinaFilter, query]);
+    }, [documents, contractFilter, obraFilter, disciplinaFilter, statusFilter, query]);
 
     const updateContract = (contractId) => {
         const nextContract = contracts.find((contract) => String(contract.id) === String(contractId)) ?? null;
@@ -361,7 +405,7 @@ export default function ProjectsIndex({
             errors.project_phase_id = 'Selecione a fase do projeto.';
         }
 
-        if (!form.data.title.trim()) {
+        if (!isRevision && !form.data.title.trim()) {
             errors.title = 'Informe o titulo do projeto.';
         }
 
@@ -416,6 +460,7 @@ export default function ProjectsIndex({
             preserveScroll: true,
             onSuccess: () => {
                 setConfirmOpen(false);
+                setSubmitPanelOpen(false);
                 form.reset('title', 'revision_change_summary', 'cap_reason', 'cap_description', 'cap_impacts', 'file');
             },
             onError: () => setConfirmOpen(false),
@@ -430,6 +475,7 @@ export default function ProjectsIndex({
             preserveScroll: true,
             onStart: () => setConfirmOpen(false),
             onSuccess: () => {
+                setSubmitPanelOpen(false);
                 form.reset('title', 'revision_change_summary', 'cap_reason', 'cap_description', 'cap_impacts', 'file');
             },
         });
@@ -441,6 +487,33 @@ export default function ProjectsIndex({
         });
     };
 
+    const openInactivateModal = (document) => {
+        inactivateForm.clearErrors();
+        inactivateForm.setData('inactive_reason', '');
+        setInactivateDocument(document);
+    };
+
+    const closeInactivateModal = () => {
+        if (inactivateForm.processing) {
+            return;
+        }
+
+        setInactivateDocument(null);
+        inactivateForm.reset();
+        inactivateForm.clearErrors();
+    };
+
+    const submitInactivation = () => {
+        if (!inactivateDocument) {
+            return;
+        }
+
+        inactivateForm.patch(route('tenant.projects.inactivate', [tenant.slug, inactivateDocument.id]), {
+            preserveScroll: true,
+            onSuccess: closeInactivateModal,
+        });
+    };
+
     const processVersion = (version) => {
         router.post(route('tenant.projects.process-aps', [tenant.slug, version.id]), {}, {
             preserveScroll: true,
@@ -449,6 +522,16 @@ export default function ProjectsIndex({
 
     const updateFile = (file) => {
         form.clearErrors('file');
+
+        if (file) {
+            const extension = String(file.name || '').split('.').pop()?.toLowerCase() || '';
+
+            if (!allowedProjectExtensions.includes(extension)) {
+                form.setError('file', `Formato nao permitido. Use: ${allowedExtensions.map((item) => `.${item}`).join(', ')}.`);
+                form.setData('file', null);
+                return;
+            }
+        }
 
         if (file && file.size > MAX_PROJECT_FILE_SIZE) {
             form.setError('file', 'O arquivo deve ter no maximo 50 MB.');
@@ -463,16 +546,40 @@ export default function ProjectsIndex({
         <AuthenticatedLayout>
             <Head title="Submeter projeto" />
 
-            <section className="sig-content grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
-                <form className="sig-card p-5" onSubmit={submit} noValidate>
-                    <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                        <FolderOpen size={14} />
-                        <span className="eyebrow">Projetos</span>
+            <section className="sig-content grid gap-6">
+                {submitPanelOpen && (
+                    <div
+                        className="fixed inset-0 z-[110] flex justify-end bg-[rgba(11,16,32,0.42)]"
+                        role="presentation"
+                        onMouseDown={() => setSubmitPanelOpen(false)}
+                    >
+                        <form
+                            className="h-full w-full max-w-[500px] overflow-y-auto border-l border-[var(--border)] bg-white p-5 shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                            onSubmit={submit}
+                            noValidate
+                            onMouseDown={(event) => event.stopPropagation()}
+                        >
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <div className="flex items-center gap-2 text-[var(--ink-500)]">
+                                <FolderOpen size={14} />
+                                <span className="eyebrow">Projetos</span>
+                            </div>
+                            <h1 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">Submeter projeto</h1>
+                            <p className="mt-1 text-sm text-[var(--ink-500)]">
+                                Envie arquivos tecnicos por contrato, obra, disciplina e revisao. Todo envio passa por analise e aprovacao antes de aparecer na arvore principal.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            className="sig-btn sig-btn-ghost !min-h-9 !px-2"
+                            title="Fechar"
+                            aria-label="Fechar formulário de submissão"
+                            onClick={() => setSubmitPanelOpen(false)}
+                        >
+                            <X size={18} />
+                        </button>
                     </div>
-                    <h1 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">Submeter projeto</h1>
-                    <p className="mt-1 text-sm text-[var(--ink-500)]">
-                        Envie arquivos tecnicos por contrato, obra, disciplina e revisao. Todo envio passa por analise e aprovacao antes de aparecer na arvore principal.
-                    </p>
 
                     {page.props.flash.success && (
                         <div className="mt-4 rounded-lg bg-[var(--green-50)] px-3 py-2 text-sm text-[var(--green)]">
@@ -531,7 +638,18 @@ export default function ProjectsIndex({
                         </Field>
 
                         <Field label="Titulo" error={form.errors.title}>
-                            <input value={form.data.title} onChange={(event) => form.setData('title', event.target.value)} placeholder="Ex: Projeto estrutural - Bloco A" required />
+                            <input
+                                value={submissionTitle}
+                                onChange={(event) => !isRevision && form.setData('title', event.target.value)}
+                                placeholder="Ex: Projeto estrutural - Bloco A"
+                                readOnly={isRevision}
+                                required={!isRevision}
+                            />
+                            {isRevision && (
+                                <span className="mt-1 block text-xs text-[var(--ink-500)]">
+                                    Revisões mantêm o título do projeto anterior.
+                                </span>
+                            )}
                         </Field>
 
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -585,7 +703,13 @@ export default function ProjectsIndex({
                                 <span className="mt-1 text-[12px] text-[var(--ink-500)]">
                                     Formatos: {allowedExtensions.map((extension) => `.${extension}`).join(', ')}. Maximo 50 MB.
                                 </span>
-                                <input className="sr-only" type="file" onChange={(event) => updateFile(event.target.files?.[0] || null)} required />
+                                <input
+                                    className="sr-only"
+                                    type="file"
+                                    accept={acceptedProjectExtensions}
+                                    onChange={(event) => updateFile(event.target.files?.[0] || null)}
+                                    required
+                                />
                             </label>
                             {form.errors.file && <span className="mt-1 block text-xs text-[var(--red)]">{form.errors.file}</span>}
                         </div>
@@ -598,7 +722,20 @@ export default function ProjectsIndex({
                         <Send size={15} />
                         Revisar e confirmar
                     </button>
-                </form>
+                        </form>
+                    </div>
+                )}
+
+                {!submitPanelOpen && page.props.flash.success && (
+                    <div className="rounded-lg bg-[var(--green-50)] px-3 py-2 text-sm text-[var(--green)]">
+                        {page.props.flash.success}
+                    </div>
+                )}
+                {!submitPanelOpen && page.props.flash.error && (
+                    <div className="rounded-lg bg-[var(--red-50)] px-3 py-2 text-sm text-[var(--red)]">
+                        {page.props.flash.error}
+                    </div>
+                )}
 
                 <section className="sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
@@ -609,15 +746,27 @@ export default function ProjectsIndex({
                             </div>
                             <h2 className="mt-1 text-[15px] font-semibold">{filteredDocuments.length} de {documents.length} documentos</h2>
                         </div>
-                        {canAnalyzeProjects && (
-                            <Link href={route('tenant.projects.review.index', tenant.slug)} className="sig-btn sig-btn-secondary sig-btn-sm">
-                                <Eye size={13} />
-                                Analisar projeto
-                            </Link>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {canUploadProjects && (
+                                <button
+                                    type="button"
+                                    className="sig-btn sig-btn-primary sig-btn-sm"
+                                    onClick={() => setSubmitPanelOpen(true)}
+                                >
+                                    <UploadCloud size={13} />
+                                    Submeter projeto
+                                </button>
+                            )}
+                            {canAnalyzeProjects && (
+                                <Link href={route('tenant.projects.review.index', tenant.slug)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                                    <Eye size={13} />
+                                    Analisar projeto
+                                </Link>
+                            )}
+                        </div>
                     </header>
 
-                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 xl:grid-cols-4">
+                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 xl:grid-cols-5">
                         <FilterSelect label="Contrato" value={contractFilter} onChange={updateContractFilter}>
                             <option value="todos">Todos os contratos</option>
                             {contracts.map((contract) => (
@@ -637,6 +786,12 @@ export default function ProjectsIndex({
                             {disciplinasForFilter.map((disciplina) => (
                                 <option key={disciplina.id} value={disciplina.id}>{disciplina.sigla} - {disciplina.nome}</option>
                             ))}
+                        </FilterSelect>
+
+                        <FilterSelect label="Situacao" value={statusFilter} onChange={setStatusFilter}>
+                            <option value="todos">Ativos e inativos</option>
+                            <option value="ativo">Ativos na arvore</option>
+                            <option value="inativo">Inativos na arvore</option>
                         </FilterSelect>
 
                         <label>
@@ -669,6 +824,10 @@ export default function ProjectsIndex({
                             <tbody>
                                 {filteredDocuments.map((document) => {
                                     const version = document.latest_version;
+                                    const treeActive = isTreeActiveDocument(document);
+                                    const inactive = isInactiveDocument(document);
+                                    const manuallyInactive = isManuallyInactiveDocument(document);
+                                    const displayStatus = manuallyInactive ? 'inativo' : document.status;
 
                                     return (
                                         <tr key={document.id}>
@@ -695,9 +854,24 @@ export default function ProjectsIndex({
                                             </td>
                                             <td className="font-semibold">{version?.revision}</td>
                                             <td>
-                                                <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
-                                                    {statusLabels[document.status] || document.status}
+                                                <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
+                                                    {statusLabels[displayStatus] || displayStatus}
                                                 </span>
+                                                {inactive && document.inactive_at && (
+                                                    <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                        Inativado por {document.inactive_by?.name || 'usuario'} em {new Date(document.inactive_at).toLocaleDateString('pt-BR')}
+                                                    </div>
+                                                )}
+                                                {inactive && !manuallyInactive && (
+                                                    <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                        Inativo na arvore ate a aprovacao.
+                                                    </div>
+                                                )}
+                                                {inactive && document.inactive_reason && (
+                                                    <div className="mt-1 max-w-[220px] truncate text-xs text-[var(--ink-500)]" title={document.inactive_reason}>
+                                                        Motivo: {document.inactive_reason}
+                                                    </div>
+                                                )}
                                                 {document.reviewed_at && (
                                                     <div className="mt-1 text-xs text-[var(--ink-500)]">
                                                         {document.reviewer?.name || 'Revisado'} em {new Date(document.reviewed_at).toLocaleDateString('pt-BR')}
@@ -716,26 +890,46 @@ export default function ProjectsIndex({
                                             </td>
                                             <td>
                                                 <div className="flex flex-wrap justify-end gap-2">
-                                                    {document.status === 'ativo' && version?.aps_urn ? (
-                                                        <a href={route('tenant.projects.viewer', [tenant.slug, version.id])} className="sig-btn sig-btn-primary sig-btn-sm">
+                                                    {treeActive && version?.aps_urn ? (
+                                                        <Link href={viewerWorkspaceUrl(tenant, version, 'view')} className="sig-btn sig-btn-primary sig-btn-sm">
                                                             <Eye size={13} />
                                                             Visualizar
-                                                        </a>
-                                                    ) : document.status === 'ativo' ? (
+                                                        </Link>
+                                                    ) : treeActive && isApsWaiting(version) ? (
+                                                        <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                                                            Processando APS
+                                                        </span>
+                                                    ) : treeActive ? (
                                                         <button type="button" onClick={() => processVersion(version)} className="sig-btn sig-btn-primary sig-btn-sm">
                                                             <Eye size={13} />
-                                                            Visualizar
+                                                            Processar APS
                                                         </button>
                                                     ) : (
                                                         <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
                                                             Fora da arvore
                                                         </span>
                                                     )}
+                                                    {version?.aps_urn && (document.status === 'ativo' || canAnalyzeProjects) && (
+                                                        <Link href={viewerWorkspaceUrl(tenant, version, 'comments')} className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                            <MessageSquare size={13} />
+                                                            Comentários
+                                                        </Link>
+                                                    )}
                                                     {version?.url && (
                                                         <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm">
                                                             <Download size={13} />
                                                             Baixar
                                                         </a>
+                                                    )}
+                                                    {canDeleteProjects && treeActive && (
+                                                        <button
+                                                            type="button"
+                                                            className="sig-btn sig-btn-secondary sig-btn-sm"
+                                                            onClick={() => openInactivateModal(document)}
+                                                        >
+                                                            <ArchiveX size={13} />
+                                                            Inativar
+                                                        </button>
                                                     )}
                                                     {canDeleteProjects && (
                                                         <ConfirmActionButton
@@ -766,7 +960,7 @@ export default function ProjectsIndex({
 
             {confirmOpen && (
                 <ConfirmProjectSubmitModal
-                    title={form.data.title}
+                    title={submissionTitle}
                     fileName={form.data.file?.name}
                     contractLabel={selectedContract ? contractLabel(selectedContract) : 'Contrato nao informado'}
                     obraLabel={selectedObra ? `${selectedObra.codigo} - ${selectedObra.nome}` : 'Obra nao informada'}
@@ -783,6 +977,18 @@ export default function ProjectsIndex({
                     processing={form.processing}
                     onClose={() => setConfirmOpen(false)}
                     onConfirm={confirmSubmit}
+                />
+            )}
+
+            {inactivateDocument && (
+                <InactivateProjectModal
+                    document={inactivateDocument}
+                    reason={inactivateForm.data.inactive_reason}
+                    error={inactivateForm.errors.inactive_reason}
+                    processing={inactivateForm.processing}
+                    onReasonChange={(value) => inactivateForm.setData('inactive_reason', value)}
+                    onClose={closeInactivateModal}
+                    onConfirm={submitInactivation}
                 />
             )}
         </AuthenticatedLayout>
@@ -954,6 +1160,78 @@ function ConfirmProjectSubmitModal({
                     <button type="button" className="sig-btn sig-btn-primary" onClick={onConfirm} disabled={processing}>
                         <Send size={15} />
                         Confirmar submissao
+                    </button>
+                </footer>
+            </section>
+        </div>
+    );
+}
+
+function InactivateProjectModal({
+    document,
+    reason,
+    error,
+    processing,
+    onReasonChange,
+    onClose,
+    onConfirm,
+}) {
+    const canConfirm = reason.trim().length > 0 && !processing;
+
+    return (
+        <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.48)] px-4 py-6"
+            role="presentation"
+            onClick={onClose}
+        >
+            <section
+                className="w-full max-w-xl overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="inactivate-project-title"
+                onClick={(event) => event.stopPropagation()}
+            >
+                <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-[var(--ink-500)]">
+                            <ArchiveX size={15} />
+                            <span className="eyebrow">Inativar projeto</span>
+                        </div>
+                        <h2 id="inactivate-project-title" className="mt-1 text-[17px] font-semibold text-[var(--ink-900)]">
+                            Remover projeto da arvore principal
+                        </h2>
+                        <p className="mt-1 text-[13px] text-[var(--ink-500)]">
+                            O registro, as revisoes e os arquivos continuam preservados no historico.
+                        </p>
+                    </div>
+                    <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
+                        <X size={18} />
+                    </button>
+                </header>
+
+                <div className="grid gap-4 px-5 py-5">
+                    <ConfirmInfo label="Projeto" value={document.title} />
+                    <ConfirmInfo label="EAP" value={document.code} mono />
+                    <label>
+                        <span className="eyebrow mb-1 block">Motivo da decisao</span>
+                        <textarea
+                            className="min-h-32 w-full resize-y rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[rgba(37,99,235,0.16)]"
+                            value={reason}
+                            onChange={(event) => onReasonChange(event.target.value)}
+                            placeholder="Explique por que este projeto sera inativado"
+                            autoFocus
+                        />
+                        {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
+                    </label>
+                </div>
+
+                <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose} disabled={processing}>
+                        Cancelar
+                    </button>
+                    <button type="button" className="sig-btn sig-btn-primary" onClick={onConfirm} disabled={!canConfirm}>
+                        <ArchiveX size={15} />
+                        Inativar projeto
                     </button>
                 </footer>
             </section>

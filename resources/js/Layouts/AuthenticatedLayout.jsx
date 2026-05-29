@@ -60,6 +60,7 @@ export default function AuthenticatedLayout({ children }) {
     const user = props.auth.user;
     const tenant = props.currentTenant;
     const tenantRole = props.currentTenantRole;
+    const tenantRoleLabel = props.currentTenantRoleLabel;
     const contract = props.contract;
     const isPlatformAdmin = Boolean(user?.is_platform_admin);
     const userCan = props.userPermissions?.can || {};
@@ -71,7 +72,6 @@ export default function AuthenticatedLayout({ children }) {
     const parametrizacaoCan = props.parametrizacaoPermissions?.can || {};
     const [parametrizacaoOpen, setParametrizacaoOpen] = useState(() => route().current('tenant.parametrizacao.*'));
     const [qualidadeOpen, setQualidadeOpen] = useState(() => route().current('tenant.qualidade.*'));
-    const [rncOpen, setRncOpen] = useState(() => route().current('tenant.qualidade.rnc.*'));
     const [projectOpen, setProjectOpen] = useState(() => route().current('tenant.projects.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -79,7 +79,7 @@ export default function AuthenticatedLayout({ children }) {
             return false;
         }
 
-        return window.localStorage.getItem('sigworks:sidebar-collapsed') === 'true';
+        return window.localStorage.getItem('deming:sidebar-collapsed') === 'true';
     });
     const notificationsRef = useRef(null);
     const notifications = props.notifications?.items || [];
@@ -87,7 +87,7 @@ export default function AuthenticatedLayout({ children }) {
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            window.localStorage.setItem('sigworks:sidebar-collapsed', String(sidebarCollapsed));
+            window.localStorage.setItem('deming:sidebar-collapsed', String(sidebarCollapsed));
         }
     }, [sidebarCollapsed]);
 
@@ -176,15 +176,7 @@ export default function AuthenticatedLayout({ children }) {
             ] : []),
         ]
         : [];
-    const qualidadeItems = tenant && rncChildren.length > 0
-        ? [
-            {
-                label: 'Relatorio Nao Conformidade',
-                active: route().current('tenant.qualidade.rnc.*'),
-                children: rncChildren,
-            },
-        ]
-        : [];
+    const qualidadeItems = rncChildren;
     const projectItems = tenant
         ? [
             ...(projectCan.view_projects ? [{
@@ -367,36 +359,7 @@ export default function AuthenticatedLayout({ children }) {
                             </button>
                             {qualidadeOpen && (
                                 <div className="ml-7">
-                                {qualidadeItems.map((item) => item.children ? (
-                                    <div key={item.label}>
-                                        <button
-                                            type="button"
-                                            className={`sig-nav-item !w-[calc(100%_-_16px)] border-0 bg-transparent !py-2 text-left !text-[12.5px] ${item.active ? 'active' : ''}`}
-                                            onClick={() => setRncOpen((open) => !open)}
-                                        >
-                                            <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
-                                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                                            <ChevronRight
-                                                size={14}
-                                                className={`transition-transform ${rncOpen ? 'rotate-90' : ''}`}
-                                            />
-                                        </button>
-                                        {rncOpen && (
-                                            <div className="ml-5">
-                                                {item.children.map((child) => (
-                                                    <Link
-                                                        key={child.label}
-                                                        href={child.href}
-                                                        className={`sig-nav-item !w-[calc(100%_-_16px)] !py-2 !text-[12px] ${child.active ? 'active' : ''}`}
-                                                    >
-                                                        <span className="h-1 w-1 rounded-full bg-current opacity-60" />
-                                                        <span className="min-w-0 flex-1 truncate">{child.label}</span>
-                                                    </Link>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
+                                {qualidadeItems.map((item) => (
                                     <Link
                                         key={item.label}
                                         href={item.href}
@@ -454,7 +417,7 @@ export default function AuthenticatedLayout({ children }) {
                     <UserAvatar user={user} />
                     <div className="min-w-0 flex-1">
                         <div className="truncate text-[13px] font-semibold text-[var(--side-fg)]">{user.name}</div>
-                        <div className="truncate text-[11.5px] text-[var(--side-fg-dim)]">{tenantRole || 'participante'}</div>
+                        <div className="truncate text-[11.5px] text-[var(--side-fg-dim)]">{tenantRoleLabel || 'participante'}</div>
                     </div>
                     <Link href={route('logout')} method="post" as="button" className="rounded-md p-1.5 text-[var(--side-fg-dim)] hover:bg-[var(--side-hover)]" title="Sair">
                         <LogOut size={16} />

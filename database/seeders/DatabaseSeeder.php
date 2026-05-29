@@ -17,11 +17,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $demoPassword = Hash::make('Senha1!');
+
         $platformAdmin = User::updateOrCreate(
             ['email' => 'admin@obras.test'],
             [
                 'name' => 'Admin Plataforma',
-                'password' => Hash::make('password'),
+                'password' => $demoPassword,
                 'is_platform_admin' => true,
                 'email_verified_at' => now(),
             ],
@@ -43,7 +45,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'owner@demo.test'],
             [
                 'name' => 'Owner Demo',
-                'password' => Hash::make('password'),
+                'password' => $demoPassword,
                 'email_verified_at' => now(),
             ],
         );
@@ -52,7 +54,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'engenheiro@demo.test'],
             [
                 'name' => 'Engenheira da Obra',
-                'password' => Hash::make('password'),
+                'password' => $demoPassword,
                 'email_verified_at' => now(),
             ],
         );
@@ -61,7 +63,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'cliente@demo.test'],
             [
                 'name' => 'Cliente Aprovador',
-                'password' => Hash::make('password'),
+                'password' => $demoPassword,
                 'email_verified_at' => now(),
             ],
         );
@@ -70,7 +72,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'construtora@demo.test'],
             [
                 'name' => 'Líder da Construtora',
-                'password' => Hash::make('password'),
+                'password' => $demoPassword,
                 'email_verified_at' => now(),
             ],
         );
@@ -82,7 +84,7 @@ class DatabaseSeeder extends Seeder
 
         $tenant->memberships()->updateOrCreate(
             ['user_id' => $engineer->id],
-            ['role' => 'engineer', 'status' => 'active', 'joined_at' => now()],
+            ['role' => 'engenheiro_campo', 'status' => 'active', 'joined_at' => now()],
         );
 
         $contract = $tenant->contracts()->updateOrCreate(

@@ -3,15 +3,18 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessProjectVersionApsJob;
 use App\Models\Contract;
 use App\Models\Disciplina;
 use App\Models\Obra;
 use App\Models\ProjectDisciplineResponsavel;
 use App\Models\ProjectDocument;
+use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectPhase;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ProjectSubmittedForReviewNotification;
+use App\Services\AutodeskApsService;
 use App\Support\ProjectCap;
 use App\Support\ProjectPermissions;
 use Illuminate\Database\Eloquent\Builder;
@@ -47,6 +50,7 @@ class ProjectController extends Controller
         'em_analise' => 'Em analise',
         'em_aprovacao' => 'Em aprovacao',
         'ativo' => 'Aprovado',
+        'inativo' => 'Inativo',
         'reprovado' => 'Reprovado',
     ];
 
@@ -80,6 +84,7 @@ class ProjectController extends Controller
                 'creator:id,name,email',
                 'reviewer:id,name,email',
                 'approver:id,name,email',
+                'inactiveBy:id,name,email',
                 'latestVersion.uploader:id,name,email',
                 'latestVersion.reviewer:id,name,email',
                 'latestVersion.approver:id,name,email',
@@ -157,14 +162,21 @@ class ProjectController extends Controller
                 'reviewer:id,name,email',
                 'approver:id,name,email',
                 'versions' => fn ($query) => $query
-                    ->whereNotNull('cap_number')
                     ->with([
                         'uploader:id,name,email',
                         'reviewer:id,name,email',
                         'approver:id,name,email',
                         'capRequester:id,name,email',
+                        'reviewMarkups' => fn ($query) => $query
+                            ->with([
+                                'creator:id,name,email',
+                                'assignee:id,name,email',
+                            ])
+                            ->latest(),
+                        'reviewChecklist.items.checkedBy:id,name,email',
                     ])
-                    ->latest(),
+                    ->orderBy('created_at')
+                    ->orderBy('id'),
             ])
             ->latest()
             ->get();
@@ -181,6 +193,7 @@ class ProjectController extends Controller
             'documentTypes' => self::DOCUMENT_TYPES,
             'statusLabels' => self::STATUS_LABELS,
             'capImpactLabels' => ProjectCap::IMPACT_LABELS,
+            'canReviewProjects' => ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW),
         ]);
     }
 
@@ -196,6 +209,7 @@ class ProjectController extends Controller
 
         $documents = $tenant->projectDocuments()
             ->whereIn('contract_id', $contractIds)
+            ->whereNull('inactive_at')
             ->whereHas('versions', fn (Builder $query) => $query->where('status', 'ativo'))
             ->with([
                 'contract:id,code,name,obra_id',
@@ -249,7 +263,7 @@ class ProjectController extends Controller
         ]);
     }
 
-    public function store(Request $request, Tenant $tenant): RedirectResponse
+    public function store(Request $request, Tenant $tenant, AutodeskApsService $aps): RedirectResponse
     {
         abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::UPLOAD), 403);
 
@@ -278,7 +292,7 @@ class ProjectController extends Controller
                 'required',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
-            'title' => ['required', 'string', 'max:255'],
+            'title' => ['nullable', 'string', 'max:255'],
             'document_type' => ['required', Rule::in(array_keys(self::DOCUMENT_TYPES))],
             'document_number' => ['required', 'string', 'regex:/^[0-9]{1,3}$/'],
             'revision' => ['nullable', 'string', 'max:30'],
@@ -337,6 +351,10 @@ class ProjectController extends Controller
             if ($capErrors !== []) {
                 throw ValidationException::withMessages($capErrors);
             }
+        } elseif (blank($data['title'] ?? null)) {
+            throw ValidationException::withMessages([
+                'title' => 'Informe o titulo do projeto.',
+            ]);
         }
 
         if (! in_array($extension, self::ALLOWED_EXTENSIONS, true)) {
@@ -362,10 +380,13 @@ class ProjectController extends Controller
                     'status' => 'em_analise',
                     'reviewed_by_id' => null,
                     'approved_by_id' => null,
+                    'inactive_by_id' => null,
                     'reviewed_at' => null,
                     'review_notes' => null,
                     'approved_at' => null,
                     'approval_notes' => null,
+                    'inactive_at' => null,
+                    'inactive_reason' => null,
                 ])->save();
             } else {
                 $createdNewDocument = true;
@@ -422,14 +443,16 @@ class ProjectController extends Controller
             return $document->load(['tenant', 'contract', 'obra', 'disciplina', 'phase', 'latestVersion']);
         });
 
+        $apsQueued = $this->queueApsProcessing($document->latestVersion, $aps);
         $notifiedCount = $this->notifyDisciplineReviewers($document, $request->user());
         $messagePrefix = $createdNewDocument
             ? "Arquivo de projeto submetido para analise como revisao {$createdRevision}."
             : "Nova revisao {$createdRevision} submetida para analise do EAP {$document->code}.";
+        $apsMessage = $apsQueued ? ' Processamento APS iniciado em segundo plano.' : '';
 
         return back()->with('success', $notifiedCount > 0
-            ? "{$messagePrefix} {$notifiedCount} responsavel(is) notificado(s) no sistema e por email."
-            : "{$messagePrefix} Nenhum responsavel cadastrado para esta disciplina.");
+            ? "{$messagePrefix}{$apsMessage} {$notifiedCount} responsavel(is) notificado(s) no sistema e por email."
+            : "{$messagePrefix}{$apsMessage} Nenhum responsavel cadastrado para esta disciplina.");
     }
 
     public function destroy(Request $request, Tenant $tenant, ProjectDocument $document): RedirectResponse
@@ -443,6 +466,34 @@ class ProjectController extends Controller
         $document->delete();
 
         return back()->with('success', 'Projeto excluido. O arquivo e o registro foram mantidos no historico.');
+    }
+
+    public function inactivate(Request $request, Tenant $tenant, ProjectDocument $document): RedirectResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+        $contract = $document->contract()->firstOrFail();
+
+        abort_unless($this->canAccessContract($request, $tenant, $contract), 403);
+        abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::DELETE, $contract), 403);
+
+        if ($document->status !== 'ativo' || $document->inactive_at !== null) {
+            return back()->with('error', 'Somente projetos aprovados e ativos na arvore podem ser inativados.');
+        }
+
+        $data = $request->validate([
+            'inactive_reason' => ['required', 'string', 'max:5000'],
+        ], [
+            'inactive_reason.required' => 'Informe o motivo da inativacao do projeto.',
+        ]);
+
+        $document->forceFill([
+            'status' => 'inativo',
+            'inactive_at' => now(),
+            'inactive_by_id' => $request->user()->id,
+            'inactive_reason' => $data['inactive_reason'],
+        ])->save();
+
+        return back()->with('success', 'Projeto inativado. Ele foi removido da arvore principal, mas permanece no historico.');
     }
 
     private function accessibleContracts(Request $request, Tenant $tenant, ?string $permission = null)
@@ -465,6 +516,26 @@ class ProjectController extends Controller
         }
 
         return $query;
+    }
+
+    private function queueApsProcessing(?ProjectDocumentVersion $version, AutodeskApsService $aps): bool
+    {
+        if (! $version || ! $aps->isConfigured() || ! config('services.autodesk_aps.auto_process', true)) {
+            return false;
+        }
+
+        if (in_array($version->derivative_status, ['queued', 'processing', 'ready'], true)) {
+            return false;
+        }
+
+        $version->forceFill([
+            'derivative_status' => 'queued',
+            'processed_at' => null,
+        ])->save();
+
+        ProcessProjectVersionApsJob::dispatch($version->id)->afterResponse();
+
+        return true;
     }
 
     private function canAccessContract(Request $request, Tenant $tenant, Contract $contract): bool

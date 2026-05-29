@@ -6,6 +6,7 @@ use App\Support\ActivityPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
+use App\Support\TenantRoles;
 use App\Support\UserPermissions;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -65,6 +66,9 @@ class HandleInertiaRequests extends Middleware
             'currentTenant' => fn () => $request->attributes->get('tenant'),
             'currentTenantRole' => fn () => $request->user() && $request->attributes->get('tenant')
                 ? $request->user()->tenantRole($request->attributes->get('tenant'))
+                : null,
+            'currentTenantRoleLabel' => fn () => $request->user() && $request->attributes->get('tenant')
+                ? TenantRoles::label($request->user()->tenantRole($request->attributes->get('tenant')))
                 : null,
             'rncPermissions' => fn () => $request->user() && $request->attributes->get('tenant')
                 ? [

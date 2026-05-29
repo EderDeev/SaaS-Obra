@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\Contract;
 use App\Models\Tenant;
+use App\Support\TenantRoles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -31,11 +32,7 @@ class ContractController extends Controller
                 ->latest()
                 ->get(),
             'statuses' => ['planning', 'active', 'paused', 'completed', 'cancelled'],
-            'canCreateContracts' => in_array(
-                $request->user()->tenantRole($tenant),
-                ['tenant_owner', 'tenant_admin', 'obras_manager'],
-                true,
-            ),
+            'canCreateContracts' => TenantRoles::canManageContracts($request->user()->tenantRole($tenant)),
         ]);
     }
 
@@ -127,7 +124,7 @@ class ContractController extends Controller
     private function authorizeManageContracts(Request $request, Tenant $tenant): void
     {
         abort_unless(
-            in_array($request->user()->tenantRole($tenant), ['tenant_owner', 'tenant_admin', 'obras_manager'], true),
+            TenantRoles::canManageContracts($request->user()->tenantRole($tenant)),
             403,
         );
     }

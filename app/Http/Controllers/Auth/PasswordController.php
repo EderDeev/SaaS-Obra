@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\PasswordPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password;
 
 class PasswordController extends Controller
 {
@@ -17,11 +17,13 @@ class PasswordController extends Controller
     {
         $validated = $request->validate([
             'current_password' => ['required', 'current_password'],
-            'password' => ['required', Password::defaults(), 'confirmed'],
-        ]);
+            'password' => ['required', 'confirmed', ...PasswordPolicy::rules()],
+        ], PasswordPolicy::messages());
 
         $request->user()->update([
             'password' => Hash::make($validated['password']),
+            'must_change_password' => false,
+            'temporary_password_created_at' => null,
         ]);
 
         return back();

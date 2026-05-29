@@ -34,6 +34,10 @@ function shouldShowOriginalName(version) {
     return Boolean(version?.original_name && version?.stored_name && version.original_name !== version.stored_name);
 }
 
+function isApsWaiting(version) {
+    return ['queued', 'processing'].includes(version?.derivative_status);
+}
+
 function noteKey(document) {
     return `${document.id}:${document.status}`;
 }
@@ -231,10 +235,14 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                     )}
                                                     {version && (
                                                         version.aps_urn ? (
-                                                            <Link href={route('tenant.projects.viewer', [tenant.slug, version.id])} className="sig-btn sig-btn-primary sig-btn-sm mt-2">
-                                                                <Eye size={13} />
-                                                                Abrir viewer
-                                                            </Link>
+                                                             <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm mt-2">
+                                                                 <Eye size={13} />
+                                                                 Checklist
+                                                             </Link>
+                                                        ) : isApsWaiting(version) ? (
+                                                            <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)] mt-2">
+                                                                Processando APS
+                                                            </span>
                                                         ) : (
                                                             <button
                                                                 type="button"

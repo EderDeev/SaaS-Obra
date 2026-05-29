@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\ResetPasswordNotification;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'phone', 'avatar_url', 'is_platform_admin'])]
+#[Fillable(['name', 'email', 'password', 'phone', 'avatar_url', 'is_platform_admin', 'must_change_password', 'temporary_password_created_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -30,6 +31,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_platform_admin' => 'boolean',
+            'must_change_password' => 'boolean',
+            'temporary_password_created_at' => 'datetime',
         ];
     }
 
@@ -91,5 +94,10 @@ class User extends Authenticatable
             ->where('tenant_id', $tenant->id)
             ->where('status', 'active')
             ->value('role');
+    }
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordNotification($token));
     }
 }

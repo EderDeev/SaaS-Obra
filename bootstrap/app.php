@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.access' => \App\Http\Middleware\EnsureTenantAccess::class,
             'tenant.admin' => \App\Http\Middleware\EnsureTenantAdmin::class,
             'parametrizacao.permission' => \App\Http\Middleware\EnsureParametrizacaoPermission::class,
+            'password.changed' => \App\Http\Middleware\EnsurePasswordWasChanged::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

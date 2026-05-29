@@ -19,7 +19,7 @@ export default function Login({ canResetPassword, status }) {
 
     return (
         <>
-            <Head title="Acessar SIGWORKS" />
+            <Head title="Acessar Deming" />
 
             <main className="sig-login grid min-h-screen grid-cols-[1fr_1.05fr] bg-[var(--bg)]">
                 <section className="flex flex-col px-6 py-8 sm:px-10 lg:px-14">
@@ -95,22 +95,22 @@ export default function Login({ canResetPassword, status }) {
                                 className={`sig-btn sig-btn-primary mt-6 w-full ${form.processing ? 'opacity-60' : ''}`}
                                 disabled={form.processing}
                             >
-                                Acessar SIGWORKS
+                                Acessar Deming
                                 <ArrowRight size={16} />
                             </button>
 
                             <div className="sig-card mt-8 flex items-start gap-3 p-4">
                                 <HardHat size={20} className="mt-0.5 text-[var(--primary)]" />
                                 <p className="text-[12.5px] leading-5 text-[var(--ink-500)]">
-                                    Suporte de campo 24/7 · <a className="font-semibold text-[var(--primary)]">suporte@sigworks.com.br</a>
+                                    Suporte operacional · <a className="font-semibold text-[var(--primary)]">suporte@deming.com.br</a>
                                 </p>
                             </div>
                         </form>
                     </div>
 
                     <footer className="flex flex-wrap justify-between gap-3 text-xs text-[var(--ink-400)]">
-                        <span>© 2026 SIGWORKS · CREA-PI 0000000</span>
-                        <span>v3.0 · build 2026</span>
+                        <span>Deming · Gestão de obras civis</span>
+                        <span>Ambiente seguro para equipes e contratos</span>
                     </footer>
                 </section>
 
@@ -130,7 +130,7 @@ export default function Login({ canResetPassword, status }) {
 
                     <div className="relative z-10">
                         <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.08em]">
-                            v3.0 · interface renovada
+                            Plataforma integrada
                         </span>
                     </div>
 
@@ -139,23 +139,8 @@ export default function Login({ canResetPassword, status }) {
                             Do canteiro à medição final, tudo em um único ambiente.
                         </h2>
                         <p className="mt-4 max-w-[440px] text-[14.5px] leading-6 text-white/70">
-                            SIGWORKS conecta engenheiros, fiscais e administrativo em um fluxo transparente de contratos, cronogramas e prestações de conta.
+                            Deming conecta engenheiros, fiscais e administrativo em um fluxo transparente de contratos, cronogramas e prestações de conta.
                         </p>
-
-                        <div className="mt-8 flex flex-wrap gap-8 text-white/85">
-                            <div>
-                                <div className="mono text-[22px] font-semibold">+38</div>
-                                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-white/55">contratos ativos</div>
-                            </div>
-                            <div>
-                                <div className="mono text-[22px] font-semibold">R$ 142M</div>
-                                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-white/55">em obras geridas</div>
-                            </div>
-                            <div>
-                                <div className="mono text-[22px] font-semibold">99,2%</div>
-                                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-white/55">uptime médio</div>
-                            </div>
-                        </div>
                     </div>
 
                     <div className="relative z-10 text-xs text-white/45">

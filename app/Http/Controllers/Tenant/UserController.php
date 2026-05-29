@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Models\User;
+use App\Notifications\UserTemporaryPasswordNotification;
+use App\Support\PasswordPolicy;
+use App\Support\TenantRoles;
 use App\Support\UserPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -39,7 +42,10 @@ class UserController extends Controller
                 ->with(['tipoEmpresa', 'contract'])
                 ->orderBy('nome')
                 ->get(),
-            'roles' => $this->roles(),
+            'roles' => TenantRoles::all(),
+            'roleGroups' => TenantRoles::groups(),
+            'roleLabels' => TenantRoles::labels(),
+            'defaultRole' => TenantRoles::defaultRole(),
             'userPermissionOptions' => UserPermissions::labels(),
             'userPermissionCan' => [
                 'create_user' => UserPermissions::can(request()->user(), $tenant, UserPermissions::CREATE),
@@ -60,7 +66,7 @@ class UserController extends Controller
                 'required',
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
-            'role' => ['required', Rule::in($this->roles())],
+            'role' => ['required', Rule::in(TenantRoles::all())],
             'user_permissions' => ['nullable', 'array'],
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
         ], [
@@ -68,12 +74,16 @@ class UserController extends Controller
             'empresa_id.exists' => 'A empresa selecionada nao pertence a este tenant.',
         ]);
 
+        $temporaryPassword = PasswordPolicy::temporaryPassword();
+
         $user = User::firstOrCreate(
             ['email' => mb_strtolower($data['email'])],
             [
                 'name' => $data['name'],
-                'password' => Hash::make('password'),
+                'password' => Hash::make($temporaryPassword),
                 'email_verified_at' => now(),
+                'must_change_password' => true,
+                'temporary_password_created_at' => now(),
             ],
         );
 
@@ -91,7 +101,13 @@ class UserController extends Controller
             ],
         );
 
-        return back()->with('success', 'Usuário vinculado. Senha demo para novas contas: password');
+        if ($user->wasRecentlyCreated) {
+            $user->notify(new UserTemporaryPasswordNotification($tenant, $temporaryPassword));
+
+            return back()->with('success', 'Usuario criado e senha provisoria enviada por email.');
+        }
+
+        return back()->with('success', 'Usuario existente vinculado ao tenant.');
     }
 
     public function update(Request $request, Tenant $tenant, TenantUser $membership): RedirectResponse
@@ -106,7 +122,7 @@ class UserController extends Controller
                 'required',
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
-            'role' => ['required', Rule::in($this->roles())],
+            'role' => ['required', Rule::in(TenantRoles::all())],
             'user_permissions' => ['nullable', 'array'],
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
         ], [
@@ -157,11 +173,4 @@ class UserController extends Controller
         abort_unless($membership->tenant_id === $tenant->id, 404);
     }
 
-    /**
-     * @return array<int, string>
-     */
-    private function roles(): array
-    {
-        return ['tenant_owner', 'tenant_admin', 'obras_manager', 'engineer', 'financial', 'viewer'];
-    }
 }

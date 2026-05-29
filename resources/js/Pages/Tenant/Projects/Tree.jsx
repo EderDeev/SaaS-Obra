@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
-import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, Search, Upload } from 'lucide-react';
+import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Search, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 const derivativeLabels = {
@@ -27,6 +27,14 @@ function approvedDate(document) {
 
 function fileDisplayName(version) {
     return version?.stored_name || version?.original_name || '';
+}
+
+function viewerWorkspaceUrl(tenant, version, workspace) {
+    return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}`;
+}
+
+function isApsWaiting(version) {
+    return ['queued', 'processing'].includes(version?.derivative_status);
 }
 
 export default function ProjectTree({ tenant, contracts, obras, disciplinas, documents, documentTypes }) {
@@ -421,12 +429,23 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                         <span className="sig-pill sig-pill-green">{node.count} projeto(s)</span>
                     )}
                     {isDocument && version?.aps_urn && (
-                        <a href={route('tenant.projects.viewer', [tenant.slug, version.id])} className="sig-btn sig-btn-primary sig-btn-sm">
+                        <Link href={viewerWorkspaceUrl(tenant, version, 'view')} className="sig-btn sig-btn-primary sig-btn-sm">
                             <Eye size={13} />
                             Visualizar
-                        </a>
+                        </Link>
                     )}
-                    {isDocument && version && !version.aps_urn && (
+                    {isDocument && version?.aps_urn && (
+                        <Link href={viewerWorkspaceUrl(tenant, version, 'comments')} className="sig-btn sig-btn-secondary sig-btn-sm">
+                            <MessageSquare size={13} />
+                            Comentários
+                        </Link>
+                    )}
+                    {isDocument && version && !version.aps_urn && isApsWaiting(version) && (
+                        <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                            Processando APS
+                        </span>
+                    )}
+                    {isDocument && version && !version.aps_urn && !isApsWaiting(version) && (
                         <button type="button" onClick={() => processVersion(version)} className="sig-btn sig-btn-primary sig-btn-sm">
                             <Eye size={13} />
                             Processar APS

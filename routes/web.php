@@ -47,7 +47,7 @@ Route::get('/dashboard', function () {
     abort_if(! $tenant, 403, 'Seu usuário ainda não possui vínculo ativo.');
 
     return redirect()->route('tenant.dashboard', $tenant);
-})->middleware(['auth', 'verified'])->name('dashboard');
+})->middleware(['auth', 'verified', 'password.changed'])->name('dashboard');
 
 if (app()->environment('local')) {
     Route::get('/dev-login/{email}', function (string $email) {
@@ -66,13 +66,13 @@ if (app()->environment('local')) {
     ]));
 }
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'password.changed'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-Route::middleware(['auth', 'verified', 'platform.admin'])
+Route::middleware(['auth', 'verified', 'password.changed', 'platform.admin'])
     ->prefix('admin')
     ->name('platform.')
     ->group(function () {
@@ -84,7 +84,7 @@ Route::middleware(['auth', 'verified', 'platform.admin'])
         Route::delete('/aps/versions/{version}', [PlatformApsUsageController::class, 'destroyVersion'])->name('aps.versions.destroy');
     });
 
-Route::middleware(['auth', 'verified', 'tenant.resolve', 'tenant.access'])
+Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'tenant.access'])
     ->prefix('t/{tenant:slug}')
     ->name('tenant.')
     ->group(function () {
@@ -122,6 +122,7 @@ Route::middleware(['auth', 'verified', 'tenant.resolve', 'tenant.access'])
         Route::patch('/projetos/marcacoes/{markup}', [ProjectReviewWorkspaceController::class, 'updateMarkup'])->name('projects.markups.update');
         Route::delete('/projetos/marcacoes/{markup}', [ProjectReviewWorkspaceController::class, 'destroyMarkup'])->name('projects.markups.destroy');
         Route::patch('/projetos/checklist-itens/{item}', [ProjectReviewWorkspaceController::class, 'updateChecklistItem'])->name('projects.checklist-items.update');
+        Route::patch('/projetos/{document}/inativar', [ProjectController::class, 'inactivate'])->name('projects.inactivate');
         Route::delete('/projetos/{document}', [ProjectController::class, 'destroy'])->name('projects.destroy');
         Route::get('/qualidade/rnc', [RelatorioNaoConformidadeController::class, 'index'])->name('qualidade.rnc.index');
         Route::get('/qualidade/rnc/dashboard', [RelatorioNaoConformidadeController::class, 'dashboard'])->name('qualidade.rnc.dashboard');

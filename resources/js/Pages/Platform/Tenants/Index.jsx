@@ -12,6 +12,18 @@ function formatCnpj(value) {
         .replace(/(\d{4})(\d)/, '$1-$2');
 }
 
+const statusLabels = {
+    active: 'Ativo',
+    trial: 'Em teste',
+    suspended: 'Suspenso',
+};
+
+const statusPills = {
+    active: 'sig-pill-green',
+    trial: 'sig-pill-blue',
+    suspended: 'sig-pill-red',
+};
+
 export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
     const page = usePage();
     const form = useForm({
@@ -67,7 +79,11 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
                             </Field>
                             <Field label="Status">
                                 <select value={form.data.status} onChange={(e) => form.setData('status', e.target.value)}>
-                                    {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                                    {statuses.map((status) => (
+                                        <option key={status} value={status}>
+                                            {statusLabels[status] || status}
+                                        </option>
+                                    ))}
                                 </select>
                             </Field>
                         </div>
@@ -91,7 +107,12 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
                                 <tr key={tenant.id}>
                                     <td><div className="font-semibold">{tenant.name}</div><div className="mono text-xs text-[var(--ink-500)]">{tenant.slug}</div></td>
                                     <td>{tenant.plan}</td>
-                                    <td>{tenant.status}</td>
+                                    <td>
+                                        <span className={`sig-pill ${statusPills[tenant.status] || 'sig-pill-muted'}`}>
+                                            <span className="sig-pill-dot" />
+                                            {statusLabels[tenant.status] || tenant.status}
+                                        </span>
+                                    </td>
                                     <td>{tenant.users_count} usuários · {tenant.contracts_count} contratos</td>
                                     <td className="text-right"><Link href={route('tenant.dashboard', tenant.slug)} className="sig-btn sig-btn-secondary sig-btn-sm">Abrir</Link></td>
                                 </tr>

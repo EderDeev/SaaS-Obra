@@ -153,11 +153,26 @@ class ActivityPermissions
 
     public static function defaultForRole(?string $role): array
     {
-        return match ($role) {
-            'tenant_owner', 'tenant_admin' => self::all(),
-            'obras_manager', 'engineer' => [self::VIEW, self::CREATE, self::EDIT],
-            'financial', 'viewer' => [self::VIEW],
-            default => [],
-        };
+        if (TenantRoles::isTenantAdmin($role)) {
+            return self::all();
+        }
+
+        if (in_array($role, [
+            ...TenantRoles::managementRoles(),
+            ...TenantRoles::coordinationRoles(),
+            ...TenantRoles::engineeringRoles(),
+            ...TenantRoles::supervisionRoles(),
+        ], true)) {
+            return [self::VIEW, self::CREATE, self::EDIT];
+        }
+
+        if (in_array($role, [
+            ...TenantRoles::technicalRoles(),
+            ...TenantRoles::administrativeRoles(),
+        ], true)) {
+            return [self::VIEW];
+        }
+
+        return [];
     }
 }

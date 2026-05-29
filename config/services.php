@@ -44,6 +44,7 @@ return [
         'scopes' => array_values(array_filter(explode(' ', (string) env('AUTODESK_APS_SCOPES', 'data:read data:write data:create bucket:create bucket:read viewables:read')))),
         'verify_ssl' => env('AUTODESK_APS_VERIFY_SSL', true),
         'ca_bundle' => env('AUTODESK_APS_CA_BUNDLE'),
+        'auto_process' => env('AUTODESK_APS_AUTO_PROCESS', true),
     ],
 
 ];

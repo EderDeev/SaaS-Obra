@@ -11,7 +11,15 @@ function empresaLabel(empresa) {
     return `${empresa.nome}${tipo}${contract}`;
 }
 
-export default function TenantUsersIndex({ tenant, memberships, empresas, roles, userPermissionCan }) {
+function roleExistsInGroups(roleGroups, role) {
+    return Object.values(roleGroups || {}).some((roles) => Object.prototype.hasOwnProperty.call(roles, role));
+}
+
+function roleLabel(roleLabels, role) {
+    return roleLabels?.[role] || role || 'Participante';
+}
+
+export default function TenantUsersIndex({ tenant, memberships, empresas, roleGroups = {}, roleLabels = {}, defaultRole = 'engenheiro_planejamento', userPermissionCan }) {
     const page = usePage();
     const currentUser = page.props.auth.user;
     const defaultEmpresaId = empresas[0]?.id ?? '';
@@ -20,13 +28,13 @@ export default function TenantUsersIndex({ tenant, memberships, empresas, roles,
         name: '',
         email: '',
         empresa_id: defaultEmpresaId,
-        role: 'engineer',
+        role: defaultRole,
     });
 
     const clearForm = () => {
         setEditingMembership(null);
         form.clearErrors();
-        form.setData({ name: '', email: '', empresa_id: defaultEmpresaId, role: 'engineer' });
+        form.setData({ name: '', email: '', empresa_id: defaultEmpresaId, role: defaultRole });
     };
 
     const editMembership = (membership) => {
@@ -36,9 +44,11 @@ export default function TenantUsersIndex({ tenant, memberships, empresas, roles,
             name: membership.user?.name ?? '',
             email: membership.user?.email ?? '',
             empresa_id: membership.empresa_id ?? '',
-            role: membership.role ?? 'engineer',
+            role: membership.role ?? defaultRole,
         });
     };
+
+    const needsCurrentRoleOption = form.data.role && !roleExistsInGroups(roleGroups, form.data.role);
 
     const submit = (event) => {
         event.preventDefault();
@@ -64,7 +74,7 @@ export default function TenantUsersIndex({ tenant, memberships, empresas, roles,
 
     return (
         <AuthenticatedLayout>
-            <Head title="Equipes" />
+            <Head title="Usuarios" />
 
             <section className="sig-content grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
                 <form className="sig-card p-5" onSubmit={submit}>
@@ -73,7 +83,9 @@ export default function TenantUsersIndex({ tenant, memberships, empresas, roles,
                         <span className="eyebrow">Equipe interna</span>
                     </div>
                     <h1 className="mt-2 text-xl font-semibold">{editingMembership ? 'Editar usuario' : 'Adicionar usuario'}</h1>
-                    <p className="mt-1 text-sm text-[var(--ink-500)]">Vincula usuario global ao tenant {tenant.name}.</p>
+                    <p className="mt-1 text-sm text-[var(--ink-500)]">
+                        Vincula usuario ao tenant {tenant.name}. Novas contas recebem senha provisoria por email.
+                    </p>
 
                     {page.props.flash.success && (
                         <div className="mt-4 rounded-lg bg-[var(--green-50)] px-3 py-2 text-sm text-[var(--green)]">
@@ -100,7 +112,18 @@ export default function TenantUsersIndex({ tenant, memberships, empresas, roles,
                         </Field>
                         <Field label="Papel" error={form.errors.role}>
                             <select value={form.data.role} onChange={(event) => form.setData('role', event.target.value)}>
-                                {roles.map((role) => <option key={role} value={role}>{role}</option>)}
+                                {needsCurrentRoleOption && (
+                                    <optgroup label="Papel atual">
+                                        <option value={form.data.role}>{roleLabel(roleLabels, form.data.role)}</option>
+                                    </optgroup>
+                                )}
+                                {Object.entries(roleGroups).map(([group, roles]) => (
+                                    <optgroup key={group} label={group}>
+                                        {Object.entries(roles).map(([role, label]) => (
+                                            <option key={role} value={role}>{label}</option>
+                                        ))}
+                                    </optgroup>
+                                ))}
                             </select>
                         </Field>
                     </div>
@@ -157,12 +180,15 @@ export default function TenantUsersIndex({ tenant, memberships, empresas, roles,
                                                 <span className="text-sm text-[var(--ink-400)]">Sem empresa</span>
                                             )}
                                         </td>
-                                        <td>{membership.role}</td>
+                                        <td>{roleLabel(roleLabels, membership.role)}</td>
                                         <td>
                                             <span className={`sig-pill ${membership.status === 'active' ? 'sig-pill-green' : 'sig-pill-red'}`}>
                                                 <span className="sig-pill-dot" />
-                                                {membership.status}
+                                                {membership.status === 'active' ? 'Ativo' : 'Inativo'}
                                             </span>
+                                            {membership.user.must_change_password && (
+                                                <span className="sig-pill sig-pill-blue ml-2">Senha provisoria</span>
+                                            )}
                                         </td>
                                         <td>
                                             <div className="flex flex-wrap justify-end gap-2">

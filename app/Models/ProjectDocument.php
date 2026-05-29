@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'created_by_id',
     'reviewed_by_id',
     'approved_by_id',
+    'inactive_by_id',
     'title',
     'code',
     'document_number',
@@ -27,6 +28,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'review_notes',
     'approved_at',
     'approval_notes',
+    'inactive_at',
+    'inactive_reason',
 ])]
 class ProjectDocument extends Model
 {
@@ -37,6 +40,7 @@ class ProjectDocument extends Model
         return [
             'reviewed_at' => 'datetime',
             'approved_at' => 'datetime',
+            'inactive_at' => 'datetime',
         ];
     }
 
@@ -78,6 +82,11 @@ class ProjectDocument extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by_id');
+    }
+
+    public function inactiveBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'inactive_by_id');
     }
 
     public function versions(): HasMany

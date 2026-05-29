@@ -1,4 +1,4 @@
-# Obras SaaS
+# Deming
 
 SaaS multi-tenant para gerenciamento de obras, baseado no escopo do projeto:
 
@@ -34,13 +34,21 @@ Terminal 2, Vite:
 npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
 ```
 
+Terminal 3, fila de jobs:
+
+```bash
+php artisan queue:work --sleep=3 --tries=1 --timeout=600
+```
+
+Esse worker e necessario quando `QUEUE_CONNECTION=database`. Ele processa tarefas em segundo plano, incluindo o envio automatico de projetos para o Autodesk APS apos a submissao.
+
 Acesse `http://127.0.0.1:8000`.
 
 Se o Vite ficar preso em outra porta, apague `public/hot` e suba novamente o comando do Terminal 2.
 
 ## Acessos demo
 
-Todos usam a senha `password`.
+Todos usam a senha `Senha1!`.
 
 - Super Admin: `admin@obras.test`
 - Owner da empresa demo: `owner@demo.test`

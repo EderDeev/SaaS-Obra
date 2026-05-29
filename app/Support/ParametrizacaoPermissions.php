@@ -92,9 +92,6 @@ class ParametrizacaoPermissions
 
     public static function defaultForRole(?string $role): array
     {
-        return match ($role) {
-            'tenant_owner', 'tenant_admin' => self::all(),
-            default => [],
-        };
+        return TenantRoles::isTenantAdmin($role) ? self::all() : [];
     }
 }

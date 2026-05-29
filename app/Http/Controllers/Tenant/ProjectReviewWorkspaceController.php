@@ -54,8 +54,8 @@ class ProjectReviewWorkspaceController extends Controller
         $notified = $this->notifyMarkupAssignee($markup, $request->user());
 
         return back()->with('success', $notified
-            ? 'Marcacao registrada. Responsavel notificado no sistema e por email.'
-            : 'Marcacao registrada nesta versao do projeto.');
+            ? 'Comentário visual registrado. Responsável notificado no sistema e por e-mail.'
+            : 'Comentário visual registrado nesta versão do projeto.');
     }
 
     public function updateMarkup(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): RedirectResponse
@@ -87,9 +87,20 @@ class ProjectReviewWorkspaceController extends Controller
             }
         }
 
+        $previousAssigneeId = $markup->assigned_to_id;
+
         $markup->update($updates);
 
-        return back()->with('success', 'Marcacao atualizada.');
+        $assigneeChanged = array_key_exists('assigned_to_id', $updates)
+            && $markup->assigned_to_id
+            && (int) $markup->assigned_to_id !== (int) $previousAssigneeId;
+
+        if ($assigneeChanged) {
+            $markup->refresh();
+            $this->notifyMarkupAssignee($markup, $request->user());
+        }
+
+        return back()->with('success', 'Comentário visual atualizado.');
     }
 
     public function destroyMarkup(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): RedirectResponse
@@ -98,7 +109,7 @@ class ProjectReviewWorkspaceController extends Controller
 
         $markup->delete();
 
-        return back()->with('success', 'Marcacao removida.');
+        return back()->with('success', 'Comentário visual removido.');
     }
 
     public function updateChecklistItem(Request $request, Tenant $tenant, ProjectReviewChecklistItem $item): RedirectResponse
@@ -158,7 +169,7 @@ class ProjectReviewWorkspaceController extends Controller
 
         if (! in_array((int) $userId, $allowedIds, true)) {
             throw ValidationException::withMessages([
-                'assigned_to_id' => 'Selecione um usuario vinculado a este contrato.',
+                'assigned_to_id' => 'Selecione um usuário vinculado a este contrato.',
             ]);
         }
     }

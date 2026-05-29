@@ -39,8 +39,8 @@ class ProjectReviewMarkupCreatedNotification extends Notification
             'project_document_id' => $this->markup->project_document_id,
             'project_document_version_id' => $this->markup->project_document_version_id,
             'project_review_markup_id' => $this->markup->id,
-            'title' => 'Nova marcacao de projeto',
-            'body' => "{$this->actor->name} criou a marcacao \"{$this->markup->title}\" para voce.",
+            'title' => 'Novo comentário visual de projeto',
+            'body' => "{$this->actor->name} criou o comentário \"{$this->markup->title}\" para você.",
             'contract' => $this->markup->contract?->code,
             'url' => route('tenant.projects.viewer', [$this->markup->tenant, $this->markup->version], false),
         ];
@@ -53,7 +53,7 @@ class ProjectReviewMarkupCreatedNotification extends Notification
         $description = Str::limit(trim(strip_tags((string) $this->markup->description)), 650);
 
         return (new MailMessage)
-            ->subject("Nova marcacao de projeto: {$this->markup->title}")
+            ->subject("Novo comentário visual de projeto: {$this->markup->title}")
             ->view('emails.project-review-markup-created', [
                 'markup' => $this->markup,
                 'actor' => $this->actor,
@@ -80,7 +80,7 @@ class ProjectReviewMarkupCreatedNotification extends Notification
             'baixa' => 'Baixa',
             'normal' => 'Normal',
             'alta' => 'Alta',
-            'critica' => 'Critica',
+            'critica' => 'Crítica',
             default => $priority,
         };
     }

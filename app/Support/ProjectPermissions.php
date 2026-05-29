@@ -155,12 +155,29 @@ class ProjectPermissions
 
     public static function defaultForRole(?string $role): array
     {
-        return match ($role) {
-            'tenant_owner', 'tenant_admin' => self::all(),
-            'obras_manager' => [self::VIEW, self::UPLOAD, self::REVIEW, self::RESPONSIBLES],
-            'engineer' => [self::VIEW, self::UPLOAD],
-            'financial', 'viewer' => [self::VIEW],
-            default => [],
-        };
+        if (TenantRoles::isTenantAdmin($role)) {
+            return self::all();
+        }
+
+        if (in_array($role, TenantRoles::managementRoles(), true)) {
+            return [self::VIEW, self::UPLOAD, self::REVIEW, self::RESPONSIBLES];
+        }
+
+        if (in_array($role, TenantRoles::coordinationRoles(), true)) {
+            return [self::VIEW, self::UPLOAD, self::REVIEW];
+        }
+
+        if (in_array($role, [
+            ...TenantRoles::engineeringRoles(),
+            ...TenantRoles::technicalRoles(),
+        ], true)) {
+            return [self::VIEW, self::UPLOAD];
+        }
+
+        if (in_array($role, TenantRoles::administrativeRoles(), true)) {
+            return [self::VIEW];
+        }
+
+        return [];
     }
 }

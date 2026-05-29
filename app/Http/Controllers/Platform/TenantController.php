@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Platform;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\UserTemporaryPasswordNotification;
+use App\Support\PasswordPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -43,14 +45,27 @@ class TenantController extends Controller
 
         $tenant = Tenant::create($data);
 
+        $temporaryPassword = PasswordPolicy::temporaryPassword();
+
         $owner = User::firstOrCreate(
             ['email' => mb_strtolower($data['owner_email'])],
             [
                 'name' => $data['owner_name'],
-                'password' => Hash::make('password'),
+                'password' => Hash::make($temporaryPassword),
                 'email_verified_at' => now(),
+                'must_change_password' => true,
+                'temporary_password_created_at' => now(),
             ],
         );
+
+        if (! $owner->wasRecentlyCreated) {
+            $owner->forceFill([
+                'password' => Hash::make($temporaryPassword),
+                'email_verified_at' => $owner->email_verified_at ?? now(),
+                'must_change_password' => true,
+                'temporary_password_created_at' => now(),
+            ])->save();
+        }
 
         $tenant->memberships()->updateOrCreate(
             ['user_id' => $owner->id],
@@ -62,7 +77,9 @@ class TenantController extends Controller
             ],
         );
 
-        return back()->with('success', 'Tenant criado com owner ativo. Senha demo: password');
+        $owner->notify(new UserTemporaryPasswordNotification($tenant, $temporaryPassword));
+
+        return back()->with('success', 'Tenant criado com owner ativo. Senha provisoria enviada por email.');
     }
 
     public function update(Request $request, Tenant $tenant): RedirectResponse

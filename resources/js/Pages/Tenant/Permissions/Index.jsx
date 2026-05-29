@@ -76,7 +76,7 @@ export default function PermissionsIndex({
             return users;
         }
 
-        return users.filter((user) => `${user.name} ${user.email} ${user.role}`.toLowerCase().includes(term));
+        return users.filter((user) => `${user.name} ${user.email} ${user.role_label || user.role}`.toLowerCase().includes(term));
     }, [query, users]);
 
     useEffect(() => {
@@ -157,7 +157,7 @@ export default function PermissionsIndex({
                                         <span className="min-w-0 flex-1">
                                             <span className="block truncate text-[13px] font-semibold">{user.name}</span>
                                             <span className="block truncate text-[12px] text-[var(--ink-500)]">{user.email}</span>
-                                            <span className="mono mt-0.5 block text-[11px] text-[var(--ink-500)]">{user.role}</span>
+                                            <span className="mt-0.5 block text-[11px] text-[var(--ink-500)]">{user.role_label || user.role}</span>
                                         </span>
                                     </button>
                                 );

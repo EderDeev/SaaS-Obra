@@ -60,6 +60,11 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+body.sig-viewer-body {
+    height: 100vh;
+    overflow: hidden;
+}
+
 button,
 input,
 select,
@@ -124,6 +129,18 @@ a {
     min-width: 0;
 }
 
+body.sig-viewer-body .sig-shell,
+body.sig-viewer-body .sig-main {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+}
+
+body.sig-viewer-body .sig-main > main {
+    height: calc(100vh - 60px);
+    overflow: hidden;
+}
+
 .sig-topbar {
     position: sticky;
     top: 0;
@@ -176,6 +193,10 @@ a {
     overflow: hidden;
 }
 
+.sig-viewer-workspace.review-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .sig-viewer-workspace .sig-viewer-stage {
     height: 100%;
     min-height: 0;
@@ -190,6 +211,111 @@ a {
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+}
+
+.sig-viewer-markup-layer {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+}
+
+.sig-viewer-pin {
+    pointer-events: auto;
+    position: absolute;
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    transform: translate(-50%, -100%);
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+    border-radius: 999px 999px 999px 6px;
+    background: var(--primary);
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.25);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+
+.sig-viewer-pin span {
+    transform: rotate(45deg);
+}
+
+.sig-viewer-pin {
+    transform: translate(-50%, -100%) rotate(-45deg);
+}
+
+.sig-viewer-pin:hover,
+.sig-viewer-pin.is-selected {
+    box-shadow: 0 14px 34px rgba(11, 95, 255, 0.38);
+    transform: translate(-50%, -100%) rotate(-45deg) scale(1.08);
+}
+
+.sig-viewer-pin.is-resolved {
+    background: var(--green);
+    opacity: .78;
+}
+
+.sig-viewer-pin.is-offscreen {
+    opacity: .48;
+}
+
+.sig-viewer-comment-chip {
+    pointer-events: auto;
+    position: absolute;
+    display: inline-flex;
+    max-width: min(260px, 44vw);
+    transform: translate(-50%, calc(-100% - 10px));
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(11, 95, 255, 0.22);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+    color: var(--ink-900);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 6px 10px 6px 6px;
+    transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+
+.sig-viewer-comment-chip:hover {
+    box-shadow: 0 16px 38px rgba(11, 95, 255, 0.22);
+    transform: translate(-50%, calc(-100% - 10px)) scale(1.03);
+}
+
+.sig-viewer-comment-chip.is-resolved {
+    border-color: rgba(15, 157, 99, 0.28);
+    opacity: .78;
+}
+
+.sig-viewer-comment-chip.is-offscreen {
+    opacity: .52;
+}
+
+.sig-viewer-comment-chip-index {
+    display: inline-flex;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--primary-50);
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.sig-viewer-comment-chip-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .sig-viewer-empty {
@@ -228,13 +354,18 @@ a {
 .sig-logo {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    font-weight: 750;
-    letter-spacing: 0.04em;
+    line-height: 1;
 }
 
-.sig-logo-mark {
-    color: var(--primary);
+.sig-logo-image {
+    display: block;
+    width: auto;
+    max-width: 154px;
+    object-fit: contain;
+}
+
+.sig-logo-icon-only .sig-logo-image {
+    max-width: none;
 }
 
 .sig-nav-item {
@@ -281,6 +412,11 @@ a {
     transform: translateY(0.5px);
 }
 
+.sig-btn:disabled {
+    cursor: not-allowed;
+    transform: none;
+}
+
 .sig-btn-primary {
     background: var(--primary);
     color: #ffffff;
@@ -288,6 +424,13 @@ a {
 
 .sig-btn-primary:hover {
     background: var(--primary-600);
+}
+
+.sig-btn-primary:disabled,
+.sig-btn-primary:disabled:hover {
+    border-color: var(--border);
+    background: var(--ink-200);
+    color: var(--ink-500);
 }
 
 .sig-btn-secondary {

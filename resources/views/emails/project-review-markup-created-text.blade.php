@@ -1,20 +1,20 @@
-SIGWORKS
-Nova marcacao de projeto
+Deming
+Novo comentário visual de projeto
 
-Ola, {{ $notifiable->name }}.
+Olá, {{ $notifiable->name }}.
 
-{{ $actor->name }} criou uma marcacao de projeto para voce analisar.
+{{ $actor->name }} criou um comentário visual de projeto para você analisar.
 
-Marcacao: {{ $markup->title }}
+Comentário: {{ $markup->title }}
 Projeto: {{ $markup->document?->title }}
-EAP: {{ $markup->document?->code ?: 'Sem codigo' }}
-Revisao: {{ $markup->version?->revision ?: 'Sem revisao' }}
+EAP: {{ $markup->document?->code ?: 'Sem código' }}
+Revisão: {{ $markup->version?->revision ?: 'Sem revisão' }}
 Contrato: {{ $markup->contract?->code }} - {{ $markup->contract?->name }}
 Prioridade: {{ $priorityLabel }}
 Prazo: {{ $markup->due_date?->format('d/m/Y') ?: 'Sem prazo' }}
 
-Descricao:
-{{ $description ?: 'Sem descricao informada.' }}
+Descrição:
+{{ $description ?: 'Sem descrição informada.' }}
 
 Abrir projeto:
 {{ $url }}

@@ -12,6 +12,7 @@ use App\Support\ActivityPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
+use App\Support\TenantRoles;
 use App\Support\UserPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -57,6 +58,7 @@ class PermissionController extends Controller
                 'email' => $membership->user?->email,
                 'avatar_url' => $membership->user?->avatar_url,
                 'role' => $membership->role,
+                'role_label' => TenantRoles::label($membership->role),
                 'empresa' => $membership->empresa?->nome,
             ])->values(),
             'contracts' => $contracts->map(fn (Contract $contract): array => [

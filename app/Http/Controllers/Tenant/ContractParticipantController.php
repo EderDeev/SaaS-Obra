@@ -7,6 +7,8 @@ use App\Models\Contract;
 use App\Models\ContractParticipant;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\UserTemporaryPasswordNotification;
+use App\Support\PasswordPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -41,12 +43,16 @@ class ContractParticipantController extends Controller
 
         abort_unless(in_array($data['role'], $validRoleBySide[$data['side']], true), 422);
 
+        $temporaryPassword = PasswordPolicy::temporaryPassword();
+
         $user = User::firstOrCreate(
             ['email' => mb_strtolower($data['email'])],
             [
                 'name' => $data['name'],
-                'password' => Hash::make('password'),
+                'password' => Hash::make($temporaryPassword),
                 'email_verified_at' => now(),
+                'must_change_password' => true,
+                'temporary_password_created_at' => now(),
             ],
         );
 
@@ -70,7 +76,13 @@ class ContractParticipantController extends Controller
             $participant->save();
         }
 
-        return back()->with('success', 'Participante vinculado ao contrato. Senha demo para novas contas: password');
+        if ($user->wasRecentlyCreated) {
+            $user->notify(new UserTemporaryPasswordNotification($tenant, $temporaryPassword));
+
+            return back()->with('success', 'Participante vinculado ao contrato. Senha provisoria enviada por email.');
+        }
+
+        return back()->with('success', 'Participante vinculado ao contrato.');
     }
 
     private function canManageParticipants(Request $request, Tenant $tenant, Contract $contract): bool

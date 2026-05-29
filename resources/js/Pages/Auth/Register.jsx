@@ -1,8 +1,11 @@
+import PasswordStrengthMeter, { passwordChecklistStatus } from '@/Components/PasswordStrengthMeter';
 import SigLogo from '@/Components/SigLogo';
 import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function Register() {
     const form = useForm({ name: '', email: '', password: '', password_confirmation: '' });
+    const passwordStatus = passwordChecklistStatus(form.data.password, form.data.password_confirmation);
+    const canSubmitPassword = passwordStatus.passwordValid && passwordStatus.confirmationMatches;
 
     const submit = (event) => {
         event.preventDefault();
@@ -15,9 +18,10 @@ export default function Register() {
             <form onSubmit={submit} className="grid gap-3">
                 <Field label="Nome" error={form.errors.name}><input value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} required /></Field>
                 <Field label="Email" error={form.errors.email}><input type="email" value={form.data.email} onChange={(e) => form.setData('email', e.target.value)} required /></Field>
-                <Field label="Senha" error={form.errors.password}><input type="password" value={form.data.password} onChange={(e) => form.setData('password', e.target.value)} required /></Field>
-                <Field label="Confirmar senha"><input type="password" value={form.data.password_confirmation} onChange={(e) => form.setData('password_confirmation', e.target.value)} required /></Field>
-                <button className="sig-btn sig-btn-primary mt-2" disabled={form.processing}>Criar conta</button>
+                <Field label="Senha" error={form.errors.password}><input type="password" value={form.data.password} onChange={(e) => form.setData('password', e.target.value)} required autoComplete="new-password" /></Field>
+                <PasswordStrengthMeter password={form.data.password} confirmation={form.data.password_confirmation} showConfirmation />
+                <Field label="Confirmar senha" error={form.errors.password_confirmation}><input type="password" value={form.data.password_confirmation} onChange={(e) => form.setData('password_confirmation', e.target.value)} required autoComplete="new-password" /></Field>
+                <button className="sig-btn sig-btn-primary mt-2" disabled={form.processing || !canSubmitPassword}>Criar conta</button>
                 <Link href={route('login')} className="text-sm font-semibold text-[var(--primary)]">Já tenho conta</Link>
             </form>
         </AuthShell>

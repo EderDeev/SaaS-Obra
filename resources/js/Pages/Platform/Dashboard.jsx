@@ -2,6 +2,18 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
 import { Building2, ClipboardList, Users, Wallet } from 'lucide-react';
 
+const statusLabels = {
+    active: 'Ativo',
+    trial: 'Em teste',
+    suspended: 'Suspenso',
+};
+
+const statusPills = {
+    active: 'sig-pill-green',
+    trial: 'sig-pill-blue',
+    suspended: 'sig-pill-red',
+};
+
 export default function PlatformDashboard({ stats, recentTenants }) {
     return (
         <AuthenticatedLayout>
@@ -42,7 +54,12 @@ export default function PlatformDashboard({ stats, recentTenants }) {
                                         <div className="mono text-xs text-[var(--ink-500)]">{tenant.slug}</div>
                                     </td>
                                     <td>{tenant.plan}</td>
-                                    <td><span className="sig-pill sig-pill-green"><span className="sig-pill-dot" />{tenant.status}</span></td>
+                                    <td>
+                                        <span className={`sig-pill ${statusPills[tenant.status] || 'sig-pill-muted'}`}>
+                                            <span className="sig-pill-dot" />
+                                            {statusLabels[tenant.status] || tenant.status}
+                                        </span>
+                                    </td>
                                     <td>{tenant.users_count} usuários · {tenant.contracts_count} contratos</td>
                                     <td className="text-right">
                                         <Link href={route('tenant.dashboard', tenant.slug)} className="sig-btn sig-btn-secondary sig-btn-sm">Abrir</Link>

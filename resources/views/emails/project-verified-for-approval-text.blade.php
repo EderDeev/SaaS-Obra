@@ -1,4 +1,4 @@
-SIGWORKS
+Deming
 Projeto aguardando aprovacao
 
 Ola, {{ $notifiable->name }}.
