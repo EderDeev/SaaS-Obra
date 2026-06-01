@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ProjectCapModal from '@/Components/ProjectCapModal';
 import { Head, Link, router } from '@inertiajs/react';
-import { CheckCircle2, Download, Eye, FileSearch, Filter, Play, Search, Send, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Download, Eye, FileSearch, Filter, Play, Search, Send, X, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 const statusClasses = {
@@ -9,6 +9,14 @@ const statusClasses = {
     em_aprovacao: 'sig-pill-amber',
     ativo: 'sig-pill-green',
     reprovado: 'sig-pill-red',
+};
+
+const derivativeLabels = {
+    not_submitted: 'Aguardando APS',
+    queued: 'Na fila APS',
+    processing: 'Processando',
+    ready: 'Pronto para viewer',
+    failed: 'Erro no APS',
 };
 
 function contractLabel(contract) {
@@ -49,6 +57,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
     const [notes, setNotes] = useState({});
     const [analysisDocument, setAnalysisDocument] = useState(null);
     const [capDocument, setCapDocument] = useState(null);
+    const [expandedDocumentIds, setExpandedDocumentIds] = useState([]);
 
     const filteredDocuments = useMemo(() => {
         const term = query.trim().toLowerCase();
@@ -91,6 +100,12 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
         });
     };
 
+    const toggleDocumentDetails = (documentId) => {
+        setExpandedDocumentIds((currentIds) => currentIds.includes(documentId)
+            ? currentIds.filter((currentId) => currentId !== documentId)
+            : [...currentIds, documentId]);
+    };
+
     return (
         <AuthenticatedLayout>
             <Head title="Analisar projeto" />
@@ -121,7 +136,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                     <StatCard label="Reprovados" value={stats.rejected} tone="red" />
                 </div>
 
-                <section className="sig-card overflow-hidden">
+                <section className="projects-module-card sig-card overflow-hidden">
                     <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 lg:grid-cols-3">
                         <FilterSelect label="Contrato" value={contractFilter} onChange={setContractFilter}>
                             <option value="todos">Todos os contratos</option>
@@ -150,7 +165,8 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                     </div>
 
                     {filteredDocuments.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="projects-wide-only overflow-x-auto">
                             <table className="sig-table min-w-[1260px]">
                                 <thead>
                                     <tr>
@@ -313,6 +329,79 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                 </tbody>
                             </table>
                         </div>
+                        <div className="projects-compact-only">
+                            {filteredDocuments.map((document) => {
+                                const version = document.latest_version;
+                                const expanded = expandedDocumentIds.includes(document.id);
+
+                                return (
+                                    <article key={document.id} className="border-b border-[var(--border)] last:border-b-0">
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-muted)]"
+                                            aria-expanded={expanded}
+                                            onClick={() => toggleDocumentDetails(document.id)}
+                                        >
+                                            <span className="min-w-0 flex-1">
+                                                <span className="flex flex-wrap items-center gap-2">
+                                                    <span className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</span>
+                                                    <span className="sig-pill sig-pill-blue font-semibold">{version?.revision || 'Sem revisao'}</span>
+                                                    <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
+                                                        {statusLabels[document.status] || document.status}
+                                                    </span>
+                                                </span>
+                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{document.code || 'Sem codigo'}</span>
+                                                <span className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+                                                    <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
+                                                    <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
+                                                    <CompactInfo label="Disciplina" value={`${document.disciplina?.sigla || '-'} - ${document.disciplina?.nome || 'Sem disciplina'}`} />
+                                                    <CompactInfo label="Fase" value={document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'} />
+                                                </span>
+                                            </span>
+                                            <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                                        </button>
+
+                                        {expanded && (
+                                            <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                                                    <CompactInfo label="Submetido por" value={`${document.creator?.name || 'Sistema'} - ${new Date(document.created_at).toLocaleDateString('pt-BR')}`} />
+                                                    <CompactInfo label="Arquivo" value={fileDisplayName(version) || 'Sem arquivo'} />
+                                                    <CompactInfo label="Tamanho" value={version?.size_label || '-'} />
+                                                    <CompactInfo label="Status APS" value={derivativeLabels[version?.derivative_status] || version?.derivative_status || '-'} />
+                                                </div>
+
+                                                {document.reviewed_at && (
+                                                    <div className="mt-3 text-xs text-[var(--ink-500)]">
+                                                        {document.reviewer?.name || 'Revisado'} em {new Date(document.reviewed_at).toLocaleDateString('pt-BR')}
+                                                    </div>
+                                                )}
+                                                {document.approved_at && (
+                                                    <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                        {document.approver?.name || 'Aprovado'} em {new Date(document.approved_at).toLocaleDateString('pt-BR')}
+                                                    </div>
+                                                )}
+
+                                                <div className="mt-4 border-t border-[var(--border)] pt-4">
+                                                    <ReviewFileActions tenant={tenant} version={version} />
+                                                </div>
+                                                <div className="mt-4 border-t border-[var(--border)] pt-4">
+                                                    <ReviewDecisionPanel
+                                                        document={document}
+                                                        version={version}
+                                                        notes={notes}
+                                                        setNotes={setNotes}
+                                                        onAnalysis={() => setAnalysisDocument(document)}
+                                                        onCap={() => setCapDocument(document)}
+                                                        onReview={reviewDocument}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             Nenhum projeto encontrado para analise.
@@ -333,6 +422,104 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                 />
             )}
         </AuthenticatedLayout>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <span className="min-w-0">
+            <span className="eyebrow block">{label}</span>
+            <span className="mt-1 block break-words text-sm font-medium text-[var(--ink-700)]">{value || '-'}</span>
+        </span>
+    );
+}
+
+function ReviewFileActions({ tenant, version }) {
+    return (
+        <div className="flex flex-wrap gap-2">
+            {version?.url && (
+                <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                    <Download size={13} />
+                    Baixar
+                </a>
+            )}
+            {version && (
+                version.aps_urn ? (
+                    <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm">
+                        <Eye size={13} />
+                        Checklist
+                    </Link>
+                ) : isApsWaiting(version) ? (
+                    <span className="sig-pill bg-white text-[var(--ink-600)]">
+                        Processando APS
+                    </span>
+                ) : (
+                    <button
+                        type="button"
+                        className="sig-btn sig-btn-secondary sig-btn-sm"
+                        onClick={() => router.post(route('tenant.projects.process-aps', [tenant.slug, version.id]), {}, { preserveScroll: true })}
+                    >
+                        <Play size={13} />
+                        Processar APS
+                    </button>
+                )
+            )}
+        </div>
+    );
+}
+
+function ReviewDecisionPanel({ document, version, notes, setNotes, onAnalysis, onCap, onReview }) {
+    const actionable = ['em_analise', 'em_aprovacao'].includes(document.status);
+    const isApprovalStep = document.status === 'em_aprovacao';
+    const positiveLabel = isApprovalStep ? 'Aprovar para arvore' : 'Enviar para aprovacao';
+    const placeholder = isApprovalStep ? 'Observacao da aprovacao' : 'Observacao da analise';
+    const currentNoteKey = noteKey(document);
+
+    if (!actionable) {
+        return (
+            <div className="text-sm text-[var(--ink-600)]">
+                <div>{document.review_notes || 'Sem observacao de analise registrada.'}</div>
+                {document.approval_notes && (
+                    <div className="mt-2 border-t border-[var(--border)] pt-2">
+                        {document.approval_notes}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className="grid gap-2">
+            {isApprovalStep && (
+                <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm justify-self-start" onClick={onAnalysis}>
+                    <Eye size={13} />
+                    Ver analise
+                </button>
+            )}
+            {version?.cap_number && (
+                <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm justify-self-start" onClick={onCap}>
+                    <Eye size={13} />
+                    Visualizar CAP
+                </button>
+            )}
+            <textarea
+                value={notes[currentNoteKey] || ''}
+                onChange={(event) => setNotes((current) => ({ ...current, [currentNoteKey]: event.target.value }))}
+                placeholder={placeholder}
+                rows={3}
+                className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
+            />
+            <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={() => onReview(document, 'reprovar')} className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]">
+                    <XCircle size={13} />
+                    Reprovar
+                </button>
+                <button type="button" onClick={() => onReview(document, 'aprovar')} className="sig-btn sig-btn-primary sig-btn-sm">
+                    <CheckCircle2 size={13} />
+                    {positiveLabel}
+                </button>
+            </div>
+        </div>
     );
 }
 

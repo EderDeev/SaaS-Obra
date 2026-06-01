@@ -4,16 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import {
     Activity,
     Bell,
+    BookOpen,
     Building2,
     ChevronRight,
     ClipboardList,
-    FileChartColumn,
     FolderOpen,
     Gauge,
     HardDrive,
     Home,
     KeyRound,
-    Layers3,
     LogOut,
     PanelLeftClose,
     PanelLeftOpen,
@@ -226,9 +225,10 @@ export default function AuthenticatedLayout({ children }) {
             ...(projectItems.length > 0 ? [
                 { label: 'Projetos', icon: FolderOpen, active: route().current('tenant.projects.*'), children: projectItems },
             ] : []),
-            { label: 'Obras', icon: Building2, href: route('tenant.contracts.index', tenant.slug), active: false },
-            { label: 'Medições', icon: Layers3, href: route('tenant.contracts.index', tenant.slug), active: false },
-            { label: 'Relatórios', icon: FileChartColumn, href: route('tenant.contracts.index', tenant.slug), active: false },
+            ...(qualidadeItems.length > 0 ? [
+                { label: 'Qualidade', icon: ShieldCheck, active: route().current('tenant.qualidade.*'), children: qualidadeItems },
+            ] : []),
+            { label: 'Tutoriais', icon: BookOpen, href: route('tenant.tutorials.index', tenant.slug), active: route().current('tenant.tutorials.*') },
         );
 
         if (canManageTenantUsers) {
@@ -259,7 +259,7 @@ export default function AuthenticatedLayout({ children }) {
         : tenant
             ? [
                 { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : 'Visão geral' },
+                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -296,6 +296,10 @@ export default function AuthenticatedLayout({ children }) {
                     <div className="eyebrow px-5 pb-2 pt-1 text-[var(--side-fg-dim)]">Workspace</div>
                     {navItems.map((item) => {
                         const Icon = item.icon;
+                        const childrenOpen = item.label === 'Qualidade' ? qualidadeOpen : projectOpen;
+                        const toggleChildren = item.label === 'Qualidade'
+                            ? () => setQualidadeOpen((open) => !open)
+                            : () => setProjectOpen((open) => !open);
 
                         if (item.children) {
                             return (
@@ -303,16 +307,16 @@ export default function AuthenticatedLayout({ children }) {
                                     <button
                                         type="button"
                                         className={`sig-nav-item border-0 bg-transparent text-left ${item.active ? 'active' : ''}`}
-                                        onClick={() => setProjectOpen((open) => !open)}
+                                        onClick={toggleChildren}
                                     >
                                         <Icon size={17} strokeWidth={1.8} />
                                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                                         <ChevronRight
                                             size={15}
-                                            className={`transition-transform ${projectOpen ? 'rotate-90' : ''}`}
+                                            className={`transition-transform ${childrenOpen ? 'rotate-90' : ''}`}
                                         />
                                     </button>
-                                    {projectOpen && (
+                                    {childrenOpen && (
                                         <div className="ml-7">
                                             {item.children.map((child) => (
                                                 <Link
@@ -342,37 +346,6 @@ export default function AuthenticatedLayout({ children }) {
                             </Link>
                         );
                     })}
-
-                    {qualidadeItems.length > 0 && (
-                        <div className="mt-2">
-                            <button
-                                type="button"
-                                className={`sig-nav-item border-0 bg-transparent text-left ${route().current('tenant.qualidade.*') ? 'active' : ''}`}
-                                onClick={() => setQualidadeOpen((open) => !open)}
-                            >
-                                <ShieldCheck size={17} strokeWidth={1.8} />
-                                <span className="min-w-0 flex-1 truncate">Qualidade</span>
-                                <ChevronRight
-                                    size={15}
-                                    className={`transition-transform ${qualidadeOpen ? 'rotate-90' : ''}`}
-                                />
-                            </button>
-                            {qualidadeOpen && (
-                                <div className="ml-7">
-                                {qualidadeItems.map((item) => (
-                                    <Link
-                                        key={item.label}
-                                        href={item.href}
-                                        className={`sig-nav-item !w-[calc(100%_-_16px)] !py-2 !text-[12.5px] ${item.active ? 'active' : ''}`}
-                                    >
-                                        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
-                                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                                    </Link>
-                                ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
 
                     {parametrizacaoItems.length > 0 && (
                         <div className="mt-2">

@@ -224,6 +224,11 @@
                     <p class="subtitle">
                         {{ $tenant->name }} &middot; RNC {{ $rnc->formatted_number }}
                     </p>
+                    @if ($rnc->projectDocument)
+                        <p class="subtitle">
+                            Projeto vinculado: {{ $rnc->projectDocument->code ?: 'Sem codigo' }} - {{ $rnc->projectDocument->title }}
+                        </p>
+                    @endif
                 </td>
                 <td class="document-logo-cell">
                     <div class="logo-panel logo-panel-right">
@@ -278,8 +283,10 @@
             </div>
             <div class="row">
                 <div class="cell">
-                    <span class="label">Natureza</span>
-                    <span class="badge badge-blue">{{ $rnc->natureza }}</span>
+                    <span class="label">Disciplina</span>
+                    <span class="badge badge-blue">
+                        {{ $rnc->disciplina?->sigla ? $rnc->disciplina->sigla.' - '.$rnc->disciplina->nome : ($rnc->disciplina?->nome ?: $rnc->natureza) }}
+                    </span>
                 </div>
                 <div class="cell">
                     <span class="label">Gravidade</span>

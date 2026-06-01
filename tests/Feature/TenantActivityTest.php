@@ -46,6 +46,7 @@ class TenantActivityTest extends TestCase
                 'assigned_to_ids' => [$engineer->id, $manager->id],
                 'title' => 'Validar RDO',
                 'description' => 'Conferir anexos do diário de obra.',
+                'category' => 'quality',
                 'priority' => 'high',
                 'due_date' => '2026-06-10',
             ])
@@ -59,6 +60,7 @@ class TenantActivityTest extends TestCase
             'assigned_to_id' => $engineer->id,
             'created_by_id' => $admin->id,
             'status' => 'todo',
+            'category' => 'quality',
             'priority' => 'high',
         ]);
         $this->assertDatabaseHas('activity_user', [
@@ -385,6 +387,7 @@ class TenantActivityTest extends TestCase
             ->patch(route('tenant.activities.update', [$tenant, $activity]), [
                 'title' => 'Titulo editado',
                 'description' => 'Descricao editada',
+                'category' => 'project',
                 'priority' => 'urgent',
                 'due_date' => '2026-06-20',
                 'assigned_to_ids' => [$engineer->id],
@@ -394,6 +397,7 @@ class TenantActivityTest extends TestCase
         $this->assertDatabaseHas('activities', [
             'id' => $activity->id,
             'title' => 'Titulo editado',
+            'category' => 'project',
             'priority' => 'urgent',
         ]);
         $this->assertDatabaseHas('activity_user', [

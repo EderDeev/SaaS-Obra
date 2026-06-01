@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { ArrowLeft, CheckCircle2, ClipboardX, Download, FileArchive, SearchCheck, Send, XCircle } from 'lucide-react';
 
@@ -74,7 +75,7 @@ export default function RncAnalisarProposta({ tenant, rnc, acaoCorretiva, acoesC
                         <section className="border-b border-[var(--border)] p-5">
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="sig-pill sig-pill-amber">Em analise</span>
-                                <span className="sig-pill sig-pill-blue">{rnc.natureza}</span>
+                                <span className="sig-pill sig-pill-blue">{rncDisciplinaLabel(rnc)}</span>
                                 <span className="sig-pill">{rnc.gravidade}</span>
                             </div>
                             <h2 className="mt-4 text-xl font-semibold text-[var(--ink-900)]">Resumo da nao conformidade</h2>

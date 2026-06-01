@@ -10,6 +10,7 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
     const [editingObra, setEditingObra] = useState(null);
     const [contractFilter, setContractFilter] = useState('todos');
     const [tipoFilter, setTipoFilter] = useState('todos');
+    const [formOpen, setFormOpen] = useState(false);
     const form = useForm({
         nome: '',
         contract_id: defaultContractId,
@@ -48,8 +49,19 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
         });
     };
 
+    const openCreateForm = () => {
+        resetForm();
+        setFormOpen(true);
+    };
+
+    const closeForm = () => {
+        resetForm();
+        setFormOpen(false);
+    };
+
     const startEditing = (obra) => {
         setEditingObra(obra);
+        setFormOpen(true);
         form.clearErrors();
         form.setData({
             nome: obra.nome || '',
@@ -71,7 +83,10 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
 
         form.post(targetRoute, {
             preserveScroll: true,
-            onSuccess: resetForm,
+            onSuccess: () => {
+                resetForm();
+                setFormOpen(false);
+            },
         });
     };
 
@@ -105,7 +120,8 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
         <AuthenticatedLayout>
             <Head title="Parametrizacao - Obras" />
 
-            <section className="sig-content grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+            <section className={`sig-content grid gap-6 ${formOpen ? 'xl:grid-cols-[380px_minmax(0,1fr)]' : ''}`}>
+                {formOpen && (
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <SlidersHorizontal size={14} />
@@ -208,16 +224,21 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                             {editingObra ? <Save size={15} /> : <Plus size={15} />}
                             {editingObra ? 'Salvar alteracoes' : 'Criar obra'}
                         </button>
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={closeForm}>
+                            <X size={15} />
+                            {editingObra ? 'Cancelar' : 'Fechar'}
+                        </button>
                         {editingObra && (
-                            <button type="button" className="sig-btn sig-btn-secondary" onClick={resetForm}>
+                            <button type="button" className="sig-btn sig-btn-ghost" onClick={resetForm}>
                                 <X size={15} />
-                                Cancelar
+                                Limpar
                             </button>
                         )}
                     </div>
                 </form>
+                )}
 
-                <section className="sig-card overflow-hidden">
+                <section className="param-list-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -228,7 +249,22 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                                 {filteredObras.length} de {obras.length} obras
                             </h2>
                         </div>
+                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={openCreateForm}>
+                            <Plus size={13} />
+                            Criar obra
+                        </button>
                     </header>
+
+                    {!formOpen && page.props.flash.success && (
+                        <div className="border-b border-[var(--border)] bg-[var(--green-50)] px-5 py-3 text-sm text-[var(--green)]">
+                            {page.props.flash.success}
+                        </div>
+                    )}
+                    {!formOpen && page.props.flash.error && (
+                        <div className="border-b border-[var(--border)] bg-[var(--red-50)] px-5 py-3 text-sm text-[var(--red)]">
+                            {page.props.flash.error}
+                        </div>
+                    )}
 
                     <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 lg:grid-cols-2">
                         <label>
@@ -264,7 +300,8 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                     </div>
 
                     {filteredObras.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="param-desktop-table overflow-x-auto">
                         <table className="sig-table min-w-[940px]">
                             <thead>
                                 <tr>
@@ -328,6 +365,53 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                             </tbody>
                         </table>
                         </div>
+
+                        <div className="param-responsive-list divide-y divide-[var(--border)]">
+                            {filteredObras.map((obra) => (
+                                <article key={obra.id} className="p-5">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="text-sm font-semibold text-[var(--ink-900)]">{obra.nome}</h3>
+                                                <span className={obra.tipo === 'pai' ? 'sig-pill sig-pill-blue' : 'sig-pill sig-pill-amber'}>
+                                                    {obra.tipo === 'pai' ? 'Obra pai' : 'Obra filha'}
+                                                </span>
+                                            </div>
+                                            <div className="mono mt-1 text-xs text-[var(--ink-500)]">{obra.codigo}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <CompactInfo label="Contrato" value={`${obra.contract?.code || '-'} - ${obra.contract?.name || 'Sem contrato'}`} />
+                                        <CompactInfo
+                                            label="Vinculo"
+                                            value={obra.obra_pai ? `${obra.obra_pai.codigo} - ${obra.obra_pai.nome}` : 'Sem obra pai'}
+                                        />
+                                    </div>
+
+                                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                                        <button
+                                            type="button"
+                                            className="sig-btn sig-btn-secondary sig-btn-sm"
+                                            onClick={() => startEditing(obra)}
+                                        >
+                                            <Pencil size={14} />
+                                            Editar
+                                        </button>
+                                        <ConfirmActionButton
+                                            title="Deletar obra"
+                                            message={`Deseja mesmo excluir a obra ${obra.nome}? Esta acao nao deve ser feita por engano.`}
+                                            confirmLabel="Deletar obra"
+                                            onConfirm={() => deleteObra(obra)}
+                                        >
+                                            <Trash2 size={14} />
+                                            Deletar
+                                        </ConfirmActionButton>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             {obras.length === 0 ? 'Nenhuma obra cadastrada ainda.' : 'Nenhuma obra encontrada para os filtros selecionados.'}
@@ -336,6 +420,15 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                 </section>
             </section>
         </AuthenticatedLayout>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <div>
+            <div className="eyebrow">{label}</div>
+            <div className="mt-1 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value}</div>
+        </div>
     );
 }
 

@@ -1,8 +1,8 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { ClipboardList, Link2, Plus, SlidersHorizontal, Trash2, UserRoundCheck } from 'lucide-react';
-import { useMemo } from 'react';
+import { ClipboardList, Link2, Plus, SlidersHorizontal, Trash2, UserRoundCheck, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 const sideLabels = {
     manager: 'Gerenciadora',
@@ -26,6 +26,7 @@ function contractLabel(contract) {
 export default function ParametrizacaoUsuariosContratosIndex({ tenant, users, contracts, links, rolesBySide }) {
     const page = usePage();
     const defaultSide = 'manager';
+    const [formOpen, setFormOpen] = useState(false);
     const form = useForm({
         user_id: users[0]?.id ?? '',
         contract_id: contracts[0]?.id ?? '',
@@ -43,6 +44,7 @@ export default function ParametrizacaoUsuariosContratosIndex({ tenant, users, co
 
         form.post(route('tenant.parametrizacao.usuarios-contratos.store', page.props.currentTenant.slug), {
             preserveScroll: true,
+            onSuccess: () => setFormOpen(false),
         });
     };
 
@@ -66,7 +68,8 @@ export default function ParametrizacaoUsuariosContratosIndex({ tenant, users, co
         <AuthenticatedLayout>
             <Head title="Parametrizacao - Usuarios x Contratos" />
 
-            <section className="sig-content grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+            <section className={`sig-content grid gap-6 ${formOpen ? 'xl:grid-cols-[420px_minmax(0,1fr)]' : ''}`}>
+                {formOpen && (
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <SlidersHorizontal size={14} />
@@ -137,13 +140,20 @@ export default function ParametrizacaoUsuariosContratosIndex({ tenant, users, co
                         </div>
                     </div>
 
-                    <button className="sig-btn sig-btn-primary mt-5" disabled={form.processing || users.length === 0 || contracts.length === 0}>
-                        <Plus size={15} />
-                        Vincular acesso
-                    </button>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                        <button className="sig-btn sig-btn-primary" disabled={form.processing || users.length === 0 || contracts.length === 0}>
+                            <Plus size={15} />
+                            Vincular acesso
+                        </button>
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={() => setFormOpen(false)}>
+                            <X size={15} />
+                            Fechar
+                        </button>
+                    </div>
                 </form>
+                )}
 
-                <section className="sig-card overflow-hidden">
+                <section className="param-list-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -152,10 +162,21 @@ export default function ParametrizacaoUsuariosContratosIndex({ tenant, users, co
                             </div>
                             <h2 className="mt-1 text-[15px] font-semibold">{links.length} vinculos ativos</h2>
                         </div>
+                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={() => setFormOpen(true)}>
+                            <Plus size={13} />
+                            Vincular acesso
+                        </button>
                     </header>
 
+                    {!formOpen && page.props.flash.success && (
+                        <div className="border-b border-[var(--border)] bg-[var(--green-50)] px-5 py-3 text-sm text-[var(--green)]">
+                            {page.props.flash.success}
+                        </div>
+                    )}
+
                     {links.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="param-desktop-table overflow-x-auto">
                         <table className="sig-table min-w-[860px]">
                             <thead>
                                 <tr>
@@ -207,6 +228,38 @@ export default function ParametrizacaoUsuariosContratosIndex({ tenant, users, co
                             </tbody>
                         </table>
                         </div>
+
+                        <div className="param-responsive-list divide-y divide-[var(--border)]">
+                            {links.map((link) => (
+                                <article key={link.id} className="p-5">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <h3 className="text-sm font-semibold text-[var(--ink-900)]">{link.user?.name}</h3>
+                                            <div className="mt-1 break-all text-xs text-[var(--ink-500)]">{link.user?.email}</div>
+                                        </div>
+                                        <span className="sig-pill sig-pill-blue">{sideLabels[link.side] || link.side}</span>
+                                    </div>
+
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <CompactInfo label="Contrato" value={`${link.contract?.code || '-'} - ${link.contract?.name || 'Sem contrato'}`} />
+                                        <CompactInfo label="Papel" value={roleLabels[link.role] || link.role} />
+                                    </div>
+
+                                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                                        <ConfirmActionButton
+                                            title="Remover usuario do contrato"
+                                            message={`Deseja mesmo remover ${link.user?.name || 'este usuario'} do contrato ${link.contract?.code || ''}? O vinculo ficara salvo no historico.`}
+                                            confirmLabel="Remover acesso"
+                                            onConfirm={() => removeLink(link)}
+                                        >
+                                            <Trash2 size={13} />
+                                            Remover
+                                        </ConfirmActionButton>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             Nenhum usuario vinculado a contratos ainda.
@@ -215,6 +268,15 @@ export default function ParametrizacaoUsuariosContratosIndex({ tenant, users, co
                 </section>
             </section>
         </AuthenticatedLayout>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <div>
+            <div className="eyebrow">{label}</div>
+            <div className="mt-1 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value}</div>
+        </div>
     );
 }
 

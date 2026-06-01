@@ -176,11 +176,17 @@ class TenantParametrizacaoTest extends TestCase
             'cnpj' => '22.222.222/0001-22',
             'sigla' => 'BETA',
         ]);
+        $disciplina = $tenant->disciplinas()->create([
+            'contract_id' => $contract->id,
+            'nome' => 'Qualidade',
+            'sigla' => 'QUA',
+        ]);
 
         RelatorioNaoConformidade::create([
             'tenant_id' => $tenant->id,
             'contract_id' => $contract->id,
             'obra_id' => $obra->id,
+            'disciplina_id' => $disciplina->id,
             'contratante_empresa_id' => $contratante->id,
             'contratada_empresa_id' => $contratada->id,
             'created_by_id' => $admin->id,

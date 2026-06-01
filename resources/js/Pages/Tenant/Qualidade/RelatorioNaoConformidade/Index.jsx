@@ -1,5 +1,6 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Bell, CheckCircle2, ClipboardCheck, ClipboardX, Download, Eye, ImagePlus, MapPin, Pencil, Plus, SearchCheck, Trash2 } from 'lucide-react';
 
@@ -160,7 +161,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                             <thead>
                                 <tr>
                                     <th>RNC</th>
-                                    <th>Natureza / Gravidade</th>
+                                    <th>Disciplina / Gravidade</th>
                                     <th>Obra</th>
                                     <th>Empresas</th>
                                     <th>Abertura</th>
@@ -176,7 +177,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                                         </td>
                                         <td>
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <span className="sig-pill sig-pill-blue">{rnc.natureza}</span>
+                                                <span className="sig-pill sig-pill-blue">{rncDisciplinaLabel(rnc)}</span>
                                                 <span className={`sig-pill ${gravityClass[rnc.gravidade] || ''}`}>{rnc.gravidade}</span>
                                             </div>
                                         </td>

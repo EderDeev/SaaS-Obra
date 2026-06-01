@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Contract;
+use App\Models\Disciplina;
 use App\Models\Empresa;
 use App\Models\Obra;
+use App\Models\ProjectDocument;
 use App\Models\RelatorioNaoConformidade;
 use App\Models\RelatorioNaoConformidadeAcaoCorretiva;
 use App\Models\RelatorioNaoConformidadeEvidencia;
@@ -21,6 +23,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class TenantRncTest extends TestCase
@@ -93,6 +96,7 @@ class TenantRncTest extends TestCase
     public function test_tenant_user_can_edit_rnc(): void
     {
         [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        $ambiental = $this->disciplina($tenant, $contract, 'Ambiental', 'AMB');
 
         $this->postRnc($tenant, $user, $obra, $contratante, $contratada, '2026-05-16');
 
@@ -111,7 +115,7 @@ class TenantRncTest extends TestCase
                 'opened_at' => '2026-05-17',
                 'latitude' => '-23.5510000',
                 'longitude' => '-46.6340000',
-                'natureza' => 'Ambiental',
+                'disciplina_id' => $ambiental->id,
                 'gravidade' => 'Grave',
                 'descricao_problema' => 'Descricao atualizada da RNC.',
                 'observacao' => 'Observacao ajustada.',
@@ -126,6 +130,7 @@ class TenantRncTest extends TestCase
 
         $this->assertSame($contract->id, $rnc->contract_id);
         $this->assertSame('001-2026', $rnc->formatted_number);
+        $this->assertSame($ambiental->id, $rnc->disciplina_id);
         $this->assertSame('Ambiental', $rnc->natureza);
         $this->assertSame('Grave', $rnc->gravidade);
         $this->assertSame('Descricao atualizada da RNC.', $rnc->descricao_problema);
@@ -136,7 +141,7 @@ class TenantRncTest extends TestCase
     {
         Storage::fake('public');
 
-        [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        [$tenant, $user, $contract, $obra, $contratante, $contratada, $disciplina] = $this->tenantScenario();
 
         $this->actingAs($user)
             ->post(route('tenant.qualidade.rnc.store', $tenant), [
@@ -146,7 +151,7 @@ class TenantRncTest extends TestCase
                 'opened_at' => '2026-05-16',
                 'latitude' => '-23.5505200',
                 'longitude' => '-46.6333080',
-                'natureza' => 'Qualidade',
+                'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Grave',
                 'descricao_problema' => 'Concreto com acabamento fora do padrão.',
                 'observacao' => 'Registro aberto durante inspeção de campo.',
@@ -167,6 +172,7 @@ class TenantRncTest extends TestCase
             'contratante_empresa_id' => $contratante->id,
             'contratada_empresa_id' => $contratada->id,
             'created_by_id' => $user->id,
+            'disciplina_id' => $disciplina->id,
             'natureza' => 'Qualidade',
             'gravidade' => 'Grave',
             'status' => 'aberta',
@@ -179,6 +185,81 @@ class TenantRncTest extends TestCase
             'comment' => 'Vista geral da não conformidade.',
             'original_name' => 'rnc.png',
         ]);
+    }
+
+    public function test_rnc_can_be_linked_to_project_and_flags_open_rnc_in_project_pages(): void
+    {
+        [$tenant, $user, $contract, $obra, $contratante, $contratada, $disciplina] = $this->tenantScenario();
+        $project = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto vinculado a RNC',
+            'code' => 'CT001-OBR001-ARQ-PB-PRJ-001',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+            'approved_at' => now(),
+        ]);
+        $project->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'ativo',
+            'approved_by_id' => $user->id,
+            'approved_at' => now(),
+            'original_name' => 'projeto-vinculado.pdf',
+            'file_path' => 'tenant-'.$tenant->id.'/projects/projeto-vinculado.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.qualidade.rnc.create', $tenant))
+            ->assertOk()
+            ->assertSee('Tenant\/Qualidade\/RelatorioNaoConformidade\/Create', false);
+
+        $this->actingAs($user)
+            ->post(route('tenant.qualidade.rnc.store', $tenant), [
+                'obra_id' => $obra->id,
+                'project_document_id' => $project->id,
+                'contratante_empresa_id' => $contratante->id,
+                'contratada_empresa_id' => $contratada->id,
+                'opened_at' => '2026-05-16',
+                'disciplina_id' => $disciplina->id,
+                'gravidade' => 'Leve',
+                'descricao_problema' => 'Problema identificado no projeto.',
+                'acoes_corretivas_recomendadas' => 'Corrigir e apresentar evidencia.',
+                'prazo_resposta_acao_corretiva' => '2026-05-20',
+            ])
+            ->assertRedirect(route('tenant.qualidade.rnc.index', $tenant));
+
+        $rnc = RelatorioNaoConformidade::query()->firstOrFail();
+
+        $this->assertSame($project->id, $rnc->project_document_id);
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Index')
+                ->where('documents.0.open_rncs_count', 1));
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.visualizar.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Tree')
+                ->where('documents.0.open_rncs_count', 1));
+
+        $rnc->forceFill(['status' => 'finalizada'])->save();
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Index')
+                ->where('documents.0.open_rncs_count', 0));
     }
 
     public function test_rnc_number_is_sequential_by_tenant_and_year(): void
@@ -693,7 +774,7 @@ class TenantRncTest extends TestCase
 
     public function test_rnc_companies_must_belong_to_the_same_contract_as_obra(): void
     {
-        [$tenant, $user, $contract, $obra, $contratante] = $this->tenantScenario();
+        [$tenant, $user, $contract, $obra, $contratante, $contratada, $disciplina] = $this->tenantScenario();
         $otherContract = $tenant->contracts()->create([
             'code' => 'CT-002',
             'name' => 'Outro Contrato',
@@ -707,7 +788,7 @@ class TenantRncTest extends TestCase
                 'contratante_empresa_id' => $contratante->id,
                 'contratada_empresa_id' => $otherCompany->id,
                 'opened_at' => '2026-05-16',
-                'natureza' => 'Qualidade',
+                'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Leve',
                 'descricao_problema' => 'Problema',
                 'acoes_corretivas_recomendadas' => 'Ação',
@@ -721,8 +802,47 @@ class TenantRncTest extends TestCase
         ]);
     }
 
+    public function test_rnc_project_must_belong_to_the_same_obra(): void
+    {
+        [$tenant, $user, $contract, $obra, $contratante, $contratada, $disciplina] = $this->tenantScenario();
+        $otherObra = $tenant->obras()->create([
+            'contract_id' => $contract->id,
+            'nome' => 'Outra Obra',
+            'codigo' => 'OBR-002',
+            'tipo' => 'pai',
+        ]);
+        $project = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $otherObra->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto de outra obra',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('tenant.qualidade.rnc.store', $tenant), [
+                'obra_id' => $obra->id,
+                'project_document_id' => $project->id,
+                'contratante_empresa_id' => $contratante->id,
+                'contratada_empresa_id' => $contratada->id,
+                'opened_at' => '2026-05-16',
+                'disciplina_id' => $disciplina->id,
+                'gravidade' => 'Leve',
+                'descricao_problema' => 'Problema',
+                'acoes_corretivas_recomendadas' => 'Acao',
+                'prazo_resposta_acao_corretiva' => '2026-05-20',
+            ])
+            ->assertSessionHasErrors('project_document_id');
+
+        $this->assertDatabaseMissing('relatorio_nao_conformidades', [
+            'project_document_id' => $project->id,
+        ]);
+    }
+
     /**
-     * @return array{Tenant, User, Contract, Obra, Empresa, Empresa}
+     * @return array{Tenant, User, Contract, Obra, Empresa, Empresa, Disciplina}
      */
     private function tenantScenario(): array
     {
@@ -755,8 +875,9 @@ class TenantRncTest extends TestCase
 
         $contratante = $this->empresa($tenant, $contract, 'Contratante Alfa', '11.111.111/0001-11');
         $contratada = $this->empresa($tenant, $contract, 'Contratada Beta', '22.222.222/0001-22');
+        $disciplina = $this->disciplina($tenant, $contract, 'Qualidade', 'QUA');
 
-        return [$tenant, $user, $contract, $obra, $contratante, $contratada];
+        return [$tenant, $user, $contract, $obra, $contratante, $contratada, $disciplina];
     }
 
     private function empresa(Tenant $tenant, Contract $contract, string $nome, string $cnpj): Empresa
@@ -770,11 +891,27 @@ class TenantRncTest extends TestCase
         ]);
     }
 
+    private function disciplina(Tenant $tenant, Contract $contract, string $nome, string $sigla): Disciplina
+    {
+        return $tenant->disciplinas()->create([
+            'contract_id' => $contract->id,
+            'nome' => $nome,
+            'sigla' => $sigla,
+            'descricao' => null,
+            'cor' => '#2563eb',
+        ]);
+    }
+
     private function createRnc(Tenant $tenant, User $user, Contract $contract, Obra $obra, Empresa $contratante, Empresa $contratada): RelatorioNaoConformidade
     {
+        $disciplina = $tenant->disciplinas()
+            ->where('contract_id', $contract->id)
+            ->firstOrFail();
+
         return $tenant->relatorioNaoConformidades()->create([
             'contract_id' => $contract->id,
             'obra_id' => $obra->id,
+            'disciplina_id' => $disciplina->id,
             'contratante_empresa_id' => $contratante->id,
             'contratada_empresa_id' => $contratada->id,
             'created_by_id' => $user->id,
@@ -783,7 +920,7 @@ class TenantRncTest extends TestCase
             'opened_at' => '2026-05-16',
             'latitude' => '-23.5505200',
             'longitude' => '-46.6333080',
-            'natureza' => 'Qualidade',
+            'natureza' => $disciplina->nome,
             'gravidade' => 'Grave',
             'descricao_problema' => 'Concreto com acabamento fora do padrao.',
             'observacao' => 'Registro aberto durante inspecao de campo.',
@@ -795,13 +932,17 @@ class TenantRncTest extends TestCase
 
     private function postRnc(Tenant $tenant, User $user, Obra $obra, Empresa $contratante, Empresa $contratada, string $openedAt): void
     {
+        $disciplina = $tenant->disciplinas()
+            ->where('contract_id', $obra->contract_id)
+            ->firstOrFail();
+
         $this->actingAs($user)
             ->post(route('tenant.qualidade.rnc.store', $tenant), [
                 'obra_id' => $obra->id,
                 'contratante_empresa_id' => $contratante->id,
                 'contratada_empresa_id' => $contratada->id,
                 'opened_at' => $openedAt,
-                'natureza' => 'Qualidade',
+                'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Leve',
                 'descricao_problema' => 'Problema',
                 'acoes_corretivas_recomendadas' => 'Acao',

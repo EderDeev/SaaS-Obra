@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { ArrowDown, ArrowLeft, ArrowUp, CheckCircle2, ClipboardX, FileArchive, ImagePlus, Send, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -223,7 +224,7 @@ export default function RncEvidenciar({ tenant, rnc, acaoCorretiva }) {
                         <section className="border-b border-[var(--border)] p-5">
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="sig-pill sig-pill-green">Proposta aprovada</span>
-                                <span className="sig-pill sig-pill-blue">{rnc.natureza}</span>
+                                <span className="sig-pill sig-pill-blue">{rncDisciplinaLabel(rnc)}</span>
                                 <span className="sig-pill">{rnc.gravidade}</span>
                             </div>
                             <h2 className="mt-4 text-xl font-semibold text-[var(--ink-900)]">Resumo da correcao aprovada</h2>

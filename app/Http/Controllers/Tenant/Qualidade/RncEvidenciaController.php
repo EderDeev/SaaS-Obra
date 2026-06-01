@@ -151,6 +151,7 @@ class RncEvidenciaController extends Controller
         $rnc->load([
             'contract:id,tenant_id,code,name,total_value,currency,starts_at,ends_at,city,state',
             'obra:id,tenant_id,contract_id,nome,codigo,tipo',
+            'disciplina:id,tenant_id,contract_id,nome,sigla,cor',
             'contratante:id,nome,cnpj,sigla,logo_path',
             'contratada:id,nome,cnpj,sigla,logo_path',
             'creator:id,name,email',

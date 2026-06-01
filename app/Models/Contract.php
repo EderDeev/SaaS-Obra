@@ -52,6 +52,16 @@ class Contract extends Model
         return $this->hasMany(Activity::class);
     }
 
+    public function relatorioNaoConformidades(): HasMany
+    {
+        return $this->hasMany(RelatorioNaoConformidade::class);
+    }
+
+    public function projectDocuments(): HasMany
+    {
+        return $this->hasMany(ProjectDocument::class);
+    }
+
     public function relatorioNaoConformidadeResponsaveis(): HasMany
     {
         return $this->hasMany(RelatorioNaoConformidadeResponsavel::class);

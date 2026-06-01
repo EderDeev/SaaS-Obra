@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
-import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Search, Upload } from 'lucide-react';
+import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Search, TriangleAlert, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 const derivativeLabels = {
@@ -30,11 +30,56 @@ function fileDisplayName(version) {
 }
 
 function viewerWorkspaceUrl(tenant, version, workspace) {
-    return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}`;
+    return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}&origin=visualizar`;
 }
 
 function isApsWaiting(version) {
     return ['queued', 'processing'].includes(version?.derivative_status);
+}
+
+function pendingRevision(document) {
+    const latestVersion = document?.latest_version;
+    const latestApprovedVersion = document?.latest_approved_version;
+
+    if (!latestVersion || !latestApprovedVersion || String(latestVersion.id) === String(latestApprovedVersion.id)) {
+        return null;
+    }
+
+    return ['em_analise', 'em_aprovacao'].includes(latestVersion.status) ? latestVersion : null;
+}
+
+function OpenRncBadge({ tenant, document }) {
+    const count = Number(document?.open_rncs_count || 0);
+    const firstOpenRnc = document?.open_rncs?.[0];
+
+    if (!count) {
+        return null;
+    }
+
+    const content = (
+        <>
+            <TriangleAlert size={12} />
+            {count} {count === 1 ? 'RNC aberta' : 'RNCs abertas'}
+        </>
+    );
+
+    if (firstOpenRnc?.id) {
+        return (
+            <Link
+                href={route('tenant.qualidade.rnc.show', [tenant.slug, firstOpenRnc.id])}
+                className="sig-pill sig-pill-red inline-flex items-center gap-1 hover:underline"
+                title={`Abrir RNC ${firstOpenRnc.formatted_number || ''}`.trim()}
+            >
+                {content}
+            </Link>
+        );
+    }
+
+    return (
+        <span className="sig-pill sig-pill-red inline-flex items-center gap-1">
+            {content}
+        </span>
+    );
 }
 
 export default function ProjectTree({ tenant, contracts, obras, disciplinas, documents, documentTypes }) {
@@ -204,8 +249,8 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
                                 </div>
                             </div>
 
-                            <div className="overflow-x-auto bg-white px-3 py-3">
-                                <div className="min-w-[980px]">
+                            <div className="bg-white px-3 py-3">
+                                <div>
                                     {tree.map((node) => (
                                         <TreeNode
                                             key={node.id}
@@ -352,25 +397,21 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
     const isDocument = node.type === 'document';
     const document = node.document;
     const version = document?.latest_approved_version || document?.latest_version;
-    const indent = level * 28 + 8;
-    const connectorLeft = (level - 1) * 28 + 18;
-
+    const revisionInProgress = pendingRevision(document);
     return (
         <div>
             <div
-                className={`group relative flex min-h-11 items-center gap-2 rounded-md pr-3 text-sm transition ${isDocument ? 'hover:bg-[var(--surface-muted)]' : 'hover:bg-[var(--primary-50)]'}`}
-                style={{ paddingLeft: `${indent}px` }}
+                className={`projects-tree-row group relative flex min-h-11 items-center gap-2 rounded-md pr-3 text-sm transition ${isDocument ? 'hover:bg-[var(--surface-muted)]' : 'hover:bg-[var(--primary-50)]'}`}
+                style={{ '--tree-level': level }}
             >
                 {level > 0 && (
                     <span
-                        className="absolute top-0 h-full border-l border-[var(--border-strong)]"
-                        style={{ left: `${connectorLeft}px` }}
+                        className="projects-tree-connector absolute top-0 h-full border-l border-[var(--border-strong)]"
                     />
                 )}
                 {level > 0 && (
                     <span
-                        className="absolute top-1/2 w-5 border-t border-[var(--border-strong)]"
-                        style={{ left: `${connectorLeft}px` }}
+                        className="projects-tree-connector absolute top-1/2 w-5 border-t border-[var(--border-strong)]"
                     />
                 )}
 
@@ -408,50 +449,58 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                             <span className={`${node.type === 'contract' ? 'text-[15px]' : 'text-sm'} truncate font-semibold text-[var(--ink-900)]`}>
                                 {node.label}
                             </span>
-                            {node.description && (
-                                <span className="truncate text-[12.5px] text-[var(--ink-500)]">
-                                    {node.description}
-                                </span>
-                            )}
-                        </span>
-                        {isDocument && (
-                            <span className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-500)]">
-                                <span>Revisao {version?.revision || 'sem revisao'}</span>
-                                <span>Aprovado em {approvedDate(document)}</span>
+                             {node.description && (
+                                 <span className="truncate text-[12.5px] text-[var(--ink-500)]">
+                                     {node.description}
+                                 </span>
+                             )}
+                             {revisionInProgress && (
+                                 <span className="sig-pill sig-pill-amber">Em revisão</span>
+                             )}
+                         </span>
+                         {isDocument && (
+                             <span className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-500)]">
+                                 <span>{revisionInProgress ? 'Revisão oficial' : 'Revisão'} {version?.revision || 'sem revisão'}</span>
+                                 {revisionInProgress && <span>Nova revisão {revisionInProgress.revision} em fluxo</span>}
+                                 <span>Aprovado em {approvedDate(document)}</span>
                                 <span>{derivativeLabels[version?.derivative_status] || version?.derivative_status || 'Sem APS'}</span>
                             </span>
                         )}
                     </span>
                 </button>
 
-                <div className="relative z-10 flex shrink-0 items-center gap-2">
+                <div className="projects-tree-actions relative z-10 flex shrink-0 items-center gap-2">
                     {!isDocument && (
                         <span className="sig-pill sig-pill-green">{node.count} projeto(s)</span>
                     )}
-                    {isDocument && version?.aps_urn && (
+                    {isDocument && <OpenRncBadge tenant={tenant} document={document} />}
+                    {isDocument && revisionInProgress && (
+                        <span className="sig-pill sig-pill-amber">Aguardando aprovação da revisão</span>
+                    )}
+                    {isDocument && !revisionInProgress && version?.aps_urn && (
                         <Link href={viewerWorkspaceUrl(tenant, version, 'view')} className="sig-btn sig-btn-primary sig-btn-sm">
                             <Eye size={13} />
                             Visualizar
                         </Link>
                     )}
-                    {isDocument && version?.aps_urn && (
+                    {isDocument && !revisionInProgress && version?.aps_urn && (
                         <Link href={viewerWorkspaceUrl(tenant, version, 'comments')} className="sig-btn sig-btn-secondary sig-btn-sm">
                             <MessageSquare size={13} />
                             Comentários
                         </Link>
                     )}
-                    {isDocument && version && !version.aps_urn && isApsWaiting(version) && (
+                    {isDocument && !revisionInProgress && version && !version.aps_urn && isApsWaiting(version) && (
                         <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
                             Processando APS
                         </span>
                     )}
-                    {isDocument && version && !version.aps_urn && !isApsWaiting(version) && (
+                    {isDocument && !revisionInProgress && version && !version.aps_urn && !isApsWaiting(version) && (
                         <button type="button" onClick={() => processVersion(version)} className="sig-btn sig-btn-primary sig-btn-sm">
                             <Eye size={13} />
                             Processar APS
                         </button>
                     )}
-                    {isDocument && version?.url && (
+                    {isDocument && !revisionInProgress && version?.url && (
                         <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm">
                             <Download size={13} />
                             Baixar

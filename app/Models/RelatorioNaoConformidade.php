@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'sequence_year',
     'contract_id',
     'obra_id',
+    'project_document_id',
+    'disciplina_id',
     'contratante_empresa_id',
     'contratada_empresa_id',
     'created_by_id',
@@ -75,6 +77,16 @@ class RelatorioNaoConformidade extends Model
     public function obra(): BelongsTo
     {
         return $this->belongsTo(Obra::class)->withTrashed();
+    }
+
+    public function projectDocument(): BelongsTo
+    {
+        return $this->belongsTo(ProjectDocument::class)->withTrashed();
+    }
+
+    public function disciplina(): BelongsTo
+    {
+        return $this->belongsTo(Disciplina::class)->withTrashed();
     }
 
     public function contratante(): BelongsTo

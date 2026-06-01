@@ -1,8 +1,8 @@
 import ContractAccessCard from '@/Components/ContractAccessCard';
 import brazilCities from '@/Data/brazilCities';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { Download, Plus, Search, SortDesc, Star } from 'lucide-react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { AlertTriangle, LayoutGrid, List, Plus, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 const statusMeta = {
@@ -12,8 +12,6 @@ const statusMeta = {
     completed: { label: 'Concluído', pill: 'sig-pill-blue' },
     cancelled: { label: 'Cancelado', pill: 'sig-pill-red' },
 };
-
-const colors = ['#0b5fff', '#0e7c66', '#b58105', '#6a52d8', '#5b6479', '#c8364a'];
 
 const brazilianStates = [
     { value: 'AC', label: 'Acre' },
@@ -88,23 +86,10 @@ function formatCurrency(value, currency) {
     });
 }
 
-function enrichContract(contract, index) {
-    const physical = contract.status === 'completed'
-        ? 100
-        : contract.status === 'paused'
-            ? 42
-            : contract.status === 'planning'
-                ? 12
-                : 58 + ((contract.id * 7) % 25);
-
+function enrichContract(contract) {
     return {
         ...contract,
         meta: statusMeta[contract.status] || statusMeta.planning,
-        physical,
-        financial: contract.status === 'completed' ? 100 : Math.max(8, physical - 7),
-        pinned: index < 2,
-        color: colors[index % colors.length],
-        badge: (contract.code || contract.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase(),
         state_label: stateNameByUf[contract.state] || contract.state,
     };
 }
@@ -115,10 +100,35 @@ const shortDate = (date) => {
     return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date));
 };
 
+const companyKey = (company, fallback = '') => company?.id ? String(company.id) : String(fallback || '');
+const companyLabel = (company, fallback = '') => company?.nome || fallback || 'Não informado';
+const hasAttention = (contract) => Number(contract.overdue_activities_count || 0) > 0
+    || Number(contract.open_rncs_count || 0) > 0
+    || Number(contract.pending_projects_count || 0) > 0;
+
+function companyOptions(contracts, resolve) {
+    return contracts.reduce((options, contract) => {
+        const [company, fallback] = resolve(contract);
+        const value = companyKey(company, fallback);
+
+        if (value && !options.some((option) => option.value === value)) {
+            options.push({ value, label: companyLabel(company, fallback) });
+        }
+
+        return options;
+    }, []).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+}
+
 export default function ContractsIndex({ tenant, contracts, statuses, canCreateContracts }) {
     const page = usePage();
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState('todos');
+    const [stateFilter, setStateFilter] = useState('todos');
+    const [clientFilter, setClientFilter] = useState('todos');
+    const [contractorFilter, setContractorFilter] = useState('todos');
+    const [managerFilter, setManagerFilter] = useState('todos');
+    const [attentionOnly, setAttentionOnly] = useState(false);
+    const [viewMode, setViewMode] = useState('cards');
     const [showCreate, setShowCreate] = useState(false);
     const [totalValueDisplay, setTotalValueDisplay] = useState('');
     const form = useForm({
@@ -137,6 +147,26 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
 
         return enrichedContracts.filter((contract) => {
             if (filter !== 'todos' && contract.status !== filter) {
+                return false;
+            }
+
+            if (stateFilter !== 'todos' && contract.state !== stateFilter) {
+                return false;
+            }
+
+            if (clientFilter !== 'todos' && companyKey(contract.cliente_empresa, contract.client_company_name) !== clientFilter) {
+                return false;
+            }
+
+            if (contractorFilter !== 'todos' && companyKey(contract.construtora_empresa, contract.contractor_company_name) !== contractorFilter) {
+                return false;
+            }
+
+            if (managerFilter !== 'todos' && companyKey(contract.gerenciadora_empresa) !== managerFilter) {
+                return false;
+            }
+
+            if (attentionOnly && !hasAttention(contract)) {
                 return false;
             }
 
@@ -159,10 +189,11 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                 contract.currency,
             ].filter(Boolean).join(' ').toLowerCase().includes(q);
         });
-    }, [enrichedContracts, query, filter]);
+    }, [attentionOnly, clientFilter, contractorFilter, enrichedContracts, filter, managerFilter, query, stateFilter]);
 
-    const pinnedContracts = filteredContracts.filter((contract) => contract.pinned);
-    const otherContracts = filteredContracts.filter((contract) => !contract.pinned);
+    const clientOptions = useMemo(() => companyOptions(enrichedContracts, (contract) => [contract.cliente_empresa, contract.client_company_name]), [enrichedContracts]);
+    const contractorOptions = useMemo(() => companyOptions(enrichedContracts, (contract) => [contract.construtora_empresa, contract.contractor_company_name]), [enrichedContracts]);
+    const managerOptions = useMemo(() => companyOptions(enrichedContracts, (contract) => [contract.gerenciadora_empresa]), [enrichedContracts]);
     const counts = {
         todos: contracts.length,
         active: contracts.filter((contract) => contract.status === 'active').length,
@@ -230,10 +261,6 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <button className="sig-btn sig-btn-secondary" type="button">
-                            <Download size={15} />
-                            Exportar lista
-                        </button>
                         {canCreateContracts && (
                             <button className="sig-btn sig-btn-primary" type="button" onClick={() => setShowCreate((value) => !value)}>
                                 <Plus size={15} />
@@ -257,10 +284,39 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                         <Search size={15} />
                         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtrar por número, obra, cliente..." />
                     </label>
-                    <button className="sig-btn sig-btn-secondary" type="button">
-                        <SortDesc size={14} />
-                        Recentes
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <FilterSelect value={stateFilter} onChange={setStateFilter} firstLabel="Todos os estados" options={stateOptions} />
+                    <FilterSelect value={clientFilter} onChange={setClientFilter} firstLabel="Todos os clientes" options={clientOptions} />
+                    <FilterSelect value={contractorFilter} onChange={setContractorFilter} firstLabel="Todas as construtoras" options={contractorOptions} />
+                    <FilterSelect value={managerFilter} onChange={setManagerFilter} firstLabel="Todas as gerenciadoras" options={managerOptions} />
+                    <button
+                        className={`sig-btn ${attentionOnly ? 'sig-btn-primary' : 'sig-btn-secondary'}`}
+                        type="button"
+                        onClick={() => setAttentionOnly((value) => !value)}
+                    >
+                        <AlertTriangle size={14} />
+                        Com pendências
                     </button>
+                    <div className="ml-auto flex rounded-md border border-[var(--border)] bg-white p-1">
+                        <button
+                            className={`rounded p-1.5 ${viewMode === 'cards' ? 'bg-[var(--ink-900)] text-white' : 'text-[var(--ink-500)]'}`}
+                            type="button"
+                            title="Visualizar em cards"
+                            onClick={() => setViewMode('cards')}
+                        >
+                            <LayoutGrid size={15} />
+                        </button>
+                        <button
+                            className={`rounded p-1.5 ${viewMode === 'table' ? 'bg-[var(--ink-900)] text-white' : 'text-[var(--ink-500)]'}`}
+                            type="button"
+                            title="Visualizar em tabela"
+                            onClick={() => setViewMode('table')}
+                        >
+                            <List size={15} />
+                        </button>
+                    </div>
                 </div>
 
                 {showCreate && canCreateContracts && (
@@ -327,34 +383,21 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     </form>
                 )}
 
-                {pinnedContracts.length > 0 && (
-                    <section className="mt-7">
-                        <div className="mb-3 flex items-center gap-2">
-                            <Star size={14} fill="currentColor" className="text-[var(--amber)]" />
-                            <span className="eyebrow">Fixados</span>
-                            <span className="text-xs text-[var(--ink-400)]">{pinnedContracts.length}</span>
-                        </div>
+                <section className="mt-7">
+                    <div className="mb-3">
+                        <span className="eyebrow">Portfólio de contratos</span>
+                        <p className="mt-1 text-xs text-[var(--ink-400)]">{filteredContracts.length} contrato(s) encontrado(s)</p>
+                    </div>
+
+                    {viewMode === 'cards' ? (
                         <div className="grid gap-4 xl:grid-cols-3 lg:grid-cols-2">
-                            {pinnedContracts.map((contract) => (
+                            {filteredContracts.map((contract) => (
                                 <ContractAccessCard key={contract.id} tenant={tenant} contract={contract} shortDate={shortDate} />
                             ))}
                         </div>
-                    </section>
-                )}
-
-                <section className="mt-7">
-                    {pinnedContracts.length > 0 && (
-                        <div className="mb-3 flex items-center gap-2">
-                            <span className="eyebrow">Todos os contratos</span>
-                            <span className="text-xs text-[var(--ink-400)]">{otherContracts.length}</span>
-                        </div>
+                    ) : (
+                        <ContractsTable tenant={tenant} contracts={filteredContracts} />
                     )}
-
-                    <div className="grid gap-4 xl:grid-cols-3 lg:grid-cols-2">
-                        {(pinnedContracts.length ? otherContracts : filteredContracts).map((contract) => (
-                            <ContractAccessCard key={contract.id} tenant={tenant} contract={contract} shortDate={shortDate} />
-                        ))}
-                    </div>
 
                     {filteredContracts.length === 0 && (
                         <div className="sig-card p-12 text-center text-[var(--ink-500)]">Nenhum contrato encontrado.</div>
@@ -375,6 +418,74 @@ function FilterButton({ active, onClick, label, count }) {
             {label} <span className="opacity-70">{count}</span>
         </button>
     );
+}
+
+function FilterSelect({ value, onChange, firstLabel, options }) {
+    return (
+        <label className="sig-input max-w-[240px]">
+            <select value={value} onChange={(event) => onChange(event.target.value)}>
+                <option value="todos">{firstLabel}</option>
+                {options.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+            </select>
+        </label>
+    );
+}
+
+function ContractsTable({ tenant, contracts }) {
+    return (
+        <div className="sig-card overflow-x-auto">
+            <table className="sig-table min-w-[1080px]">
+                <thead>
+                    <tr>
+                        <th>Contrato</th>
+                        <th>Empresas</th>
+                        <th>Local</th>
+                        <th>Vigência</th>
+                        <th>Pendências</th>
+                        <th>Valor</th>
+                        <th>Status</th>
+                        <th />
+                    </tr>
+                </thead>
+                <tbody>
+                    {contracts.map((contract) => (
+                        <tr key={contract.id}>
+                            <td>
+                                <strong className="block text-[var(--ink-900)]">{contract.code}</strong>
+                                <span className="text-xs text-[var(--ink-500)]">{contract.obra?.nome || contract.name || 'Sem obra vinculada'}</span>
+                            </td>
+                            <td>
+                                <span className="block text-xs">Cliente: {companyLabel(contract.cliente_empresa, contract.client_company_name)}</span>
+                                <span className="block text-xs text-[var(--ink-500)]">Construtora: {companyLabel(contract.construtora_empresa, contract.contractor_company_name)}</span>
+                            </td>
+                            <td>{[contract.city, contract.state_label].filter(Boolean).join(' - ') || 'Não informado'}</td>
+                            <td>{shortDate(contract.starts_at)} até {shortDate(contract.ends_at)}</td>
+                            <td>
+                                <div className="flex flex-wrap gap-1">
+                                    <CountPill label="Atividades" count={contract.open_activities_count} />
+                                    <CountPill label="RNCs" count={contract.open_rncs_count} />
+                                    <CountPill label="Projetos" count={contract.pending_projects_count} />
+                                </div>
+                            </td>
+                            <td>{formatCurrency(contract.total_value, contract.currency) || 'Não informado'}</td>
+                            <td><span className={`sig-pill ${contract.meta.pill}`}>{contract.meta.label}</span></td>
+                            <td>
+                                <Link className="sig-btn sig-btn-secondary" href={route('tenant.contracts.show', [tenant.slug, contract.id])}>
+                                    Abrir
+                                </Link>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function CountPill({ label, count }) {
+    return <span className="sig-pill border border-[var(--border)]">{Number(count || 0)} {label}</span>;
 }
 
 function Field({ label, error, children }) {

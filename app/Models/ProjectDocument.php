@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -94,6 +95,19 @@ class ProjectDocument extends Model
         return $this->hasMany(ProjectDocumentVersion::class);
     }
 
+    public function rncs(): HasMany
+    {
+        return $this->hasMany(RelatorioNaoConformidade::class);
+    }
+
+    public function openRncs(): HasMany
+    {
+        return $this->rncs()
+            ->where('status', 'aberta')
+            ->latest('opened_at')
+            ->latest('id');
+    }
+
     public function latestVersion(): HasOne
     {
         return $this->hasOne(ProjectDocumentVersion::class)->latestOfMany();
@@ -102,7 +116,6 @@ class ProjectDocument extends Model
     public function latestApprovedVersion(): HasOne
     {
         return $this->hasOne(ProjectDocumentVersion::class)
-            ->where('status', 'ativo')
-            ->latestOfMany();
+            ->ofMany(['id' => 'max'], fn (Builder $query) => $query->where('status', 'ativo'));
     }
 }

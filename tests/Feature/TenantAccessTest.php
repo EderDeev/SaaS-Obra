@@ -138,6 +138,53 @@ class TenantAccessTest extends TestCase
             ->assertSee('Tenant\/Dashboard', false);
     }
 
+    public function test_platform_admin_can_open_any_tenant_contract_portfolio_and_details(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'teste',
+            'name' => 'Empresa Teste',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $contract = Contract::create([
+            'tenant_id' => $tenant->id,
+            'code' => 'CT-001',
+            'name' => 'Contrato',
+            'status' => 'active',
+        ]);
+        $document = $contract->projectDocuments()->create([
+            'tenant_id' => $tenant->id,
+            'title' => 'Projeto com revisão',
+            'status' => 'em_analise',
+        ]);
+        $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'revision' => 'R00',
+            'original_name' => 'projeto-r00.pdf',
+            'file_path' => 'projects/projeto-r00.pdf',
+        ]);
+        $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'revision' => 'R01',
+            'original_name' => 'projeto-r01.pdf',
+            'file_path' => 'projects/projeto-r01.pdf',
+        ]);
+        $platformAdmin = User::factory()->create([
+            'is_platform_admin' => true,
+        ]);
+
+        $this->actingAs($platformAdmin)
+            ->get(route('tenant.contracts.index', $tenant))
+            ->assertOk()
+            ->assertSee('CT-001');
+
+        $this->actingAs($platformAdmin)
+            ->get(route('tenant.contracts.show', [$tenant, $contract]))
+            ->assertOk()
+            ->assertSee('Tenant\/Contracts\/Show', false)
+            ->assertSee('R01');
+    }
+
     public function test_platform_admin_can_open_aps_usage_panel(): void
     {
         config([
@@ -242,6 +289,28 @@ class TenantAccessTest extends TestCase
         $this->actingAs($user)
             ->get(route('tenant.users.index', $tenant))
             ->assertOk();
+    }
+
+    public function test_tenant_user_can_access_tutorials_page(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'teste',
+            'name' => 'Empresa Teste',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $user = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $user->id,
+            'role' => 'engineer',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.tutorials.index', $tenant))
+            ->assertOk()
+            ->assertSee('Tenant\/Tutorials\/Index', false);
     }
 
     public function test_tenant_user_can_access_quality_rnc_page(): void

@@ -45,7 +45,7 @@ export default function ProjectCapModal({ document, version, capImpactLabels = {
 
     return (
         <div
-            className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.48)] px-4 py-6"
+            className="fixed inset-0 z-[130] flex items-center justify-center bg-[rgba(11,16,32,0.48)] px-4 py-6"
             role="presentation"
             onMouseDown={onClose}
         >

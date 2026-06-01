@@ -67,6 +67,7 @@ class ProjectViewerController extends Controller
             'apsConfigured' => $aps->isConfigured(),
             'canReviewProjects' => $canReviewProjects,
             'workspaceMode' => $workspaceMode,
+            'projectListContext' => $request->query('origin') === 'visualizar' ? 'visualizar' : 'review',
             'showCommentsPanel' => $showCommentsPanel,
             'showChecklistPanel' => $showChecklistPanel,
             'contractUsers' => $this->contractUsers($tenant, $contract),
@@ -153,6 +154,8 @@ class ProjectViewerController extends Controller
 
         $version->load([
             'document.contract:id,tenant_id,code,name,obra_id',
+            'document.latestVersion',
+            'document.latestApprovedVersion',
             'document.obra:id,nome,codigo',
             'document.disciplina:id,nome,sigla,cor',
             'document.phase:id,name,code',
@@ -160,16 +163,32 @@ class ProjectViewerController extends Controller
 
         abort_unless($version->document, 404);
 
+        if ($request->query('origin') === 'visualizar') {
+            abort_if($this->hasPendingRevision($version), 403);
+        }
+
         $canView = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::VIEW, $version->document->contract);
         $canReview = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $version->document->contract);
 
         abort_unless($canView || $canReview, 403);
+        abort_if($this->hasPendingRevision($version) && ! $canReview, 403);
 
         if ($version->status !== 'ativo') {
             abort_unless($canReview, 403);
         }
 
         return $version;
+    }
+
+    private function hasPendingRevision(ProjectDocumentVersion $version): bool
+    {
+        $latestVersion = $version->document->latestVersion;
+        $latestApprovedVersion = $version->document->latestApprovedVersion;
+
+        return $latestVersion
+            && $latestApprovedVersion
+            && (int) $latestVersion->id !== (int) $latestApprovedVersion->id
+            && in_array($latestVersion->status, ['em_analise', 'em_aprovacao'], true);
     }
 
     private function workspaceMode(Request $request, ProjectDocumentVersion $version, bool $canReviewProjects): string

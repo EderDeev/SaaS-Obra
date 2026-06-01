@@ -79,7 +79,8 @@ export default function RelatorioNaoConformidadeCreate({
     tenant,
     obras,
     empresas,
-    naturezas,
+    projects = [],
+    disciplinas = [],
     gravidades,
     mode = 'create',
     rnc = null,
@@ -99,12 +100,13 @@ export default function RelatorioNaoConformidadeCreate({
     const selectedPhotosRef = useRef([]);
     const form = useForm({
         obra_id: defaultObraId,
+        project_document_id: rnc?.project_document_id ?? '',
         contratante_empresa_id: rnc?.contratante_empresa_id ?? '',
         contratada_empresa_id: rnc?.contratada_empresa_id ?? '',
         opened_at: dateInput(rnc?.opened_at) || today(),
         latitude: rnc?.latitude ?? '',
         longitude: rnc?.longitude ?? '',
-        natureza: rnc?.natureza ?? naturezas[0] ?? '',
+        disciplina_id: rnc?.disciplina_id ?? '',
         gravidade: rnc?.gravidade ?? gravidades[0] ?? '',
         descricao_problema: rnc?.descricao_problema ?? '',
         observacao: rnc?.observacao ?? '',
@@ -121,7 +123,15 @@ export default function RelatorioNaoConformidadeCreate({
         () => empresas.filter((empresa) => String(empresa.contract_id) === String(selectedObra?.contract_id)),
         [empresas, selectedObra?.contract_id],
     );
-    const canCreate = obras.length > 0 && empresasForSelectedContract.length >= 2;
+    const projectsForSelectedObra = useMemo(
+        () => projects.filter((project) => String(project.obra_id) === String(selectedObra?.id)),
+        [projects, selectedObra?.id],
+    );
+    const disciplinasForSelectedContract = useMemo(
+        () => disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(selectedObra?.contract_id)),
+        [disciplinas, selectedObra?.contract_id],
+    );
+    const canCreate = obras.length > 0 && empresasForSelectedContract.length >= 2 && disciplinasForSelectedContract.length > 0;
     const selectedContratanteEmpresa = useMemo(
         () => empresasForSelectedContract.find((empresa) => String(empresa.id) === String(form.data.contratante_empresa_id)),
         [empresasForSelectedContract, form.data.contratante_empresa_id],
@@ -148,10 +158,18 @@ export default function RelatorioNaoConformidadeCreate({
         const validCompanyIds = empresas
             .filter((empresa) => String(empresa.contract_id) === String(obra?.contract_id))
             .map((empresa) => empresa.id);
+        const validProjectIds = projects
+            .filter((project) => String(project.obra_id) === String(obra?.id))
+            .map((project) => project.id);
+        const validDisciplinaIds = disciplinas
+            .filter((disciplina) => String(disciplina.contract_id) === String(obra?.contract_id))
+            .map((disciplina) => disciplina.id);
 
         form.setData({
             ...form.data,
             obra_id: obraId,
+            project_document_id: validProjectIds.includes(Number(form.data.project_document_id)) ? form.data.project_document_id : '',
+            disciplina_id: validDisciplinaIds.includes(Number(form.data.disciplina_id)) ? form.data.disciplina_id : '',
             contratante_empresa_id: validCompanyIds.includes(Number(form.data.contratante_empresa_id)) ? form.data.contratante_empresa_id : '',
             contratada_empresa_id: validCompanyIds.includes(Number(form.data.contratada_empresa_id)) ? form.data.contratada_empresa_id : '',
         });
@@ -312,6 +330,21 @@ export default function RelatorioNaoConformidadeCreate({
                             </div>
                         )}
 
+                        <Field label="Projeto vinculado (opcional)" error={form.errors.project_document_id}>
+                            <select
+                                value={form.data.project_document_id}
+                                onChange={(event) => form.setData('project_document_id', event.target.value)}
+                            >
+                                <option value="">Sem projeto vinculado</option>
+                                {projectsForSelectedObra.map((project) => (
+                                    <option key={project.id} value={project.id}>
+                                        {project.code || 'Sem codigo'} - {project.title}
+                                        {project.latest_version?.revision ? ` (${project.latest_version.revision})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
                         <div className="grid gap-3 md:grid-cols-2">
                             <Field label="Contratante" error={form.errors.contratante_empresa_id}>
                                 <select
@@ -374,10 +407,13 @@ export default function RelatorioNaoConformidadeCreate({
                         <MapPicker form={form} />
 
                         <div className="grid gap-3 md:grid-cols-2">
-                            <Field label="Natureza" error={form.errors.natureza}>
-                                <select value={form.data.natureza} onChange={(event) => form.setData('natureza', event.target.value)} required>
-                                    {naturezas.map((natureza) => (
-                                        <option key={natureza} value={natureza}>{natureza}</option>
+                            <Field label="Disciplina" error={form.errors.disciplina_id}>
+                                <select value={form.data.disciplina_id} onChange={(event) => form.setData('disciplina_id', event.target.value)} required>
+                                    <option value="">Selecione a disciplina</option>
+                                    {disciplinasForSelectedContract.map((disciplina) => (
+                                        <option key={disciplina.id} value={disciplina.id}>
+                                            {disciplina.sigla} - {disciplina.nome}
+                                        </option>
                                     ))}
                                 </select>
                             </Field>
@@ -478,7 +514,7 @@ export default function RelatorioNaoConformidadeCreate({
 
                     {!canCreate && (
                         <p className="mt-2 text-xs text-[var(--ink-500)]">
-                            Cadastre uma obra e pelo menos duas empresas no mesmo contrato para criar RNC.
+                            Cadastre uma obra, pelo menos duas empresas e uma disciplina no mesmo contrato para criar RNC.
                         </p>
                     )}
                 </form>

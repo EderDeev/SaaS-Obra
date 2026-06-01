@@ -27,6 +27,11 @@ class ActivityController extends Controller
 
     private const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 
+    private const CATEGORIES = [
+        'project' => 'Projeto',
+        'quality' => 'Qualidade',
+    ];
+
     public function index(Request $request, Tenant $tenant): Response
     {
         abort_unless(ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::VIEW), 403);
@@ -71,6 +76,7 @@ class ActivityController extends Controller
             'assigneesByContract' => $this->assignableUsersByContract($tenant, $contracts),
             'statuses' => self::STATUSES,
             'priorities' => self::PRIORITIES,
+            'categories' => self::CATEGORIES,
             'canCreateActivities' => $contracts->contains(fn (Contract $contract): bool => ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::CREATE, $contract)),
             'canEditActivities' => ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::EDIT),
             'canDeleteActivities' => ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::DELETE),
@@ -90,6 +96,7 @@ class ActivityController extends Controller
             'assigned_to_ids.*' => ['integer', 'exists:users,id'],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
+            'category' => ['nullable', Rule::in(array_keys(self::CATEGORIES))],
             'priority' => ['required', Rule::in(self::PRIORITIES)],
             'due_date' => ['nullable', 'date'],
         ]);
@@ -121,6 +128,7 @@ class ActivityController extends Controller
             'created_by_id' => $request->user()->id,
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
+            'category' => $data['category'] ?? 'project',
             'status' => 'todo',
             'priority' => $data['priority'],
             'due_date' => $data['due_date'] ?? null,
@@ -152,6 +160,7 @@ class ActivityController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
+            'category' => ['nullable', Rule::in(array_keys(self::CATEGORIES))],
             'priority' => ['required', Rule::in(self::PRIORITIES)],
             'due_date' => ['nullable', 'date'],
             'assigned_to_ids' => ['nullable', 'array'],
@@ -178,6 +187,7 @@ class ActivityController extends Controller
             'assigned_to_id' => $assignedUserIds->first(),
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
+            'category' => $data['category'] ?? $activity->category ?? 'project',
             'priority' => $data['priority'],
             'due_date' => $data['due_date'] ?? null,
         ]);

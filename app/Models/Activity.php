@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'created_by_id',
     'title',
     'description',
+    'category',
     'status',
     'priority',
     'due_date',

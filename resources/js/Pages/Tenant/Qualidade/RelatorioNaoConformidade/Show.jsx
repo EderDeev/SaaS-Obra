@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { ArrowLeft, ClipboardX, Download, ImagePlus, MapPin, Pencil } from 'lucide-react';
 
@@ -170,7 +171,7 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
 
                         <div className="flex flex-wrap items-center gap-2">
                             <span className={`sig-pill ${gravityClass[rnc.gravidade] || ''}`}>{rnc.gravidade}</span>
-                            <span className="sig-pill sig-pill-blue">{rnc.natureza}</span>
+                            <span className="sig-pill sig-pill-blue">{rncDisciplinaLabel(rnc)}</span>
                             <span className="sig-pill">{rnc.status}</span>
                         </div>
                         <h2 className="mt-4 text-xl font-semibold text-[var(--ink-900)]">Relatorio de Nao Conformidade</h2>
@@ -179,6 +180,10 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                             <Meta label="Contrato" value={`${rnc.contract?.code || ''} - ${rnc.contract?.name || ''}`} />
                             <Meta label="Obra" value={`${rnc.obra?.codigo || ''} - ${rnc.obra?.nome || ''}`} />
+                            <Meta
+                                label="Projeto vinculado"
+                                value={rnc.project_document ? `${rnc.project_document.code || 'Sem codigo'} - ${rnc.project_document.title}` : 'Sem projeto vinculado'}
+                            />
                             <Meta label="Data abertura" value={shortDate(rnc.opened_at)} />
                             <Meta label="Prazo resposta acao corretiva" value={shortDate(rnc.prazo_resposta_acao_corretiva)} />
                             <Meta label="Contratante" value={rnc.contratante?.sigla || rnc.contratante?.nome} />

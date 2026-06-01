@@ -23,6 +23,7 @@ use App\Http\Controllers\Tenant\Qualidade\RelatorioNaoConformidadeController;
 use App\Http\Controllers\Tenant\Qualidade\RncAcaoCorretivaController;
 use App\Http\Controllers\Tenant\Qualidade\RncEvidenciaController;
 use App\Http\Controllers\Tenant\Qualidade\RncResponsavelController;
+use App\Http\Controllers\Tenant\TutorialController;
 use App\Http\Controllers\Tenant\UserController as TenantUserController;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
@@ -89,6 +90,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
     ->name('tenant.')
     ->group(function () {
         Route::get('/', TenantDashboardController::class)->name('dashboard');
+        Route::get('/tutoriais', TutorialController::class)->name('tutorials.index');
         Route::get('/users', [TenantUserController::class, 'index'])->name('users.index');
         Route::post('/users', [TenantUserController::class, 'store'])->name('users.store');
         Route::patch('/users/{membership}', [TenantUserController::class, 'update'])->name('users.update');

@@ -7,7 +7,7 @@ Ola, {{ $notifiable->name }}.
 
 Contrato: {{ $rnc->contract?->code }} - {{ $rnc->contract?->name }}
 Obra: {{ $rnc->obra?->codigo }} - {{ $rnc->obra?->nome }}
-Natureza: {{ $rnc->natureza }}
+Disciplina: {{ $rnc->disciplina?->sigla ? $rnc->disciplina->sigla.' - '.$rnc->disciplina->nome : ($rnc->disciplina?->nome ?: $rnc->natureza) }}
 Gravidade: {{ $rnc->gravidade }}
 Prazo para resposta: {{ $rnc->prazo_resposta_acao_corretiva?->format('d/m/Y') }}
 

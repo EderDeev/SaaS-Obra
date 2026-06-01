@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { Building2, ClipboardList, GitBranch, Link2, Save, ShieldCheck, SlidersHorizontal } from 'lucide-react';
-import { useMemo } from 'react';
+import { Building2, ClipboardList, GitBranch, Link2, Plus, Save, ShieldCheck, SlidersHorizontal, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 function contractLabel(contract) {
     return `${contract.code} - ${contract.obra?.nome || contract.name}`;
@@ -21,6 +21,7 @@ function countLabel(total, singular, plural) {
 export default function ParametrizacaoContratosIndex({ tenant, contracts, obras, empresas }) {
     const page = usePage();
     const defaultContract = contracts[0];
+    const [formOpen, setFormOpen] = useState(false);
     const form = useForm({
         contract_id: defaultContract?.id ?? '',
         obra_id: defaultContract?.obra_id ?? '',
@@ -72,6 +73,7 @@ export default function ParametrizacaoContratosIndex({ tenant, contracts, obras,
 
         form.post(route('tenant.parametrizacao.contrato.store', page.props.currentTenant.slug), {
             preserveScroll: true,
+            onSuccess: () => setFormOpen(false),
         });
     };
 
@@ -79,7 +81,8 @@ export default function ParametrizacaoContratosIndex({ tenant, contracts, obras,
         <AuthenticatedLayout>
             <Head title="Parametrização - Contrato" />
 
-            <section className="sig-content grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+            <section className={`sig-content grid gap-6 ${formOpen ? 'xl:grid-cols-[420px_minmax(0,1fr)]' : ''}`}>
+                {formOpen && (
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <SlidersHorizontal size={14} />
@@ -172,10 +175,16 @@ export default function ParametrizacaoContratosIndex({ tenant, contracts, obras,
                         </Field>
                     </div>
 
-                    <button className="sig-btn sig-btn-primary mt-5" disabled={form.processing || contracts.length === 0}>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                    <button className="sig-btn sig-btn-primary" disabled={form.processing || contracts.length === 0}>
                         <Save size={15} />
                         Salvar vínculos
                     </button>
+                    <button type="button" className="sig-btn sig-btn-secondary" onClick={() => setFormOpen(false)}>
+                        <X size={15} />
+                        Fechar
+                    </button>
+                    </div>
 
                     {selectedContract && (
                         <div className="mt-5 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--ink-500)]">
@@ -190,8 +199,9 @@ export default function ParametrizacaoContratosIndex({ tenant, contracts, obras,
                         </div>
                     )}
                 </form>
+                )}
 
-                <section className="sig-card overflow-hidden">
+                <section className="param-list-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -202,9 +212,21 @@ export default function ParametrizacaoContratosIndex({ tenant, contracts, obras,
                                 {countLabel(contracts.length, 'contrato cadastrado', 'contratos cadastrados')}
                             </h2>
                         </div>
+                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={() => setFormOpen(true)}>
+                            <Plus size={13} />
+                            Vincular contrato
+                        </button>
                     </header>
 
+                    {!formOpen && page.props.flash.success && (
+                        <div className="border-b border-[var(--border)] bg-[var(--green-50)] px-5 py-3 text-sm text-[var(--green)]">
+                            {page.props.flash.success}
+                        </div>
+                    )}
+
                     {contracts.length > 0 ? (
+                        <>
+                        <div className="param-desktop-table overflow-x-auto">
                         <table className="sig-table">
                             <thead>
                                 <tr>
@@ -257,6 +279,38 @@ export default function ParametrizacaoContratosIndex({ tenant, contracts, obras,
                                 ))}
                             </tbody>
                         </table>
+                        </div>
+
+                        <div className="param-responsive-list divide-y divide-[var(--border)]">
+                            {contracts.map((contract) => (
+                                <article key={contract.id} className="p-5">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h3 className="text-sm font-semibold text-[var(--ink-900)]">{contract.name}</h3>
+                                        <span className="sig-pill sig-pill-blue">{contract.code}</span>
+                                    </div>
+
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <CompactInfo
+                                            label="Obra"
+                                            value={contract.obra ? `${contract.obra.codigo} - ${contract.obra.nome}` : 'Sem obra'}
+                                        />
+                                        <CompactInfo
+                                            label="Cliente"
+                                            value={contract.cliente_empresa ? `${contract.cliente_empresa.nome} - ${contract.cliente_empresa.tipo_empresa?.nome || 'sem tipo'}` : 'Sem cliente'}
+                                        />
+                                        <CompactInfo
+                                            label="Construtora"
+                                            value={contract.construtora_empresa ? `${contract.construtora_empresa.nome} - ${contract.construtora_empresa.tipo_empresa?.nome || 'sem tipo'}` : 'Sem construtora'}
+                                        />
+                                        <CompactInfo
+                                            label="Gerenciadora"
+                                            value={contract.gerenciadora_empresa ? `${contract.gerenciadora_empresa.nome} - ${contract.gerenciadora_empresa.tipo_empresa?.nome || 'sem tipo'}` : 'Sem gerenciadora'}
+                                        />
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             Nenhum contrato cadastrado ainda.
@@ -265,6 +319,15 @@ export default function ParametrizacaoContratosIndex({ tenant, contracts, obras,
                 </section>
             </section>
         </AuthenticatedLayout>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <div>
+            <div className="eyebrow">{label}</div>
+            <div className="mt-1 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value}</div>
+        </div>
     );
 }
 

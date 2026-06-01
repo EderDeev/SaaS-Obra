@@ -17,7 +17,7 @@ class RncResponsibleNotification extends Notification
         private readonly RelatorioNaoConformidade $rnc,
         private readonly User $actor,
     ) {
-        $this->rnc->loadMissing(['tenant', 'contract', 'obra']);
+        $this->rnc->loadMissing(['tenant', 'contract', 'obra', 'disciplina']);
     }
 
     /**

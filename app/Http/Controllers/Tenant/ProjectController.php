@@ -75,6 +75,7 @@ class ProjectController extends Controller
 
         $documents = $tenant->projectDocuments()
             ->whereIn('contract_id', $contractIds)
+            ->withCount(['rncs as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta')])
             ->with([
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
@@ -85,6 +86,7 @@ class ProjectController extends Controller
                 'reviewer:id,name,email',
                 'approver:id,name,email',
                 'inactiveBy:id,name,email',
+                'openRncs:id,tenant_id,project_document_id,sequence_number,sequence_year,opened_at,status',
                 'latestVersion.uploader:id,name,email',
                 'latestVersion.reviewer:id,name,email',
                 'latestVersion.approver:id,name,email',
@@ -211,6 +213,7 @@ class ProjectController extends Controller
             ->whereIn('contract_id', $contractIds)
             ->whereNull('inactive_at')
             ->whereHas('versions', fn (Builder $query) => $query->where('status', 'ativo'))
+            ->withCount(['rncs as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta')])
             ->with([
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
@@ -220,6 +223,8 @@ class ProjectController extends Controller
                 'creator:id,name,email',
                 'reviewer:id,name,email',
                 'approver:id,name,email',
+                'openRncs:id,tenant_id,project_document_id,sequence_number,sequence_year,opened_at,status',
+                'latestVersion',
                 'latestApprovedVersion.uploader:id,name,email',
                 'latestApprovedVersion.reviewer:id,name,email',
                 'latestApprovedVersion.approver:id,name,email',

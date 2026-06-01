@@ -467,6 +467,7 @@ export default function Viewer({
     reviewMarkups = [],
     reviewChecklist = null,
     workspaceMode = 'view',
+    projectListContext = 'review',
     showCommentsPanel = false,
     showChecklistPanel = false,
 }) {
@@ -497,6 +498,10 @@ export default function Viewer({
 
     const isReady = currentStatus === 'ready' && version.aps_urn;
     const displayName = fileDisplayName(version);
+    const projectListUrl = projectListContext === 'visualizar'
+        ? route('tenant.projects.visualizar.index', tenant.slug)
+        : route('tenant.projects.review.index', tenant.slug);
+    const projectListLabel = projectListContext === 'visualizar' ? 'Visualizar projetos' : 'Analisar projetos';
     const visibleMarkups = useMemo(
         () => (showCommentsPanel ? reviewMarkups : []),
         [reviewMarkups, showCommentsPanel],
@@ -1370,9 +1375,9 @@ export default function Viewer({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                        <Link href={route('tenant.projects.review.index', tenant.slug)} className="sig-btn sig-btn-secondary">
+                        <Link href={projectListUrl} className="sig-btn sig-btn-secondary">
                             <ArrowLeft size={15} />
-                            Analisar projetos
+                            {projectListLabel}
                         </Link>
                         {isReady && showCommentsPanel && (
                             <button

@@ -1,7 +1,7 @@
 import ProjectCapModal from '@/Components/ProjectCapModal';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
-import { ClipboardList, Download, Eye, Filter, GitBranch, History, MessageSquare, Search, UserRound, X } from 'lucide-react';
+import { ChevronDown, ClipboardList, Download, Eye, Filter, GitBranch, History, MessageSquare, Search, UserRound, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 const statusClasses = {
@@ -80,6 +80,7 @@ export default function ProjectRevisions({
     const [query, setQuery] = useState('');
     const [capRow, setCapRow] = useState(null);
     const [historyRow, setHistoryRow] = useState(null);
+    const [expandedRowIds, setExpandedRowIds] = useState([]);
 
     const rows = useMemo(() => documents.flatMap((document) => (
         (document.versions || []).filter((version) => version.cap_number).map((version) => ({
@@ -107,6 +108,12 @@ export default function ProjectRevisions({
         });
     }, [rows, contractFilter, query]);
 
+    const toggleRowDetails = (rowId) => {
+        setExpandedRowIds((currentIds) => currentIds.includes(rowId)
+            ? currentIds.filter((currentId) => currentId !== rowId)
+            : [...currentIds, rowId]);
+    };
+
     return (
         <AuthenticatedLayout>
             <Head title="Projetos revisados" />
@@ -129,7 +136,7 @@ export default function ProjectRevisions({
                     </div>
                 </header>
 
-                <section className="sig-card overflow-hidden">
+                <section className="projects-module-card sig-card overflow-hidden">
                     <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
                         <FilterSelect label="Contrato" value={contractFilter} onChange={setContractFilter}>
                             <option value="todos">Todos os contratos</option>
@@ -150,7 +157,8 @@ export default function ProjectRevisions({
                     </div>
 
                     {filteredRows.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="projects-wide-only overflow-x-auto">
                             <table className="sig-table min-w-[1320px]">
                                 <thead>
                                     <tr>
@@ -248,6 +256,65 @@ export default function ProjectRevisions({
                                 </tbody>
                             </table>
                         </div>
+                        <div className="projects-compact-only">
+                            {filteredRows.map(({ id, document, version }) => {
+                                const previousVersion = previousVersionFor(document, version);
+                                const latestVersion = latestVersionFor(document);
+                                const commentsCount = versionComments(version).length;
+                                const expanded = expandedRowIds.includes(id);
+
+                                return (
+                                    <article key={id} className="border-b border-[var(--border)] last:border-b-0">
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-muted)]"
+                                            aria-expanded={expanded}
+                                            onClick={() => toggleRowDetails(id)}
+                                        >
+                                            <span className="min-w-0 flex-1">
+                                                <span className="flex flex-wrap items-center gap-2">
+                                                    <span className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</span>
+                                                    <span className="sig-pill sig-pill-amber">{version.cap_number}</span>
+                                                    <span className={`sig-pill ${statusClasses[version.status] || 'sig-pill-blue'}`}>
+                                                        {statusLabels[version.status] || version.status}
+                                                    </span>
+                                                </span>
+                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{document.code || 'Sem EAP'}</span>
+                                                <span className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+                                                    <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
+                                                    <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
+                                                    <CompactInfo label="Disciplina" value={`${document.disciplina?.sigla || '-'} - ${document.disciplina?.nome || 'Sem disciplina'}`} />
+                                                    <CompactInfo label="Revisao" value={`${previousVersion?.revision || 'Inicial'} -> ${version.revision}`} />
+                                                </span>
+                                            </span>
+                                            <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                                        </button>
+
+                                        {expanded && (
+                                            <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                                                    <CompactInfo label="Solicitante" value={personName(version.cap_requester || version.uploader)} />
+                                                    <CompactInfo label="CAP registrada em" value={formatDateTime(version.cap_requested_at || version.created_at)} />
+                                                    <CompactInfo label="Projeto atual" value={latestVersion?.revision || version.revision} />
+                                                    <CompactInfo label="Comentarios nesta revisao" value={`${commentsCount} comentario(s)`} />
+                                                </div>
+                                                <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                                                    <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={() => setHistoryRow({ document, version })}>
+                                                        <History size={13} />
+                                                        Historico
+                                                    </button>
+                                                    <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => setCapRow({ document, version })}>
+                                                        <Eye size={13} />
+                                                        CAP
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             {rows.length === 0 ? 'Nenhum projeto revisado com CAP ainda.' : 'Nenhuma CAP encontrada para os filtros selecionados.'}
@@ -293,6 +360,15 @@ function FilterSelect({ label, value, onChange, children }) {
                 </select>
             </span>
         </label>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <span className="min-w-0">
+            <span className="eyebrow block">{label}</span>
+            <span className="mt-1 block break-words text-sm font-medium text-[var(--ink-700)]">{value || '-'}</span>
+        </span>
     );
 }
 

@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArchiveX, CheckCircle2, Download, Eye, FileUp, Filter, FolderOpen, MessageSquare, Search, Send, Trash2, UploadCloud, X } from 'lucide-react';
+import { ArchiveX, CheckCircle2, ChevronDown, Download, Eye, FileUp, Filter, FolderOpen, MessageSquare, Search, Send, Trash2, TriangleAlert, UploadCloud, X } from 'lucide-react';
 import { useMemo, useRef } from 'react';
 import { useState } from 'react';
 
@@ -62,6 +62,40 @@ function isTreeActiveDocument(document) {
 
 function isInactiveDocument(document) {
     return !isTreeActiveDocument(document);
+}
+
+function OpenRncBadge({ tenant, document }) {
+    const count = Number(document?.open_rncs_count || 0);
+    const firstOpenRnc = document?.open_rncs?.[0];
+
+    if (!count) {
+        return null;
+    }
+
+    const content = (
+        <>
+            <TriangleAlert size={12} />
+            {count} {count === 1 ? 'RNC aberta' : 'RNCs abertas'}
+        </>
+    );
+
+    if (firstOpenRnc?.id) {
+        return (
+            <Link
+                href={route('tenant.qualidade.rnc.show', [tenant.slug, firstOpenRnc.id])}
+                className="sig-pill sig-pill-red inline-flex items-center gap-1 hover:underline"
+                title={`Abrir RNC ${firstOpenRnc.formatted_number || ''}`.trim()}
+            >
+                {content}
+            </Link>
+        );
+    }
+
+    return (
+        <span className="sig-pill sig-pill-red inline-flex items-center gap-1">
+            {content}
+        </span>
+    );
 }
 
 function isApsWaiting(version) {
@@ -132,6 +166,7 @@ export default function ProjectsIndex({
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
     const [inactivateDocument, setInactivateDocument] = useState(null);
+    const [expandedDocumentIds, setExpandedDocumentIds] = useState([]);
     const confirmedSubmitRef = useRef(false);
     const form = useForm({
         contract_id: defaultContractId,
@@ -361,6 +396,12 @@ export default function ProjectsIndex({
         setContractFilter(contractId);
         setObraFilter('todos');
         setDisciplinaFilter('todos');
+    };
+
+    const toggleDocumentDetails = (documentId) => {
+        setExpandedDocumentIds((currentIds) => currentIds.includes(documentId)
+            ? currentIds.filter((currentId) => currentId !== documentId)
+            : [...currentIds, documentId]);
     };
 
     const toggleCapImpact = (impact) => {
@@ -737,7 +778,7 @@ export default function ProjectsIndex({
                     </div>
                 )}
 
-                <section className="sig-card overflow-hidden">
+                <section className="projects-list-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -806,7 +847,8 @@ export default function ProjectsIndex({
                     </div>
 
                     {filteredDocuments.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="projects-desktop-table overflow-x-auto">
                         <table className="sig-table min-w-[1280px]">
                             <thead>
                                 <tr>
@@ -833,10 +875,15 @@ export default function ProjectsIndex({
                                         <tr key={document.id}>
                                             <td>
                                                 <div className="font-semibold">{document.title}</div>
-                                                <div className="mt-1 text-xs text-[var(--ink-500)]">
-                                                    Fase: {document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'}
-                                                </div>
-                                                <div className="mono mt-1 text-xs text-[var(--ink-500)]">{document.code || 'Sem codigo'} · {documentTypes[document.document_type] || document.document_type}</div>
+                                                 <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                     Fase: {document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'}
+                                                 </div>
+                                                 <div className="mono mt-1 text-xs text-[var(--ink-500)]">{document.code || 'Sem codigo'} · {documentTypes[document.document_type] || document.document_type}</div>
+                                                 {Number(document.open_rncs_count || 0) > 0 && (
+                                                     <div className="mt-2">
+                                                         <OpenRncBadge tenant={tenant} document={document} />
+                                                     </div>
+                                                 )}
                                             </td>
                                             <td>
                                                 <div className="mono text-xs">{document.contract?.code}</div>
@@ -950,6 +997,90 @@ export default function ProjectsIndex({
                             </tbody>
                         </table>
                         </div>
+
+                        <div className="projects-responsive-list">
+                            {filteredDocuments.map((document) => {
+                                const version = document.latest_version;
+                                const treeActive = isTreeActiveDocument(document);
+                                const inactive = isInactiveDocument(document);
+                                const manuallyInactive = isManuallyInactiveDocument(document);
+                                const displayStatus = manuallyInactive ? 'inativo' : document.status;
+                                const expanded = expandedDocumentIds.includes(document.id);
+
+                                return (
+                                    <article key={document.id} className="border-b border-[var(--border)] last:border-b-0">
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-muted)]"
+                                            aria-expanded={expanded}
+                                            onClick={() => toggleDocumentDetails(document.id)}
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <h3 className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</h3>
+                                                    <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
+                                                        {statusLabels[displayStatus] || displayStatus}
+                                                    </span>
+                                                </div>
+
+                                                <div className="mono mt-1 break-all text-xs text-[var(--ink-500)]">
+                                                    {document.code || 'Sem codigo'} - {version?.revision || 'Sem revisao'}
+                                                </div>
+
+                                                <div className="mt-3 grid gap-x-4 gap-y-2 text-xs text-[var(--ink-500)] sm:grid-cols-2 lg:grid-cols-4">
+                                                    <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
+                                                    <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
+                                                    <CompactInfo label="Disciplina" value={`${document.disciplina?.sigla || '-'} - ${document.disciplina?.nome || 'Sem disciplina'}`} />
+                                                    <CompactInfo label="Fase" value={document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'} />
+                                                </div>
+                                            </div>
+
+                                            <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                                        </button>
+
+                                        {Number(document.open_rncs_count || 0) > 0 && (
+                                            <div className="px-5 pb-4">
+                                                <OpenRncBadge tenant={tenant} document={document} />
+                                            </div>
+                                        )}
+
+                                        {expanded && (
+                                            <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                                                    <CompactInfo label="Tipo de documento" value={documentTypes[document.document_type] || document.document_type} />
+                                                    <CompactInfo label="Arquivo" value={fileDisplayName(version) || 'Sem arquivo'} />
+                                                    <CompactInfo label="Tamanho" value={version?.size_label || '-'} />
+                                                    <CompactInfo label="Status APS" value={derivativeLabels[version?.derivative_status] || version?.derivative_status || '-'} />
+                                                </div>
+
+                                                {shouldShowOriginalName(version) && (
+                                                    <div className="mt-3 break-all text-xs text-[var(--ink-500)]">
+                                                        Original: {version.original_name}
+                                                    </div>
+                                                )}
+
+                                                <ProjectStatusDetails document={document} inactive={inactive} manuallyInactive={manuallyInactive} />
+
+                                                <div className="mt-4 border-t border-[var(--border)] pt-4">
+                                                    <ProjectDocumentActions
+                                                        tenant={tenant}
+                                                        document={document}
+                                                        version={version}
+                                                        treeActive={treeActive}
+                                                        canAnalyzeProjects={canAnalyzeProjects}
+                                                        canDeleteProjects={canDeleteProjects}
+                                                        onProcessVersion={processVersion}
+                                                        onOpenInactivateModal={openInactivateModal}
+                                                        onDeleteDocument={deleteDocument}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             {documents.length === 0 ? 'Nenhum projeto enviado ainda.' : 'Nenhum projeto encontrado para os filtros selecionados.'}
@@ -1100,18 +1231,18 @@ function ConfirmProjectSubmitModal({
 }) {
     return (
         <div
-            className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.48)] px-4 py-6"
+            className="fixed inset-0 z-[120] flex items-stretch justify-center bg-[rgba(11,16,32,0.48)] px-3 py-3 sm:items-center sm:px-4 sm:py-6"
             role="presentation"
             onClick={onClose}
         >
             <section
-                className="w-full max-w-2xl overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)] sm:max-h-[calc(100dvh-3rem)]"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="confirm-project-submit-title"
                 onClick={(event) => event.stopPropagation()}
             >
-                <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
+                <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--border)] px-4 py-3 sm:px-5 sm:py-4">
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <CheckCircle2 size={15} />
@@ -1129,7 +1260,7 @@ function ConfirmProjectSubmitModal({
                     </button>
                 </header>
 
-                <div className="grid gap-3 px-5 py-5 sm:grid-cols-2">
+                <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
                     <ConfirmInfo label="Titulo" value={title} />
                     <ConfirmInfo label="Arquivo" value={fileName} />
                     <ConfirmInfo label="Contrato" value={contractLabel} />
@@ -1153,11 +1284,11 @@ function ConfirmProjectSubmitModal({
                     )}
                 </div>
 
-                <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
-                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose} disabled={processing}>
+                <footer className="grid shrink-0 gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 sm:flex sm:flex-wrap sm:justify-end sm:px-5 sm:py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary w-full sm:w-auto" onClick={onClose} disabled={processing}>
                         Cancelar
                     </button>
-                    <button type="button" className="sig-btn sig-btn-primary" onClick={onConfirm} disabled={processing}>
+                    <button type="button" className="sig-btn sig-btn-primary w-full sm:w-auto" onClick={onConfirm} disabled={processing}>
                         <Send size={15} />
                         Confirmar submissao
                     </button>
@@ -1273,5 +1404,110 @@ function FilterSelect({ label, value, onChange, children }) {
                 </select>
             </span>
         </label>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <div className="min-w-0">
+            <div className="eyebrow">{label}</div>
+            <div className="mt-1 break-words text-sm font-medium text-[var(--ink-700)]">{value || '-'}</div>
+        </div>
+    );
+}
+
+function ProjectStatusDetails({ document, inactive, manuallyInactive }) {
+    return (
+        <>
+            {inactive && document.inactive_at && (
+                <div className="mt-3 text-xs text-[var(--ink-500)]">
+                    Inativado por {document.inactive_by?.name || 'usuario'} em {new Date(document.inactive_at).toLocaleDateString('pt-BR')}
+                </div>
+            )}
+            {inactive && !manuallyInactive && (
+                <div className="mt-3 text-xs text-[var(--ink-500)]">
+                    Inativo na arvore ate a aprovacao.
+                </div>
+            )}
+            {inactive && document.inactive_reason && (
+                <div className="mt-1 text-xs text-[var(--ink-500)]">
+                    Motivo: {document.inactive_reason}
+                </div>
+            )}
+            {document.reviewed_at && (
+                <div className="mt-1 text-xs text-[var(--ink-500)]">
+                    {document.reviewer?.name || 'Revisado'} em {new Date(document.reviewed_at).toLocaleDateString('pt-BR')}
+                </div>
+            )}
+        </>
+    );
+}
+
+function ProjectDocumentActions({
+    tenant,
+    document,
+    version,
+    treeActive,
+    canAnalyzeProjects,
+    canDeleteProjects,
+    onProcessVersion,
+    onOpenInactivateModal,
+    onDeleteDocument,
+}) {
+    return (
+        <div className="flex flex-wrap gap-2">
+            {treeActive && version?.aps_urn ? (
+                <Link href={viewerWorkspaceUrl(tenant, version, 'view')} className="sig-btn sig-btn-primary sig-btn-sm">
+                    <Eye size={13} />
+                    Visualizar
+                </Link>
+            ) : treeActive && isApsWaiting(version) ? (
+                <span className="sig-pill bg-white text-[var(--ink-600)]">
+                    Processando APS
+                </span>
+            ) : treeActive ? (
+                <button type="button" onClick={() => onProcessVersion(version)} className="sig-btn sig-btn-primary sig-btn-sm">
+                    <Eye size={13} />
+                    Processar APS
+                </button>
+            ) : (
+                <span className="sig-pill bg-white text-[var(--ink-600)]">
+                    Fora da arvore
+                </span>
+            )}
+            {version?.aps_urn && (document.status === 'ativo' || canAnalyzeProjects) && (
+                <Link href={viewerWorkspaceUrl(tenant, version, 'comments')} className="sig-btn sig-btn-secondary sig-btn-sm">
+                    <MessageSquare size={13} />
+                    Comentarios
+                </Link>
+            )}
+            {version?.url && (
+                <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                    <Download size={13} />
+                    Baixar
+                </a>
+            )}
+            {canDeleteProjects && treeActive && (
+                <button
+                    type="button"
+                    className="sig-btn sig-btn-secondary sig-btn-sm"
+                    onClick={() => onOpenInactivateModal(document)}
+                >
+                    <ArchiveX size={13} />
+                    Inativar
+                </button>
+            )}
+            {canDeleteProjects && (
+                <ConfirmActionButton
+                    title="Excluir projeto"
+                    message={`Deseja mesmo excluir ${document.title}? O registro e o arquivo ficarao preservados no historico.`}
+                    confirmLabel="Excluir projeto"
+                    onConfirm={() => onDeleteDocument(document)}
+                >
+                    <Trash2 size={13} />
+                    Excluir
+                </ConfirmActionButton>
+            )}
+        </div>
     );
 }

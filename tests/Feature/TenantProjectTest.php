@@ -343,7 +343,7 @@ class TenantProjectTest extends TestCase
             'status' => 'ativo',
             'approved_at' => now(),
         ]);
-        $approved->versions()->create([
+        $approvedVersion = $approved->versions()->create([
             'tenant_id' => $tenant->id,
             'uploaded_by_id' => $user->id,
             'revision' => 'R00',
@@ -352,6 +352,17 @@ class TenantProjectTest extends TestCase
             'approved_at' => now(),
             'original_name' => 'aprovado.pdf',
             'file_path' => 'tenant-1/projects/aprovado.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+        ]);
+        $approved->forceFill(['status' => 'em_analise'])->save();
+        $approved->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R01',
+            'status' => 'em_analise',
+            'original_name' => 'revisao-pendente.pdf',
+            'file_path' => 'tenant-1/projects/revisao-pendente.pdf',
             'mime_type' => 'application/pdf',
             'file_size' => 120,
         ]);
@@ -400,7 +411,20 @@ class TenantProjectTest extends TestCase
             ->assertSee('Tenant\/Projects\/Tree', false)
             ->assertSee('Projeto aprovado na arvore')
             ->assertDontSee('Projeto ainda em analise')
-            ->assertDontSee('Projeto aprovado inativo');
+            ->assertDontSee('Projeto aprovado inativo')
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Tree')
+                ->where('documents.0.status', 'em_analise')
+                ->where('documents.0.latest_version.revision', 'R01')
+                ->where('documents.0.latest_approved_version.revision', 'R00'));
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.viewer', [$tenant, $approvedVersion]).'?workspace=view&origin=visualizar')
+            ->assertForbidden();
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.viewer', [$tenant, $approvedVersion]).'?workspace=comments')
+            ->assertForbidden();
     }
 
     public function test_project_submission_notifies_discipline_reviewers_by_database_and_mail(): void

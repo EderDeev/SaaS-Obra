@@ -10,6 +10,7 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
     const [editingDisciplina, setEditingDisciplina] = useState(null);
     const [contractFilter, setContractFilter] = useState('todos');
     const [query, setQuery] = useState('');
+    const [formOpen, setFormOpen] = useState(false);
     const form = useForm({
         contract_id: defaultContractId,
         nome: '',
@@ -48,8 +49,19 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
         });
     };
 
+    const openCreateForm = () => {
+        resetForm();
+        setFormOpen(true);
+    };
+
+    const closeForm = () => {
+        resetForm();
+        setFormOpen(false);
+    };
+
     const startEditing = (disciplina) => {
         setEditingDisciplina(disciplina);
+        setFormOpen(true);
         form.clearErrors();
         form.setData({
             contract_id: disciplina.contract_id || defaultContractId,
@@ -71,7 +83,10 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
 
         form.post(targetRoute, {
             preserveScroll: true,
-            onSuccess: resetForm,
+            onSuccess: () => {
+                resetForm();
+                setFormOpen(false);
+            },
         });
     };
 
@@ -89,7 +104,8 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
         <AuthenticatedLayout>
             <Head title="Parametrizacao - Disciplinas" />
 
-            <section className="sig-content grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+            <section className={`sig-content grid gap-6 ${formOpen ? 'xl:grid-cols-[380px_minmax(0,1fr)]' : ''}`}>
+                {formOpen && (
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <SlidersHorizontal size={14} />
@@ -183,16 +199,21 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                             {editingDisciplina ? <Save size={15} /> : <Plus size={15} />}
                             {editingDisciplina ? 'Salvar alteracoes' : 'Criar disciplina'}
                         </button>
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={closeForm}>
+                            <X size={15} />
+                            {editingDisciplina ? 'Cancelar' : 'Fechar'}
+                        </button>
                         {editingDisciplina && (
-                            <button type="button" className="sig-btn sig-btn-secondary" onClick={resetForm}>
+                            <button type="button" className="sig-btn sig-btn-ghost" onClick={resetForm}>
                                 <X size={15} />
-                                Cancelar
+                                Limpar
                             </button>
                         )}
                     </div>
                 </form>
+                )}
 
-                <section className="sig-card overflow-hidden">
+                <section className="param-list-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -203,7 +224,22 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                                 {filteredDisciplinas.length} de {disciplinas.length} disciplinas
                             </h2>
                         </div>
+                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={openCreateForm}>
+                            <Plus size={13} />
+                            Criar disciplina
+                        </button>
                     </header>
+
+                    {!formOpen && page.props.flash.success && (
+                        <div className="border-b border-[var(--border)] bg-[var(--green-50)] px-5 py-3 text-sm text-[var(--green)]">
+                            {page.props.flash.success}
+                        </div>
+                    )}
+                    {!formOpen && page.props.flash.error && (
+                        <div className="border-b border-[var(--border)] bg-[var(--red-50)] px-5 py-3 text-sm text-[var(--red)]">
+                            {page.props.flash.error}
+                        </div>
+                    )}
 
                     <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 lg:grid-cols-2">
                         <label>
@@ -235,7 +271,8 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                     </div>
 
                     {filteredDisciplinas.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="param-desktop-table overflow-x-auto">
                         <table className="sig-table min-w-[920px]">
                             <thead>
                                 <tr>
@@ -295,6 +332,48 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                             </tbody>
                         </table>
                         </div>
+
+                        <div className="param-responsive-list divide-y divide-[var(--border)]">
+                            {filteredDisciplinas.map((disciplina) => (
+                                <article key={disciplina.id} className="p-5">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="h-3.5 w-3.5 rounded-full border border-[var(--border)]" style={{ backgroundColor: disciplina.cor }} />
+                                        <h3 className="text-sm font-semibold text-[var(--ink-900)]">{disciplina.nome}</h3>
+                                        <span className="sig-pill sig-pill-blue">{disciplina.sigla}</span>
+                                    </div>
+
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <CompactInfo label="Contrato" value={`${disciplina.contract?.code || '-'} - ${disciplina.contract?.name || 'Sem contrato'}`} />
+                                        <CompactInfo label="Cor" value={disciplina.cor || '-'} />
+                                    </div>
+
+                                    <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-[13px] text-[var(--ink-600)]">
+                                        {disciplina.descricao || 'Sem descricao'}
+                                    </div>
+
+                                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                                        <button
+                                            type="button"
+                                            className="sig-btn sig-btn-secondary sig-btn-sm"
+                                            onClick={() => startEditing(disciplina)}
+                                        >
+                                            <Pencil size={14} />
+                                            Editar
+                                        </button>
+                                        <ConfirmActionButton
+                                            title="Deletar disciplina"
+                                            message={`Deseja mesmo excluir a disciplina ${disciplina.nome}? O registro sera mantido no historico.`}
+                                            confirmLabel="Deletar disciplina"
+                                            onConfirm={() => deleteDisciplina(disciplina)}
+                                        >
+                                            <Trash2 size={14} />
+                                            Deletar
+                                        </ConfirmActionButton>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             {disciplinas.length === 0 ? 'Nenhuma disciplina cadastrada ainda.' : 'Nenhuma disciplina encontrada para os filtros selecionados.'}
@@ -303,6 +382,15 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                 </section>
             </section>
         </AuthenticatedLayout>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <div>
+            <div className="eyebrow">{label}</div>
+            <div className="mt-1 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value}</div>
+        </div>
     );
 }
 

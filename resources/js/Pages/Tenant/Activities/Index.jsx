@@ -16,6 +16,7 @@ import {
     Search,
     Send,
     Save,
+    Tag,
     Trash2,
     Upload,
     UserRound,
@@ -36,6 +37,11 @@ const priorityMeta = {
     normal: { label: 'Normal', className: '' },
     high: { label: 'Alta', className: 'sig-pill-amber' },
     urgent: { label: 'Urgente', className: 'sig-pill-red' },
+};
+
+const categoryMeta = {
+    project: { label: 'Projeto', className: 'sig-pill-blue' },
+    quality: { label: 'Qualidade', className: 'sig-pill-green' },
 };
 
 const shortDate = (date) => {
@@ -144,6 +150,7 @@ export default function ActivitiesIndex({
     activities,
     assigneesByContract,
     priorities,
+    categories,
     canCreateActivities,
     canEditActivities,
     canDeleteActivities,
@@ -151,6 +158,7 @@ export default function ActivitiesIndex({
     const page = usePage();
     const [query, setQuery] = useState('');
     const [contractFilter, setContractFilter] = useState('todos');
+    const [categoryFilter, setCategoryFilter] = useState('todos');
     const [showCreate, setShowCreate] = useState(false);
     const [draggedActivityId, setDraggedActivityId] = useState(null);
     const [selectedActivityId, setSelectedActivityId] = useState(null);
@@ -161,6 +169,7 @@ export default function ActivitiesIndex({
         assigned_to_ids: [],
         title: '',
         description: '',
+        category: 'project',
         priority: 'normal',
         due_date: '',
     });
@@ -191,6 +200,10 @@ export default function ActivitiesIndex({
                 return false;
             }
 
+            if (categoryFilter !== 'todos' && String(activity.category || 'project') !== String(categoryFilter)) {
+                return false;
+            }
+
             if (!q) {
                 return true;
             }
@@ -198,13 +211,14 @@ export default function ActivitiesIndex({
             return [
                 activity.title,
                 activity.description,
+                categories?.[activity.category],
                 activity.contract?.code,
                 activity.contract?.name,
                 activity.contract?.obra?.nome,
                 ...activityAssignees(activity).map((user) => user.name),
             ].filter(Boolean).join(' ').toLowerCase().includes(q);
         });
-    }, [activities, contractFilter, query]);
+    }, [activities, categories, categoryFilter, contractFilter, query]);
 
     const submit = (event) => {
         event.preventDefault();
@@ -217,6 +231,7 @@ export default function ActivitiesIndex({
                     assigned_to_ids: [],
                     title: '',
                     description: '',
+                    category: 'project',
                     priority: 'normal',
                     due_date: '',
                 });
@@ -302,6 +317,16 @@ export default function ActivitiesIndex({
                             ))}
                         </select>
                     </label>
+
+                    <label className="sig-input max-w-[240px]">
+                        <Tag size={15} />
+                        <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                            <option value="todos">Todas as categorias</option>
+                            {Object.entries(categories || {}).map(([value, label]) => (
+                                <option key={value} value={value}>{label}</option>
+                            ))}
+                        </select>
+                    </label>
                 </div>
 
                 {page.props.flash.success && (
@@ -321,6 +346,13 @@ export default function ActivitiesIndex({
                                     <option key={contract.id} value={contract.id}>
                                         {contract.code} · {contract.name}
                                     </option>
+                                ))}
+                            </select>
+                        </Field>
+                        <Field label="Categoria" error={form.errors.category}>
+                            <select value={form.data.category} onChange={(event) => form.setData('category', event.target.value)} required>
+                                {Object.entries(categories || {}).map(([value, label]) => (
+                                    <option key={value} value={value}>{label}</option>
                                 ))}
                             </select>
                         </Field>
@@ -478,6 +510,7 @@ export default function ActivitiesIndex({
                     tenant={tenant}
                     assigneesByContract={assigneesByContract}
                     priorities={priorities}
+                    categories={categories}
                     canEditActivities={canEditActivities}
                     canDeleteActivities={canDeleteActivities}
                     onClose={() => setSelectedActivityId(null)}
@@ -489,6 +522,7 @@ export default function ActivitiesIndex({
 
 function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragStart, onDragEnd }) {
     const priority = priorityMeta[activity.priority] || priorityMeta.normal;
+    const category = categoryMeta[activity.category || 'project'] || categoryMeta.project;
     const due = dueInfo(activity.due_date, activity.status);
     const dueDate = shortDate(activity.due_date);
     const contractName = activity.contract?.obra?.nome || activity.contract?.name;
@@ -503,9 +537,15 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
             className={`sig-card min-w-0 max-w-full overflow-hidden p-4 transition hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] ${canEditActivities ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${dragging ? 'opacity-60 ring-2 ring-[var(--primary-100)]' : ''}`}
         >
             <div className="mb-3 flex min-w-0 flex-wrap items-start justify-between gap-2">
-                <span className={`sig-pill ${priority.className}`}>
-                    <span className="sig-pill-dot" />
-                    {priority.label}
+                <span className="flex flex-wrap gap-2">
+                    <span className={`sig-pill ${category.className}`}>
+                        <Tag size={12} />
+                        {category.label}
+                    </span>
+                    <span className={`sig-pill ${priority.className}`}>
+                        <span className="sig-pill-dot" />
+                        {priority.label}
+                    </span>
                 </span>
                 <span className={`sig-pill min-w-0 ${due.className}`}>
                     <Clock3 size={12} />
@@ -566,18 +606,20 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
     );
 }
 
-function ActivityModal({ activity, tenant, assigneesByContract, priorities, canEditActivities, canDeleteActivities, onClose }) {
+function ActivityModal({ activity, tenant, assigneesByContract, priorities, categories, canEditActivities, canDeleteActivities, onClose }) {
     const commentForm = useForm({ body: '' });
     const fileForm = useForm({ file: null });
     const [editing, setEditing] = useState(false);
     const editForm = useForm({
         title: activity.title || '',
         description: activity.description || '',
+        category: activity.category || 'project',
         priority: activity.priority || 'normal',
         due_date: activity.due_date ? String(activity.due_date).slice(0, 10) : '',
         assigned_to_ids: activityAssignees(activity).map((user) => user.id),
     });
     const priority = priorityMeta[activity.priority] || priorityMeta.normal;
+    const category = categoryMeta[activity.category || 'project'] || categoryMeta.project;
     const due = dueInfo(activity.due_date, activity.status);
     const assignees = activityAssignees(activity);
     const contractName = activity.contract?.obra?.nome || activity.contract?.name;
@@ -636,6 +678,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, canE
                 <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
                     <div className="min-w-0">
                         <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <span className={`sig-pill ${category.className}`}><Tag size={12} />{category.label}</span>
                             <span className={`sig-pill ${priority.className}`}><span className="sig-pill-dot" />{priority.label}</span>
                             <span className={`sig-pill ${due.className}`}><Clock3 size={12} />{due.label}</span>
                             <span className="mono text-[12px] text-[var(--ink-500)]">{activity.contract?.code}</span>
@@ -677,6 +720,13 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, canE
                                 <select value={editForm.data.priority} onChange={(event) => editForm.setData('priority', event.target.value)} required>
                                     {priorities.map((item) => (
                                         <option key={item} value={item}>{priorityMeta[item]?.label || item}</option>
+                                    ))}
+                                </select>
+                            </Field>
+                            <Field label="Categoria" error={editForm.errors.category}>
+                                <select value={editForm.data.category} onChange={(event) => editForm.setData('category', event.target.value)} required>
+                                    {Object.entries(categories || {}).map(([value, label]) => (
+                                        <option key={value} value={value}>{label}</option>
                                     ))}
                                 </select>
                             </Field>

@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link } from '@inertiajs/react';
 import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardX, Clock3, Gauge, SearchCheck } from 'lucide-react';
 
@@ -19,7 +20,7 @@ export default function RelatorioNaoConformidadeDashboard({
     metrics,
     statusCounts,
     gravidadeCounts,
-    naturezaCounts,
+    disciplinaCounts,
     monthlyCounts,
     recentRncs = [],
     responseOverdueRncs = [],
@@ -62,7 +63,7 @@ export default function RelatorioNaoConformidadeDashboard({
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-2">
                     <BarPanel title="Gravidade" counts={gravidadeCounts} />
-                    <BarPanel title="Natureza" counts={naturezaCounts} />
+                    <BarPanel title="Disciplina" counts={disciplinaCounts} />
                 </div>
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)]">
@@ -80,7 +81,7 @@ export default function RelatorioNaoConformidadeDashboard({
                                     <tr>
                                         <th>RNC</th>
                                         <th>Obra</th>
-                                        <th>Natureza</th>
+                                        <th>Disciplina</th>
                                         <th>Status</th>
                                         <th>Abertura</th>
                                     </tr>
@@ -97,7 +98,7 @@ export default function RelatorioNaoConformidadeDashboard({
                                                 <div className="font-semibold text-[var(--ink-900)]">{rnc.obra?.codigo || '-'}</div>
                                                 <div className="text-xs text-[var(--ink-500)]">{rnc.obra?.nome || '-'}</div>
                                             </td>
-                                            <td>{rnc.natureza}</td>
+                                            <td>{rncDisciplinaLabel(rnc)}</td>
                                             <td>
                                                 <span className={`sig-pill ${statusClass[rnc.status] || ''}`}>{rnc.status}</span>
                                             </td>

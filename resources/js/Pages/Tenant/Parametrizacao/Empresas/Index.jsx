@@ -36,6 +36,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
     const [logoPreviewOrigin, setLogoPreviewOrigin] = useState(null);
     const [contractFilter, setContractFilter] = useState('todos');
     const [tipoFilter, setTipoFilter] = useState('todos');
+    const [formOpen, setFormOpen] = useState(false);
     const form = useForm({
         nome: '',
         contract_id: defaultContractId,
@@ -114,6 +115,16 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
         });
     };
 
+    const openCreateForm = () => {
+        resetForm();
+        setFormOpen(true);
+    };
+
+    const closeForm = () => {
+        resetForm();
+        setFormOpen(false);
+    };
+
     const startEditing = (empresa) => {
         if (logoPreviewRef.current) {
             URL.revokeObjectURL(logoPreviewRef.current);
@@ -121,6 +132,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
         }
 
         setEditingEmpresa(empresa);
+        setFormOpen(true);
         setLogoPreview(empresa.logo_url || null);
         setLogoPreviewOrigin(empresa.logo_url ? 'stored' : null);
         form.clearErrors();
@@ -148,6 +160,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
             preserveScroll: true,
             onSuccess: () => {
                 resetForm();
+                setFormOpen(false);
             },
         });
     };
@@ -166,7 +179,8 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
         <AuthenticatedLayout>
             <Head title="Parametrização - Empresas" />
 
-            <section className="sig-content grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+            <section className={`sig-content grid gap-6 ${formOpen ? 'xl:grid-cols-[380px_minmax(0,1fr)]' : ''}`}>
+                {formOpen && (
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <SlidersHorizontal size={14} />
@@ -300,16 +314,21 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                             {editingEmpresa ? <Save size={15} /> : <Plus size={15} />}
                             {editingEmpresa ? 'Salvar alterações' : 'Criar empresa'}
                         </button>
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={closeForm}>
+                            <X size={15} />
+                            {editingEmpresa ? 'Cancelar' : 'Fechar'}
+                        </button>
                         {editingEmpresa && (
-                            <button type="button" className="sig-btn sig-btn-secondary" onClick={resetForm}>
+                            <button type="button" className="sig-btn sig-btn-ghost" onClick={resetForm}>
                                 <X size={15} />
-                                Cancelar
+                                Limpar
                             </button>
                         )}
                     </div>
                 </form>
+                )}
 
-                <section className="sig-card overflow-hidden">
+                <section className="param-list-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -320,7 +339,22 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                                 {filteredEmpresas.length} de {empresas.length} empresas
                             </h2>
                         </div>
+                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={openCreateForm}>
+                            <Plus size={13} />
+                            Criar empresa
+                        </button>
                     </header>
+
+                    {!formOpen && page.props.flash.success && (
+                        <div className="border-b border-[var(--border)] bg-[var(--green-50)] px-5 py-3 text-sm text-[var(--green)]">
+                            {page.props.flash.success}
+                        </div>
+                    )}
+                    {!formOpen && page.props.flash.error && (
+                        <div className="border-b border-[var(--border)] bg-[var(--red-50)] px-5 py-3 text-sm text-[var(--red)]">
+                            {page.props.flash.error}
+                        </div>
+                    )}
 
                     <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 lg:grid-cols-2">
                         <label>
@@ -359,7 +393,8 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                     </div>
 
                     {filteredEmpresas.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="param-desktop-table overflow-x-auto">
                         <table className="sig-table min-w-[940px]">
                             <thead>
                                 <tr>
@@ -423,6 +458,55 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                             </tbody>
                         </table>
                         </div>
+
+                        <div className="param-responsive-list divide-y divide-[var(--border)]">
+                            {filteredEmpresas.map((empresa) => (
+                                <article key={empresa.id} className="p-5">
+                                    <div className="flex items-start gap-3">
+                                        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] text-[11px] font-bold text-[var(--ink-600)]">
+                                            {empresa.logo_url ? (
+                                                <img src={empresa.logo_url} alt={empresa.nome} className="h-full w-full object-contain" />
+                                            ) : (
+                                                initials(empresa.sigla || empresa.nome)
+                                            )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="text-sm font-semibold text-[var(--ink-900)]">{empresa.nome}</h3>
+                                                <span className="sig-pill sig-pill-blue">{empresa.tipo_empresa?.nome || 'Sem tipo'}</span>
+                                            </div>
+                                            <div className="mono mt-1 text-xs text-[var(--ink-500)]">{empresa.sigla || '-'}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <CompactInfo label="Contrato" value={`${empresa.contract?.code || '-'} - ${empresa.contract?.name || 'Sem contrato'}`} />
+                                        <CompactInfo label="CNPJ" value={empresa.cnpj || '-'} />
+                                    </div>
+
+                                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                                        <button
+                                            type="button"
+                                            className="sig-btn sig-btn-secondary sig-btn-sm"
+                                            onClick={() => startEditing(empresa)}
+                                        >
+                                            <Pencil size={14} />
+                                            Editar
+                                        </button>
+                                        <ConfirmActionButton
+                                            title="Deletar empresa"
+                                            message={`Deseja mesmo excluir a empresa ${empresa.nome}? Esta acao nao deve ser feita por engano.`}
+                                            confirmLabel="Deletar empresa"
+                                            onConfirm={() => deleteEmpresa(empresa)}
+                                        >
+                                            <Trash2 size={14} />
+                                            Deletar
+                                        </ConfirmActionButton>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             {empresas.length === 0 ? 'Nenhuma empresa cadastrada ainda.' : 'Nenhuma empresa encontrada para os filtros selecionados.'}
@@ -431,6 +515,15 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                 </section>
             </section>
         </AuthenticatedLayout>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <div>
+            <div className="eyebrow">{label}</div>
+            <div className="mt-1 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value}</div>
+        </div>
     );
 }
 

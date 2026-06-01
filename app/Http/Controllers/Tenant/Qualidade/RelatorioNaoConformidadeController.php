@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Tenant\Qualidade;
 
 use App\Http\Controllers\Controller;
 use App\Models\Contract;
+use App\Models\Disciplina;
 use App\Models\Empresa;
+use App\Models\Obra;
+use App\Models\ProjectDocument;
 use App\Models\RelatorioNaoConformidade;
 use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
@@ -28,8 +31,6 @@ use Inertia\Response as InertiaResponse;
 
 class RelatorioNaoConformidadeController extends Controller
 {
-    private const NATUREZAS = ['Terraplanagem', 'Qualidade', 'Pavimentação', 'Ambiental', 'Sinalização', 'Drenagem'];
-
     private const GRAVIDADES = ['Leve', 'Média', 'Grave', 'Gravíssima'];
 
     private const PDF_PHOTO_WIDTH = 1000;
@@ -51,6 +52,7 @@ class RelatorioNaoConformidadeController extends Controller
             ->with([
                 'contract:id,code,name',
                 'obra:id,nome,codigo',
+                'disciplina:id,nome,sigla,cor',
                 'contratante:id,nome,sigla,logo_path',
                 'contratada:id,nome,sigla,logo_path',
                 'creator:id,name',
@@ -82,6 +84,7 @@ class RelatorioNaoConformidadeController extends Controller
             ->with([
                 'contract:id,code,name',
                 'obra:id,nome,codigo',
+                'disciplina:id,nome,sigla,cor',
                 'contratante:id,nome,sigla',
                 'contratada:id,nome,sigla',
                 'acoesCorretivas:id,tenant_id,relatorio_nao_conformidade_id,user_id,status,prazo_execucao_proposto,submitted_at,reviewed_at',
@@ -124,7 +127,7 @@ class RelatorioNaoConformidadeController extends Controller
             ],
             'statusCounts' => $this->countBy($rncs, 'status'),
             'gravidadeCounts' => $this->countBy($rncs, 'gravidade'),
-            'naturezaCounts' => $this->countBy($rncs, 'natureza'),
+            'disciplinaCounts' => $this->countRncDisciplines($rncs),
             'monthlyCounts' => $monthlyCounts,
             'recentRncs' => $rncs->take(8)->values(),
             'responseOverdueRncs' => $atrasadasResposta->take(6)->values(),
@@ -173,6 +176,10 @@ class RelatorioNaoConformidadeController extends Controller
                 'required',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
+            'project_document_id' => [
+                'nullable',
+                Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
             'contratante_empresa_id' => [
                 'required',
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
@@ -184,7 +191,10 @@ class RelatorioNaoConformidadeController extends Controller
             'opened_at' => ['required', 'date'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'natureza' => ['required', Rule::in(self::NATUREZAS)],
+            'disciplina_id' => [
+                'required',
+                Rule::exists('disciplinas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
             'gravidade' => ['required', Rule::in(self::GRAVIDADES)],
             'descricao_problema' => ['required', 'string', 'max:10000'],
             'observacao' => ['nullable', 'string', 'max:10000'],
@@ -200,6 +210,8 @@ class RelatorioNaoConformidadeController extends Controller
             'obra_id.required' => 'Selecione a obra.',
             'contratante_empresa_id.required' => 'Selecione a empresa contratante.',
             'contratada_empresa_id.required' => 'Selecione a empresa contratada.',
+            'disciplina_id.required' => 'Selecione a disciplina.',
+            'disciplina_id.exists' => 'Selecione uma disciplina valida.',
             'prazo_resposta_acao_corretiva.required' => 'Informe o prazo para resposta de ação corretiva.',
             'prazo_resposta_acao_corretiva.after_or_equal' => 'O prazo para resposta de ação corretiva não pode ser anterior à data de abertura.',
             'photos.*.image' => 'Envie apenas imagens no registro fotográfico.',
@@ -214,6 +226,8 @@ class RelatorioNaoConformidadeController extends Controller
 
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
+        $projectDocument = $this->projectDocumentForRnc($tenant, $data['project_document_id'] ?? null, $contract, $obra);
+        $disciplina = $this->disciplinaForContract($tenant, (int) $data['disciplina_id'], $contract);
 
         if (! $contratante || ! $contratada) {
             throw ValidationException::withMessages([
@@ -221,8 +235,14 @@ class RelatorioNaoConformidadeController extends Controller
             ]);
         }
 
+        if (! $disciplina) {
+            throw ValidationException::withMessages([
+                'disciplina_id' => 'Selecione uma disciplina vinculada ao mesmo contrato da obra.',
+            ]);
+        }
+
         $sequenceYear = Carbon::parse($data['opened_at'])->year;
-        $rnc = DB::transaction(function () use ($tenant, $contract, $obra, $contratante, $contratada, $request, $data, $sequenceYear): RelatorioNaoConformidade {
+        $rnc = DB::transaction(function () use ($tenant, $contract, $obra, $projectDocument, $disciplina, $contratante, $contratada, $request, $data, $sequenceYear): RelatorioNaoConformidade {
             $nextSequence = ((int) $tenant->relatorioNaoConformidades()
                 ->where('sequence_year', $sequenceYear)
                 ->lockForUpdate()
@@ -233,13 +253,15 @@ class RelatorioNaoConformidadeController extends Controller
                 'sequence_year' => $sequenceYear,
                 'contract_id' => $contract->id,
                 'obra_id' => $obra->id,
+                'project_document_id' => $projectDocument?->id,
+                'disciplina_id' => $disciplina->id,
                 'contratante_empresa_id' => $contratante->id,
                 'contratada_empresa_id' => $contratada->id,
                 'created_by_id' => $request->user()->id,
                 'opened_at' => $data['opened_at'],
                 'latitude' => $data['latitude'] ?? null,
                 'longitude' => $data['longitude'] ?? null,
-                'natureza' => $data['natureza'],
+                'natureza' => $disciplina->nome,
                 'gravidade' => $data['gravidade'],
                 'descricao_problema' => $data['descricao_problema'],
                 'observacao' => $data['observacao'] ?? null,
@@ -285,6 +307,8 @@ class RelatorioNaoConformidadeController extends Controller
 
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
+        $projectDocument = $this->projectDocumentForRnc($tenant, $data['project_document_id'] ?? null, $contract, $obra);
+        $disciplina = $this->disciplinaForContract($tenant, (int) $data['disciplina_id'], $contract);
 
         if (! $contratante || ! $contratada) {
             throw ValidationException::withMessages([
@@ -292,15 +316,23 @@ class RelatorioNaoConformidadeController extends Controller
             ]);
         }
 
+        if (! $disciplina) {
+            throw ValidationException::withMessages([
+                'disciplina_id' => 'Selecione uma disciplina vinculada ao mesmo contrato da obra.',
+            ]);
+        }
+
         $rnc->update([
             'contract_id' => $contract->id,
             'obra_id' => $obra->id,
+            'project_document_id' => $projectDocument?->id,
+            'disciplina_id' => $disciplina->id,
             'contratante_empresa_id' => $contratante->id,
             'contratada_empresa_id' => $contratada->id,
             'opened_at' => $data['opened_at'],
             'latitude' => $data['latitude'] ?? null,
             'longitude' => $data['longitude'] ?? null,
-            'natureza' => $data['natureza'],
+            'natureza' => $disciplina->nome,
             'gravidade' => $data['gravidade'],
             'descricao_problema' => $data['descricao_problema'],
             'observacao' => $data['observacao'] ?? null,
@@ -483,7 +515,22 @@ class RelatorioNaoConformidadeController extends Controller
                 ->with('tipoEmpresa:id,nome')
                 ->orderBy('nome')
                 ->get(['id', 'tenant_id', 'contract_id', 'tipo_empresa_id', 'nome', 'cnpj', 'sigla', 'logo_path']),
-            'naturezas' => self::NATUREZAS,
+            'projects' => $tenant->projectDocuments()
+                ->whereIn('contract_id', $contractIds)
+                ->with(['latestVersion' => fn ($query) => $query->select([
+                    'project_document_versions.id',
+                    'project_document_versions.project_document_id',
+                    'project_document_versions.revision',
+                    'project_document_versions.status',
+                ])])
+                ->orderBy('code')
+                ->orderBy('title')
+                ->get(['id', 'tenant_id', 'contract_id', 'obra_id', 'title', 'code', 'status']),
+            'disciplinas' => $tenant->disciplinas()
+                ->whereIn('contract_id', $contractIds)
+                ->orderBy('sigla')
+                ->orderBy('nome')
+                ->get(['id', 'tenant_id', 'contract_id', 'nome', 'sigla', 'cor']),
             'gravidades' => self::GRAVIDADES,
         ];
     }
@@ -494,6 +541,10 @@ class RelatorioNaoConformidadeController extends Controller
             'obra_id' => [
                 'required',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
+            'project_document_id' => [
+                'nullable',
+                Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'contratante_empresa_id' => [
                 'required',
@@ -506,7 +557,10 @@ class RelatorioNaoConformidadeController extends Controller
             'opened_at' => ['required', 'date'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'natureza' => ['required', Rule::in(self::NATUREZAS)],
+            'disciplina_id' => [
+                'required',
+                Rule::exists('disciplinas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
             'gravidade' => ['required', Rule::in(self::GRAVIDADES)],
             'descricao_problema' => ['required', 'string', 'max:10000'],
             'observacao' => ['nullable', 'string', 'max:10000'],
@@ -540,6 +594,8 @@ class RelatorioNaoConformidadeController extends Controller
             'obra_id.required' => 'Selecione a obra.',
             'contratante_empresa_id.required' => 'Selecione a empresa contratante.',
             'contratada_empresa_id.required' => 'Selecione a empresa contratada.',
+            'disciplina_id.required' => 'Selecione a disciplina.',
+            'disciplina_id.exists' => 'Selecione uma disciplina valida.',
             'prazo_resposta_acao_corretiva.required' => 'Informe o prazo para resposta de ação corretiva.',
             'prazo_resposta_acao_corretiva.after_or_equal' => 'O prazo para resposta de ação corretiva não pode ser anterior à data de abertura.',
             'photos.*.image' => 'Envie apenas imagens no registro fotográfico.',
@@ -946,6 +1002,28 @@ class RelatorioNaoConformidadeController extends Controller
             ->all();
     }
 
+    /**
+     * @param  Collection<int, RelatorioNaoConformidade>  $rncs
+     * @return array<string, int>
+     */
+    private function countRncDisciplines(Collection $rncs): array
+    {
+        return $rncs
+            ->groupBy(fn (RelatorioNaoConformidade $rnc): string => $this->disciplinaLabel($rnc))
+            ->map(fn (Collection $items): int => $items->count())
+            ->sortDesc()
+            ->all();
+    }
+
+    private function disciplinaLabel(RelatorioNaoConformidade $rnc): string
+    {
+        if ($rnc->disciplina?->sigla) {
+            return $rnc->disciplina->sigla.' - '.$rnc->disciplina->nome;
+        }
+
+        return $rnc->disciplina?->nome ?: ($rnc->natureza ?: 'Sem disciplina');
+    }
+
     private function canReviewRncProposals(User $user, Tenant $tenant): bool
     {
         return RncPermissions::canAny($user, $tenant, RncPermissions::REVIEW);
@@ -957,6 +1035,35 @@ class RelatorioNaoConformidadeController extends Controller
             ->where('id', $empresaId)
             ->where('contract_id', $contract->id)
             ->first();
+    }
+
+    private function disciplinaForContract(Tenant $tenant, int $disciplinaId, Contract $contract): ?Disciplina
+    {
+        return $tenant->disciplinas()
+            ->where('id', $disciplinaId)
+            ->where('contract_id', $contract->id)
+            ->first();
+    }
+
+    private function projectDocumentForRnc(Tenant $tenant, mixed $projectDocumentId, Contract $contract, Obra $obra): ?ProjectDocument
+    {
+        if (blank($projectDocumentId)) {
+            return null;
+        }
+
+        $projectDocument = $tenant->projectDocuments()
+            ->whereKey($projectDocumentId)
+            ->where('contract_id', $contract->id)
+            ->where('obra_id', $obra->id)
+            ->first();
+
+        if (! $projectDocument) {
+            throw ValidationException::withMessages([
+                'project_document_id' => 'Selecione um projeto vinculado a mesma obra e ao mesmo contrato da RNC.',
+            ]);
+        }
+
+        return $projectDocument;
     }
 
     /**
@@ -983,6 +1090,8 @@ class RelatorioNaoConformidadeController extends Controller
         $rnc->load([
             'contract:id,tenant_id,code,name,total_value,currency,starts_at,ends_at,city,state',
             'obra:id,tenant_id,contract_id,nome,codigo,tipo',
+            'projectDocument:id,tenant_id,contract_id,obra_id,title,code,document_number,status',
+            'disciplina:id,tenant_id,contract_id,nome,sigla,cor',
             'contratante:id,nome,cnpj,sigla,logo_path',
             'contratada:id,nome,cnpj,sigla,logo_path',
             'creator:id,name,email',

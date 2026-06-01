@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Check, ClipboardList, Filter, FolderOpen, Plus, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react';
+import { Check, ChevronDown, ClipboardList, Filter, FolderOpen, Plus, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 function contractLabel(contract) {
@@ -41,6 +41,7 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
     const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
     const [tipoFilter, setTipoFilter] = useState('todos');
     const [userFilter, setUserFilter] = useState('');
+    const [expandedResponsavelIds, setExpandedResponsavelIds] = useState([]);
 
     const disciplinas = disciplinasByContract[form.data.contract_id] || [];
     const users = usersByContract[form.data.contract_id] || [];
@@ -144,6 +145,12 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
     const updateContractFilter = (contractId) => {
         setContractFilter(contractId);
         setDisciplinaFilter('todos');
+    };
+
+    const toggleResponsavelDetails = (responsavelId) => {
+        setExpandedResponsavelIds((currentIds) => currentIds.includes(responsavelId)
+            ? currentIds.filter((currentId) => currentId !== responsavelId)
+            : [...currentIds, responsavelId]);
     };
 
     return (
@@ -289,7 +296,7 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
                     </button>
                 </form>
 
-                <section className="sig-card overflow-hidden">
+                <section className="projects-module-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -336,7 +343,8 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
                     </div>
 
                     {filteredResponsaveis.length > 0 ? (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="projects-wide-only overflow-x-auto">
                             <table className="sig-table min-w-[1080px]">
                                 <thead>
                                     <tr>
@@ -411,6 +419,66 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
                                 </tbody>
                             </table>
                         </div>
+                        <div className="projects-compact-only">
+                            {filteredResponsaveis.map((responsavel) => {
+                                const expanded = expandedResponsavelIds.includes(responsavel.id);
+
+                                return (
+                                    <article key={responsavel.id} className="border-b border-[var(--border)] last:border-b-0">
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-muted)]"
+                                            aria-expanded={expanded}
+                                            onClick={() => toggleResponsavelDetails(responsavel.id)}
+                                        >
+                                            <span className="flex min-w-0 items-center gap-3">
+                                                <Avatar user={responsavel.user} />
+                                                <span className="min-w-0">
+                                                    <span className="block truncate text-sm font-semibold text-[var(--ink-900)]">{responsavel.user?.name}</span>
+                                                    <span className="mt-1 block truncate text-xs text-[var(--ink-500)]">{responsavel.user?.email}</span>
+                                                    <span className="mt-2 flex flex-wrap gap-2">
+                                                        <span className={`sig-pill ${responsavel.tipo === 'aprovacao' ? 'sig-pill-amber' : 'sig-pill-blue'}`}>
+                                                            {responsavel.tipo_label}
+                                                        </span>
+                                                    </span>
+                                                </span>
+                                            </span>
+                                            <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                                        </button>
+
+                                        {expanded && (
+                                            <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                                                <div className="grid gap-4 sm:grid-cols-3">
+                                                    <CompactInfo label="Contrato" value={`${responsavel.contract?.code || '-'} - ${responsavel.contract?.name || 'Sem contrato'}`} />
+                                                    <CompactInfo label="Disciplina" value={`${responsavel.disciplina?.sigla || '-'} - ${responsavel.disciplina?.nome || 'Sem disciplina'}`} />
+                                                    <CompactInfo label="Cadastrado em" value={responsavel.created_at} />
+                                                </div>
+                                                <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                                                    <button
+                                                        type="button"
+                                                        className="sig-btn sig-btn-secondary sig-btn-sm"
+                                                        onClick={() => loadResponsavel(responsavel)}
+                                                    >
+                                                        Editar
+                                                    </button>
+                                                    <ConfirmActionButton
+                                                        title="Remover responsavel"
+                                                        message={`Deseja mesmo remover ${responsavel.user?.name || 'este usuario'} desta responsabilidade?`}
+                                                        confirmLabel="Remover responsavel"
+                                                        className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]"
+                                                        onConfirm={() => router.delete(route('tenant.projects.responsaveis.destroy', [tenant.slug, responsavel.id]), { preserveScroll: true })}
+                                                    >
+                                                        <Trash2 size={13} />
+                                                        Remover
+                                                    </ConfirmActionButton>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                        </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             {responsaveis.length === 0
@@ -447,5 +515,14 @@ function Field({ label, error, children }) {
             <span className="sig-input">{children}</span>
             {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
         </label>
+    );
+}
+
+function CompactInfo({ label, value }) {
+    return (
+        <div className="min-w-0">
+            <div className="eyebrow">{label}</div>
+            <div className="mt-1 break-words text-sm font-medium text-[var(--ink-700)]">{value || '-'}</div>
+        </div>
     );
 }

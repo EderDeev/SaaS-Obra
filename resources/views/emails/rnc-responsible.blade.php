@@ -35,8 +35,10 @@
                                     <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">{{ $rnc->obra?->codigo }} - {{ $rnc->obra?->nome }}</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Natureza</td>
-                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">{{ $rnc->natureza }}</td>
+                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Disciplina</td>
+                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">
+                                        {{ $rnc->disciplina?->sigla ? $rnc->disciplina->sigla.' - '.$rnc->disciplina->nome : ($rnc->disciplina?->nome ?: $rnc->natureza) }}
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Gravidade</td>
