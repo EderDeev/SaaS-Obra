@@ -10,7 +10,9 @@ fi
 
 php artisan storage:link || true
 
-exec php -d upload_max_filesize=64M \
-    -d post_max_size=64M \
+exec php -d upload_max_filesize=100M \
+    -d post_max_size=128M \
     -d memory_limit=512M \
+    -d max_execution_time=0 \
+    -d max_input_time=0 \
     artisan serve --host=0.0.0.0 --port="${PORT:-8080}"

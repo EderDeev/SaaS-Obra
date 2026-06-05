@@ -39,6 +39,10 @@ class ResolveTenant
         $request->attributes->set('tenant', $tenant);
         app()->instance('currentTenant', $tenant);
 
+        if ($request->hasSession()) {
+            $request->session()->put('current_tenant_id', $tenant->id);
+        }
+
         if (DB::connection()->getDriverName() === 'pgsql') {
             DB::select("select set_config('app.current_tenant', ?, false)", [(string) $tenant->id]);
         }

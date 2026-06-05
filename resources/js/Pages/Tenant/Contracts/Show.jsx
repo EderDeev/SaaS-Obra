@@ -1,5 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import {
     Activity,
     AlertTriangle,
@@ -76,50 +76,17 @@ const initials = (name = '?') => name
 export default function ContractShow({
     tenant,
     contract,
-    canManageParticipants,
-    participantRoles,
     recentActivities = [],
     recentRncs = [],
     recentProjects = [],
     capabilities = {},
 }) {
-    const page = usePage();
-    const form = useForm({
-        name: '',
-        email: '',
-        side: 'client',
-        role: 'client_viewer',
-    });
-
-    const rolesForSide = participantRoles[form.data.side] || [];
     const statusMeta = contractStatusMeta[contract.status] || { label: contract.status, pill: '' };
     const badge = (contract.code || contract.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
     const contractTitle = contract.obra?.nome || contract.name;
     const cliente = contract.cliente_empresa?.nome || contract.client_company_name || 'Cliente não informado';
     const construtora = contract.construtora_empresa?.nome || contract.contractor_company_name || 'Construtora não informada';
     const location = [contract.city, contract.state].filter(Boolean).join(' - ') || 'Local não informado';
-
-    const submit = (event) => {
-        event.preventDefault();
-
-        form.post(route('tenant.contracts.participants.store', [page.props.currentTenant.slug, contract.id]), {
-            preserveScroll: true,
-            onSuccess: () => form.setData({
-                name: '',
-                email: '',
-                side: 'client',
-                role: 'client_viewer',
-            }),
-        });
-    };
-
-    const updateSide = (side) => {
-        form.setData((data) => ({
-            ...data,
-            side,
-            role: participantRoles[side]?.[0] || '',
-        }));
-    };
 
     return (
         <AuthenticatedLayout>
@@ -212,15 +179,6 @@ export default function ContractShow({
 
                     <aside className="grid content-start gap-5">
                         <ContractDetails contract={contract} cliente={cliente} construtora={construtora} location={location} />
-                        {canManageParticipants && (
-                            <ParticipantForm
-                                form={form}
-                                rolesForSide={rolesForSide}
-                                updateSide={updateSide}
-                                submit={submit}
-                                success={page.props.flash.success}
-                            />
-                        )}
                         <TeamCard participants={contract.participants || []} />
                     </aside>
                 </section>
@@ -318,43 +276,6 @@ function InfoRow({ label, value }) {
             <dt className="text-[var(--ink-500)]">{label}</dt>
             <dd className="text-right font-medium text-[var(--ink-900)]">{value}</dd>
         </div>
-    );
-}
-
-function ParticipantForm({ form, rolesForSide, updateSide, submit, success }) {
-    return (
-        <form className="sig-card p-5" onSubmit={submit}>
-            <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Adicionar participante</h2>
-            {success && <div className="mt-3 rounded-lg bg-[var(--green-50)] px-3 py-2 text-sm text-[var(--green)]">{success}</div>}
-            <div className="mt-4 grid gap-3">
-                <Field label="Nome"><input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} required /></Field>
-                <Field label="E-mail"><input value={form.data.email} onChange={(event) => form.setData('email', event.target.value)} type="email" required /></Field>
-                <div className="grid grid-cols-2 gap-3">
-                    <Field label="Lado">
-                        <select value={form.data.side} onChange={(event) => updateSide(event.target.value)}>
-                            <option value="client">Cliente</option>
-                            <option value="contractor">Construtora</option>
-                            <option value="manager">Gerenciadora</option>
-                        </select>
-                    </Field>
-                    <Field label="Papel">
-                        <select value={form.data.role} onChange={(event) => form.setData('role', event.target.value)}>
-                            {rolesForSide.map((role) => <option key={role} value={role}>{role}</option>)}
-                        </select>
-                    </Field>
-                </div>
-            </div>
-            <button className="sig-btn sig-btn-primary mt-4" disabled={form.processing}><Plus size={14} /> Adicionar</button>
-        </form>
-    );
-}
-
-function Field({ label, children }) {
-    return (
-        <label>
-            <span className="eyebrow mb-1 block">{label}</span>
-            <span className="sig-input">{children}</span>
-        </label>
     );
 }
 

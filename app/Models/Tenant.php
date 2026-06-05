@@ -90,6 +90,21 @@ class Tenant extends Model
         return $this->hasMany(ProjectDisciplineResponsavel::class);
     }
 
+    public function orcamentoInsumos(): HasMany
+    {
+        return $this->hasMany(OrcamentoInsumo::class);
+    }
+
+    public function orcamentoComposicoes(): HasMany
+    {
+        return $this->hasMany(OrcamentoComposicao::class);
+    }
+
+    public function orcamentoComposicaoItems(): HasMany
+    {
+        return $this->hasMany(OrcamentoComposicaoItem::class);
+    }
+
     public function getRouteKeyName(): string
     {
         return 'slug';

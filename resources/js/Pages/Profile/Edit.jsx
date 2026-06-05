@@ -29,8 +29,6 @@ export default function ProfileEdit() {
     const avatarPreviewRef = useRef(null);
     const form = useForm({
         _method: 'patch',
-        name: user.name,
-        email: user.email,
         avatar: null,
     });
 
@@ -203,7 +201,7 @@ export default function ProfileEdit() {
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="eyebrow">Sistema</div>
                     <h1 className="mt-2 text-xl font-semibold">Perfil</h1>
-                    <p className="mt-1 text-sm text-[var(--ink-500)]">Atualize os dados básicos da sua conta.</p>
+                    <p className="mt-1 text-sm text-[var(--ink-500)]">Atualize sua foto de perfil para facilitar a identificação no sistema.</p>
 
                     <div className="mt-5 flex flex-wrap items-center gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4">
                         {avatarUrl && !avatarLoadFailed ? (
@@ -238,9 +236,15 @@ export default function ProfileEdit() {
                         </div>
                     </div>
 
-                    <div className="mt-5 grid gap-3">
-                        <Field label="Nome" error={form.errors.name}><input value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} required /></Field>
-                        <Field label="Email" error={form.errors.email}><input type="email" value={form.data.email} onChange={(e) => form.setData('email', e.target.value)} required /></Field>
+                    <div className="mt-5 grid gap-3 rounded-lg border border-[var(--border)] bg-white p-4 sm:grid-cols-2">
+                        <div>
+                            <span className="eyebrow mb-1 block">Nome</span>
+                            <div className="text-[14px] font-semibold text-[var(--ink-900)]">{user.name}</div>
+                        </div>
+                        <div>
+                            <span className="eyebrow mb-1 block">Email</span>
+                            <div className="break-all text-[14px] text-[var(--ink-600)]">{user.email}</div>
+                        </div>
                     </div>
 
                     <button className="sig-btn sig-btn-primary mt-5" disabled={form.processing}>
@@ -319,15 +323,5 @@ export default function ProfileEdit() {
                 </div>
             )}
         </AuthenticatedLayout>
-    );
-}
-
-function Field({ label, error, children }) {
-    return (
-        <label>
-            <span className="eyebrow mb-1 block">{label}</span>
-            <span className="sig-input">{children}</span>
-            {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
-        </label>
     );
 }

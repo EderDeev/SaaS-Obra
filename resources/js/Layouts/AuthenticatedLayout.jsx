@@ -6,6 +6,7 @@ import {
     Bell,
     BookOpen,
     Building2,
+    Calculator,
     ChevronRight,
     ClipboardList,
     FolderOpen,
@@ -72,6 +73,7 @@ export default function AuthenticatedLayout({ children }) {
     const [parametrizacaoOpen, setParametrizacaoOpen] = useState(() => route().current('tenant.parametrizacao.*'));
     const [qualidadeOpen, setQualidadeOpen] = useState(() => route().current('tenant.qualidade.*'));
     const [projectOpen, setProjectOpen] = useState(() => route().current('tenant.projects.*'));
+    const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         if (typeof window === 'undefined') {
@@ -176,6 +178,25 @@ export default function AuthenticatedLayout({ children }) {
         ]
         : [];
     const qualidadeItems = rncChildren;
+    const orcamentoItems = tenant
+        ? [
+            {
+                label: 'Listar Orçamentos',
+                href: route('tenant.orcamentos.index', tenant.slug),
+                active: route().current('tenant.orcamentos.index'),
+            },
+            {
+                label: 'Composições',
+                href: route('tenant.orcamentos.composicoes.index', tenant.slug),
+                active: route().current('tenant.orcamentos.composicoes.*'),
+            },
+            {
+                label: 'Insumos',
+                href: route('tenant.orcamentos.insumos.index', tenant.slug),
+                active: route().current('tenant.orcamentos.insumos.*'),
+            },
+        ]
+        : [];
     const projectItems = tenant
         ? [
             ...(projectCan.view_projects ? [{
@@ -222,6 +243,7 @@ export default function AuthenticatedLayout({ children }) {
             ...(activityCan.view_activities ? [
                 { label: 'Atividades', icon: Activity, href: route('tenant.activities.index', tenant.slug), active: route().current('tenant.activities.*') },
             ] : []),
+            { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
             ...(projectItems.length > 0 ? [
                 { label: 'Projetos', icon: FolderOpen, active: route().current('tenant.projects.*'), children: projectItems },
             ] : []),
@@ -259,7 +281,7 @@ export default function AuthenticatedLayout({ children }) {
         : tenant
             ? [
                 { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
+                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -296,9 +318,11 @@ export default function AuthenticatedLayout({ children }) {
                     <div className="eyebrow px-5 pb-2 pt-1 text-[var(--side-fg-dim)]">Workspace</div>
                     {navItems.map((item) => {
                         const Icon = item.icon;
-                        const childrenOpen = item.label === 'Qualidade' ? qualidadeOpen : projectOpen;
+                        const childrenOpen = item.label === 'Qualidade' ? qualidadeOpen : item.label === 'Orçamentos' ? orcamentosOpen : projectOpen;
                         const toggleChildren = item.label === 'Qualidade'
                             ? () => setQualidadeOpen((open) => !open)
+                            : item.label === 'Orçamentos'
+                                ? () => setOrcamentosOpen((open) => !open)
                             : () => setProjectOpen((open) => !open);
 
                         if (item.children) {
@@ -382,7 +406,7 @@ export default function AuthenticatedLayout({ children }) {
                     <div className="eyebrow px-5 pb-2 text-[var(--side-fg-dim)]">Sistema</div>
                     <Link href={route('profile.edit')} className={`sig-nav-item ${route().current('profile.*') ? 'active' : ''}`}>
                         <Settings size={17} strokeWidth={1.8} />
-                        <span>Configurações</span>
+                        <span>Perfil</span>
                     </Link>
                 </nav>
 

@@ -7,6 +7,9 @@ use App\Models\Contract;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ActivityAssignedNotification;
+use App\Notifications\ActivityCommentedNotification;
+use App\Notifications\ActivityFileUploadedNotification;
+use App\Notifications\ActivityStatusChangedNotification;
 use App\Support\ActivityPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -356,6 +359,47 @@ class TenantActivityTest extends TestCase
         ]);
     }
 
+    public function test_status_change_notifies_activity_assignees_by_database_and_mail(): void
+    {
+        Notification::fake();
+
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $engineer = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $engineer->id,
+            'role' => 'engineer',
+            'status' => 'active',
+        ]);
+
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $engineer->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Atualizar cronograma',
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+        $activity->assignees()->sync([$engineer->id]);
+
+        $this->actingAs($admin)
+            ->patch(route('tenant.activities.update', [$tenant, $activity]), [
+                'status' => 'in_progress',
+            ])
+            ->assertRedirect();
+
+        Notification::assertSentTo($engineer, ActivityStatusChangedNotification::class, function ($notification, array $channels): bool {
+            return in_array('database', $channels, true) && in_array('mail', $channels, true);
+        });
+    }
+
     public function test_tenant_admin_can_edit_activity_details_and_soft_delete_activity(): void
     {
         [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
@@ -551,6 +595,57 @@ class TenantActivityTest extends TestCase
 
         $this->assertTrue($notifications->contains(fn ($notification): bool => $notification->data['title'] === 'Novo comentário na atividade'));
         $this->assertTrue($notifications->contains(fn ($notification): bool => $notification->data['title'] === 'Novo arquivo na atividade'));
+    }
+
+    public function test_comment_and_file_upload_notify_activity_assignees_by_database_and_mail(): void
+    {
+        Notification::fake();
+        Storage::fake('public');
+
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $engineer = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $engineer->id,
+            'role' => 'engineer',
+            'status' => 'active',
+        ]);
+
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $engineer->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Validar memoria de calculo',
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+        $activity->assignees()->sync([$engineer->id]);
+
+        $this->actingAs($admin)
+            ->post(route('tenant.activities.comments.store', [$tenant, $activity]), [
+                'body' => 'Favor revisar ate amanha.',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($admin)
+            ->post(route('tenant.activities.files.store', [$tenant, $activity]), [
+                'file' => UploadedFile::fake()->create('memoria.xlsx', 90, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+            ])
+            ->assertRedirect();
+
+        Notification::assertSentTo($engineer, ActivityCommentedNotification::class, function ($notification, array $channels): bool {
+            return in_array('database', $channels, true) && in_array('mail', $channels, true);
+        });
+        Notification::assertSentTo($engineer, ActivityFileUploadedNotification::class, function ($notification, array $channels): bool {
+            return in_array('database', $channels, true) && in_array('mail', $channels, true);
+        });
     }
 
     /**

@@ -163,6 +163,30 @@ class UserController extends Controller
         return back()->with('success', 'Usuario desativado.');
     }
 
+    public function resetPassword(Request $request, Tenant $tenant, TenantUser $membership): RedirectResponse
+    {
+        $this->authorizeTenantUsers($tenant, UserPermissions::EDIT);
+        $this->ensureMembershipBelongsToTenant($tenant, $membership);
+
+        abort_if($membership->user_id === $request->user()->id, 422, 'Voce nao pode resetar a propria senha por aqui.');
+
+        $temporaryPassword = PasswordPolicy::temporaryPassword();
+
+        $membership->user->update([
+            'password' => Hash::make($temporaryPassword),
+            'must_change_password' => true,
+            'temporary_password_created_at' => now(),
+        ]);
+
+        return back()
+            ->with('success', 'Senha provisoria gerada. Copie e envie ao usuario por um canal seguro.')
+            ->with('reset_password', [
+                'user_name' => $membership->user->name,
+                'user_email' => $membership->user->email,
+                'temporary_password' => $temporaryPassword,
+            ]);
+    }
+
     private function authorizeTenantUsers(Tenant $tenant, string $permission = UserPermissions::VIEW): void
     {
         abort_unless(UserPermissions::can(request()->user(), $tenant, $permission), 403);

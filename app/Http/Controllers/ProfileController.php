@@ -30,14 +30,7 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $validated = $request->validated();
         $user = $request->user();
-
-        $user->fill(collect($validated)->except('avatar')->all());
-
-        if ($user->isDirty('email')) {
-            $user->email_verified_at = null;
-        }
 
         if ($request->hasFile('avatar')) {
             $this->deleteStoredAvatar($user->avatar_url);

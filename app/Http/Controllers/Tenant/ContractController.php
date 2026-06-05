@@ -137,7 +137,6 @@ class ContractController extends Controller
                 ->latest()
                 ->limit(5)
                 ->get(['id', 'contract_id', 'disciplina_id', 'title', 'code', 'status', 'created_at']),
-            'canManageParticipants' => $this->canManageParticipants($request, $tenant, $contract),
             'capabilities' => [
                 'viewActivities' => ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW, $contract),
                 'createActivity' => ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::CREATE, $contract),
@@ -145,11 +144,6 @@ class ContractController extends Controller
                 'uploadProject' => ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::UPLOAD, $contract),
                 'viewRncs' => RncPermissions::can($request->user(), $tenant, RncPermissions::VIEW, $contract),
                 'createRnc' => RncPermissions::can($request->user(), $tenant, RncPermissions::CREATE, $contract),
-            ],
-            'participantRoles' => [
-                'client' => ['client_approver', 'client_viewer'],
-                'contractor' => ['contractor_lead', 'contractor_member'],
-                'manager' => ['manager', 'team_member'],
             ],
         ]);
     }
@@ -188,17 +182,4 @@ class ContractController extends Controller
         );
     }
 
-    private function canManageParticipants(Request $request, Tenant $tenant, Contract $contract): bool
-    {
-        if (in_array($request->user()->tenantRole($tenant), ['tenant_owner', 'tenant_admin'], true)) {
-            return true;
-        }
-
-        return $contract->participants()
-            ->where('user_id', $request->user()->id)
-            ->where('side', 'manager')
-            ->where('role', 'manager')
-            ->where('status', 'active')
-            ->exists();
-    }
 }

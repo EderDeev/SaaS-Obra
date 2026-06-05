@@ -25,7 +25,7 @@ Para subir a aplicação em desenvolvimento, use dois terminais.
 Terminal 1, Laravel:
 
 ```bash
-php -d upload_max_filesize=64M -d post_max_size=64M -d memory_limit=256M -S 127.0.0.1:8000 server.php
+php -d upload_max_filesize=100M -d post_max_size=128M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 127.0.0.1:8000 server.php
 ```
 
 Terminal 2, Vite:
@@ -78,4 +78,74 @@ Essa rota só é registrada quando `APP_ENV=local`.
 
 ## Observação sobre Postgres e RLS
 
-O desenvolvimento local está em SQLite para facilitar a execução imediata. O middleware já seta `app.current_tenant` quando a conexão for PostgreSQL. A próxima etapa de hardening é adicionar as policies RLS completas para as tabelas de domínio antes do deploy em Postgres.
+Os testes automatizados usam SQLite em memoria para rapidez, mas o deploy do Railway deve usar PostgreSQL. O middleware ja seta `app.current_tenant` quando a conexao for PostgreSQL. A proxima etapa de hardening e adicionar as policies RLS completas para as tabelas de dominio antes de producao real.
+
+## Deploy no Railway
+
+O projeto ja inclui `railway.toml` com:
+
+- build: `npm run build`
+- pre-deploy: `php artisan migrate --force`
+- start: `sh ./railway/start-app.sh`
+- healthcheck: `/up`
+
+Variaveis obrigatorias no servico da aplicacao:
+
+```text
+APP_NAME="Deming"
+APP_ENV=production
+APP_DEBUG=false
+APP_KEY=base64:...
+APP_URL=https://seu-app.up.railway.app
+APP_TIMEZONE=America/Sao_Paulo
+APP_LOCALE=pt_BR
+APP_FALLBACK_LOCALE=pt_BR
+APP_FAKER_LOCALE=pt_BR
+LOG_CHANNEL=stderr
+DB_CONNECTION=pgsql
+DB_URL=${{Postgres.DATABASE_URL}}
+DB_SSLMODE=require
+SESSION_DRIVER=database
+CACHE_STORE=database
+QUEUE_CONNECTION=sync
+FILESYSTEM_DISK=public
+RAILPACK_PHP_VERSION=8.4
+```
+
+Para uploads persistirem entre deploys, crie um Railway Volume no servico da aplicacao com mount path:
+
+```text
+/app/storage/app/public
+```
+
+Para email real via Brevo, configure no Railway:
+
+```text
+MAIL_MAILER=smtp
+MAIL_SCHEME=null
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_USERNAME=seu-login-smtp-brevo
+MAIL_PASSWORD=sua-chave-smtp-brevo
+MAIL_FROM_ADDRESS=email-verificado-no-brevo@seudominio.com
+MAIL_FROM_NAME="${APP_NAME}"
+```
+
+O `MAIL_FROM_ADDRESS` precisa ser um remetente verificado no Brevo. Se `MAIL_MAILER=log`, a aplicacao registra os emails no log e nao envia mensagens reais.
+
+Servicos opcionais:
+
+```text
+VITE_MAPBOX_ACCESS_TOKEN=...
+AUTODESK_APS_CLIENT_ID=...
+AUTODESK_APS_CLIENT_SECRET=...
+AUTODESK_APS_BUCKET_KEY=...
+AUTODESK_APS_REGION=US
+AUTODESK_APS_AUTO_PROCESS=true
+```
+
+Para processamento APS realmente em segundo plano, use `QUEUE_CONNECTION=database` e crie um segundo servico no Railway com start command:
+
+```bash
+sh ./railway/start-worker.sh
+```
