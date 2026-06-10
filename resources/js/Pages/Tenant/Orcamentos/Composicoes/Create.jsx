@@ -1,24 +1,25 @@
 import { Link, router, useForm } from '@inertiajs/react';
-import { ArrowLeft, ChevronDown, Save } from 'lucide-react';
+import { ArrowLeft, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import OrcamentoShell from '../Partials/OrcamentoShell';
 
 export default function CreateComposicao({ tenant, options = {} }) {
-    const [step, setStep] = useState(1);
-    const [activeRegion, setActiveRegion] = useState('Todas as Bases');
-    const [selectedReferences, setSelectedReferences] = useState(['SINAPI-PA-04/2026']);
-    const [isSubmitting, setIsSubmitting] = useState(false);
     const states = options.states ?? [];
     const types = options.types ?? [];
     const calculationMethods = options.calculationMethods ?? [];
     const referenceGroups = options.baseReferences ?? [];
+    const initialReferences = referenceGroups.flatMap((group) => group.items ?? []);
+    const initialReference = initialReferences.find((reference) => reference.nome === 'SINAPI' && reference.uf === 'PA')
+        ?? initialReferences.find((reference) => reference.nome === 'SINAPI')
+        ?? initialReferences[0];
+    const [step, setStep] = useState(1);
+    const [selectedReferences, setSelectedReferences] = useState(initialReference ? [initialReference.codigo] : []);
+    const [referenceDatesByChoice, setReferenceDatesByChoice] = useState({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const allReferences = useMemo(
         () => referenceGroups.flatMap((group) => group.items ?? []),
         [referenceGroups],
     );
-    const filteredGroups = activeRegion === 'Todas as Bases'
-        ? referenceGroups
-        : referenceGroups.filter((group) => group.region === activeRegion);
     const selectedReferenceItems = allReferences.filter((reference) => selectedReferences.includes(reference.codigo));
 
     const form = useForm({
@@ -29,13 +30,70 @@ export default function CreateComposicao({ tenant, options = {} }) {
         uf: 'PA',
         modelo: 'SINAPI',
         metodo_calculo: 'truncate_2',
+        producao_equipe: '1,0000',
+        adicional_mao_obra: '',
+        fator_influencia_chuvas: '',
         observacao: '',
         base_references: [],
     });
+    const referenceChoices = useMemo(() => {
+        const groups = new Map();
+        const stateReferences = allReferences.filter((reference) => reference.uf === form.data.uf);
+
+        stateReferences.forEach((reference) => {
+            const key = `${reference.nome}|${reference.uf}`;
+
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    key,
+                    nome: reference.nome,
+                    uf: reference.uf,
+                    localidade: reference.localidade,
+                    references: [],
+                });
+            }
+
+            groups.get(key).references.push(reference);
+        });
+
+        return Array.from(groups.values())
+            .map((choice) => ({
+                ...choice,
+                references: choice.references.sort((a, b) => String(b.data).localeCompare(String(a.data))),
+            }))
+            .sort((a, b) => `${a.nome}-${a.uf}`.localeCompare(`${b.nome}-${b.uf}`));
+    }, [allReferences, form.data.uf]);
 
     const updateField = (field, value) => {
         form.clearErrors(field);
         form.setData(field, value);
+    };
+
+    const selectDefaultReference = (model, state) => {
+        const stateReferences = allReferences.filter((item) => item.uf === state);
+        const reference = stateReferences.find((item) => item.nome === model)
+            ?? stateReferences[0];
+
+        setSelectedReferences(reference ? [reference.codigo] : []);
+    };
+
+    const updateModelo = (value) => {
+        form.clearErrors('modelo', 'producao_equipe', 'adicional_mao_obra', 'fator_influencia_chuvas');
+        selectDefaultReference(value, form.data.uf);
+
+        form.setData({
+            ...form.data,
+            modelo: value,
+            producao_equipe: value === 'SICRO3' && !form.data.producao_equipe ? '1,0000' : form.data.producao_equipe,
+            adicional_mao_obra: value === 'SICRO3' ? form.data.adicional_mao_obra : '',
+            fator_influencia_chuvas: value === 'SICRO3' ? form.data.fator_influencia_chuvas : '',
+        });
+    };
+
+    const updateEstado = (value) => {
+        form.clearErrors('uf');
+        selectDefaultReference(form.data.modelo, value);
+        form.setData('uf', value);
     };
 
     const validateGeneralFields = () => {
@@ -61,7 +119,7 @@ export default function CreateComposicao({ tenant, options = {} }) {
             errors.uf = 'Selecione o estado.';
         }
 
-        if (!form.data.metodo_calculo) {
+        if (form.data.modelo !== 'SICRO3' && !form.data.metodo_calculo) {
             errors.metodo_calculo = 'Selecione o metodo de calculo.';
         }
 
@@ -79,14 +137,6 @@ export default function CreateComposicao({ tenant, options = {} }) {
 
         form.clearErrors('codigo', 'descricao', 'tipo_composicao', 'unidade', 'uf', 'metodo_calculo');
         setStep(2);
-    };
-
-    const toggleReference = (codigo) => {
-        setSelectedReferences((current) => (
-            current.includes(codigo)
-                ? current.filter((item) => item !== codigo)
-                : [...current, codigo]
-        ));
     };
 
     const submit = (event) => {
@@ -120,7 +170,7 @@ export default function CreateComposicao({ tenant, options = {} }) {
                 onError: (errors) => {
                     form.setError(errors);
 
-                    const firstStepFields = ['codigo', 'descricao', 'tipo_composicao', 'unidade', 'uf', 'modelo', 'metodo_calculo', 'observacao'];
+                    const firstStepFields = ['codigo', 'descricao', 'tipo_composicao', 'unidade', 'uf', 'modelo', 'metodo_calculo', 'producao_equipe', 'adicional_mao_obra', 'fator_influencia_chuvas', 'observacao'];
                     const hasFirstStepError = firstStepFields.some((field) => Boolean(errors[field]));
 
                     setStep(hasFirstStepError ? 1 : 2);
@@ -153,26 +203,25 @@ export default function CreateComposicao({ tenant, options = {} }) {
                         calculationMethods={calculationMethods}
                         form={form}
                         onChange={updateField}
+                        onModeloChange={updateModelo}
+                        onStateChange={updateEstado}
                         onNext={goToReferences}
                         states={states}
                         types={types}
                     />
                 ) : (
                     <ReferenceStep
-                        activeRegion={activeRegion}
-                        allReferences={allReferences}
                         form={form}
-                        filteredGroups={filteredGroups}
                         isSubmitting={isSubmitting}
                         onBack={() => setStep(1)}
-                        onRegionChange={setActiveRegion}
-                        onSelectAll={() => setSelectedReferences(allReferences.map((reference) => reference.codigo))}
-                        onSelectLatest={() => setSelectedReferences(['SINAPI-PA-04/2026'])}
-                        onSetSelectedReferences={setSelectedReferences}
+                        onSelectAll={() => setSelectedReferences(referenceChoices.map((choice) => referenceDatesByChoice[choice.key] ?? choice.references[0]?.codigo).filter(Boolean))}
                         onUnselectAll={() => setSelectedReferences([])}
+                        referenceDatesByChoice={referenceDatesByChoice}
+                        referenceChoices={referenceChoices}
+                        setReferenceDatesByChoice={setReferenceDatesByChoice}
+                        setSelectedReferences={setSelectedReferences}
                         selectedReferenceItems={selectedReferenceItems}
                         selectedReferences={selectedReferences}
-                        toggleReference={toggleReference}
                     />
                 )}
             </form>
@@ -213,7 +262,9 @@ function StepTabs({ step, onStepChange }) {
     );
 }
 
-function GeneralStep({ calculationMethods, form, onChange, onNext, states, types }) {
+function GeneralStep({ calculationMethods, form, onChange, onModeloChange, onNext, onStateChange, states, types }) {
+    const isSicro3 = form.data.modelo === 'SICRO3';
+
     return (
         <section className="p-5">
             <div className="grid gap-4 lg:grid-cols-2">
@@ -265,7 +316,7 @@ function GeneralStep({ calculationMethods, form, onChange, onNext, states, types
                     <select
                         className="sig-input"
                         value={form.data.uf}
-                        onChange={(event) => onChange('uf', event.target.value)}
+                        onChange={(event) => onStateChange(event.target.value)}
                     >
                         {states.map((state) => (
                             <option key={state.value} value={state.value}>
@@ -279,37 +330,94 @@ function GeneralStep({ calculationMethods, form, onChange, onNext, states, types
             <div className="mt-5 grid gap-5 lg:grid-cols-2">
                 <fieldset>
                     <legend className="mb-2 text-xs font-bold text-[var(--ink-500)]">Modelo Composicao</legend>
-                    <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ink-700)]">
-                        <input checked readOnly className="h-4 w-4 accent-[var(--primary)]" type="radio" />
-                        Sinapi
-                    </label>
+                    <div className="flex flex-wrap gap-4">
+                        <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ink-700)]">
+                            <input
+                                checked={form.data.modelo === 'SINAPI'}
+                                className="h-4 w-4 accent-[var(--primary)]"
+                                name="modelo"
+                                type="radio"
+                                value="SINAPI"
+                                onChange={(event) => onModeloChange(event.target.value)}
+                            />
+                            Sinapi
+                        </label>
+                        <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ink-700)]">
+                            <input
+                                checked={form.data.modelo === 'SICRO3'}
+                                className="h-4 w-4 accent-[var(--primary)]"
+                                name="modelo"
+                                type="radio"
+                                value="SICRO3"
+                                onChange={(event) => onModeloChange(event.target.value)}
+                            />
+                            Sicro3
+                        </label>
+                    </div>
+                    {form.errors.modelo && <ErrorMessage message={form.errors.modelo} />}
                 </fieldset>
 
-                <fieldset>
-                    <legend className="mb-2 text-xs font-bold text-[var(--ink-500)]">Metodo de Calculo</legend>
-                    <div className="grid gap-2">
-                        {calculationMethods.map((method) => (
-                            <label key={method.value} className="flex items-center gap-2 text-sm text-[var(--ink-700)]">
-                                <input
-                                    checked={form.data.metodo_calculo === method.value}
-                                    className="h-4 w-4 accent-[var(--primary)]"
-                                    name="metodo_calculo"
-                                    type="radio"
-                                    value={method.value}
-                                    onChange={(event) => onChange('metodo_calculo', event.target.value)}
-                                />
-                                {method.label}
-                                {method.badge && (
-                                    <span className="rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                                        {method.badge}
-                                    </span>
-                                )}
-                            </label>
-                        ))}
-                    </div>
-                    {form.errors.metodo_calculo && <ErrorMessage message={form.errors.metodo_calculo} />}
-                </fieldset>
+                {!isSicro3 && (
+                    <fieldset>
+                        <legend className="mb-2 text-xs font-bold text-[var(--ink-500)]">Metodo de Calculo</legend>
+                        <div className="grid gap-2">
+                            {calculationMethods.map((method) => (
+                                <label key={method.value} className="flex items-center gap-2 text-sm text-[var(--ink-700)]">
+                                    <input
+                                        checked={form.data.metodo_calculo === method.value}
+                                        className="h-4 w-4 accent-[var(--primary)]"
+                                        name="metodo_calculo"
+                                        type="radio"
+                                        value={method.value}
+                                        onChange={(event) => onChange('metodo_calculo', event.target.value)}
+                                    />
+                                    {method.label}
+                                    {method.badge && (
+                                        <span className="rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                            {method.badge}
+                                        </span>
+                                    )}
+                                </label>
+                            ))}
+                        </div>
+                        {form.errors.metodo_calculo && <ErrorMessage message={form.errors.metodo_calculo} />}
+                    </fieldset>
+                )}
             </div>
+
+            {isSicro3 && (
+                <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                    <Field label="Producao de Equipe" error={form.errors.producao_equipe}>
+                        <input
+                            className="sig-input"
+                            placeholder="1,0000"
+                            type="text"
+                            value={form.data.producao_equipe}
+                            onChange={(event) => onChange('producao_equipe', event.target.value)}
+                        />
+                    </Field>
+
+                    <Field label="Adicional de Mao de Obra" error={form.errors.adicional_mao_obra}>
+                        <input
+                            className="sig-input"
+                            placeholder="Opcional"
+                            type="text"
+                            value={form.data.adicional_mao_obra}
+                            onChange={(event) => onChange('adicional_mao_obra', event.target.value)}
+                        />
+                    </Field>
+
+                    <Field label="Fator de Influencia de Chuvas - FIC" error={form.errors.fator_influencia_chuvas}>
+                        <input
+                            className="sig-input"
+                            placeholder="Opcional"
+                            type="text"
+                            value={form.data.fator_influencia_chuvas}
+                            onChange={(event) => onChange('fator_influencia_chuvas', event.target.value)}
+                        />
+                    </Field>
+                </div>
+            )}
 
             <Field className="mt-5" label="Observacao" error={form.errors.observacao}>
                 <textarea
@@ -330,22 +438,44 @@ function GeneralStep({ calculationMethods, form, onChange, onNext, states, types
 }
 
 function ReferenceStep({
-    activeRegion,
-    allReferences,
-    filteredGroups,
     form,
     onBack,
     isSubmitting,
-    onRegionChange,
     onSelectAll,
-    onSelectLatest,
-    onSetSelectedReferences,
     onUnselectAll,
+    referenceDatesByChoice,
+    referenceChoices,
+    setReferenceDatesByChoice,
+    setSelectedReferences,
     selectedReferenceItems,
     selectedReferences,
-    toggleReference,
 }) {
-    const regions = ['Todas as Bases', 'Nacional', 'Sudeste', 'Nordeste', 'Centro-Oeste', 'Norte', 'Sul'];
+    const toggleChoice = (choice, checked) => {
+        const codes = choice.references.map((reference) => reference.codigo);
+        const selectedDateCode = referenceDatesByChoice[choice.key] ?? choice.references[0].codigo;
+
+        setSelectedReferences((current) => {
+            const withoutChoice = current.filter((code) => !codes.includes(code));
+
+            return checked ? [...withoutChoice, selectedDateCode] : withoutChoice;
+        });
+    };
+
+    const updateChoiceDate = (choice, code) => {
+        const codes = choice.references.map((reference) => reference.codigo);
+
+        setReferenceDatesByChoice((current) => ({
+            ...current,
+            [choice.key]: code,
+        }));
+
+        setSelectedReferences((current) => {
+            const hasChoiceSelected = current.some((selected) => codes.includes(selected));
+            const withoutChoice = current.filter((selected) => !codes.includes(selected));
+
+            return hasChoiceSelected ? [...withoutChoice, code] : current;
+        });
+    };
 
     return (
         <section className="p-4">
@@ -357,7 +487,7 @@ function ReferenceStep({
                 ) : selectedReferenceItems.map((reference) => (
                     <span key={reference.codigo} className="inline-flex items-center gap-1 rounded-md bg-[var(--primary)] px-2 py-1 text-xs font-bold text-white">
                         {reference.codigo}
-                        <button type="button" onClick={() => toggleReference(reference.codigo)}>
+                        <button type="button" onClick={() => setSelectedReferences((current) => current.filter((code) => code !== reference.codigo))}>
                             x
                         </button>
                     </span>
@@ -365,76 +495,81 @@ function ReferenceStep({
             </div>
 
             <div className="overflow-hidden rounded-lg border border-[var(--border)]">
-                <div className="flex flex-wrap gap-1 border-b border-[var(--border)] bg-[var(--surface-muted)] p-2">
-                    {regions.map((region) => (
-                        <button
-                            key={region}
-                            className={`rounded-md px-2.5 py-1.5 text-xs font-bold transition ${
-                                activeRegion === region
-                                    ? 'bg-white text-[var(--primary)] shadow-[var(--shadow-sm)]'
-                                    : 'text-[var(--ink-500)] hover:bg-white'
-                            }`}
-                            type="button"
-                            onClick={() => onRegionChange(region)}
-                        >
-                            {region}
-                        </button>
-                    ))}
+                <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+                    <h2 className="text-sm font-bold text-[var(--ink-900)]">Bases de referencia</h2>
+                    <p className="mt-1 text-xs text-[var(--ink-500)]">
+                        Selecione a base oficial e a data que serao usadas como referencia desta composicao.
+                    </p>
                 </div>
 
-                <div className="max-h-[280px] overflow-y-auto p-3">
-                    {filteredGroups.map((group) => (
-                        <div key={group.region} className="mb-3 last:mb-0">
-                            <label className="mb-1.5 flex items-center gap-2 text-sm font-bold text-[var(--ink-500)]">
-                                <input
-                                    checked={(group.items ?? []).every((item) => selectedReferences.includes(item.codigo))}
-                                    className="h-4 w-4 accent-[var(--primary)]"
-                                    type="checkbox"
-                                    onChange={(event) => {
-                                        const itemCodes = (group.items ?? []).map((item) => item.codigo);
-
-                                        if (event.target.checked) {
-                                            onSetSelectedReferences(Array.from(new Set([...selectedReferences, ...itemCodes])));
-                                            return;
-                                        }
-
-                                        onSetSelectedReferences(selectedReferences.filter((codigo) => !itemCodes.includes(codigo)));
-                                    }}
-                                />
-                                {group.region}
-                            </label>
-
-                            <div className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
-                                {(group.items ?? []).map((reference) => (
-                                    <label key={reference.codigo} className="grid cursor-pointer items-center gap-2 py-2 text-sm text-[var(--ink-700)] md:grid-cols-[minmax(140px,0.8fr)_minmax(160px,1fr)_minmax(80px,0.5fr)_auto]">
-                                        <span className="inline-flex items-center gap-2 font-semibold">
-                                            <input
-                                                checked={selectedReferences.includes(reference.codigo)}
-                                                className="h-4 w-4 accent-[var(--primary)]"
-                                                type="checkbox"
-                                                onChange={() => toggleReference(reference.codigo)}
-                                            />
-                                            {reference.nome}
-                                        </span>
-                                        <span>{reference.localidade}</span>
-                                        <span>{reference.data}</span>
-                                        <ChevronDown className="hidden text-[var(--ink-400)] md:block" size={16} />
-                                    </label>
-                                ))}
-                            </div>
+                <div className="divide-y divide-[var(--border)] bg-white">
+                    {referenceChoices.length === 0 ? (
+                        <div className="m-3 rounded-lg border border-dashed border-[var(--border)] bg-white p-4 text-sm text-[var(--ink-500)]">
+                            Nenhuma base global encontrada. Importe uma base oficial para selecionar as referencias.
                         </div>
-                    ))}
+                    ) : referenceChoices.map((choice) => {
+                        const codes = choice.references.map((reference) => reference.codigo);
+                        const selectedCode = selectedReferences.find((code) => codes.includes(code))
+                            ?? referenceDatesByChoice[choice.key]
+                            ?? choice.references[0]?.codigo;
+                        const selectedReference = choice.references.find((reference) => reference.codigo === selectedCode) ?? choice.references[0];
+                        const checked = codes.some((code) => selectedReferences.includes(code));
+
+                        return (
+                            <div
+                                key={choice.key}
+                                className={`grid gap-3 px-4 py-3 transition md:grid-cols-[32px_minmax(120px,1fr)_minmax(160px,1.2fr)_minmax(220px,1.4fr)] md:items-center ${
+                                    checked
+                                        ? 'bg-[var(--primary-50)]/70'
+                                        : 'bg-white hover:bg-[var(--surface-muted)]/70'
+                                }`}
+                            >
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        checked={checked}
+                                        className="h-4 w-4 accent-[var(--primary)]"
+                                        type="checkbox"
+                                        onChange={(event) => toggleChoice(choice, event.target.checked)}
+                                    />
+                                    <span className="text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-400)] md:hidden">
+                                        Selecionar
+                                    </span>
+                                </label>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-bold text-[var(--ink-900)]">{choice.nome}</p>
+                                    <p className="mt-0.5 text-[11px] font-semibold text-[var(--ink-400)] md:hidden">Base</p>
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-[var(--ink-600)]">{choice.localidade}</p>
+                                    <p className="mt-0.5 text-[11px] font-semibold text-[var(--ink-400)] md:hidden">Localidade</p>
+                                </div>
+                                <label className="grid gap-1">
+                                    <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink-400)] md:hidden">
+                                        Data base
+                                    </span>
+                                    <select
+                                        className="sig-input !h-10 !min-h-10 text-sm"
+                                        value={selectedReference?.codigo ?? ''}
+                                        onChange={(event) => updateChoiceDate(choice, event.target.value)}
+                                    >
+                                        {choice.references.map((reference) => (
+                                            <option key={reference.codigo} value={reference.codigo}>
+                                                {reference.data} {reference.total ? `- ${reference.total} registros` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                        );
+                    })}
                 </div>
 
-                <div className="sticky bottom-0 grid gap-2 border-t border-[var(--border)] bg-white p-3 shadow-[0_-8px_18px_rgba(15,23,42,0.04)] md:grid-cols-4">
+                <div className="sticky bottom-0 grid gap-2 border-t border-[var(--border)] bg-white p-3 shadow-[0_-8px_18px_rgba(15,23,42,0.04)] md:grid-cols-[1fr_1fr_1.4fr]">
                     <button className="sig-btn sig-btn-secondary justify-center" type="button" onClick={onSelectAll}>
-                        Selecionar Todos
+                        Selecionar bases exibidas
                     </button>
                     <button className="sig-btn sig-btn-secondary justify-center" type="button" onClick={onUnselectAll}>
-                        Desmarcar Todos
-                    </button>
-                    <button className="sig-btn sig-btn-secondary justify-center" type="button" onClick={onSelectLatest}>
-                        Ultima Data
+                        Limpar selecao
                     </button>
                     <button className="sig-btn sig-btn-primary justify-center" disabled={isSubmitting || selectedReferenceItems.length === 0} type="submit">
                         <Save size={15} />

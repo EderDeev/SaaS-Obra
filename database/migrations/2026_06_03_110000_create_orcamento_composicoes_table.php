@@ -21,8 +21,8 @@ return new class extends Migration
             $table->string('metodo_calculo', 50);
             $table->text('observacao')->nullable();
             $table->json('base_references')->nullable();
-            $table->decimal('preco_onerado', 15, 2)->default(0);
-            $table->decimal('preco_desonerado', 15, 2)->default(0);
+            $table->decimal('preco_onerado', 18, 6)->default(0);
+            $table->decimal('preco_desonerado', 18, 6)->default(0);
             $table->timestamps();
             $table->softDeletes();
 

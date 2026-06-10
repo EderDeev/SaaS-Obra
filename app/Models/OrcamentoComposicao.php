@@ -19,6 +19,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'uf',
     'modelo',
     'metodo_calculo',
+    'producao_equipe',
+    'adicional_mao_obra',
+    'fator_influencia_chuvas',
     'observacao',
     'base_references',
     'preco_onerado',
@@ -35,8 +38,11 @@ class OrcamentoComposicao extends Model
         return [
             'base_references' => 'array',
             'is_global' => 'boolean',
-            'preco_onerado' => 'decimal:2',
-            'preco_desonerado' => 'decimal:2',
+            'preco_onerado' => 'decimal:6',
+            'preco_desonerado' => 'decimal:6',
+            'producao_equipe' => 'decimal:6',
+            'adicional_mao_obra' => 'decimal:6',
+            'fator_influencia_chuvas' => 'decimal:6',
         ];
     }
 

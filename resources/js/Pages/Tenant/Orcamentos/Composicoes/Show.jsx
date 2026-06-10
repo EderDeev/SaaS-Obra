@@ -1,7 +1,20 @@
 import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArrowLeft, Boxes, Check, ChevronDown, ChevronRight, Layers3, PackagePlus, Pencil, Plus, Search, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { AlertCircle, ArrowLeft, Boxes, Check, ChevronDown, ChevronRight, Layers3, PackagePlus, Pencil, Plus, Search, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import OrcamentoShell from '../Partials/OrcamentoShell';
+
+const SICRO3_COMPOSITION_SECTIONS = [
+    { value: 'atividades_auxiliares', code: 'D', label: 'Atividades Auxiliares' },
+    { value: 'tempo_fixo', code: 'E', label: 'Tempo Fixo' },
+    { value: 'momento_transporte', code: 'F', label: 'Momento de Transporte' },
+];
+
+const SICRO3_TRANSPORT_TYPES = [
+    { value: 'ln', code: 'LN', label: 'Composicao LN' },
+    { value: 'rp', code: 'RP', label: 'Composicao RP' },
+    { value: 'p', code: 'P', label: 'Composicao P' },
+    { value: 'fe', code: 'FE', label: 'Composicao FE' },
+];
 
 export default function ShowComposicao({
     tenant,
@@ -77,6 +90,7 @@ export default function ShowComposicao({
                         {activeBuilder === 'insumo' && (
                             <ItemBuilder
                                 composicao={composicao}
+                                existingItems={items}
                                 itemType="insumo"
                                 options={insumoOptions}
                                 tenant={tenant}
@@ -88,10 +102,11 @@ export default function ShowComposicao({
                         {activeBuilder === 'composicao' && (
                             <ItemBuilder
                                 composicao={composicao}
+                                existingItems={items}
                                 itemType="composicao"
                                 options={composicaoOptions}
                                 tenant={tenant}
-                                title="Adicionar composicao da base propria"
+                                title={String(composicao.modelo).toUpperCase() === 'SICRO3' ? 'Adicionar composicao ao analitico SICRO3' : 'Adicionar composicao da base propria'}
                                 onCancel={() => setActiveBuilder(null)}
                             />
                         )}
@@ -117,6 +132,8 @@ function AnaliticoDetail({ composicao, detail, tenant }) {
     const states = detail?.states ?? [];
     const initialState = states.find((state) => state.uf === composicao.uf)?.uf ?? states[0]?.uf ?? null;
     const [openState, setOpenState] = useState(initialState);
+    const isSicro3 = String(detail?.modelo ?? composicao.modelo ?? '').toUpperCase() === 'SICRO3';
+    const itemPriceDecimals = isSicro3 ? 4 : 2;
 
     return (
         <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
@@ -166,15 +183,18 @@ function AnaliticoDetail({ composicao, detail, tenant }) {
                                             <p className="text-xs font-semibold text-[var(--ink-400)]">{state.uf}</p>
                                         </div>
                                     </div>
-                                    <StateValue label="Valor Nao Desonerado" value={state.preco_onerado} />
-                                    <StateValue label="Valor Desonerado" value={state.preco_desonerado} />
-                                    <span className="inline-flex min-h-8 items-center justify-center rounded-full bg-white px-3 text-xs font-bold text-[var(--ink-500)] shadow-[var(--shadow-sm)]">
-                                        {state.items_count} itens
-                                    </span>
+                                    <StateValue label="Valor Nao Desonerado" value={state.effective_preco_onerado} />
+                                    <StateValue label="Valor Desonerado" value={state.effective_preco_desonerado} />
+                                    <div className="flex flex-col items-start gap-1 lg:items-end">
+                                        <span className="inline-flex min-h-8 items-center justify-center rounded-full bg-white px-3 text-xs font-bold text-[var(--ink-500)] shadow-[var(--shadow-sm)]">
+                                            {state.items_count} itens
+                                        </span>
+                                        <StateQualityNote state={state} />
+                                    </div>
                                 </button>
 
                                 {isOpen && (
-                                    <AnaliticoItems state={state} tenant={tenant} />
+                                    <AnaliticoItems state={state} tenant={tenant} priceDecimals={itemPriceDecimals} />
                                 )}
                             </article>
                         );
@@ -203,7 +223,32 @@ function StateValue({ label, value }) {
     );
 }
 
-function AnaliticoItems({ state, tenant }) {
+function StateQualityNote({ state }) {
+    const missing = Number(state.missing_price_items_count ?? 0);
+    const isCalculated = state.price_source === 'analytic';
+
+    if (!isCalculated && missing <= 0) {
+        return null;
+    }
+
+    return (
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-semibold">
+            {isCalculated && (
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
+                    Calculado
+                </span>
+            )}
+            {missing > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+                    <AlertCircle size={11} />
+                    {missing} sem preco
+                </span>
+            )}
+        </div>
+    );
+}
+
+function AnaliticoItems({ state, tenant, priceDecimals = 2 }) {
     if (!state.items?.length) {
         return (
             <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-6 text-sm text-[var(--ink-500)]">
@@ -253,13 +298,18 @@ function AnaliticoItems({ state, tenant }) {
                                     <CompositionCodeLink item={item} tenant={tenant} />
                                 </td>
                                 <td className="px-3 py-3 font-semibold leading-5 text-[var(--ink-800)]">{item.descricao}</td>
-                                <td className="px-3 py-3 text-[var(--ink-600)]">{item.tipo || item.item_type_label}</td>
+                                <td className="px-3 py-3 text-[var(--ink-600)]">
+                                    <div className="flex flex-col gap-1">
+                                        <span>{item.tipo || item.item_type_label}</span>
+                                        <ItemPriceWarning item={item} />
+                                    </div>
+                                </td>
                                 <td className="px-3 py-3 font-semibold text-[var(--ink-700)]">{item.unidade || '-'}</td>
-                                <td className="px-3 py-3 text-right font-mono">{formatCurrency(item.preco_unitario_onerado)}</td>
-                                <td className="px-3 py-3 text-right font-mono">{formatCurrency(item.preco_unitario_desonerado)}</td>
+                                <td className="px-3 py-3 text-right font-mono">{formatCurrency(item.preco_unitario_onerado, priceDecimals)}</td>
+                                <td className="px-3 py-3 text-right font-mono">{formatCurrency(item.preco_unitario_desonerado, priceDecimals)}</td>
                                 <td className="px-3 py-3 text-right font-mono">{formatNumber(item.coeficiente, 6)}</td>
-                                <td className="px-3 py-3 text-right font-mono font-semibold">{formatCurrency(item.preco_onerado)}</td>
-                                <td className="px-3 py-3 text-right font-mono font-semibold">{formatCurrency(item.preco_desonerado)}</td>
+                                <td className="px-3 py-3 text-right font-mono font-semibold">{formatCurrency(item.preco_onerado, priceDecimals)}</td>
+                                <td className="px-3 py-3 text-right font-mono font-semibold">{formatCurrency(item.preco_desonerado, priceDecimals)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -288,15 +338,31 @@ function AnaliticoItems({ state, tenant }) {
                         <div className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
                             <MobileValue label="Tipo" value={item.tipo || item.item_type_label} />
                             <MobileValue label="Coeficiente" value={formatNumber(item.coeficiente, 6)} />
-                            <MobileValue label="Unit. nao des." value={formatCurrency(item.preco_unitario_onerado)} />
-                            <MobileValue label="Unit. des." value={formatCurrency(item.preco_unitario_desonerado)} />
-                            <MobileValue label="Total nao des." value={formatCurrency(item.preco_onerado)} />
-                            <MobileValue label="Total des." value={formatCurrency(item.preco_desonerado)} />
+                            <MobileValue label="Unit. nao des." value={formatCurrency(item.preco_unitario_onerado, priceDecimals)} />
+                            <MobileValue label="Unit. des." value={formatCurrency(item.preco_unitario_desonerado, priceDecimals)} />
+                            <MobileValue label="Total nao des." value={formatCurrency(item.preco_onerado, priceDecimals)} />
+                            <MobileValue label="Total des." value={formatCurrency(item.preco_desonerado, priceDecimals)} />
                         </div>
+                        <ItemPriceWarning item={item} />
                     </article>
                 ))}
             </div>
         </div>
+    );
+}
+
+function ItemPriceWarning({ item }) {
+    const missing = Number(item.missing_price_items_count ?? 0);
+
+    if (missing <= 0) {
+        return null;
+    }
+
+    return (
+        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+            <AlertCircle size={11} />
+            Sem preco vinculado
+        </span>
     );
 }
 
@@ -381,14 +447,54 @@ function ComposicaoHeader({ composicao }) {
     );
 }
 
-function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel }) {
-    const [base, setBase] = useState(options[0]?.base ?? 'SINAPI');
+function ItemBuilder({ composicao, existingItems = [], itemType, options, tenant, title, onCancel }) {
+    const referenceBaseOptions = useMemo(() => (
+        Array.from(new Set((composicao.base_references ?? [])
+            .map((reference) => String(reference.nome ?? '').trim().toUpperCase())
+            .filter(Boolean)))
+    ), [composicao.base_references]);
+    const baseOptions = useMemo(() => {
+        const optionBases = Array.from(new Set(options.map((option) => option.base).filter(Boolean)));
+
+        return optionBases.length > 0 ? optionBases : referenceBaseOptions;
+    }, [options, referenceBaseOptions]);
+    const [base, setBase] = useState(options[0]?.base ?? referenceBaseOptions[0] ?? String(composicao.modelo ?? 'SINAPI').toUpperCase());
     const [codeSearch, setCodeSearch] = useState('');
     const [descriptionSearch, setDescriptionSearch] = useState('');
+    const [remoteOptions, setRemoteOptions] = useState([]);
     const [selectedId, setSelectedId] = useState('');
     const [coefficient, setCoefficient] = useState('1');
+    const [sicro3Section, setSicro3Section] = useState(SICRO3_COMPOSITION_SECTIONS[0].value);
+    const [sicro3OperativeUse, setSicro3OperativeUse] = useState('1');
+    const [sicro3IdleUse, setSicro3IdleUse] = useState('0');
+    const [sicro3ReferencedItemId, setSicro3ReferencedItemId] = useState('');
+    const [sicro3TransportType, setSicro3TransportType] = useState('fe');
     const [processing, setProcessing] = useState(false);
-    const baseOptions = useMemo(() => Array.from(new Set(options.map((option) => option.base).filter(Boolean))), [options]);
+    const [loadingOptions, setLoadingOptions] = useState(false);
+    const isSicro3 = String(composicao.modelo).toUpperCase() === 'SICRO3';
+    const isSicro3CompositionBuilder = itemType === 'composicao' && isSicro3;
+    const isSicro3TransportComposition = isSicro3CompositionBuilder && sicro3Section === 'momento_transporte';
+    const hasSearch = Boolean(codeSearch.trim() || descriptionSearch.trim());
+    const availableOptions = hasSearch ? remoteOptions : options;
+    const selectedTransportType = SICRO3_TRANSPORT_TYPES.find((type) => type.value === sicro3TransportType) ?? SICRO3_TRANSPORT_TYPES[0];
+    const changeBase = (value) => {
+        setBase(value);
+        setSelectedId('');
+    };
+    const changeSicro3Section = (value) => {
+        setSicro3Section(value);
+        setSelectedId('');
+        setCoefficient('1');
+        setSicro3ReferencedItemId('');
+    };
+    const changeCodeSearch = (value) => {
+        setCodeSearch(value);
+        setSelectedId('');
+    };
+    const changeDescriptionSearch = (value) => {
+        setDescriptionSearch(value);
+        setSelectedId('');
+    };
     const filteredOptions = useMemo(() => {
         const code = codeSearch.trim().toLowerCase();
         const description = descriptionSearch.trim().toLowerCase();
@@ -397,23 +503,93 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
             return [];
         }
 
-        return options
+        return availableOptions
             .filter((option) => !base || option.base === base)
             .filter((option) => !code || String(option.codigo).toLowerCase().includes(code))
             .filter((option) => !description || String(option.descricao).toLowerCase().includes(description))
             .slice(0, 30);
-    }, [base, codeSearch, descriptionSearch, itemType, options]);
-    const selected = options.find((option) => String(option.id) === String(selectedId));
+    }, [availableOptions, base, codeSearch, descriptionSearch]);
+    const selected = availableOptions.find((option) => String(option.id) === String(selectedId));
+    const selectedSicro3Section = itemType === 'insumo' ? sicro3SectionFromOption(selected) : sicro3Section;
+    const isSicro3Equipment = isSicro3 && itemType === 'insumo' && selectedSicro3Section === 'equipamentos';
+    const needsSicro3Reference = isSicro3 && itemType === 'composicao' && ['tempo_fixo', 'momento_transporte'].includes(sicro3Section);
+    const referenceOptions = useMemo(() => existingItems
+        .filter((item) => ['equipamentos', 'mao_de_obra', 'material'].includes(item.sicro3_section))
+        .map((item) => ({
+            id: item.id,
+            label: `${item.codigo} - ${item.descricao}`,
+        })), [existingItems]);
     const requiresSearch = !codeSearch.trim() && !descriptionSearch.trim();
     const itemLabel = itemType === 'insumo' ? 'insumos' : 'composicoes';
+    const previewOnerado = isSicro3
+        ? calculateSicro3BuilderPrice(selected, coefficient, selectedSicro3Section, sicro3OperativeUse, sicro3IdleUse, 'onerado')
+        : calculatePrice(selected?.preco_unitario_onerado, coefficient);
+    const previewDesonerado = isSicro3
+        ? calculateSicro3BuilderPrice(selected, coefficient, selectedSicro3Section, sicro3OperativeUse, sicro3IdleUse, 'desonerado')
+        : calculatePrice(selected?.preco_unitario_desonerado, coefficient);
+
+    useEffect(() => {
+        const code = codeSearch.trim();
+        const description = descriptionSearch.trim();
+
+        if (!code && !description) {
+            setRemoteOptions([]);
+            setLoadingOptions(false);
+            return undefined;
+        }
+
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => {
+            const params = new URLSearchParams({
+                item_type: itemType,
+                base: base || '',
+                codigo: code,
+                descricao: description,
+            });
+
+            setLoadingOptions(true);
+            fetch(`${route('tenant.orcamentos.composicoes.items.options', [tenant.slug, composicao.id])}?${params.toString()}`, {
+                headers: { Accept: 'application/json' },
+                signal: controller.signal,
+            })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error('Falha ao buscar opcoes.');
+                    }
+
+                    return response.json();
+                })
+                .then((payload) => setRemoteOptions(payload.options ?? []))
+                .catch((error) => {
+                    if (error.name !== 'AbortError') {
+                        setRemoteOptions([]);
+                    }
+                })
+                .finally(() => {
+                    if (!controller.signal.aborted) {
+                        setLoadingOptions(false);
+                    }
+                });
+        }, 250);
+
+        return () => {
+            window.clearTimeout(timeout);
+            controller.abort();
+        };
+    }, [base, codeSearch, composicao.id, descriptionSearch, itemType, tenant.slug]);
 
     const cancelSelection = () => {
         setSelectedId('');
         setCoefficient('1');
+        setSicro3Section(SICRO3_COMPOSITION_SECTIONS[0].value);
+        setSicro3OperativeUse('1');
+        setSicro3IdleUse('0');
+        setSicro3ReferencedItemId('');
+        setSicro3TransportType('fe');
     };
 
     const save = () => {
-        if (!selectedId) {
+        if (!selectedId || (isSicro3CompositionBuilder && !sicro3Section) || (needsSicro3Reference && !sicro3ReferencedItemId)) {
             return;
         }
 
@@ -424,6 +600,11 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                 item_type: itemType,
                 source_id: selectedId,
                 coeficiente: coefficient,
+                sicro3_section: isSicro3CompositionBuilder ? sicro3Section : null,
+                sicro3_utilizacao_operativa: isSicro3Equipment ? sicro3OperativeUse : null,
+                sicro3_utilizacao_improdutiva: isSicro3Equipment ? sicro3IdleUse : null,
+                sicro3_referenced_item_id: needsSicro3Reference ? sicro3ReferencedItemId : null,
+                sicro3_transport_type: isSicro3TransportComposition ? sicro3TransportType : null,
             },
             {
                 preserveScroll: true,
@@ -433,6 +614,11 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                     setCodeSearch('');
                     setDescriptionSearch('');
                     setCoefficient('1');
+                    setSicro3Section(SICRO3_COMPOSITION_SECTIONS[0].value);
+                    setSicro3OperativeUse('1');
+                    setSicro3IdleUse('0');
+                    setSicro3ReferencedItemId('');
+                    setSicro3TransportType('fe');
                 },
             },
         );
@@ -449,6 +635,49 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                     <X size={18} />
                 </button>
             </header>
+
+            {isSicro3CompositionBuilder && (
+                <div className="border-b border-[var(--border)] bg-white px-4 py-3">
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <label className="grid gap-1 text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                            Tipo da composicao no analitico SICRO3
+                            <select
+                                className="sig-input mt-1 !h-10 !min-h-10 normal-case tracking-normal"
+                                value={sicro3Section}
+                                onChange={(event) => changeSicro3Section(event.target.value)}
+                            >
+                                {SICRO3_COMPOSITION_SECTIONS.map((section) => (
+                                    <option key={section.value} value={section.value}>
+                                        {section.code} - {section.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+
+                        {isSicro3TransportComposition ? (
+                            <label className="grid gap-1 text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                                Tipo da composicao de transporte
+                                <select
+                                    className="sig-input mt-1 !h-10 !min-h-10 normal-case tracking-normal"
+                                    value={sicro3TransportType}
+                                    onChange={(event) => setSicro3TransportType(event.target.value)}
+                                >
+                                    {SICRO3_TRANSPORT_TYPES.map((type) => (
+                                        <option key={type.value} value={type.value}>
+                                            {type.code} - {type.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        ) : null}
+                    </div>
+                    <p className="mt-2 text-xs text-[var(--ink-500)]">
+                        {isSicro3TransportComposition
+                            ? `Busque e selecione a composicao de transporte ${selectedTransportType.code}; depois vincule o item que sera transportado.`
+                            : 'Essa classificacao organiza a composicao nas secoes D, E ou F do analitico SICRO3.'}
+                    </p>
+                </div>
+            )}
 
             <div className="overflow-x-auto">
                 <table className="min-w-[1240px] w-full border-collapse text-left text-xs">
@@ -475,11 +704,11 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                             </td>
                             <td className="px-2 py-2">
                                 {selected ? (
-                                    <span className="font-semibold text-[var(--ink-700)]">{selected.base}</span>
+                                    <span className="font-semibold text-[var(--ink-700)]">{selected.base_label ?? formatBaseLabel(selected.base)}</span>
                                 ) : (
-                                    <select className="sig-input !h-9 !min-h-9 !w-28 !px-2" value={base} onChange={(event) => setBase(event.target.value)}>
+                                    <select className="sig-input !h-9 !min-h-9 !w-28 !px-2" value={base} onChange={(event) => changeBase(event.target.value)}>
                                         {baseOptions.map((option) => (
-                                            <option key={option} value={option}>{option}</option>
+                                            <option key={option} value={option}>{formatBaseLabel(option)}</option>
                                         ))}
                                     </select>
                                 )}
@@ -488,7 +717,7 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                                 {selected ? (
                                     <span className="font-mono font-semibold text-[var(--ink-700)]">{selected.codigo}</span>
                                 ) : (
-                                    <input className="sig-input !h-9 !min-h-9 !w-32 !px-2" placeholder="Codigo" value={codeSearch} onChange={(event) => setCodeSearch(event.target.value)} />
+                                    <input className="sig-input !h-9 !min-h-9 !w-32 !px-2" placeholder={isSicro3TransportComposition ? `Codigo ${selectedTransportType.code}` : 'Codigo'} value={codeSearch} onChange={(event) => changeCodeSearch(event.target.value)} />
                                 )}
                             </td>
                             <td className="px-2 py-2">
@@ -497,7 +726,7 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                                         {selected.descricao}
                                     </span>
                                 ) : (
-                                    <input className="sig-input !h-9 !min-h-9 !w-80 !px-2" placeholder="Descricao" value={descriptionSearch} onChange={(event) => setDescriptionSearch(event.target.value)} />
+                                    <input className="sig-input !h-9 !min-h-9 !w-80 !px-2" placeholder={isSicro3TransportComposition ? `Descricao ${selectedTransportType.code}` : 'Descricao'} value={descriptionSearch} onChange={(event) => changeDescriptionSearch(event.target.value)} />
                                 )}
                             </td>
                             <td className="px-2 py-2">{selected?.tipo ?? '-'}</td>
@@ -507,15 +736,15 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                             <td className="px-2 py-2">
                                 <input className="sig-input !h-9 !min-h-9 !w-28 !px-2" value={coefficient} onChange={(event) => setCoefficient(event.target.value)} />
                             </td>
-                            <td className="px-2 py-2 text-right">{formatCurrency(calculatePrice(selected?.preco_unitario_onerado, coefficient))}</td>
-                            <td className="px-2 py-2 text-right">{formatCurrency(calculatePrice(selected?.preco_unitario_desonerado, coefficient))}</td>
+                            <td className="px-2 py-2 text-right">{formatCurrency(previewOnerado)}</td>
+                            <td className="px-2 py-2 text-right">{formatCurrency(previewDesonerado)}</td>
                             <td className="px-2 py-2">
                                 {selected ? (
                                     <div className="flex items-center justify-center gap-2">
                                         <button
                                             className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                                             type="button"
-                                            disabled={processing}
+                                            disabled={processing || (isSicro3CompositionBuilder && !sicro3Section) || (needsSicro3Reference && !sicro3ReferencedItemId)}
                                             onClick={save}
                                             aria-label="Confirmar item"
                                             title="Confirmar"
@@ -538,6 +767,72 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                                 )}
                             </td>
                         </tr>
+                        {selected && isSicro3 && (isSicro3Equipment || needsSicro3Reference || sicro3Section === 'momento_transporte') ? (
+                            <tr className="border-b border-[var(--border)] bg-white">
+                                <td className="px-4 py-4" colSpan={12}>
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                        {isSicro3Equipment ? (
+                                            <>
+                                                <label className="grid gap-1 text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                                                    Utilizacao operativa
+                                                    <input
+                                                        className="sig-input mt-1 !h-10 !min-h-10 normal-case tracking-normal"
+                                                        value={sicro3OperativeUse}
+                                                        onChange={(event) => setSicro3OperativeUse(event.target.value)}
+                                                    />
+                                                </label>
+                                                <label className="grid gap-1 text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                                                    Utilizacao improdutiva
+                                                    <input
+                                                        className="sig-input mt-1 !h-10 !min-h-10 normal-case tracking-normal"
+                                                        value={sicro3IdleUse}
+                                                        onChange={(event) => setSicro3IdleUse(event.target.value)}
+                                                    />
+                                                </label>
+                                                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--ink-600)]">
+                                                    <p className="font-bold uppercase tracking-[0.06em]">Custos improdutivos</p>
+                                                    <p className="mt-1">Nao des.: {formatCurrency(selected.custo_improdutivo_onerado ?? selected.preco_unitario_onerado, 4)}</p>
+                                                    <p>Des.: {formatCurrency(selected.custo_improdutivo_desonerado ?? selected.preco_unitario_desonerado, 4)}</p>
+                                                </div>
+                                            </>
+                                        ) : null}
+
+                                        {needsSicro3Reference ? (
+                                            <label className="grid gap-1 text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)] md:col-span-3">
+                                                Selecione o item referenciado
+                                                <select
+                                                    className="sig-input mt-1 !h-10 !min-h-10 normal-case tracking-normal"
+                                                    value={sicro3ReferencedItemId}
+                                                    onChange={(event) => setSicro3ReferencedItemId(event.target.value)}
+                                                >
+                                                    <option value="">Selecione um item ja adicionado</option>
+                                                    {referenceOptions.map((option) => (
+                                                        <option key={option.id} value={option.id}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                                {referenceOptions.length === 0 && (
+                                                    <span className="normal-case tracking-normal text-amber-600">
+                                                        Adicione primeiro ao menos um equipamento, mao de obra ou material para referenciar.
+                                                    </span>
+                                                )}
+                                            </label>
+                                        ) : null}
+
+                                        {isSicro3TransportComposition ? (
+                                            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800 md:col-span-3">
+                                                <p className="font-bold uppercase tracking-[0.06em]">Composicao de transporte vinculada</p>
+                                                <p className="mt-1 font-semibold">
+                                                    {selectedTransportType.code} {selected.codigo} - {selected.descricao}
+                                                </p>
+                                                <p className="mt-1 text-blue-700">
+                                                    Esse codigo sera gravado como transporte {selectedTransportType.code}. O item referenciado acima e o item transportado.
+                                                </p>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </td>
+                            </tr>
+                        ) : null}
                     </tbody>
                 </table>
             </div>
@@ -548,8 +843,12 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                         <div className="p-4 text-sm text-[var(--ink-500)]">
                             Pesquise pelo codigo ou pela descricao para listar {itemLabel} da base selecionada.
                         </div>
+                    ) : loadingOptions ? (
+                        <div className="p-4 text-sm text-[var(--ink-500)]">Buscando registros da base selecionada...</div>
                     ) : filteredOptions.length === 0 ? (
-                        <div className="p-4 text-sm text-[var(--ink-500)]">Nenhum registro encontrado nas bases de referencia selecionadas.</div>
+                        <div className="p-4 text-sm text-[var(--ink-500)]">
+                            Nenhum registro encontrado nas bases de referencia selecionadas. Verifique se a data da base desta composicao possui {itemLabel} importados.
+                        </div>
                     ) : filteredOptions.map((option) => (
                         <button
                             key={option.id}
@@ -562,7 +861,7 @@ function ItemBuilder({ composicao, itemType, options, tenant, title, onCancel })
                             <span className="font-mono font-bold">{option.codigo}</span>
                             <span className="font-semibold">{option.descricao}</span>
                             <span>{option.unidade}</span>
-                            <span>{option.data ?? option.base}</span>
+                            <span>{option.data ?? option.base_label ?? formatBaseLabel(option.base)}</span>
                         </button>
                     ))}
                 </div>
@@ -575,6 +874,7 @@ function CompositionItemsTable({ composicao, items, tenant }) {
     const [editingId, setEditingId] = useState(null);
     const [editingCoefficient, setEditingCoefficient] = useState('1');
     const [processingId, setProcessingId] = useState(null);
+    const isSicro3 = String(composicao.modelo).toUpperCase() === 'SICRO3';
 
     if (items.length === 0) {
         return (
@@ -607,9 +907,26 @@ function CompositionItemsTable({ composicao, items, tenant }) {
         );
     };
 
+    if (isSicro3) {
+        return (
+            <Sicro3OwnCompositionItemsTable
+                composicao={composicao}
+                editingCoefficient={editingCoefficient}
+                editingId={editingId}
+                items={items}
+                onCancelEdit={cancelEdit}
+                onEditCoefficientChange={setEditingCoefficient}
+                onSaveEdit={saveEdit}
+                onStartEdit={startEdit}
+                processingId={processingId}
+                tenant={tenant}
+            />
+        );
+    }
+
     return (
         <section className="overflow-hidden rounded-lg border border-[var(--border)]">
-            <table className="w-full min-w-[980px] border-collapse text-left text-xs">
+            <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
                 <thead className="bg-[var(--ink-900)] text-white">
                     <tr>
                         <th className="px-3 py-3">BASE</th>
@@ -628,15 +945,15 @@ function CompositionItemsTable({ composicao, items, tenant }) {
                         const isEditing = editingId === item.id;
                         const processing = processingId === item.id;
                         const previewOnerado = isEditing
-                            ? calculatePrice(item.preco_unitario_onerado, editingCoefficient)
+                            ? calculateSicro3BuilderPrice(item, editingCoefficient, item.sicro3_section, item.sicro3_utilizacao_operativa, item.sicro3_utilizacao_improdutiva, 'onerado')
                             : item.preco_onerado;
                         const previewDesonerado = isEditing
-                            ? calculatePrice(item.preco_unitario_desonerado, editingCoefficient)
+                            ? calculateSicro3BuilderPrice(item, editingCoefficient, item.sicro3_section, item.sicro3_utilizacao_operativa, item.sicro3_utilizacao_improdutiva, 'desonerado')
                             : item.preco_desonerado;
 
                         return (
                             <tr key={item.id} className={`hover:bg-[var(--primary-50)]/50 ${isEditing ? 'bg-indigo-50/60' : ''}`}>
-                                <td className="px-3 py-3">{item.base}</td>
+                                <td className="px-3 py-3">{formatBaseLabel(item.base)}</td>
                                 <td className="px-3 py-3 font-mono font-bold text-[var(--primary)]">
                                     <CompositionCodeLink item={item} tenant={tenant} />
                                 </td>
@@ -708,6 +1025,396 @@ function CompositionItemsTable({ composicao, items, tenant }) {
     );
 }
 
+const SICRO3_ANALYTIC_SECTIONS = [
+    { key: 'equipamentos', code: 'A', label: 'EQUIPAMENTOS', columns: 'equipment' },
+    { key: 'mao_de_obra', code: 'B', label: 'MAO-DE-OBRA', columns: 'labor' },
+    { key: 'material', code: 'C', label: 'MATERIAL', columns: 'material' },
+    { key: 'atividades_auxiliares', code: 'D', label: 'ATIVIDADES AUXILIARES', columns: 'composition' },
+    { key: 'tempo_fixo', code: 'E', label: 'TEMPO FIXO', columns: 'composition' },
+    { key: 'momento_transporte', code: 'F', label: 'MOMENTO DE TRANSPORTE', columns: 'composition' },
+];
+
+function Sicro3OwnCompositionItemsTable({
+    composicao,
+    editingCoefficient,
+    editingId,
+    items,
+    onCancelEdit,
+    onEditCoefficientChange,
+    onSaveEdit,
+    onStartEdit,
+    processingId,
+    tenant,
+}) {
+    const sicro3Summary = composicao.sicro3_summary ?? {};
+    const totalOnerado = Number(sicro3Summary.preco_onerado ?? composicao.preco_onerado ?? items.reduce((sum, item) => sum + Number(item.preco_onerado ?? 0), 0));
+    const totalDesonerado = Number(sicro3Summary.preco_desonerado ?? composicao.preco_desonerado ?? items.reduce((sum, item) => sum + Number(item.preco_desonerado ?? 0), 0));
+
+    return (
+        <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
+            <div className="border-b border-[var(--border)]">
+                <div className="bg-[var(--primary)] px-3 py-2 text-xs font-bold text-white">
+                    {composicao.descricao}
+                </div>
+                <div className="grid gap-px bg-[var(--border)] text-xs md:grid-cols-4">
+                    <Sicro3HeaderCell label="Data" value={firstReferenceLabel(composicao)} />
+                    <Sicro3HeaderCell label="Unidade" value={composicao.unidade} />
+                    <Sicro3HeaderCell label="Producao da equipe" value={formatOptionalNumber(composicao.producao_equipe, 4)} />
+                    <Sicro3HeaderCell label="Fator de influencia da chuva - FIC" value={formatOptionalNumber(composicao.fator_influencia_chuvas, 4)} />
+                </div>
+            </div>
+
+            <div className="overflow-x-auto">
+                <div className="min-w-[1280px]">
+                    <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-3 text-xs font-bold text-[var(--ink-900)]">
+                        <span>{composicao.estado_label ?? composicao.uf} - Nao Desonerado</span>
+                        <span>{formatCurrency(totalOnerado)}</span>
+                    </div>
+
+                    {SICRO3_ANALYTIC_SECTIONS.map((section) => (
+                        <Sicro3AnalyticSection
+                            key={section.key}
+                            composicao={composicao}
+                            editingCoefficient={editingCoefficient}
+                            editingId={editingId}
+                            items={items.filter((item) => item.sicro3_section === section.key)}
+                            onCancelEdit={onCancelEdit}
+                            onEditCoefficientChange={onEditCoefficientChange}
+                            onSaveEdit={onSaveEdit}
+                            onStartEdit={onStartEdit}
+                            processingId={processingId}
+                            section={section}
+                            summary={sicro3Summary}
+                            tenant={tenant}
+                        />
+                    ))}
+
+                    <div className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--surface-muted)] px-3 py-4 text-xs font-bold text-[var(--ink-900)]">
+                        <span>{composicao.estado_label ?? composicao.uf} - Desonerado</span>
+                        <span>{formatCurrency(totalDesonerado)}</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function Sicro3HeaderCell({ label, value }) {
+    return (
+        <div className="bg-white px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">{label}</p>
+            <p className="mt-2 font-semibold text-[var(--ink-900)]">{value || '-'}</p>
+        </div>
+    );
+}
+
+function Sicro3AnalyticSection({
+    composicao,
+    editingCoefficient,
+    editingId,
+    items,
+    onCancelEdit,
+    onEditCoefficientChange,
+    onSaveEdit,
+    onStartEdit,
+    processingId,
+    section,
+    summary,
+    tenant,
+}) {
+    const sectionSummary = summary?.sections?.[section.key] ?? {};
+    const subtotalOnerado = Number(sectionSummary.onerado ?? items.reduce((sum, item) => sum + Number(item.preco_onerado ?? 0), 0));
+    const subtotalDesonerado = Number(sectionSummary.desonerado ?? items.reduce((sum, item) => sum + Number(item.preco_desonerado ?? 0), 0));
+
+    return (
+        <div className="border-b border-[var(--border)]">
+            <div className="grid grid-cols-[52px_1fr] bg-[#2f2f2f] text-xs font-bold text-white">
+                <div className="px-3 py-2">{section.code}</div>
+                <div className="px-3 py-2">{section.label}</div>
+            </div>
+            <table className="w-full table-fixed border-collapse text-left text-xs">
+                <Sicro3SectionHead section={section} />
+                <tbody className="divide-y divide-[var(--border)] bg-white">
+                    {items.length === 0 ? (
+                        <tr>
+                            <td className="px-3 py-4 text-center text-[var(--ink-400)]" colSpan={10}>
+                                Nenhum item nesta categoria.
+                            </td>
+                        </tr>
+                    ) : items.map((item) => {
+                        const isEditing = editingId === item.id;
+                        const processing = processingId === item.id;
+                        const previewOnerado = isEditing
+                            ? calculatePrice(item.preco_unitario_onerado, editingCoefficient)
+                            : item.preco_onerado;
+                        const previewDesonerado = isEditing
+                            ? calculatePrice(item.preco_unitario_desonerado, editingCoefficient)
+                            : item.preco_desonerado;
+
+                        return (
+                            <Sicro3SectionRow
+                                key={item.id}
+                                composicao={composicao}
+                                editingCoefficient={editingCoefficient}
+                                isEditing={isEditing}
+                                item={item}
+                                onCancelEdit={onCancelEdit}
+                                onEditCoefficientChange={onEditCoefficientChange}
+                                onSaveEdit={onSaveEdit}
+                                onStartEdit={onStartEdit}
+                                previewDesonerado={previewDesonerado}
+                                previewOnerado={previewOnerado}
+                                processing={processing}
+                                section={section}
+                                tenant={tenant}
+                            />
+                        );
+                    })}
+                    <tr className="bg-[var(--surface-muted)] font-bold text-[var(--ink-700)]">
+                        <td className="px-3 py-2 text-right" colSpan={8}>
+                            Total {section.label.toLowerCase()}
+                        </td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(subtotalOnerado)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(subtotalDesonerado)}</td>
+                    </tr>
+                    {section.key === 'mao_de_obra' ? (
+                        <>
+                            <Sicro3SummaryRow label="Custo horario total de execucao" onerado={summary?.custo_horario_execucao_onerado} desonerado={summary?.custo_horario_execucao_desonerado} />
+                            <Sicro3SummaryRow label="Custo unitario de execucao" onerado={summary?.custo_unitario_execucao_onerado} desonerado={summary?.custo_unitario_execucao_desonerado} />
+                            <Sicro3SummaryRow label="Custo do Fator de Influencia da Chuva - FIC" onerado={summary?.custo_fic_onerado} desonerado={summary?.custo_fic_desonerado} />
+                        </>
+                    ) : null}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function Sicro3SummaryRow({ label, onerado, desonerado }) {
+    return (
+        <tr className="bg-white text-[var(--ink-700)]">
+            <td className="px-3 py-2 text-right font-semibold" colSpan={8}>
+                {label}
+            </td>
+            <td className="px-3 py-2 text-right font-bold">{formatCurrency(onerado ?? 0, 4)}</td>
+            <td className="px-3 py-2 text-right font-bold">{formatCurrency(desonerado ?? 0, 4)}</td>
+        </tr>
+    );
+}
+
+function Sicro3SectionHead({ section }) {
+    if (section.columns === 'equipment') {
+        return (
+            <thead className="bg-[#2f2f2f] text-white">
+                <tr>
+                    <th className="w-[8%] px-3 py-2">CODIGO</th>
+                    <th className="w-[34%] px-3 py-2">DESCRICAO</th>
+                    <th className="w-[8%] px-3 py-2 text-right">QUANTIDADE</th>
+                    <th className="w-[9%] px-3 py-2 text-right">UTIL. OPER.</th>
+                    <th className="w-[9%] px-3 py-2 text-right">UTIL. IMPROD.</th>
+                    <th className="w-[10%] px-3 py-2 text-right">CUSTO OPER.</th>
+                    <th className="w-[10%] px-3 py-2 text-right">CUSTO IMPROD.</th>
+                    <th className="w-[8%] px-3 py-2 text-right">CUSTO HOR.</th>
+                    <th className="w-[8%] px-3 py-2 text-right">TOTAL</th>
+                    <th className="w-[8%] px-3 py-2 text-right">ACOES</th>
+                </tr>
+            </thead>
+        );
+    }
+
+    return (
+        <thead className="bg-[#2f2f2f] text-white">
+            <tr>
+                <th className="w-[8%] px-3 py-2">CODIGO</th>
+                <th className="w-[38%] px-3 py-2">DESCRICAO</th>
+                <th className="w-[12%] px-3 py-2">TIPO</th>
+                <th className="w-[7%] px-3 py-2">UNID.</th>
+                <th className="w-[9%] px-3 py-2 text-right">QUANTIDADE</th>
+                <th className="w-[10%] px-3 py-2 text-right">UNIT. NAO DES.</th>
+                <th className="w-[10%] px-3 py-2 text-right">UNIT. DES.</th>
+                <th className="w-[10%] px-3 py-2 text-right">TOTAL NAO DES.</th>
+                <th className="w-[10%] px-3 py-2 text-right">TOTAL DES.</th>
+                <th className="w-[8%] px-3 py-2 text-right">ACOES</th>
+            </tr>
+        </thead>
+    );
+}
+
+function Sicro3SectionRow({
+    editingCoefficient,
+    isEditing,
+    item,
+    onCancelEdit,
+    onEditCoefficientChange,
+    onSaveEdit,
+    onStartEdit,
+    previewDesonerado,
+    previewOnerado,
+    processing,
+    section,
+    tenant,
+    composicao,
+}) {
+    const quantityCell = isEditing ? (
+        <input
+            className="sig-input !h-8 !min-h-8 !w-24 !px-2 text-right text-xs"
+            value={editingCoefficient}
+            onChange={(event) => onEditCoefficientChange(event.target.value)}
+        />
+    ) : (
+        formatNumber(item.coeficiente, 5)
+    );
+
+    if (section.columns === 'equipment') {
+        const operationalUse = Number(item.sicro3_utilizacao_operativa ?? 1);
+        const idleUse = Number(item.sicro3_utilizacao_improdutiva ?? 0);
+        const idleCost = Number(item.custo_improdutivo_onerado ?? item.preco_unitario_onerado ?? 0);
+        const hourlyCost = (Number(item.preco_unitario_onerado ?? 0) * operationalUse) + (idleCost * idleUse);
+
+        return (
+            <tr className={isEditing ? 'bg-indigo-50/60' : 'hover:bg-[var(--primary-50)]/40'}>
+                <td className="px-3 py-2 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
+                <td className="px-3 py-2 font-semibold text-[var(--ink-800)]">{item.descricao}</td>
+                <td className="px-3 py-2 text-right">{quantityCell}</td>
+                <td className="px-3 py-2 text-right">{formatNumber(operationalUse, 2)}</td>
+                <td className="px-3 py-2 text-right">{formatNumber(idleUse, 2)}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(item.preco_unitario_onerado, 4)}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(idleCost, 4)}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(hourlyCost, 4)}</td>
+                <td className="px-3 py-2 text-right font-bold">{formatCurrency(previewOnerado, 4)}</td>
+                <td className="px-3 py-2 text-right">
+                    <Sicro3RowActions
+                        composicao={composicao}
+                        isEditing={isEditing}
+                        item={item}
+                        onCancelEdit={onCancelEdit}
+                        onSaveEdit={onSaveEdit}
+                        onStartEdit={onStartEdit}
+                        processing={processing}
+                        tenant={tenant}
+                    />
+                </td>
+            </tr>
+        );
+    }
+
+    return (
+        <tr className={isEditing ? 'bg-indigo-50/60' : 'hover:bg-[var(--primary-50)]/40'}>
+            <td className="px-3 py-2 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
+            <td className="px-3 py-2 font-semibold text-[var(--ink-800)]">
+                <span>{item.descricao}</span>
+                <Sicro3ReferenceMeta item={item} />
+            </td>
+            <td className="px-3 py-2">{item.tipo}</td>
+            <td className="px-3 py-2">{item.unidade}</td>
+            <td className="px-3 py-2 text-right">{quantityCell}</td>
+            <td className="px-3 py-2 text-right">{formatCurrency(item.preco_unitario_onerado, 4)}</td>
+            <td className="px-3 py-2 text-right">{formatCurrency(item.preco_unitario_desonerado, 4)}</td>
+            <td className="px-3 py-2 text-right font-bold">{formatCurrency(previewOnerado, 4)}</td>
+            <td className="px-3 py-2 text-right font-bold">{formatCurrency(previewDesonerado, 4)}</td>
+            <td className="px-3 py-2 text-right">
+                <Sicro3RowActions
+                    composicao={composicao}
+                    isEditing={isEditing}
+                    item={item}
+                    onCancelEdit={onCancelEdit}
+                    onSaveEdit={onSaveEdit}
+                    onStartEdit={onStartEdit}
+                    processing={processing}
+                    tenant={tenant}
+                />
+            </td>
+        </tr>
+    );
+}
+
+function Sicro3ReferenceMeta({ item }) {
+    const transportCodes = [
+        item.sicro3_transport_ln_code ? `LN ${item.sicro3_transport_ln_code}` : null,
+        item.sicro3_transport_rp_code ? `RP ${item.sicro3_transport_rp_code}` : null,
+        item.sicro3_transport_p_code ? `P ${item.sicro3_transport_p_code}` : null,
+        item.sicro3_transport_fe_code ? `FE ${item.sicro3_transport_fe_code}` : null,
+    ].filter(Boolean);
+
+    if (!item.sicro3_referenced_item_code && transportCodes.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="mt-1 space-y-1 text-[11px] font-medium text-[var(--ink-500)]">
+            {item.sicro3_referenced_item_code && (
+                <p>Item referenciado: {item.sicro3_referenced_item_code} - {item.sicro3_referenced_item_description}</p>
+            )}
+            {transportCodes.length > 0 && (
+                <p>Transporte: {transportCodes.join(' · ')}</p>
+            )}
+        </div>
+    );
+}
+
+function Sicro3RowActions({ composicao, isEditing, item, onCancelEdit, onSaveEdit, onStartEdit, processing, tenant }) {
+    if (isEditing) {
+        return (
+            <div className="flex items-center justify-end gap-1">
+                <button
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    disabled={processing}
+                    onClick={() => onSaveEdit(item)}
+                    title="Salvar coeficiente"
+                >
+                    <Check size={14} strokeWidth={3} />
+                </button>
+                <button
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    disabled={processing}
+                    onClick={onCancelEdit}
+                    title="Cancelar edicao"
+                >
+                    <X size={14} strokeWidth={3} />
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex items-center justify-end gap-1">
+            <button
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[var(--primary)] transition hover:bg-[var(--primary-50)]"
+                type="button"
+                onClick={() => onStartEdit(item)}
+                title="Editar coeficiente"
+            >
+                <Pencil size={14} />
+            </button>
+            <button
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-rose-600 transition hover:bg-rose-50"
+                type="button"
+                onClick={() => router.delete(route('tenant.orcamentos.composicoes.items.destroy', [tenant.slug, composicao.id, item.id]), { preserveScroll: true })}
+                title="Remover item"
+            >
+                <X size={15} />
+            </button>
+        </div>
+    );
+}
+
+function Sicro3SectionBadge({ item }) {
+    if (!item.sicro3_section_code || !item.sicro3_section_label) {
+        return <span className="text-[var(--ink-300)]">-</span>;
+    }
+
+    return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-[var(--ink-700)]">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--ink-900)] text-[10px] text-white">
+                {item.sicro3_section_code}
+            </span>
+            {item.sicro3_section_label}
+        </span>
+    );
+}
+
 function CreateInsumoModal({ composicao, options, tenant, onClose }) {
     const firstReference = composicao.base_references?.[0] ?? {};
     const form = useForm({
@@ -715,14 +1422,25 @@ function CreateInsumoModal({ composicao, options, tenant, onClose }) {
         descricao: '',
         unidade: '',
         tipo: 'equipment',
+        grupo_id: '',
         uf: firstReference.uf ?? composicao.uf ?? 'PA',
-        origem_preco: 'CR',
         preco_nao_desonerado: '',
         preco_desonerado: '',
+        custo_improdutivo_nao_desonerado: '',
+        custo_improdutivo_desonerado: '',
         data: toMonthInputValue(firstReference.data) ?? '2026-04',
         coeficiente: '1',
         observacao: '',
     });
+    const isEquipment = form.data.tipo === 'equipment';
+    const updateTipo = (value) => {
+        form.setData({
+            ...form.data,
+            tipo: value,
+            custo_improdutivo_nao_desonerado: value === 'equipment' ? form.data.custo_improdutivo_nao_desonerado : '',
+            custo_improdutivo_desonerado: value === 'equipment' ? form.data.custo_improdutivo_desonerado : '',
+        });
+    };
 
     const submit = (event) => {
         event.preventDefault();
@@ -751,14 +1469,9 @@ function CreateInsumoModal({ composicao, options, tenant, onClose }) {
                         Base propria
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <ModalField label="Codigo" error={form.errors.codigo_insumo}>
-                            <input className="sig-input" value={form.data.codigo_insumo} onChange={(event) => form.setData('codigo_insumo', event.target.value)} />
-                        </ModalField>
-                        <ModalField label="Origem preco" error={form.errors.origem_preco}>
-                            <input className="sig-input" value={form.data.origem_preco} onChange={(event) => form.setData('origem_preco', event.target.value)} />
-                        </ModalField>
-                    </div>
+                    <ModalField label="Codigo" error={form.errors.codigo_insumo}>
+                        <input className="sig-input" value={form.data.codigo_insumo} onChange={(event) => form.setData('codigo_insumo', event.target.value)} />
+                    </ModalField>
 
                     <ModalField label="Descricao" error={form.errors.descricao}>
                         <input className="sig-input" value={form.data.descricao} onChange={(event) => form.setData('descricao', event.target.value)} />
@@ -769,9 +1482,18 @@ function CreateInsumoModal({ composicao, options, tenant, onClose }) {
                     </ModalField>
 
                     <ModalField label="Tipo" error={form.errors.tipo}>
-                        <select className="sig-input" value={form.data.tipo} onChange={(event) => form.setData('tipo', event.target.value)}>
+                        <select className="sig-input" value={form.data.tipo} onChange={(event) => updateTipo(event.target.value)}>
                             {(options.types ?? []).map((type) => (
                                 <option key={type.value} value={type.value}>{type.label}</option>
+                            ))}
+                        </select>
+                    </ModalField>
+
+                    <ModalField label="Grupo" error={form.errors.grupo_id}>
+                        <select className="sig-input" value={form.data.grupo_id} onChange={(event) => form.setData('grupo_id', event.target.value)}>
+                            <option value="">Sem grupo</option>
+                            {(options.grupos ?? []).map((grupo) => (
+                                <option key={grupo.value} value={grupo.value}>{grupo.label}</option>
                             ))}
                         </select>
                     </ModalField>
@@ -786,11 +1508,45 @@ function CreateInsumoModal({ composicao, options, tenant, onClose }) {
                     </div>
 
                     <ModalField label="Valor nao desonerado" error={form.errors.preco_nao_desonerado}>
-                        <input className="sig-input" value={form.data.preco_nao_desonerado} onChange={(event) => form.setData('preco_nao_desonerado', event.target.value)} />
+                        <input
+                            className="sig-input"
+                            inputMode="numeric"
+                            placeholder="100.000,00"
+                            value={form.data.preco_nao_desonerado}
+                            onChange={(event) => setMoneyField(form, 'preco_nao_desonerado', event.target.value)}
+                        />
                     </ModalField>
-                    <ModalField label="Valor desonerado" error={form.errors.preco_desonerado}>
-                        <input className="sig-input" placeholder="Opcional" value={form.data.preco_desonerado} onChange={(event) => form.setData('preco_desonerado', event.target.value)} />
+                    <ModalField label="Valor desonerado (opcional)" error={form.errors.preco_desonerado}>
+                        <input
+                            className="sig-input"
+                            inputMode="numeric"
+                            placeholder="Opcional"
+                            value={form.data.preco_desonerado}
+                            onChange={(event) => setMoneyField(form, 'preco_desonerado', event.target.value)}
+                        />
                     </ModalField>
+                    {isEquipment && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <ModalField label="Valor nao Desonerado Improdutivo" error={form.errors.custo_improdutivo_nao_desonerado}>
+                                <input
+                                    className="sig-input"
+                                    inputMode="numeric"
+                                    placeholder="Opcional"
+                                    value={form.data.custo_improdutivo_nao_desonerado}
+                                    onChange={(event) => setMoneyField(form, 'custo_improdutivo_nao_desonerado', event.target.value)}
+                                />
+                            </ModalField>
+                            <ModalField label="Valor Desonerado Improdutivo" error={form.errors.custo_improdutivo_desonerado}>
+                                <input
+                                    className="sig-input"
+                                    inputMode="numeric"
+                                    placeholder="Opcional"
+                                    value={form.data.custo_improdutivo_desonerado}
+                                    onChange={(event) => setMoneyField(form, 'custo_improdutivo_desonerado', event.target.value)}
+                                />
+                            </ModalField>
+                        </div>
+                    )}
                     <ModalField label="Coeficiente deste insumo para esta composicao" error={form.errors.coeficiente}>
                         <input className="sig-input" value={form.data.coeficiente} onChange={(event) => form.setData('coeficiente', event.target.value)} />
                     </ModalField>
@@ -819,6 +1575,25 @@ function ModalField({ children, error, label }) {
             {error && <span className="mt-1 block text-xs font-semibold text-rose-600">{error}</span>}
         </label>
     );
+}
+
+function setMoneyField(form, field, value) {
+    form.setData(field, formatMoneyInput(value));
+}
+
+function formatMoneyInput(value) {
+    const digits = String(value ?? '').replace(/\D/g, '');
+
+    if (!digits) {
+        return '';
+    }
+
+    const padded = digits.padStart(3, '0');
+    const integer = (padded.slice(0, -2).replace(/^0+(?=\d)/, '') || '0')
+        .replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const cents = padded.slice(-2);
+
+    return `${integer},${cents}`;
 }
 
 function DetailTerm({ children }) {
@@ -868,12 +1643,56 @@ function calculatePrice(price, coefficient) {
     return (Number.isNaN(parsedPrice) ? 0 : parsedPrice) * (Number.isNaN(parsedCoefficient) ? 1 : parsedCoefficient);
 }
 
-function formatCurrency(value) {
+function calculateSicro3BuilderPrice(option, coefficient, section, operativeUse = '1', idleUse = '0', field = 'onerado') {
+    if (!option) {
+        return 0;
+    }
+
+    if (section !== 'equipamentos') {
+        return calculatePrice(field === 'desonerado' ? option.preco_unitario_desonerado : option.preco_unitario_onerado, coefficient);
+    }
+
+    const parsedCoefficient = Number(String(coefficient || '1').replace(',', '.'));
+    const parsedOperativeUse = Number(String(operativeUse || '1').replace(',', '.'));
+    const parsedIdleUse = Number(String(idleUse || '0').replace(',', '.'));
+    const operationalCost = Number(field === 'desonerado' ? option.preco_unitario_desonerado : option.preco_unitario_onerado) || 0;
+    const idleCost = Number(field === 'desonerado' ? option.custo_improdutivo_desonerado : option.custo_improdutivo_onerado) || operationalCost;
+
+    return (Number.isNaN(parsedCoefficient) ? 1 : parsedCoefficient)
+        * ((operationalCost * (Number.isNaN(parsedOperativeUse) ? 1 : parsedOperativeUse))
+            + (idleCost * (Number.isNaN(parsedIdleUse) ? 0 : parsedIdleUse)));
+}
+
+function sicro3SectionFromOption(option) {
+    const type = String(option?.tipo ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/-/g, ' ');
+
+    if (type.includes('equipamento')) {
+        return 'equipamentos';
+    }
+
+    if (type.includes('mao de obra')) {
+        return 'mao_de_obra';
+    }
+
+    if (type.includes('material')) {
+        return 'material';
+    }
+
+    return null;
+}
+
+function formatCurrency(value, decimals = 2) {
     const parsed = Number(value ?? 0);
 
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL',
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
     }).format(Number.isNaN(parsed) ? 0 : parsed);
 }
 
@@ -886,8 +1705,20 @@ function formatNumber(value, decimals = 2) {
     }).format(Number.isNaN(parsed) ? 0 : parsed);
 }
 
+function formatOptionalNumber(value, decimals = 2) {
+    if (value === null || value === undefined || value === '') {
+        return '-';
+    }
+
+    return formatNumber(value, decimals);
+}
+
 function firstReferenceLabel(composicao) {
     const reference = composicao.base_references?.[0];
 
     return reference?.data ?? '-';
+}
+
+function formatBaseLabel(base) {
+    return String(base).toUpperCase() === 'PROPRIA' ? 'Base propria' : base;
 }

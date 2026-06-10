@@ -12,6 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('tenant_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('grupo_id')->nullable()->constrained('orcamento_insumo_grupos')->nullOnDelete();
             $table->string('banco', 30)->default('SINAPI');
             $table->string('tipo', 30)->nullable();
             $table->string('codigo_insumo', 50);
@@ -19,8 +20,10 @@ return new class extends Migration
             $table->string('unidade', 20);
             $table->string('uf', 2);
             $table->string('origem_preco', 30)->nullable();
-            $table->decimal('preco_nao_desonerado', 15, 2)->nullable();
-            $table->decimal('preco_desonerado', 15, 2)->nullable();
+            $table->decimal('preco_nao_desonerado', 18, 6)->nullable();
+            $table->decimal('preco_desonerado', 18, 6)->nullable();
+            $table->decimal('custo_improdutivo_nao_desonerado', 18, 6)->nullable();
+            $table->decimal('custo_improdutivo_desonerado', 18, 6)->nullable();
             $table->date('data_referencia');
             $table->timestamps();
             $table->softDeletes();

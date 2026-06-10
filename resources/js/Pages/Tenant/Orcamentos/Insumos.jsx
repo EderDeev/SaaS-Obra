@@ -1,5 +1,6 @@
 import { router, useForm, usePage } from '@inertiajs/react';
-import { CheckCircle2, Clock3, Building2, Database, Globe2, Plus, Search, UploadCloud, X } from 'lucide-react';
+import ConfirmActionButton from '@/Components/ConfirmActionButton';
+import { CheckCircle2, Clock3, Building2, Database, FolderTree, Globe2, Pencil, Plus, Search, Trash2, UploadCloud, X } from 'lucide-react';
 import { cloneElement, useMemo, useState } from 'react';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
@@ -35,7 +36,7 @@ const states = [
 
 const banks = [
     { value: 'SINAPI', label: 'SINAPI' },
-    { value: 'SICRO', label: 'SICRO' },
+    { value: 'SICRO3', label: 'SICRO3' },
     { value: 'PROPRIA', label: 'Base propria' },
 ];
 
@@ -61,7 +62,10 @@ export default function OrcamentosInsumos({
     insumos = [],
     totalInsumos = 0,
     typeOptions = [],
+    typeOptionsByBank = {},
     dateOptions = [],
+    grupoOptions = [],
+    grupos = [],
     canManageTenantInsumos = false,
     canManageGlobalInsumos = false,
 }) {
@@ -81,32 +85,57 @@ export default function OrcamentosInsumos({
 
     const createForm = useForm({
         scope: 'tenant',
-        banco: 'SINAPI',
         tipo: '',
+        grupo_id: '',
         codigo_insumo: '',
         descricao: '',
         unidade: '',
         uf: 'PA',
-        origem_preco: '',
         preco_nao_desonerado: '',
         preco_desonerado: '',
+        custo_improdutivo_nao_desonerado: '',
+        custo_improdutivo_desonerado: '',
         data: '04/2026',
+        observacao: '',
     });
 
     const tenantImportForm = useForm({
         scope: 'tenant',
-        banco: 'SINAPI',
         file: null,
+        first_item_row: '2',
+        last_item_row: '',
+        data: currentMonthReference(),
+        tipo_column: '',
+        codigo_column: '',
+        grupo_column: '',
+        descricao_column: '',
+        unidade_column: '',
+        preco_desonerado_column: '',
+        preco_nao_desonerado_column: '',
     });
 
     const globalImportForm = useForm({
         scope: 'global',
         banco: 'SINAPI',
         file: null,
+        first_item_row: '2',
+        last_item_row: '',
+        codigo_insumo_column: '',
+        classificacao_column: '',
+        descricao_column: '',
+        unidade_column: '',
+        uf_column: '',
+        origem_preco_column: '',
+        preco_nao_desonerado_column: '',
+        preco_desonerado_column: '',
+        custo_improdutivo_nao_desonerado_column: '',
+        custo_improdutivo_desonerado_column: '',
+        data_column: '',
     });
 
     const visiblePanels = useMemo(() => ({
         create: canManageTenantInsumos,
+        groups: canManageTenantInsumos,
         importTenant: canManageTenantInsumos,
         importGlobal: canManageGlobalInsumos,
     }), [canManageGlobalInsumos, canManageTenantInsumos]);
@@ -167,7 +196,7 @@ export default function OrcamentosInsumos({
             tenant={tenant}
             active="insumos"
             title="Insumos"
-            subtitle="Base mestre dos recursos usados nas composicoes. Cadastre itens proprios do tenant ou importe uma base global para todos os tenants."
+            subtitle="Base mestre dos recursos usados nas composicoes. Cadastre itens da base propria ou importe uma base global para toda a plataforma."
             showNav={false}
         >
             {page.props.flash?.success && (
@@ -191,9 +220,15 @@ export default function OrcamentosInsumos({
                     </ActionButton>
                 )}
 
+                {visiblePanels.groups && (
+                    <ActionButton active={activePanel === 'groups'} icon={FolderTree} tone="violet" onClick={() => togglePanel('groups')}>
+                        Grupos
+                    </ActionButton>
+                )}
+
                 {visiblePanels.importTenant && (
                     <ActionButton active={activePanel === 'importTenant'} icon={Building2} tone="green" onClick={() => togglePanel('importTenant')}>
-                        Importar CSV do tenant
+                        Importar base propria
                     </ActionButton>
                 )}
 
@@ -204,36 +239,34 @@ export default function OrcamentosInsumos({
                 )}
             </section>
 
-            <SearchPanel
-                dateOptions={dateOptions}
-                filters={filters}
-                onChange={updateFilter}
-                onSubmit={submitSearch}
-                typeOptions={typeOptions}
-            />
-
             {activePanel === 'create' && (
                 <CreateInsumoPanel
                     form={createForm}
+                    grupoOptions={grupoOptions}
                     onClose={() => setActivePanel(null)}
                     onSubmit={submitCreate}
                 />
             )}
 
-            {activePanel === 'importTenant' && (
-                <ImportInsumoPanel
-                    description="Os itens importados ficarao disponiveis apenas para este tenant."
-                    form={tenantImportForm}
-                    icon={Building2}
+            {activePanel === 'groups' && (
+                <InsumoGroupsPanel
+                    grupos={grupos}
                     onClose={() => setActivePanel(null)}
-                    onSubmit={(event) => submitImport(event, tenantImportForm, 'Importacao de insumos do tenant')}
-                    title="Importar insumos do tenant"
+                    tenant={tenant}
+                />
+            )}
+
+            {activePanel === 'importTenant' && (
+                <ImportOwnInsumoPanel
+                    form={tenantImportForm}
+                    onClose={() => setActivePanel(null)}
+                    onSubmit={(event) => submitImport(event, tenantImportForm, 'Importacao de base propria')}
                 />
             )}
 
             {activePanel === 'importGlobal' && (
                 <ImportInsumoPanel
-                    description="Os itens importados ficarao disponiveis para todos os tenants. Use apenas para bases oficiais ou corporativas."
+                    description="Os itens importados ficarao disponiveis para toda a plataforma. Use apenas para bases oficiais ou corporativas."
                     form={globalImportForm}
                     icon={Globe2}
                     onClose={() => setActivePanel(null)}
@@ -241,6 +274,15 @@ export default function OrcamentosInsumos({
                     title="Importar insumos globais"
                 />
             )}
+
+            <SearchPanel
+                dateOptions={dateOptions}
+                filters={filters}
+                onChange={updateFilter}
+                onSubmit={submitSearch}
+                typeOptions={typeOptions}
+                typeOptionsByBank={typeOptionsByBank}
+            />
 
             <InsumosList
                 filters={filters}
@@ -255,8 +297,9 @@ export default function OrcamentosInsumos({
     );
 }
 
-function SearchPanel({ dateOptions = [], filters, onChange, onSubmit, typeOptions = [] }) {
-    const normalizedTypeOptions = ensureSelectedOption(typeOptions, filters.type, 'Tipo selecionado');
+function SearchPanel({ dateOptions = [], filters, onChange, onSubmit, typeOptions = [], typeOptionsByBank = {} }) {
+    const bankTypeOptions = typeOptionsByBank?.[filters.bank] ?? typeOptions;
+    const normalizedTypeOptions = ensureSelectedOption(bankTypeOptions, filters.type, 'Tipo selecionado');
     const normalizedDateOptions = ensureSelectedOption(dateOptions, filters.date, filters.date);
 
     return (
@@ -285,7 +328,13 @@ function SearchPanel({ dateOptions = [], filters, onChange, onSubmit, typeOption
                         />
                     </Field>
                     <Field label="Banco">
-                        <select value={filters.bank} onChange={(event) => onChange('bank', event.target.value)}>
+                        <select
+                            value={filters.bank}
+                            onChange={(event) => {
+                                onChange('bank', event.target.value);
+                                onChange('type', 'all');
+                            }}
+                        >
                             <option value="TODOS">Todos</option>
                             {banks.map((bank) => <option key={bank.value} value={bank.value}>{bank.label}</option>)}
                         </select>
@@ -424,15 +473,187 @@ function ImportResultFeedback({ result }) {
                     </div>
                 ))}
             </div>
+
+            {duplicated > 0 && result.duplicate_note && (
+                <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-xs leading-5 text-violet-800">
+                    {result.duplicate_note}
+                </div>
+            )}
         </section>
     );
 }
 
-function CreateInsumoPanel({ form, onClose, onSubmit }) {
+function InsumoGroupsPanel({ grupos = [], onClose, tenant }) {
+    const [editingId, setEditingId] = useState(null);
+    const createForm = useForm({
+        nome: '',
+        descricao: '',
+    });
+    const editForm = useForm({
+        nome: '',
+        descricao: '',
+    });
+
+    const submitCreate = (event) => {
+        event.preventDefault();
+
+        createForm.post(route('tenant.orcamentos.insumos.grupos.store', tenant.slug), {
+            preserveScroll: true,
+            onSuccess: () => createForm.reset(),
+        });
+    };
+
+    const startEdit = (grupo) => {
+        setEditingId(grupo.id);
+        editForm.setData({
+            nome: grupo.nome ?? '',
+            descricao: grupo.descricao ?? '',
+        });
+    };
+
+    const cancelEdit = () => {
+        setEditingId(null);
+        editForm.reset();
+        editForm.clearErrors();
+    };
+
+    const submitEdit = (event, grupo) => {
+        event.preventDefault();
+
+        editForm.patch(route('tenant.orcamentos.insumos.grupos.update', [tenant.slug, grupo.id]), {
+            preserveScroll: true,
+            onSuccess: cancelEdit,
+        });
+    };
+
     return (
         <section className="sig-card mb-5 overflow-hidden">
             <PanelHeader
-                description="Cadastre um insumo proprio para este tenant."
+                description="Organize os insumos proprios por grupos, como materiais hidraulicos, equipamentos ou familias de servicos."
+                icon={FolderTree}
+                onClose={onClose}
+                title="Grupos de insumos"
+            />
+
+            <div className="grid gap-5 p-5 xl:grid-cols-[minmax(280px,360px)_1fr]">
+                <form className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4" onSubmit={submitCreate}>
+                    <h3 className="text-sm font-semibold text-[var(--ink-900)]">Novo grupo</h3>
+                    <p className="mt-1 text-xs text-[var(--ink-500)]">Os grupos criados aqui aparecem no cadastro manual de insumo.</p>
+
+                    <div className="mt-4 grid gap-3">
+                        <Field label="Nome" error={createForm.errors.nome}>
+                            <input value={createForm.data.nome} onChange={(event) => createForm.setData('nome', event.target.value)} placeholder="Ex: Equipamentos de compactacao" />
+                        </Field>
+                        <Field label="Descricao" error={createForm.errors.descricao}>
+                            <textarea
+                                value={createForm.data.descricao}
+                                onChange={(event) => createForm.setData('descricao', event.target.value)}
+                                placeholder="Opcional"
+                                style={{ minHeight: 78, paddingTop: 10, resize: 'vertical' }}
+                            />
+                        </Field>
+                    </div>
+
+                    <div className="mt-4 flex justify-end">
+                        <button className="sig-btn sig-btn-primary" disabled={createForm.processing} type="submit">
+                            <Plus size={15} />
+                            {createForm.processing ? 'Salvando...' : 'Criar grupo'}
+                        </button>
+                    </div>
+                </form>
+
+                <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+                    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+                        <div>
+                            <h3 className="text-sm font-semibold text-[var(--ink-900)]">Grupos cadastrados</h3>
+                            <p className="mt-1 text-xs text-[var(--ink-500)]">{grupos.length} grupo(s) ativo(s)</p>
+                        </div>
+                    </header>
+
+                    {grupos.length === 0 ? (
+                        <div className="p-6 text-sm text-[var(--ink-500)]">
+                            Nenhum grupo cadastrado ainda.
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-[var(--border)]">
+                            {grupos.map((grupo) => {
+                                const isEditing = editingId === grupo.id;
+
+                                return (
+                                    <article key={grupo.id} className="p-4">
+                                        {isEditing ? (
+                                            <form className="grid gap-3" onSubmit={(event) => submitEdit(event, grupo)}>
+                                                <div className="grid gap-3 lg:grid-cols-2">
+                                                    <Field label="Nome" error={editForm.errors.nome}>
+                                                        <input value={editForm.data.nome} onChange={(event) => editForm.setData('nome', event.target.value)} />
+                                                    </Field>
+                                                    <Field label="Descricao" error={editForm.errors.descricao}>
+                                                        <input value={editForm.data.descricao} onChange={(event) => editForm.setData('descricao', event.target.value)} placeholder="Opcional" />
+                                                    </Field>
+                                                </div>
+                                                <div className="flex flex-wrap justify-end gap-2">
+                                                    <button className="sig-btn sig-btn-secondary" type="button" onClick={cancelEdit}>Cancelar</button>
+                                                    <button className="sig-btn sig-btn-primary" disabled={editForm.processing} type="submit">
+                                                        {editForm.processing ? 'Salvando...' : 'Salvar grupo'}
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        ) : (
+                                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <h4 className="text-sm font-semibold text-[var(--ink-900)]">{grupo.nome}</h4>
+                                                        <span className="rounded-full bg-[var(--primary-50)] px-2 py-0.5 text-[10px] font-bold text-[var(--primary)]">
+                                                            {grupo.insumos_count ?? 0} insumo(s)
+                                                        </span>
+                                                    </div>
+                                                    {grupo.descricao && (
+                                                        <p className="mt-1 text-xs leading-5 text-[var(--ink-500)]">{grupo.descricao}</p>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={() => startEdit(grupo)}>
+                                                        <Pencil size={13} />
+                                                        Editar
+                                                    </button>
+                                                    <ConfirmActionButton
+                                                        title="Excluir grupo"
+                                                        message={`Deseja mesmo excluir o grupo ${grupo.nome}? Os insumos vinculados ficarao sem grupo, mas o historico sera mantido.`}
+                                                        confirmLabel="Excluir grupo"
+                                                        onConfirm={() => router.delete(route('tenant.orcamentos.insumos.grupos.destroy', [tenant.slug, grupo.id]), { preserveScroll: true })}
+                                                    >
+                                                        <Trash2 size={13} />
+                                                        Excluir
+                                                    </ConfirmActionButton>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function CreateInsumoPanel({ form, grupoOptions = [], onClose, onSubmit }) {
+    const isEquipment = form.data.tipo === 'equipment';
+    const updateTipo = (value) => {
+        form.setData({
+            ...form.data,
+            tipo: value,
+            custo_improdutivo_nao_desonerado: value === 'equipment' ? form.data.custo_improdutivo_nao_desonerado : '',
+            custo_improdutivo_desonerado: value === 'equipment' ? form.data.custo_improdutivo_desonerado : '',
+        });
+    };
+
+    return (
+        <section className="sig-card mb-5 overflow-hidden">
+            <PanelHeader
+                description="Cadastre um insumo na base propria."
                 icon={Plus}
                 onClose={onClose}
                 title="Criar insumo"
@@ -440,15 +661,16 @@ function CreateInsumoPanel({ form, onClose, onSubmit }) {
 
             <form className="grid gap-4 p-5" onSubmit={onSubmit}>
                 <div className="grid gap-4 lg:grid-cols-4">
-                    <Field label="Banco" error={form.errors.banco}>
-                        <select value={form.data.banco} onChange={(event) => form.setData('banco', event.target.value)}>
-                            {banks.map((bank) => <option key={bank.value} value={bank.value}>{bank.label}</option>)}
+                    <Field label="Tipo" error={form.errors.tipo}>
+                        <select value={form.data.tipo} onChange={(event) => updateTipo(event.target.value)}>
+                            {types.map((type) => <option key={type.value || 'empty'} value={type.value}>{type.label}</option>)}
                         </select>
                     </Field>
 
-                    <Field label="Tipo" error={form.errors.tipo}>
-                        <select value={form.data.tipo} onChange={(event) => form.setData('tipo', event.target.value)}>
-                            {types.map((type) => <option key={type.value || 'empty'} value={type.value}>{type.label}</option>)}
+                    <Field label="Grupo" error={form.errors.grupo_id}>
+                        <select value={form.data.grupo_id} onChange={(event) => form.setData('grupo_id', event.target.value)}>
+                            <option value="">Sem grupo</option>
+                            {grupoOptions.map((grupo) => <option key={grupo.value} value={grupo.value}>{grupo.label}</option>)}
                         </select>
                     </Field>
 
@@ -462,37 +684,73 @@ function CreateInsumoPanel({ form, onClose, onSubmit }) {
                 </div>
 
                 <Field label="Descricao" error={form.errors.descricao}>
-                    <textarea
+                    <input
                         value={form.data.descricao}
                         onChange={(event) => form.setData('descricao', event.target.value)}
                         placeholder="Descricao do insumo"
-                        style={{ minHeight: 82, paddingTop: 10, resize: 'vertical' }}
                     />
                 </Field>
 
-                <div className="grid gap-4 lg:grid-cols-5">
+                <Field label="Observacao" error={form.errors.observacao}>
+                    <textarea
+                        value={form.data.observacao}
+                        onChange={(event) => form.setData('observacao', event.target.value)}
+                        placeholder="Observacao opcional sobre o insumo"
+                        style={{ minHeight: 72, paddingTop: 10, resize: 'vertical' }}
+                    />
+                </Field>
+
+                <div className="grid gap-4 lg:grid-cols-4">
                     <Field label="UF" error={form.errors.uf}>
                         <select value={form.data.uf} onChange={(event) => form.setData('uf', event.target.value)}>
                             {states.map((state) => <option key={state.value} value={state.value}>{state.value} - {state.label}</option>)}
                         </select>
                     </Field>
 
-                    <Field label="Origem preco" error={form.errors.origem_preco}>
-                        <input value={form.data.origem_preco} onChange={(event) => form.setData('origem_preco', event.target.value.toUpperCase())} placeholder="CR" />
-                    </Field>
-
                     <Field label="Preco nao desonerado" error={form.errors.preco_nao_desonerado}>
-                        <input value={form.data.preco_nao_desonerado} onChange={(event) => form.setData('preco_nao_desonerado', event.target.value)} placeholder="231,00" />
+                        <input
+                            inputMode="numeric"
+                            value={form.data.preco_nao_desonerado}
+                            onChange={(event) => setMoneyField(form, 'preco_nao_desonerado', event.target.value)}
+                            placeholder="100.000,00"
+                        />
                     </Field>
 
-                    <Field label="Preco desonerado" error={form.errors.preco_desonerado}>
-                        <input value={form.data.preco_desonerado} onChange={(event) => form.setData('preco_desonerado', event.target.value)} placeholder="231,00" />
+                    <Field label="Preco desonerado (opcional)" error={form.errors.preco_desonerado}>
+                        <input
+                            inputMode="numeric"
+                            value={form.data.preco_desonerado}
+                            onChange={(event) => setMoneyField(form, 'preco_desonerado', event.target.value)}
+                            placeholder="Opcional"
+                        />
                     </Field>
 
                     <Field label="Data" error={form.errors.data}>
                         <input value={form.data.data} onChange={(event) => form.setData('data', event.target.value)} placeholder="04/2026" />
                     </Field>
                 </div>
+
+                {isEquipment && (
+                    <div className="grid gap-4 lg:grid-cols-2">
+                        <Field label="Valor nao Desonerado Improdutivo" error={form.errors.custo_improdutivo_nao_desonerado}>
+                            <input
+                                inputMode="numeric"
+                                value={form.data.custo_improdutivo_nao_desonerado}
+                                onChange={(event) => setMoneyField(form, 'custo_improdutivo_nao_desonerado', event.target.value)}
+                                placeholder="Opcional"
+                            />
+                        </Field>
+
+                        <Field label="Valor Desonerado Improdutivo" error={form.errors.custo_improdutivo_desonerado}>
+                            <input
+                                inputMode="numeric"
+                                value={form.data.custo_improdutivo_desonerado}
+                                onChange={(event) => setMoneyField(form, 'custo_improdutivo_desonerado', event.target.value)}
+                                placeholder="Opcional"
+                            />
+                        </Field>
+                    </div>
+                )}
 
                 <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
                     <button className="sig-btn sig-btn-secondary" type="button" onClick={onClose}>
@@ -508,15 +766,113 @@ function CreateInsumoPanel({ form, onClose, onSubmit }) {
     );
 }
 
+function ImportOwnInsumoPanel({ form, onClose, onSubmit }) {
+    return (
+        <section className="sig-card mb-5 overflow-hidden">
+            <header className="border-b border-[var(--border)]">
+                <div className="bg-[var(--primary)] px-5 py-3 text-sm font-bold text-white">
+                    Selecione o arquivo e informe os campos relevantes.
+                </div>
+                <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                    <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
+                            <Building2 size={17} />
+                        </span>
+                        <div>
+                            <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Importar base propria</h2>
+                            <p className="mt-1 text-xs text-[var(--ink-500)]">
+                                Os itens serao gravados como Base propria. Informe as letras das colunas da sua planilha.
+                            </p>
+                        </div>
+                    </div>
+                    <button className="sig-btn sig-btn-ghost" type="button" onClick={onClose}>
+                        <X size={15} />
+                        Fechar
+                    </button>
+                </div>
+            </header>
+
+            <form className="grid gap-5 p-5" onSubmit={onSubmit}>
+                <div className="grid gap-4 lg:grid-cols-[minmax(240px,420px)_1fr]">
+                    <Field label="Arquivo" error={form.errors.file}>
+                        <input
+                            accept=".csv,.txt,.tsv"
+                            onChange={(event) => form.setData('file', event.target.files?.[0] ?? null)}
+                            type="file"
+                        />
+                    </Field>
+                    <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
+                        Suporta arquivos <strong>CSV, TXT e TSV</strong>. Para XLSX/XLS/ODS, exporte a planilha como CSV antes de importar.
+                    </div>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <Field label="Numero da linha do primeiro item" error={form.errors.first_item_row}>
+                        <input value={form.data.first_item_row} onChange={(event) => form.setData('first_item_row', event.target.value)} inputMode="numeric" placeholder="2" />
+                    </Field>
+                    <Field label="Numero da linha do ultimo item" error={form.errors.last_item_row}>
+                        <input value={form.data.last_item_row} onChange={(event) => form.setData('last_item_row', event.target.value)} inputMode="numeric" placeholder="Ex: 250" />
+                    </Field>
+                    <Field label="Data de referencia" error={form.errors.data}>
+                        <input value={form.data.data} onChange={(event) => form.setData('data', event.target.value)} placeholder="06/2026" />
+                    </Field>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <ColumnLetterField form={form} field="tipo_column" label="Letra da coluna de Tipo" />
+                    <ColumnLetterField form={form} field="codigo_column" label="Letra da coluna do Codigo" />
+                    <ColumnLetterField form={form} field="grupo_column" label="Letra da coluna do Grupo" optional />
+                    <ColumnLetterField form={form} field="descricao_column" label="Letra da coluna da Descricao" />
+                    <ColumnLetterField form={form} field="unidade_column" label="Letra da coluna da Unidade" />
+                    <ColumnLetterField form={form} field="preco_desonerado_column" label="Letra da coluna do Preco Unitario Desonerado" optional />
+                    <ColumnLetterField form={form} field="preco_nao_desonerado_column" label="Letra da coluna do Preco Unitario Nao Desonerado" />
+                </div>
+
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
+                    <p>
+                        <strong>Tipo:</strong> campo obrigatorio. Informe a coluna que contem o tipo de cada linha, como Material, Equipamento, Mao de obra ou Servico.
+                    </p>
+                    <p>
+                        <strong>Grupo:</strong> campo opcional. Se informado, o nome ou ID precisa existir previamente em Grupos.
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
+                    <button className="sig-btn sig-btn-secondary" type="button" onClick={onClose}>
+                        Cancelar
+                    </button>
+                    <button className="sig-btn sig-btn-primary" disabled={form.processing || !form.data.file} type="submit">
+                        <UploadCloud size={15} />
+                        {form.processing ? 'Importando...' : 'Salvar as alteracoes'}
+                    </button>
+                </div>
+            </form>
+        </section>
+    );
+}
+
+function ColumnLetterField({ field, form, label, optional = false }) {
+    return (
+        <Field label={label} error={form.errors[field]}>
+            <input
+                value={form.data[field]}
+                onChange={(event) => form.setData(field, event.target.value.toUpperCase())}
+                placeholder={optional ? 'Opcional' : 'Ex: A'}
+            />
+        </Field>
+    );
+}
+
 function ImportInsumoPanel({ description, form, icon, onClose, onSubmit, title }) {
     const Icon = icon;
+    const isSicro3 = form.data.banco === 'SICRO3';
 
     return (
         <section className="sig-card mb-5 overflow-hidden">
             <PanelHeader description={description} icon={Icon} onClose={onClose} title={title} />
 
-            <form className="grid gap-4 p-5" onSubmit={onSubmit}>
-                <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+            <form className="grid gap-5 p-5" onSubmit={onSubmit}>
+                <div className="grid gap-4 lg:grid-cols-[220px_minmax(240px,420px)_1fr]">
                     <Field label="Banco" error={form.errors.banco}>
                         <select value={form.data.banco} onChange={(event) => form.setData('banco', event.target.value)}>
                             {banks.map((bank) => <option key={bank.value} value={bank.value}>{bank.label}</option>)}
@@ -530,17 +886,48 @@ function ImportInsumoPanel({ description, form, icon, onClose, onSubmit, title }
                             type="file"
                         />
                     </Field>
+
+                    <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
+                        Suporta arquivos <strong>CSV, TXT e TSV</strong>. Para XLSX/XLS/ODS, exporte a planilha como CSV antes de importar.
+                    </div>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <Field label="Numero da linha do primeiro item" error={form.errors.first_item_row}>
+                        <input value={form.data.first_item_row} onChange={(event) => form.setData('first_item_row', event.target.value)} inputMode="numeric" placeholder="2" />
+                    </Field>
+                    <Field label="Numero da linha do ultimo item" error={form.errors.last_item_row}>
+                        <input value={form.data.last_item_row} onChange={(event) => form.setData('last_item_row', event.target.value)} inputMode="numeric" placeholder="Ex: 190000" />
+                    </Field>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <ColumnLetterField form={form} field="codigo_insumo_column" label="Letra da coluna do Codigo do insumo" />
+                    <ColumnLetterField form={form} field="classificacao_column" label="Letra da coluna da Classificacao" />
+                    <ColumnLetterField form={form} field="descricao_column" label="Letra da coluna da Descricao" />
+                    <ColumnLetterField form={form} field="unidade_column" label="Letra da coluna da Unidade" />
+                    <ColumnLetterField form={form} field="uf_column" label="Letra da coluna da UF" />
+                    <ColumnLetterField form={form} field="origem_preco_column" label="Letra da coluna da Origem do preco" optional />
+                    <ColumnLetterField form={form} field="preco_nao_desonerado_column" label="Letra da coluna do Preco nao desonerado" />
+                    <ColumnLetterField form={form} field="preco_desonerado_column" label="Letra da coluna do Preco desonerado" />
+                    {isSicro3 && (
+                        <>
+                            <ColumnLetterField form={form} field="custo_improdutivo_nao_desonerado_column" label="Letra da coluna do Custo improdutivo nao desonerado" optional />
+                            <ColumnLetterField form={form} field="custo_improdutivo_desonerado_column" label="Letra da coluna do Custo improdutivo desonerado" optional />
+                        </>
+                    )}
+                    <ColumnLetterField form={form} field="data_column" label="Letra da coluna da Data" />
                 </div>
 
                 <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
-                    <strong className="text-[var(--ink-700)]">Colunas obrigatorias:</strong>{' '}
-                    codigo_insumo, descricao, unidade, uf, origem_preco, preco_nao_desonerado, preco_desonerado, data.
+                    <strong className="text-[var(--ink-700)]">Campos obrigatorios:</strong>{' '}
+                    codigo, classificacao, descricao, unidade, UF, preco nao desonerado, preco desonerado e data.
                     <br />
-                    Coluna opcional aceita: <strong>classificacao</strong>.
+                    Origem do preco e opcional. Para <strong>SICRO3</strong>, as colunas de custo improdutivo nao desonerado e desonerado tambem sao opcionais.
                     <br />
-                    A coluna <strong>data</strong> e obrigatoria e pode vir como <strong>04/26</strong>, <strong>04/2026</strong> ou <strong>2026-04-01</strong>. Valores com virgula decimal serao convertidos automaticamente.
+                    A data vem da propria planilha e pode estar como <strong>04/26</strong>, <strong>abr/26</strong>, <strong>04/2026</strong> ou <strong>2026-04-01</strong>.
                     <br />
-                    Limite por importacao: <strong>100 MB</strong>. Arquivos grandes sao processados em lotes no PostgreSQL.
+                    Duplicados ja existentes na base global serao ignorados. Limite por importacao: <strong>100 MB</strong>, processado em lotes no PostgreSQL.
                 </div>
 
                 <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
@@ -605,6 +992,14 @@ function ActionButton({ active, children, icon, onClick, tone = 'blue' }) {
             softBackground: '#fffbeb',
             softBorder: '#fde68a',
             softColor: '#b45309',
+        },
+        violet: {
+            background: '#7c3aed',
+            border: '#7c3aed',
+            color: '#ffffff',
+            softBackground: '#f5f3ff',
+            softBorder: '#ddd6fe',
+            softColor: '#6d28d9',
         },
     }[tone];
 
@@ -718,7 +1113,8 @@ function InsumosList({ filters, hasSearched, insumos, pagination, setFilters, te
                                                 {insumo.descricao}
                                             </span>
                                             <span className="text-[11px] font-medium text-[var(--ink-400)]">
-                                                {insumo.banco} - {insumo.uf}
+                                                {[insumo.banco, insumo.uf].filter(Boolean).join(' - ')}
+                                                {insumo.grupo?.nome ? ` - ${insumo.grupo.nome}` : ''}
                                             </span>
                                         </div>
                                     </TableCell>
@@ -771,7 +1167,8 @@ function InsumosList({ filters, hasSearched, insumos, pagination, setFilters, te
 
                                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-[var(--ink-400)]">
                                     <span>{insumo.banco}</span>
-                                    <span>{insumo.uf}</span>
+                                    {insumo.uf && <span>{insumo.uf}</span>}
+                                    {insumo.grupo?.nome && <span>{insumo.grupo.nome}</span>}
                                 </div>
                             </article>
                         ))}
@@ -902,6 +1299,32 @@ function Field({ label, children, error }) {
     );
 }
 
+function currentMonthReference() {
+    const date = new Date();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+
+    return `${month}/${date.getFullYear()}`;
+}
+
+function setMoneyField(form, field, value) {
+    form.setData(field, formatMoneyInput(value));
+}
+
+function formatMoneyInput(value) {
+    const digits = String(value ?? '').replace(/\D/g, '');
+
+    if (!digits) {
+        return '';
+    }
+
+    const padded = digits.padStart(3, '0');
+    const integer = (padded.slice(0, -2).replace(/^0+(?=\d)/, '') || '0')
+        .replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const cents = padded.slice(-2);
+
+    return `${integer},${cents}`;
+}
+
 function formatInsumoCode(value) {
     const code = String(value || '').trim();
 
@@ -926,5 +1349,20 @@ function formatDecimalValue(value) {
     return new Intl.NumberFormat('pt-BR', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-    }).format(number);
+    }).format(truncateDecimal(number));
+}
+
+function truncateDecimal(value, decimals = 2) {
+    const parsed = Number(value ?? 0);
+
+    if (Number.isNaN(parsed)) {
+        return 0;
+    }
+
+    const factor = 10 ** decimals;
+    const epsilon = 1e-9;
+
+    return parsed < 0
+        ? Math.ceil(parsed * factor - epsilon) / factor
+        : Math.floor(parsed * factor + epsilon) / factor;
 }

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'tenant_id',
     'created_by_id',
+    'grupo_id',
     'banco',
     'tipo',
     'classificacao',
@@ -20,7 +21,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'origem_preco',
     'preco_nao_desonerado',
     'preco_desonerado',
+    'custo_improdutivo_nao_desonerado',
+    'custo_improdutivo_desonerado',
     'data_referencia',
+    'observacao',
 ])]
 class OrcamentoInsumo extends Model
 {
@@ -30,8 +34,10 @@ class OrcamentoInsumo extends Model
     {
         return [
             'data_referencia' => 'date',
-            'preco_nao_desonerado' => 'decimal:2',
-            'preco_desonerado' => 'decimal:2',
+            'preco_nao_desonerado' => 'decimal:6',
+            'preco_desonerado' => 'decimal:6',
+            'custo_improdutivo_nao_desonerado' => 'decimal:6',
+            'custo_improdutivo_desonerado' => 'decimal:6',
         ];
     }
 
@@ -43,5 +49,10 @@ class OrcamentoInsumo extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function grupo(): BelongsTo
+    {
+        return $this->belongsTo(OrcamentoInsumoGrupo::class, 'grupo_id');
     }
 }

@@ -14,6 +14,7 @@ return new class extends Migration
             $table->foreignId('orcamento_composicao_id')->constrained('orcamento_composicoes')->cascadeOnDelete();
             $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('item_type', 20);
+            $table->string('sicro3_section', 40)->nullable();
             $table->foreignId('orcamento_insumo_id')->nullable()->constrained('orcamento_insumos')->nullOnDelete();
             $table->foreignId('child_composicao_id')->nullable()->constrained('orcamento_composicoes')->nullOnDelete();
             $table->string('base', 80)->nullable();
@@ -21,11 +22,11 @@ return new class extends Migration
             $table->text('descricao');
             $table->string('tipo', 80)->nullable();
             $table->string('unidade', 20);
-            $table->decimal('preco_unitario_onerado', 15, 2)->default(0);
-            $table->decimal('preco_unitario_desonerado', 15, 2)->default(0);
+            $table->decimal('preco_unitario_onerado', 18, 6)->default(0);
+            $table->decimal('preco_unitario_desonerado', 18, 6)->default(0);
             $table->decimal('coeficiente', 15, 6)->default(1);
-            $table->decimal('preco_onerado', 15, 2)->default(0);
-            $table->decimal('preco_desonerado', 15, 2)->default(0);
+            $table->decimal('preco_onerado', 18, 6)->default(0);
+            $table->decimal('preco_desonerado', 18, 6)->default(0);
             $table->text('observacao')->nullable();
             $table->timestamps();
             $table->softDeletes();

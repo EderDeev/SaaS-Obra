@@ -1,5 +1,5 @@
 import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { Building2, CheckCircle2, Clock3, Eye, FileSpreadsheet, Globe2, Plus, Search, UploadCloud, X } from 'lucide-react';
+import { AlertCircle, Building2, CheckCircle2, Clock3, Eye, FileSpreadsheet, Globe2, Plus, Search, UploadCloud, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
@@ -35,8 +35,7 @@ const states = [
 
 const baseOptions = [
     { value: 'SINAPI', label: 'SINAPI' },
-    { value: 'SICRO', label: 'SICRO' },
-    { value: 'PROPRIA', label: 'Base propria' },
+    { value: 'SICRO3', label: 'SICRO3' },
 ];
 
 const orderOptions = [
@@ -47,8 +46,13 @@ const orderOptions = [
 
 const modelOptions = [
     { value: 'SINAPI', label: 'SINAPI' },
-    { value: 'SICRO', label: 'SICRO' },
+    { value: 'SICRO3', label: 'SICRO3' },
     { value: 'PROPRIA', label: 'Base propria' },
+];
+
+const officialModelOptions = [
+    { value: 'SINAPI', label: 'SINAPI' },
+    { value: 'SICRO3', label: 'SICRO3' },
 ];
 
 export default function OrcamentosComposicoes({
@@ -76,13 +80,35 @@ export default function OrcamentosComposicoes({
     const [activePanel, setActivePanel] = useState(null);
     const tenantImportForm = useForm({
         scope: 'tenant',
-        modelo: 'SINAPI',
         file: null,
+        first_item_row: '',
+        last_item_row: '',
+        data: '',
+        fonte_column: '',
+        tipo_column: '',
+        codigo_column: '',
+        descricao_column: '',
+        unidade_column: '',
+        preco_unitario_column: '',
+        preco_desonerado_column: '',
+        preco_nao_desonerado_column: '',
     });
     const globalImportForm = useForm({
         scope: 'global',
         modelo: 'SINAPI',
         file: null,
+        first_item_row: '',
+        last_item_row: '',
+        data_column: '',
+        fonte_column: '',
+        tipo_column: '',
+        codigo_column: '',
+        descricao_column: '',
+        unidade_column: '',
+        uf_column: '',
+        preco_unitario_column: '',
+        preco_desonerado_column: '',
+        preco_nao_desonerado_column: '',
     });
     const analyticImportForm = useForm({
         scope: 'tenant',
@@ -183,7 +209,7 @@ export default function OrcamentosComposicoes({
 
                 {visiblePanels.importTenant && (
                     <ActionButton active={activePanel === 'importTenant'} icon={Building2} tone="green" onClick={() => togglePanel('importTenant')}>
-                        Importar Tenant
+                        Importar base propria
                     </ActionButton>
                 )}
 
@@ -201,19 +227,16 @@ export default function OrcamentosComposicoes({
             </section>
 
             {activePanel === 'importTenant' && (
-                <ImportCompositionPanel
-                    description="As composicoes importadas ficarao disponiveis apenas para este tenant."
+                <ImportOwnCompositionPanel
                     form={tenantImportForm}
-                    icon={Building2}
                     onClose={() => setActivePanel(null)}
-                    onSubmit={(event) => submitImport(event, tenantImportForm, 'Importacao de composicoes do tenant')}
-                    title="Importar composicoes do tenant"
+                    onSubmit={(event) => submitImport(event, tenantImportForm, 'Importacao de composicoes da base propria')}
                 />
             )}
 
             {activePanel === 'importGlobal' && (
                 <ImportCompositionPanel
-                    description="As composicoes importadas ficarao disponiveis para todos os tenants. Use apenas bases oficiais ou corporativas."
+                    description="As composicoes importadas ficarao disponiveis para toda a plataforma. Use apenas bases oficiais ou corporativas."
                     form={globalImportForm}
                     icon={Globe2}
                     onClose={() => setActivePanel(null)}
@@ -433,7 +456,7 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                                                     {composicao.descricao}
                                                 </span>
                                                 <span className="text-[11px] font-medium text-[var(--ink-400)]">
-                                                    {composicao.modelo} - {firstReferenceLabel(composicao)}
+                                                    {composicao.base_label ?? composicao.scope_label ?? composicao.modelo} - Modelo {composicao.modelo} - {firstReferenceLabel(composicao)}
                                                 </span>
                                             </div>
                                         </TableCell>
@@ -441,8 +464,12 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                                         <TableCell className="font-semibold text-[var(--ink-800)]">{composicao.unidade}</TableCell>
                                         <TableCell>{composicao.estado_label}</TableCell>
                                         <TableCell className="text-center font-semibold">{composicao.items_count ?? 0}</TableCell>
-                                        <TableCell className="text-right font-mono">{formatCurrency(composicao.preco_onerado)}</TableCell>
-                                        <TableCell className="text-right font-mono">{formatCurrency(composicao.preco_desonerado)}</TableCell>
+                                        <TableCell className="text-right">
+                                            <PriceDisplay composicao={composicao} showNote value={composicao.effective_preco_onerado} />
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <PriceDisplay composicao={composicao} value={composicao.effective_preco_desonerado} />
+                                        </TableCell>
                                         <TableCell className="text-right">
                                             <OpenButton compact composicao={composicao} tenant={tenant} />
                                         </TableCell>
@@ -473,9 +500,10 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                                     <MobileMetric label="Unidade" value={composicao.unidade} />
                                     <MobileMetric label="Estado" value={composicao.estado_label} />
                                     <MobileMetric label="Itens" value={composicao.items_count ?? 0} />
-                                    <MobileMetric label="Onerado" value={formatCurrency(composicao.preco_onerado)} />
-                                    <MobileMetric label="Desonerado" value={formatCurrency(composicao.preco_desonerado)} />
+                                    <MobileMetric label="Onerado" value={formatCurrency(composicao.effective_preco_onerado)} />
+                                    <MobileMetric label="Desonerado" value={formatCurrency(composicao.effective_preco_desonerado)} />
                                 </div>
+                                <PriceQualityNote composicao={composicao} />
                             </article>
                         ))}
                     </div>
@@ -486,6 +514,40 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                 <Pagination pagination={pagination} />
             )}
         </section>
+    );
+}
+
+function PriceDisplay({ composicao, showNote = false, value }) {
+    return (
+        <div className="flex flex-col items-end gap-1">
+            <span className="font-mono">{formatCurrency(value)}</span>
+            {showNote && <PriceQualityNote composicao={composicao} compact />}
+        </div>
+    );
+}
+
+function PriceQualityNote({ compact = false, composicao }) {
+    const missing = Number(composicao.missing_price_items_count ?? 0);
+    const isCalculated = ['analytic', 'items'].includes(composicao.price_source);
+
+    if (!isCalculated && missing <= 0) {
+        return null;
+    }
+
+    return (
+        <div className={`mt-2 flex flex-wrap items-center gap-1 text-[10px] font-semibold ${compact ? 'justify-end' : ''}`}>
+            {isCalculated && (
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
+                    Calculado pelos itens
+                </span>
+            )}
+            {missing > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+                    <AlertCircle size={11} />
+                    {missing} sem preco
+                </span>
+            )}
+        </div>
     );
 }
 
@@ -650,31 +712,159 @@ function actionTone(tone) {
     return tones[tone] ?? tones.blue;
 }
 
+function ImportOwnCompositionPanel({ form, onClose, onSubmit }) {
+    return (
+        <section className="mb-5 overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
+            <header className="border-b border-[var(--border)]">
+                <div className="bg-[var(--primary)] px-5 py-3 text-sm font-bold text-white">
+                    Selecione o arquivo e informe os campos relevantes.
+                </div>
+                <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                    <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                            <Building2 size={17} />
+                        </span>
+                        <div>
+                            <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Importar composicoes da base propria</h2>
+                            <p className="mt-1 text-xs leading-5 text-[var(--ink-500)]">
+                                As composicoes serao gravadas no tenant atual como Base propria. Informe as letras das colunas da sua planilha.
+                            </p>
+                        </div>
+                    </div>
+                    <button className="sig-btn sig-btn-ghost" type="button" onClick={onClose}>
+                        <X size={15} />
+                        Fechar
+                    </button>
+                </div>
+            </header>
+
+            <form className="grid gap-5 p-5" onSubmit={onSubmit}>
+                <div className="grid gap-4 lg:grid-cols-[minmax(240px,420px)_1fr]">
+                    <CompositionImportField label="Arquivo" error={form.errors.file}>
+                        <input
+                            accept=".csv,.txt,.tsv"
+                            className="sig-input"
+                            onChange={(event) => form.setData('file', event.target.files?.[0] ?? null)}
+                            type="file"
+                        />
+                    </CompositionImportField>
+                    <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
+                        Suporta arquivos <strong>CSV, TXT e TSV</strong>. Para XLSX/XLS/ODS, exporte a planilha como CSV antes de importar.
+                    </div>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <CompositionImportField label="Numero da linha do primeiro item" error={form.errors.first_item_row}>
+                        <input className="sig-input" value={form.data.first_item_row} onChange={(event) => form.setData('first_item_row', event.target.value)} inputMode="numeric" placeholder="2" />
+                    </CompositionImportField>
+                    <CompositionImportField label="Numero da linha do ultimo item" error={form.errors.last_item_row}>
+                        <input className="sig-input" value={form.data.last_item_row} onChange={(event) => form.setData('last_item_row', event.target.value)} inputMode="numeric" placeholder="Ex: 250" />
+                    </CompositionImportField>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <CompositionColumnLetterField form={form} field="fonte_column" label="Letra da Coluna da Fonte" optional />
+                    <CompositionColumnLetterField form={form} field="tipo_column" label="Letra da coluna de Tipo" optional />
+                    <CompositionColumnLetterField form={form} field="codigo_column" label="Letra da Coluna do Codigo" />
+                    <CompositionColumnLetterField form={form} field="descricao_column" label="Letra da Coluna da Descricao" />
+                    <CompositionColumnLetterField form={form} field="unidade_column" label="Letra da Coluna da Unidade" />
+                    <CompositionColumnLetterField
+                        form={form}
+                        field="preco_unitario_column"
+                        label="Letra da Coluna do Preco Unitario"
+                        hint="Opcional. Use para planilhas no modelo SICRO3, quando houver apenas um preco unitario."
+                        optional
+                    />
+                    <CompositionColumnLetterField form={form} field="preco_desonerado_column" label="Letra da Coluna do Preco Unitario Desonerado" optional />
+                    <CompositionColumnLetterField
+                        form={form}
+                        field="preco_nao_desonerado_column"
+                        label="Letra da Coluna do Preco Unitario Nao Desonerado"
+                        hint="Opcional. Use para planilhas no modelo SINAPI."
+                        optional
+                    />
+                </div>
+
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
+                    <p>
+                        <strong className="text-[var(--ink-700)]">Campos obrigatorios:</strong> primeira linha, ultima linha, data de referencia, codigo, descricao e unidade.
+                    </p>
+                    <p>
+                        Fonte, tipo e precos sao opcionais. Se nenhum preco for informado, a composicao sera importada com valor zero e podera ser detalhada depois.
+                    </p>
+                    <p>
+                        Todas as linhas entram como <strong>Base propria</strong> do tenant atual, sem vinculo com base global.
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
+                    <button className="sig-btn sig-btn-secondary" type="button" onClick={onClose}>
+                        Cancelar
+                    </button>
+                    <button className="sig-btn sig-btn-primary" disabled={form.processing || !form.data.file} type="submit">
+                        <UploadCloud size={15} />
+                        {form.processing ? 'Importando...' : 'Salvar as alteracoes'}
+                    </button>
+                </div>
+            </form>
+        </section>
+    );
+}
+
+function CompositionColumnLetterField({ field, form, hint = null, label, optional = false }) {
+    return (
+        <CompositionImportField label={label} error={form.errors[field]} hint={hint}>
+            <input
+                className="sig-input"
+                value={form.data[field]}
+                onChange={(event) => form.setData(field, event.target.value.toUpperCase())}
+                placeholder={optional ? 'Opcional' : 'Ex: A'}
+            />
+        </CompositionImportField>
+    );
+}
+
+function CompositionImportField({ children, error, hint = null, label }) {
+    return (
+        <label className="block">
+            <span className="mb-1 block text-xs font-bold text-[var(--ink-500)]">{label}</span>
+            {children}
+            {hint && <span className="mt-1 block text-[11px] leading-4 text-[var(--ink-400)]">{hint}</span>}
+            {error && <span className="mt-1 block text-xs font-semibold text-rose-600">{error}</span>}
+        </label>
+    );
+}
+
 function ImportCompositionPanel({ description, form, icon: Icon, onClose, onSubmit, title }) {
     return (
         <section className="mb-5 overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
-            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
-                <div className="flex items-start gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
-                        <Icon size={17} />
-                    </span>
-                    <div>
-                        <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">{title}</h2>
-                        <p className="mt-1 text-xs leading-5 text-[var(--ink-500)]">{description}</p>
-                    </div>
+            <header className="border-b border-[var(--border)]">
+                <div className="bg-[var(--primary)] px-5 py-3 text-sm font-bold text-white">
+                    Selecione o arquivo e informe os campos relevantes.
                 </div>
-                <button
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--ink-500)] transition hover:bg-[var(--primary-50)] hover:text-[var(--primary)]"
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Fechar painel"
-                >
-                    <X size={16} />
-                </button>
+                <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                    <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
+                            <Icon size={17} />
+                        </span>
+                        <div>
+                            <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">{title}</h2>
+                            <p className="mt-1 text-xs leading-5 text-[var(--ink-500)]">{description}</p>
+                        </div>
+                    </div>
+                    <button
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--ink-500)] transition hover:bg-[var(--primary-50)] hover:text-[var(--primary)]"
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Fechar painel"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
             </header>
 
-            <form className="grid gap-4 p-5" onSubmit={onSubmit}>
-                <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+            <form className="grid gap-5 p-5" onSubmit={onSubmit}>
+                <div className="grid gap-4 lg:grid-cols-[220px_minmax(240px,420px)_1fr]">
                     <label className="block">
                         <span className="mb-1 block text-xs font-bold text-[var(--ink-500)]">Base da importacao</span>
                         <select
@@ -682,7 +872,7 @@ function ImportCompositionPanel({ description, form, icon: Icon, onClose, onSubm
                             value={form.data.modelo}
                             onChange={(event) => form.setData('modelo', event.target.value)}
                         >
-                            {modelOptions.map((option) => (
+                            {officialModelOptions.map((option) => (
                                 <option key={option.value} value={option.value}>
                                     {option.label}
                                 </option>
@@ -701,15 +891,56 @@ function ImportCompositionPanel({ description, form, icon: Icon, onClose, onSubm
                         />
                         {form.errors.file && <span className="mt-1 block text-xs font-semibold text-rose-600">{form.errors.file}</span>}
                     </label>
+
+                    <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
+                        Suporta arquivos <strong>CSV, TXT e TSV</strong>. Para XLSX/XLS/ODS, exporte a planilha como CSV antes de importar.
+                    </div>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <CompositionImportField label="Numero da linha do primeiro item" error={form.errors.first_item_row}>
+                        <input className="sig-input" value={form.data.first_item_row} onChange={(event) => form.setData('first_item_row', event.target.value)} inputMode="numeric" placeholder="2" />
+                    </CompositionImportField>
+                    <CompositionImportField label="Numero da linha do ultimo item" error={form.errors.last_item_row}>
+                        <input className="sig-input" value={form.data.last_item_row} onChange={(event) => form.setData('last_item_row', event.target.value)} inputMode="numeric" placeholder="Ex: 250000" />
+                    </CompositionImportField>
+                </div>
+
+                <div className="grid max-w-3xl gap-4">
+                    <CompositionColumnLetterField form={form} field="fonte_column" label="Letra da Coluna da Fonte" optional />
+                    <CompositionColumnLetterField form={form} field="tipo_column" label="Letra da coluna de Tipo" optional />
+                    <CompositionColumnLetterField form={form} field="codigo_column" label="Letra da Coluna do Codigo" />
+                    <CompositionColumnLetterField form={form} field="descricao_column" label="Letra da Coluna da Descricao" />
+                    <CompositionColumnLetterField form={form} field="unidade_column" label="Letra da Coluna da Unidade" />
+                    <CompositionColumnLetterField form={form} field="uf_column" label="Letra da Coluna da UF" />
+                    <CompositionColumnLetterField form={form} field="data_column" label="Letra da Coluna da Data de Referencia" />
+                    <CompositionColumnLetterField
+                        form={form}
+                        field="preco_unitario_column"
+                        label="Letra da Coluna do Preco Unitario"
+                        hint="Opcional. Use para planilhas no modelo SICRO3, quando houver apenas um preco unitario."
+                        optional
+                    />
+                    <CompositionColumnLetterField form={form} field="preco_desonerado_column" label="Letra da Coluna do Preco Unitario Desonerado" optional />
+                    <CompositionColumnLetterField
+                        form={form}
+                        field="preco_nao_desonerado_column"
+                        label="Letra da Coluna do Preco Unitario Nao Desonerado"
+                        hint="Opcional. Use para planilhas no modelo SINAPI."
+                        optional
+                    />
                 </div>
 
                 <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
-                    <strong className="text-[var(--ink-700)]">Colunas obrigatorias:</strong>{' '}
-                    grupo, codigo, descricao, unidade, uf, preco_nao_desonerado, preco_desonerado, data.
-                    <br />
-                    A coluna <strong>data</strong> e obrigatoria e pode vir como <strong>04/26</strong>, <strong>04/2026</strong> ou <strong>2026-04-01</strong>. Valores com virgula decimal serao convertidos automaticamente.
-                    <br />
-                    Limite por importacao: <strong>100 MB</strong>. Linhas duplicadas no mesmo arquivo serao ignoradas, sem atualizar registros.
+                    <p>
+                        <strong className="text-[var(--ink-700)]">Campos obrigatorios:</strong> base, arquivo, primeira linha, ultima linha, codigo, descricao, unidade, UF e data de referencia.
+                    </p>
+                    <p>
+                        Fonte, tipo e precos sao opcionais. Duplicados ja existentes na base global serao atualizados conforme a chave base + codigo + UF + data.
+                    </p>
+                    <p>
+                        A importacao global fica disponivel para todos os tenants e deve ser usada para bases oficiais SINAPI ou SICRO3.
+                    </p>
                 </div>
 
                 <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
@@ -760,7 +991,7 @@ function ImportAnalyticPanel({ canManageGlobal, canManageTenant, form, onClose, 
                             value={form.data.scope}
                             onChange={(event) => form.setData('scope', event.target.value)}
                         >
-                            {canManageTenant && <option value="tenant">Tenant</option>}
+                            {canManageTenant && <option value="tenant">Base propria</option>}
                             {canManageGlobal && <option value="global">Global</option>}
                         </select>
                         {form.errors.scope && <span className="mt-1 block text-xs font-semibold text-rose-600">{form.errors.scope}</span>}
@@ -979,5 +1210,7 @@ function formatCurrency(value) {
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
     }).format(Number.isNaN(parsed) ? 0 : parsed);
 }

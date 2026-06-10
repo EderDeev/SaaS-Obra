@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'orcamento_composicao_id',
     'created_by_id',
     'item_type',
+    'sicro3_section',
     'orcamento_insumo_id',
     'child_composicao_id',
     'base',
@@ -21,7 +22,18 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'unidade',
     'preco_unitario_onerado',
     'preco_unitario_desonerado',
+    'custo_improdutivo_onerado',
+    'custo_improdutivo_desonerado',
     'coeficiente',
+    'sicro3_utilizacao_operativa',
+    'sicro3_utilizacao_improdutiva',
+    'sicro3_referenced_item_id',
+    'sicro3_referenced_item_code',
+    'sicro3_referenced_item_description',
+    'sicro3_transport_ln_code',
+    'sicro3_transport_rp_code',
+    'sicro3_transport_p_code',
+    'sicro3_transport_fe_code',
     'preco_onerado',
     'preco_desonerado',
     'observacao',
@@ -35,11 +47,16 @@ class OrcamentoComposicaoItem extends Model
     protected function casts(): array
     {
         return [
-            'preco_unitario_onerado' => 'decimal:2',
-            'preco_unitario_desonerado' => 'decimal:2',
+            'preco_unitario_onerado' => 'decimal:6',
+            'preco_unitario_desonerado' => 'decimal:6',
+            'custo_improdutivo_onerado' => 'decimal:6',
+            'custo_improdutivo_desonerado' => 'decimal:6',
             'coeficiente' => 'decimal:6',
-            'preco_onerado' => 'decimal:2',
-            'preco_desonerado' => 'decimal:2',
+            'sicro3_utilizacao_operativa' => 'decimal:6',
+            'sicro3_utilizacao_improdutiva' => 'decimal:6',
+            'sicro3_referenced_item_id' => 'integer',
+            'preco_onerado' => 'decimal:6',
+            'preco_desonerado' => 'decimal:6',
         ];
     }
 

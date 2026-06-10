@@ -115,6 +115,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::post('/orcamentos/composicoes', [OrcamentoController::class, 'storeComposicao'])->name('orcamentos.composicoes.store');
         Route::post('/orcamentos/composicoes/importar', [OrcamentoController::class, 'importComposicoes'])->name('orcamentos.composicoes.import');
         Route::post('/orcamentos/composicoes/importar-analitico', [OrcamentoController::class, 'importComposicoesAnalitico'])->name('orcamentos.composicoes.import-analitico');
+        Route::get('/orcamentos/composicoes/{composicao}/opcoes-itens', [OrcamentoController::class, 'composicaoItemOptions'])->name('orcamentos.composicoes.items.options');
         Route::post('/orcamentos/composicoes/{composicao}/itens', [OrcamentoController::class, 'storeComposicaoItem'])->name('orcamentos.composicoes.items.store');
         Route::post('/orcamentos/composicoes/{composicao}/insumos', [OrcamentoController::class, 'storeComposicaoCreatedInsumo'])->name('orcamentos.composicoes.insumos.store');
         Route::patch('/orcamentos/composicoes/{composicao}/itens/{item}', [OrcamentoController::class, 'updateComposicaoItem'])->name('orcamentos.composicoes.items.update');
@@ -123,6 +124,9 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/orcamentos/insumos', [OrcamentoController::class, 'insumos'])->name('orcamentos.insumos.index');
         Route::post('/orcamentos/insumos', [OrcamentoController::class, 'storeInsumo'])->name('orcamentos.insumos.store');
         Route::post('/orcamentos/insumos/importar', [OrcamentoController::class, 'importInsumos'])->name('orcamentos.insumos.import');
+        Route::post('/orcamentos/insumos/grupos', [OrcamentoController::class, 'storeInsumoGrupo'])->name('orcamentos.insumos.grupos.store');
+        Route::patch('/orcamentos/insumos/grupos/{grupo}', [OrcamentoController::class, 'updateInsumoGrupo'])->name('orcamentos.insumos.grupos.update');
+        Route::delete('/orcamentos/insumos/grupos/{grupo}', [OrcamentoController::class, 'destroyInsumoGrupo'])->name('orcamentos.insumos.grupos.destroy');
         Route::get('/projetos/visualizar', [ProjectController::class, 'tree'])->name('projects.visualizar.index');
         Route::get('/projetos/revisados', [ProjectController::class, 'revisions'])->name('projects.revisions.index');
         Route::get('/projetos', [ProjectController::class, 'index'])->name('projects.index');
