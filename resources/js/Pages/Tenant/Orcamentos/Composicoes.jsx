@@ -44,12 +44,6 @@ const orderOptions = [
     { value: 'unit', label: 'Unidade' },
 ];
 
-const modelOptions = [
-    { value: 'SINAPI', label: 'SINAPI' },
-    { value: 'SICRO3', label: 'SICRO3' },
-    { value: 'PROPRIA', label: 'Base propria' },
-];
-
 const officialModelOptions = [
     { value: 'SINAPI', label: 'SINAPI' },
     { value: 'SICRO3', label: 'SICRO3' },
@@ -111,7 +105,7 @@ export default function OrcamentosComposicoes({
         preco_nao_desonerado_column: '',
     });
     const analyticImportForm = useForm({
-        scope: 'tenant',
+        scope: 'global',
         modelo: 'SINAPI',
         file: null,
     });
@@ -128,7 +122,7 @@ export default function OrcamentosComposicoes({
         create: canManageTenantComposicoes,
         importTenant: canManageTenantComposicoes,
         importGlobal: canManageGlobalComposicoes,
-        importAnalytic: canManageTenantComposicoes || canManageGlobalComposicoes,
+        importAnalytic: canManageGlobalComposicoes,
     }), [canManageGlobalComposicoes, canManageTenantComposicoes]);
     const updateFilter = (field, value) => {
         setFilters((current) => ({ ...current, [field]: value }));
@@ -247,8 +241,6 @@ export default function OrcamentosComposicoes({
 
             {activePanel === 'importAnalytic' && (
                 <ImportAnalyticPanel
-                    canManageGlobal={canManageGlobalComposicoes}
-                    canManageTenant={canManageTenantComposicoes}
                     form={analyticImportForm}
                     onClose={() => setActivePanel(null)}
                     onSubmit={submitAnalyticImport}
@@ -320,6 +312,13 @@ function ImportProgressOverlay({ form, title }) {
 
 function ImportResultFeedback({ result }) {
     const duplicated = Number(result.duplicated ?? result.duplicates ?? 0);
+    const changed = Number(result.created ?? 0) + Number(result.updated ?? 0);
+    const status = result.status ?? (changed > 0 ? 'success' : 'warning');
+    const isSuccess = status === 'success';
+    const statusLabel = isSuccess ? 'Sucesso' : 'Atencao';
+    const message = result.message ?? (isSuccess
+        ? 'Importacao concluida com sucesso.'
+        : 'Importacao concluida, mas nenhum registro novo foi gravado.');
     const total = Number(result.read ?? 0) || Number(result.created ?? 0) + Number(result.updated ?? 0) + duplicated + Number(result.skipped ?? 0);
     const metrics = [
         { label: 'Criadas', value: result.created ?? 0, tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
@@ -330,7 +329,7 @@ function ImportResultFeedback({ result }) {
     ];
 
     return (
-        <section className="mb-5 rounded-lg border border-emerald-200 bg-white p-4 shadow-[var(--shadow-sm)]">
+        <section className={`mb-5 rounded-lg border bg-white p-4 shadow-[var(--shadow-sm)] ${isSuccess ? 'border-emerald-200' : 'border-amber-200'}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h2 className="text-sm font-bold text-[var(--ink-900)]">{result.title ?? 'Resumo da importacao'}</h2>
@@ -339,9 +338,13 @@ function ImportResultFeedback({ result }) {
                         {' '}| Base: <strong>{result.base ?? '-'}</strong>
                     </p>
                 </div>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-                    Concluido
+                <span className={`rounded-full px-3 py-1 text-xs font-bold ${isSuccess ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {statusLabel}
                 </span>
+            </div>
+
+            <div className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${isSuccess ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                {message}
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -957,7 +960,7 @@ function ImportCompositionPanel({ description, form, icon: Icon, onClose, onSubm
     );
 }
 
-function ImportAnalyticPanel({ canManageGlobal, canManageTenant, form, onClose, onSubmit }) {
+function ImportAnalyticPanel({ form, onClose, onSubmit }) {
     return (
         <section className="mb-5 overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
             <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
@@ -983,20 +986,8 @@ function ImportAnalyticPanel({ canManageGlobal, canManageTenant, form, onClose, 
             </header>
 
             <form className="grid gap-4 p-5" onSubmit={onSubmit}>
-                <div className="grid gap-4 lg:grid-cols-[180px_220px_1fr]">
-                    <label className="block">
-                        <span className="mb-1 block text-xs font-bold text-[var(--ink-500)]">Escopo</span>
-                        <select
-                            className="sig-input"
-                            value={form.data.scope}
-                            onChange={(event) => form.setData('scope', event.target.value)}
-                        >
-                            {canManageTenant && <option value="tenant">Base propria</option>}
-                            {canManageGlobal && <option value="global">Global</option>}
-                        </select>
-                        {form.errors.scope && <span className="mt-1 block text-xs font-semibold text-rose-600">{form.errors.scope}</span>}
-                    </label>
-
+                <input type="hidden" value="global" name="scope" />
+                <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
                     <label className="block">
                         <span className="mb-1 block text-xs font-bold text-[var(--ink-500)]">Base</span>
                         <select
@@ -1004,7 +995,7 @@ function ImportAnalyticPanel({ canManageGlobal, canManageTenant, form, onClose, 
                             value={form.data.modelo}
                             onChange={(event) => form.setData('modelo', event.target.value)}
                         >
-                            {modelOptions.map((option) => (
+                            {officialModelOptions.map((option) => (
                                 <option key={option.value} value={option.value}>
                                     {option.label}
                                 </option>
@@ -1026,6 +1017,9 @@ function ImportAnalyticPanel({ canManageGlobal, canManageTenant, form, onClose, 
                 </div>
 
                 <div className="rounded-lg border border-dashed border-violet-200 bg-violet-50/60 px-4 py-3 text-xs leading-5 text-[var(--ink-600)]">
+                    <strong className="text-[var(--ink-800)]">Escopo:</strong>{' '}
+                    Global. O analitico importado fica disponivel para todos os tenants e nao cria vinculos de Base propria.
+                    <br />
                     <strong className="text-[var(--ink-800)]">Colunas obrigatorias:</strong>{' '}
                     codigo_da_composicao, tipo_item, codigo_do_item, coeficiente, data.
                     <br />

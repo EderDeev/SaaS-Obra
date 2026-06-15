@@ -95,6 +95,16 @@ class Tenant extends Model
         return $this->hasMany(OrcamentoInsumo::class);
     }
 
+    public function orcamentos(): HasMany
+    {
+        return $this->hasMany(Orcamento::class);
+    }
+
+    public function orcamentoEtapas(): HasMany
+    {
+        return $this->hasMany(OrcamentoEtapa::class);
+    }
+
     public function orcamentoComposicoes(): HasMany
     {
         return $this->hasMany(OrcamentoComposicao::class);
@@ -103,6 +113,11 @@ class Tenant extends Model
     public function orcamentoComposicaoItems(): HasMany
     {
         return $this->hasMany(OrcamentoComposicaoItem::class);
+    }
+
+    public function medicaoItens(): HasMany
+    {
+        return $this->hasMany(MedicaoItem::class);
     }
 
     public function getRouteKeyName(): string

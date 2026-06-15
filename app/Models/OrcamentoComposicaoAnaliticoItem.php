@@ -14,6 +14,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'modelo',
     'grupo',
     'codigo_composicao',
+    'descricao_composicao',
+    'unidade_composicao',
+    'producao_equipe',
+    'fator_influencia_chuvas',
     'tipo_item',
     'codigo_item',
     'descricao_item',
@@ -21,6 +25,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'uf',
     'data_referencia',
     'coeficiente',
+    'secao',
+    'tipo_transporte',
+    'codigo_item_referenciado',
+    'utilizacao_operativa',
+    'utilizacao_improdutiva',
     'raw_payload',
 ])]
 class OrcamentoComposicaoAnaliticoItem extends Model
@@ -35,6 +44,10 @@ class OrcamentoComposicaoAnaliticoItem extends Model
             'is_global' => 'boolean',
             'data_referencia' => 'date',
             'coeficiente' => 'decimal:6',
+            'producao_equipe' => 'decimal:6',
+            'fator_influencia_chuvas' => 'decimal:6',
+            'utilizacao_operativa' => 'decimal:6',
+            'utilizacao_improdutiva' => 'decimal:6',
             'raw_payload' => 'array',
         ];
     }

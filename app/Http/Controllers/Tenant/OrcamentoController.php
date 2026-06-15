@@ -3,12 +3,17 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Empresa;
+use App\Models\Orcamento;
 use App\Models\OrcamentoComposicao;
 use App\Models\OrcamentoComposicaoAnaliticoItem;
 use App\Models\OrcamentoComposicaoItem;
+use App\Models\OrcamentoEtapa;
 use App\Models\OrcamentoInsumo;
 use App\Models\OrcamentoInsumoGrupo;
+use App\Models\OrcamentoItem;
 use App\Models\Tenant;
+use App\Models\TipoEmpresa;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +26,17 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use ZipArchive;
 
 class OrcamentoController extends Controller
 {
@@ -31,6 +47,41 @@ class OrcamentoController extends Controller
     private const SICRO3_CALCULATION_METHOD = 'sicro3_round_4_2';
 
     private const CALCULATION_METHODS = ['truncate_2', 'round_2', 'none', 'sicro3_round_4_2'];
+
+    private const ORCAMENTO_ROUNDING_METHODS = [
+        'round_all_2',
+        'round_compositions_2',
+        'round_and_truncate_unit',
+        'truncate_all_2',
+        'none',
+    ];
+
+    private const ORCAMENTO_CATEGORIES = [
+        'Calcadas e meio-fio',
+        'Construcao e ampliacao de rede de abastecimento de agua',
+        'Creches e escolas - Construcao',
+        'Creches e escolas - Reforma',
+        'Espacos publicos e pracas - Construcao',
+        'Espacos publicos e pracas - Reforma',
+        'Galpoes',
+        'Infraestruturas Esportivas - Construcao',
+        'Infraestruturas Esportivas - Reforma',
+        'Hospitais e unidades de saude - Construcao',
+        'Hospitais e unidades de saude - Reforma',
+        'Muros',
+        'Passagens molhadas e pontes - Construcao',
+        'Passagens molhadas e pontes - Reforma',
+        'Pavimentacao asfaltica',
+        'Pavimentacao e drenagem',
+        'Pavimentacao em bloco de concreto intertravado',
+        'Pavimentacao em paralelepipedo',
+        'Predios publicos - Construcao',
+        'Predios publicos - Reforma',
+        'Unidades habitacionais - Construcao',
+        'Unidades habitacionais - Reforma',
+        'Usinas fotovoltaicas',
+        'Outros',
+    ];
 
     private const SICRO3_INSUMO_ITEM_SECTIONS = [
         'equipamentos' => ['code' => 'A', 'label' => 'Equipamentos'],
@@ -66,11 +117,874 @@ class OrcamentoController extends Controller
         'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
     ];
 
-    public function index(Tenant $tenant): Response
+    public function index(Request $request, Tenant $tenant): Response
     {
+        $orcamentos = Orcamento::query()
+            ->with(['clienteEmpresa:id,nome'])
+            ->where('tenant_id', $tenant->id)
+            ->latest()
+            ->get();
+
         return Inertia::render('Tenant/Orcamentos/Index', [
             'tenant' => $tenant,
+            'orcamentos' => $orcamentos
+                ->map(fn (Orcamento $orcamento): array => $this->serializeOrcamento($orcamento))
+                ->values(),
+            'stats' => [
+                'total' => $orcamentos->count(),
+                'draft' => $orcamentos->where('status', 'draft')->count(),
+                'approved' => $orcamentos->where('status', 'approved')->count(),
+            ],
+            'canManageOrcamentos' => $this->canManageTenantInsumos($request, $tenant),
         ]);
+    }
+
+    public function create(Request $request, Tenant $tenant): Response
+    {
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+
+        return Inertia::render('Tenant/Orcamentos/Create', [
+            'tenant' => $tenant,
+            'options' => $this->orcamentoFormOptions($tenant),
+        ]);
+    }
+
+    public function store(Request $request, Tenant $tenant): RedirectResponse
+    {
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+
+        $data = $request->validate([
+            'codigo' => ['required', 'string', 'max:50', Rule::unique('orcamentos', 'codigo')->where('tenant_id', $tenant->id)->whereNull('deleted_at')],
+            'descricao' => ['required', 'string', 'max:255'],
+            'cliente_empresa_id' => [
+                'nullable',
+                Rule::exists('empresas', 'id')->where('tenant_id', $tenant->id),
+            ],
+            'categoria' => ['required', 'string', Rule::in(self::ORCAMENTO_CATEGORIES)],
+            'prazo_entrega_at' => ['nullable', 'date'],
+            'permitir_insumos_preco_zerado' => ['boolean'],
+            'is_licitacao' => ['boolean'],
+            'licitacao_tipo' => ['nullable', Rule::requiredIf($request->boolean('is_licitacao')), 'string', 'max:120'],
+            'licitacao_abertura_at' => ['nullable', Rule::requiredIf($request->boolean('is_licitacao')), 'date'],
+            'licitacao_processo' => ['nullable', Rule::requiredIf($request->boolean('is_licitacao')), 'string', 'max:120'],
+            'arredondamento' => ['required', 'string', Rule::in(self::ORCAMENTO_ROUNDING_METHODS)],
+            'encargos_sociais' => ['required', 'string', Rule::in(['desonerado', 'nao_desonerado'])],
+            'bdi_tipo' => ['required', 'string', Rule::in(['unit_price', 'total_budget'])],
+            'bdi_percentual' => ['required', 'string', 'max:30'],
+            'base_references' => ['required', 'array', 'min:1'],
+            'base_references.*.codigo' => ['required', 'string', 'max:40'],
+            'base_references.*.nome' => ['required', 'string', Rule::in(['SINAPI', 'SICRO3'])],
+            'base_references.*.uf' => ['required', 'string', Rule::in(self::BRAZILIAN_STATES)],
+            'base_references.*.localidade' => ['nullable', 'string', 'max:120'],
+            'base_references.*.data' => ['required', 'string', 'max:20'],
+        ]);
+
+        $bdiPercentual = $this->parseDecimal($data['bdi_percentual']);
+
+        if ($bdiPercentual === null || $bdiPercentual < 0) {
+            throw ValidationException::withMessages([
+                'bdi_percentual' => 'Informe um percentual de BDI valido.',
+            ]);
+        }
+
+        $baseReferences = collect($data['base_references'])
+            ->map(fn (array $reference): array => [
+                'codigo' => trim($reference['codigo']),
+                'nome' => mb_strtoupper(trim($reference['nome'])),
+                'uf' => mb_strtoupper(trim($reference['uf'])),
+                'localidade' => trim((string) ($reference['localidade'] ?? '')),
+                'data' => trim($reference['data']),
+            ])
+            ->unique('codigo')
+            ->values()
+            ->all();
+
+        $orcamento = Orcamento::create([
+            'tenant_id' => $tenant->id,
+            'created_by_id' => $request->user()->id,
+            'cliente_empresa_id' => $data['cliente_empresa_id'] ?? null,
+            'codigo' => trim($data['codigo']),
+            'descricao' => trim($data['descricao']),
+            'categoria' => $data['categoria'],
+            'prazo_entrega_at' => filled($data['prazo_entrega_at'] ?? null)
+                ? CarbonImmutable::parse($data['prazo_entrega_at'])->toDateTimeString()
+                : null,
+            'permitir_insumos_preco_zerado' => (bool) ($data['permitir_insumos_preco_zerado'] ?? false),
+            'is_licitacao' => (bool) ($data['is_licitacao'] ?? false),
+            'licitacao_tipo' => ($data['is_licitacao'] ?? false) ? trim((string) ($data['licitacao_tipo'] ?? '')) : null,
+            'licitacao_abertura_at' => ($data['is_licitacao'] ?? false) && filled($data['licitacao_abertura_at'] ?? null)
+                ? CarbonImmutable::parse($data['licitacao_abertura_at'])->toDateTimeString()
+                : null,
+            'licitacao_processo' => ($data['is_licitacao'] ?? false) ? trim((string) ($data['licitacao_processo'] ?? '')) : null,
+            'arredondamento' => $data['arredondamento'],
+            'encargos_sociais' => $data['encargos_sociais'],
+            'bdi_tipo' => $data['bdi_tipo'],
+            'bdi_percentual' => $bdiPercentual,
+            'base_references' => $baseReferences,
+            'status' => 'draft',
+        ]);
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Orcamento criado.');
+    }
+
+    public function show(Request $request, Tenant $tenant, Orcamento $orcamento): Response
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+
+        $orcamento->load([
+            'clienteEmpresa:id,nome',
+            'etapas' => fn ($query) => $query
+                ->with(['itens' => fn ($query) => $query->orderBy('ordem')->orderBy('id')])
+                ->orderBy('ordem'),
+        ]);
+
+        return Inertia::render('Tenant/Orcamentos/Show', [
+            'tenant' => $tenant,
+            'orcamento' => $this->serializeOrcamento($orcamento),
+            'etapas' => $orcamento->etapas
+                ->map(fn (OrcamentoEtapa $etapa): array => $this->serializeOrcamentoEtapa($etapa, $orcamento))
+                ->values(),
+            'canManageOrcamentos' => $this->canManageTenantInsumos($request, $tenant),
+        ]);
+    }
+
+    public function downloadRelatorioSintetico(Request $request, Tenant $tenant, Orcamento $orcamento): StreamedResponse
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+
+        $this->loadOrcamentoForReport($orcamento);
+
+        $spreadsheet = $this->buildOrcamentoSinteticoSpreadsheet($tenant, $orcamento);
+
+        return $this->streamOrcamentoReport($spreadsheet, $this->orcamentoReportFileName($orcamento, 'sintetico'));
+    }
+
+    public function downloadRelatorioResumo(Request $request, Tenant $tenant, Orcamento $orcamento): StreamedResponse
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+
+        $this->loadOrcamentoForReport($orcamento);
+
+        $spreadsheet = $this->buildOrcamentoResumoSpreadsheet($tenant, $orcamento);
+
+        return $this->streamOrcamentoReport($spreadsheet, $this->orcamentoReportFileName($orcamento, 'resumo'));
+    }
+
+    public function downloadRelatoriosZip(Request $request, Tenant $tenant, Orcamento $orcamento): BinaryFileResponse
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+
+        $data = $request->validate([
+            'reports' => ['required', 'array', 'min:2'],
+            'reports.*' => ['required', 'string', Rule::in(['sintetico', 'resumo'])],
+        ]);
+
+        $reports = collect($data['reports'])->unique()->values();
+        $this->loadOrcamentoForReport($orcamento);
+
+        $tempDirectory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'deming-reports';
+
+        if (! is_dir($tempDirectory)) {
+            mkdir($tempDirectory, 0775, true);
+        }
+
+        $zipPath = tempnam($tempDirectory, 'orcamento_reports_');
+        $zip = new ZipArchive();
+
+        abort_unless($zip->open($zipPath, ZipArchive::OVERWRITE) === true, 500, 'Não foi possível gerar o arquivo ZIP.');
+
+        $temporaryFiles = [];
+
+        try {
+            foreach ($reports as $reportType) {
+                $spreadsheet = $this->buildOrcamentoReportSpreadsheet($tenant, $orcamento, $reportType);
+                $fileName = $this->orcamentoReportFileName($orcamento, $reportType);
+                $reportPath = $tempDirectory.DIRECTORY_SEPARATOR.Str::uuid().'.xlsx';
+
+                $writer = new Xlsx($spreadsheet);
+                $writer->setPreCalculateFormulas(false);
+                $writer->save($reportPath);
+                $spreadsheet->disconnectWorksheets();
+
+                $temporaryFiles[] = $reportPath;
+                $zip->addFile($reportPath, $fileName);
+            }
+        } finally {
+            $zip->close();
+
+            foreach ($temporaryFiles as $temporaryFile) {
+                if (is_file($temporaryFile)) {
+                    unlink($temporaryFile);
+                }
+            }
+        }
+
+        return response()
+            ->download($zipPath, Str::slug('orcamento-'.$orcamento->codigo.'-relatorios').'.zip', [
+                'Content-Type' => 'application/zip',
+            ])
+            ->deleteFileAfterSend(true);
+    }
+
+    private function streamOrcamentoReport(Spreadsheet $spreadsheet, string $fileName): StreamedResponse
+    {
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            $writer = new Xlsx($spreadsheet);
+            $writer->setPreCalculateFormulas(false);
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    private function loadOrcamentoForReport(Orcamento $orcamento): void
+    {
+        $orcamento->load([
+            'clienteEmpresa:id,nome',
+            'etapas' => fn ($query) => $query
+                ->with(['itens' => fn ($query) => $query->orderBy('ordem')->orderBy('id')])
+                ->orderBy('ordem'),
+        ]);
+    }
+
+    private function buildOrcamentoReportSpreadsheet(Tenant $tenant, Orcamento $orcamento, string $reportType): Spreadsheet
+    {
+        return match ($reportType) {
+            'resumo' => $this->buildOrcamentoResumoSpreadsheet($tenant, $orcamento),
+            default => $this->buildOrcamentoSinteticoSpreadsheet($tenant, $orcamento),
+        };
+    }
+
+    private function orcamentoReportFileName(Orcamento $orcamento, string $reportType): string
+    {
+        return Str::slug('orcamento-'.$orcamento->codigo.'-'.$reportType).'.xlsx';
+    }
+
+    public function storeEtapa(Request $request, Tenant $tenant, Orcamento $orcamento): RedirectResponse
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+
+        $data = $request->validate([
+            'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
+            'after_etapa_id' => [
+                'nullable',
+                Rule::exists('orcamento_etapas', 'id')
+                    ->where('tenant_id', $tenant->id)
+                    ->where('orcamento_id', $orcamento->id)
+                    ->whereNull('deleted_at'),
+            ],
+            'descricao' => ['required', 'string', 'max:255'],
+            'quantidade' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        $quantidade = $this->parseDecimal($data['quantidade'] ?? null) ?? '1.000000';
+
+        if ((float) $quantidade <= 0) {
+            throw ValidationException::withMessages([
+                'quantidade' => 'Informe uma quantidade maior que zero.',
+            ]);
+        }
+
+        DB::transaction(function () use ($data, $tenant, $orcamento, $request, $quantidade): void {
+            $ordem = (int) ($data['ordem'] ?? 0);
+
+            if (filled($data['after_etapa_id'] ?? null)) {
+                $afterEtapa = OrcamentoEtapa::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('orcamento_id', $orcamento->id)
+                    ->findOrFail($data['after_etapa_id']);
+
+                $ordem = $afterEtapa->ordem + 1;
+            }
+
+            if ($ordem <= 0) {
+                $ordem = ((int) OrcamentoEtapa::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('orcamento_id', $orcamento->id)
+                    ->max('ordem')) + 1;
+            }
+
+            OrcamentoEtapa::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->where('ordem', '>=', $ordem)
+                ->increment('ordem');
+
+            OrcamentoEtapa::create([
+                'tenant_id' => $tenant->id,
+                'orcamento_id' => $orcamento->id,
+                'created_by_id' => $request->user()->id,
+                'ordem' => $ordem,
+                'descricao' => trim($data['descricao']),
+                'quantidade' => $quantidade,
+            ]);
+
+            $this->renumberOrcamentoEtapas($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Etapa criada.');
+    }
+
+    public function updateEtapa(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $etapa): RedirectResponse
+    {
+        $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+
+        $data = $request->validate([
+            'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
+            'descricao' => ['required', 'string', 'max:255'],
+            'quantidade' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        $quantidade = $this->parseDecimal($data['quantidade'] ?? null) ?? '1.000000';
+
+        if ((float) $quantidade <= 0) {
+            throw ValidationException::withMessages([
+                'quantidade' => 'Informe uma quantidade maior que zero.',
+            ]);
+        }
+
+        DB::transaction(function () use ($data, $tenant, $orcamento, $etapa, $quantidade): void {
+            $currentOrder = (int) $etapa->ordem;
+            $newOrder = (int) ($data['ordem'] ?? $currentOrder);
+            $maxOrder = (int) OrcamentoEtapa::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->max('ordem');
+
+            $newOrder = max(1, min($newOrder, max(1, $maxOrder)));
+
+            if ($newOrder !== $currentOrder) {
+                if ($newOrder > $currentOrder) {
+                    OrcamentoEtapa::query()
+                        ->where('tenant_id', $tenant->id)
+                        ->where('orcamento_id', $orcamento->id)
+                        ->whereKeyNot($etapa->id)
+                        ->whereBetween('ordem', [$currentOrder + 1, $newOrder])
+                        ->decrement('ordem');
+                } else {
+                    OrcamentoEtapa::query()
+                        ->where('tenant_id', $tenant->id)
+                        ->where('orcamento_id', $orcamento->id)
+                        ->whereKeyNot($etapa->id)
+                        ->whereBetween('ordem', [$newOrder, $currentOrder - 1])
+                        ->increment('ordem');
+                }
+            }
+
+            $etapa->update([
+                'ordem' => $newOrder,
+                'descricao' => trim($data['descricao']),
+                'quantidade' => $quantidade,
+            ]);
+
+            $this->renumberOrcamentoEtapas($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Etapa atualizada.');
+    }
+
+    public function toggleEtapaVisibility(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $etapa): RedirectResponse
+    {
+        $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+
+        $meta = $etapa->meta ?? [];
+        $hidden = ! (bool) ($meta['hidden'] ?? false);
+        $meta['hidden'] = $hidden;
+
+        $etapa->update(['meta' => $meta]);
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', $hidden ? 'Etapa ocultada.' : 'Etapa exibida.');
+    }
+
+    public function destroyEtapa(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $etapa): RedirectResponse
+    {
+        $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+
+        DB::transaction(function () use ($tenant, $orcamento, $etapa): void {
+            OrcamentoItem::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->where('orcamento_etapa_id', $etapa->id)
+                ->delete();
+
+            $etapa->delete();
+            $this->renumberOrcamentoEtapas($tenant, $orcamento);
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Etapa excluida.');
+    }
+
+    public function orcamentoComposicaoOptions(Request $request, Tenant $tenant, Orcamento $orcamento): JsonResponse
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+
+        $filters = $request->validate([
+            'codigo' => ['nullable', 'string', 'max:80'],
+            'descricao' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        $query = $this->composicoesAvailableForTenant($tenant)
+            ->withCount('items')
+            ->withSum('items as items_preco_onerado_sum', 'preco_onerado')
+            ->withSum('items as items_preco_desonerado_sum', 'preco_desonerado');
+
+        $this->applyInsensitiveLike($query, 'codigo', $filters['codigo'] ?? null);
+        $this->applyInsensitiveLike($query, 'descricao', $filters['descricao'] ?? null);
+
+        $references = $this->orcamentoSelectedReferences($orcamento);
+
+        $query->where(function (Builder $query) use ($tenant, $references): void {
+            $query->where(function (Builder $query) use ($tenant): void {
+                $query->where('tenant_id', $tenant->id)
+                    ->where('is_global', false);
+            });
+
+            if ($references === []) {
+                return;
+            }
+
+            $query->orWhere(function (Builder $query) use ($references): void {
+                $query->where('is_global', true)
+                    ->where(function (Builder $query) use ($references): void {
+                        foreach ($references as $reference) {
+                            $query->orWhere(function (Builder $query) use ($reference): void {
+                                $query->where('modelo', $reference['base']);
+
+                                if ($reference['uf']) {
+                                    $query->where('uf', $reference['uf']);
+                                }
+                            });
+                        }
+                    });
+            });
+        });
+
+        $composicoes = $query
+            ->orderBy('codigo')
+            ->limit(300)
+            ->get()
+            ->filter(fn (OrcamentoComposicao $composicao): bool => $this->composicaoAllowedForOrcamento($tenant, $orcamento, $composicao))
+            ->take(80)
+            ->values();
+
+        $summaries = $this->composicaoListPriceSummaries($tenant, $composicoes);
+
+        return response()->json([
+            'options' => $composicoes
+                ->map(fn (OrcamentoComposicao $composicao): array => $this->serializeOrcamentoComposicaoOption(
+                    $composicao,
+                    $summaries[$composicao->id] ?? null,
+                ))
+                ->values()
+                ->all(),
+        ]);
+    }
+
+    public function orcamentoInsumoOptions(Request $request, Tenant $tenant, Orcamento $orcamento): JsonResponse
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+
+        $filters = $request->validate([
+            'codigo' => ['nullable', 'string', 'max:80'],
+            'descricao' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        $references = $this->orcamentoSelectedReferences($orcamento);
+
+        $query = $this->insumosAvailableForTenant($tenant)
+            ->where(function (Builder $query) use ($tenant, $references): void {
+                $query->where('tenant_id', $tenant->id);
+
+                if ($references === []) {
+                    return;
+                }
+
+                $query->orWhere(function (Builder $query) use ($references): void {
+                    $query->whereNull('tenant_id')
+                        ->where(function (Builder $query) use ($references): void {
+                            foreach ($references as $reference) {
+                                $query->orWhere(function (Builder $query) use ($reference): void {
+                                    $query->where('banco', $reference['base']);
+
+                                    if ($reference['uf']) {
+                                        $query->where('uf', $reference['uf']);
+                                    }
+
+                                    if ($reference['date']) {
+                                        $query->whereDate('data_referencia', $reference['date']->toDateString());
+                                    }
+                                });
+                            }
+                        });
+                });
+            });
+
+        $this->applyInsensitiveLike($query, 'codigo_insumo', $filters['codigo'] ?? null);
+        $this->applyInsensitiveLike($query, 'descricao', $filters['descricao'] ?? null);
+
+        if (! (bool) $orcamento->permitir_insumos_preco_zerado) {
+            $priceColumn = $orcamento->encargos_sociais === 'nao_desonerado'
+                ? 'preco_nao_desonerado'
+                : 'preco_desonerado';
+
+            $query->whereRaw("COALESCE({$priceColumn}, 0) > 0");
+        }
+
+        return response()->json([
+            'options' => $query
+                ->orderBy('descricao')
+                ->limit(80)
+                ->get()
+                ->filter(fn (OrcamentoInsumo $insumo): bool => $this->insumoAllowedForOrcamento($tenant, $orcamento, $insumo))
+                ->map(fn (OrcamentoInsumo $insumo): array => $this->serializeOrcamentoInsumoOption($insumo))
+                ->values()
+                ->all(),
+        ]);
+    }
+
+    public function storeOrcamentoComposicaoItem(
+        Request $request,
+        Tenant $tenant,
+        Orcamento $orcamento,
+        OrcamentoEtapa $etapa,
+    ): RedirectResponse {
+        $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+
+        $data = $request->validate([
+            'orcamento_composicao_id' => ['required', 'integer'],
+            'quantidade' => ['required', 'string', 'max:30'],
+            'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
+            'aplicar_bdi' => ['boolean'],
+        ]);
+
+        $quantidade = $this->parseDecimal($data['quantidade'] ?? null);
+
+        if ($quantidade === null || (float) $quantidade <= 0) {
+            throw ValidationException::withMessages([
+                'quantidade' => 'Informe uma quantidade maior que zero.',
+            ]);
+        }
+
+        $composicao = $this->composicoesAvailableForTenant($tenant)
+            ->withCount('items')
+            ->withSum('items as items_preco_onerado_sum', 'preco_onerado')
+            ->withSum('items as items_preco_desonerado_sum', 'preco_desonerado')
+            ->findOrFail($data['orcamento_composicao_id']);
+
+        if (! $this->composicaoAllowedForOrcamento($tenant, $orcamento, $composicao)) {
+            throw ValidationException::withMessages([
+                'orcamento_composicao_id' => 'Esta composicao nao pertence as bases selecionadas para o orcamento.',
+            ]);
+        }
+
+        DB::transaction(function () use ($data, $tenant, $orcamento, $etapa, $request, $quantidade, $composicao): void {
+            $ordem = (int) ($data['ordem'] ?? 0);
+
+            if ($ordem <= 0) {
+                $ordem = ((int) OrcamentoItem::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('orcamento_id', $orcamento->id)
+                    ->where('orcamento_etapa_id', $etapa->id)
+                    ->max('ordem')) + 1;
+            }
+
+            OrcamentoItem::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->where('orcamento_etapa_id', $etapa->id)
+                ->where('ordem', '>=', $ordem)
+                ->increment('ordem');
+
+            $prices = $this->orcamentoComposicaoPrices($tenant, $composicao);
+            $item = OrcamentoItem::create([
+                'tenant_id' => $tenant->id,
+                'orcamento_id' => $orcamento->id,
+                'orcamento_etapa_id' => $etapa->id,
+                'created_by_id' => $request->user()->id,
+                'item_type' => 'composicao',
+                'orcamento_composicao_id' => $composicao->id,
+                'ordem' => $ordem,
+                'codigo' => $composicao->codigo,
+                'banco' => $composicao->is_global ? $composicao->modelo : 'PROPRIA',
+                'descricao' => $composicao->descricao,
+                'unidade' => $composicao->unidade,
+                'quantidade' => $quantidade,
+                'valor_unitario_nao_desonerado' => $prices['nao_desonerado'],
+                'valor_unitario_desonerado' => $prices['desonerado'],
+                'aplicar_bdi' => (bool) ($data['aplicar_bdi'] ?? false),
+                'meta' => [
+                    'base_label' => $this->orcamentoComposicaoBaseLabel($composicao),
+                ],
+            ]);
+
+            $this->recalculateOrcamentoItemTotals($item, $orcamento);
+            $this->renumberOrcamentoItems($tenant, $etapa);
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Composicao adicionada ao orcamento.');
+    }
+
+    public function storeOrcamentoInsumoItem(
+        Request $request,
+        Tenant $tenant,
+        Orcamento $orcamento,
+        OrcamentoEtapa $etapa,
+    ): RedirectResponse {
+        $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+
+        $data = $request->validate([
+            'orcamento_insumo_id' => ['required', 'integer'],
+            'quantidade' => ['required', 'string', 'max:30'],
+            'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
+            'aplicar_bdi' => ['boolean'],
+            'valor_unitario_manual' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        $quantidade = $this->parseDecimal($data['quantidade'] ?? null);
+
+        if ($quantidade === null || (float) $quantidade <= 0) {
+            throw ValidationException::withMessages([
+                'quantidade' => 'Informe uma quantidade maior que zero.',
+            ]);
+        }
+
+        $insumo = $this->insumosAvailableForTenant($tenant)->findOrFail($data['orcamento_insumo_id']);
+
+        if (! $this->insumoAllowedForOrcamento($tenant, $orcamento, $insumo)) {
+            throw ValidationException::withMessages([
+                'orcamento_insumo_id' => 'Este insumo nao pertence as bases selecionadas para o orcamento.',
+            ]);
+        }
+
+        $prices = $this->orcamentoInsumoPrices($insumo);
+        $selectedPrice = $orcamento->encargos_sociais === 'nao_desonerado'
+            ? (float) $prices['nao_desonerado']
+            : (float) $prices['desonerado'];
+        $manualPrice = $this->parseDecimal($data['valor_unitario_manual'] ?? null);
+
+        if ($selectedPrice <= 0) {
+            if (! (bool) $orcamento->permitir_insumos_preco_zerado) {
+                throw ValidationException::withMessages([
+                    'orcamento_insumo_id' => 'Este orcamento nao permite adicionar insumos com preco zerado.',
+                ]);
+            }
+
+            if ($manualPrice === null || (float) $manualPrice <= 0) {
+                throw ValidationException::withMessages([
+                    'valor_unitario_manual' => 'Informe o valor unitario deste insumo para o orcamento.',
+                ]);
+            }
+
+            $prices = [
+                'nao_desonerado' => $this->storeMoney($manualPrice),
+                'desonerado' => $this->storeMoney($manualPrice),
+            ];
+        }
+
+        DB::transaction(function () use ($data, $tenant, $orcamento, $etapa, $request, $quantidade, $insumo, $prices, $manualPrice, $selectedPrice): void {
+            $ordem = (int) ($data['ordem'] ?? 0);
+
+            if ($ordem <= 0) {
+                $ordem = ((int) OrcamentoItem::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('orcamento_id', $orcamento->id)
+                    ->where('orcamento_etapa_id', $etapa->id)
+                    ->max('ordem')) + 1;
+            }
+
+            OrcamentoItem::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->where('orcamento_etapa_id', $etapa->id)
+                ->where('ordem', '>=', $ordem)
+                ->increment('ordem');
+
+            $baseLabel = trim(implode(' - ', array_filter([
+                $insumo->banco,
+                $insumo->uf,
+                $insumo->data_referencia?->format('m/Y'),
+            ])));
+
+            $item = OrcamentoItem::create([
+                'tenant_id' => $tenant->id,
+                'orcamento_id' => $orcamento->id,
+                'orcamento_etapa_id' => $etapa->id,
+                'created_by_id' => $request->user()->id,
+                'item_type' => 'insumo',
+                'orcamento_insumo_id' => $insumo->id,
+                'ordem' => $ordem,
+                'codigo' => $insumo->codigo_insumo,
+                'banco' => $insumo->banco,
+                'descricao' => $insumo->descricao,
+                'unidade' => $insumo->unidade,
+                'quantidade' => $quantidade,
+                'valor_unitario_nao_desonerado' => $prices['nao_desonerado'],
+                'valor_unitario_desonerado' => $prices['desonerado'],
+                'aplicar_bdi' => (bool) ($data['aplicar_bdi'] ?? false),
+                'meta' => [
+                    'base_label' => $baseLabel,
+                    'manual_price' => $selectedPrice <= 0,
+                    'manual_price_value' => $selectedPrice <= 0 ? $this->storeMoney($manualPrice) : null,
+                ],
+            ]);
+
+            $this->recalculateOrcamentoItemTotals($item, $orcamento);
+            $this->renumberOrcamentoItems($tenant, $etapa);
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Insumo adicionado ao orcamento.');
+    }
+
+    public function toggleOrcamentoItemBdi(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): RedirectResponse
+    {
+        $this->authorizeOrcamentoItem($request, $tenant, $orcamento, $item);
+
+        $data = $request->validate([
+            'bdi_percentual' => ['required', 'string', 'max:30'],
+        ]);
+
+        $bdiPercentual = $this->parseDecimal($data['bdi_percentual'] ?? null);
+
+        if ($bdiPercentual === null || (float) $bdiPercentual < 0) {
+            throw ValidationException::withMessages([
+                'bdi_percentual' => 'Informe um percentual de BDI valido.',
+            ]);
+        }
+
+        DB::transaction(function () use ($tenant, $orcamento, $item, $bdiPercentual): void {
+            $meta = $item->meta ?? [];
+            $meta['bdi_percentual'] = $this->storeMoney($bdiPercentual);
+            $meta['bdi_diferenciado'] = true;
+
+            $item->forceFill([
+                'aplicar_bdi' => true,
+                'meta' => $meta,
+            ]);
+
+            $this->recalculateOrcamentoItemTotals($item, $orcamento);
+
+            $etapa = OrcamentoEtapa::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->findOrFail($item->orcamento_etapa_id);
+
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+            $this->renumberOrcamentoItems($tenant, $etapa);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'BDI diferenciado aplicado ao item.');
+    }
+
+    public function updateOrcamentoItem(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): RedirectResponse
+    {
+        $this->authorizeOrcamentoItem($request, $tenant, $orcamento, $item);
+
+        $data = $request->validate([
+            'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
+            'quantidade' => ['required', 'string', 'max:30'],
+            'aplicar_bdi' => ['boolean'],
+        ]);
+
+        $quantidade = $this->parseDecimal($data['quantidade'] ?? null);
+
+        if ($quantidade === null || (float) $quantidade <= 0) {
+            throw ValidationException::withMessages([
+                'quantidade' => 'Informe uma quantidade maior que zero.',
+            ]);
+        }
+
+        DB::transaction(function () use ($data, $tenant, $orcamento, $item, $quantidade): void {
+            $etapa = OrcamentoEtapa::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->findOrFail($item->orcamento_etapa_id);
+
+            $currentOrder = (int) $item->ordem;
+            $maxOrder = (int) OrcamentoItem::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->where('orcamento_etapa_id', $etapa->id)
+                ->count();
+            $newOrder = (int) ($data['ordem'] ?? $currentOrder);
+            $newOrder = max(1, min(max(1, $maxOrder), $newOrder));
+
+            if ($newOrder < $currentOrder) {
+                OrcamentoItem::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('orcamento_id', $orcamento->id)
+                    ->where('orcamento_etapa_id', $etapa->id)
+                    ->where('id', '!=', $item->id)
+                    ->whereBetween('ordem', [$newOrder, $currentOrder - 1])
+                    ->increment('ordem');
+            }
+
+            if ($newOrder > $currentOrder) {
+                OrcamentoItem::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('orcamento_id', $orcamento->id)
+                    ->where('orcamento_etapa_id', $etapa->id)
+                    ->where('id', '!=', $item->id)
+                    ->whereBetween('ordem', [$currentOrder + 1, $newOrder])
+                    ->decrement('ordem');
+            }
+
+            $item->forceFill([
+                'ordem' => $newOrder,
+                'quantidade' => $quantidade,
+                'aplicar_bdi' => (bool) ($data['aplicar_bdi'] ?? false),
+            ]);
+
+            $this->recalculateOrcamentoItemTotals($item, $orcamento);
+            $this->renumberOrcamentoItems($tenant, $etapa);
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Item atualizado no orcamento.');
+    }
+
+    public function destroyOrcamentoItem(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): RedirectResponse
+    {
+        $this->authorizeOrcamentoItem($request, $tenant, $orcamento, $item);
+
+        DB::transaction(function () use ($tenant, $orcamento, $item): void {
+            $etapa = OrcamentoEtapa::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->findOrFail($item->orcamento_etapa_id);
+
+            $item->delete();
+            $this->renumberOrcamentoItems($tenant, $etapa);
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Item excluido do orcamento.');
     }
 
     public function composicoes(Request $request, Tenant $tenant): Response
@@ -909,28 +1823,33 @@ class OrcamentoController extends Controller
     public function importComposicoesAnalitico(Request $request, Tenant $tenant): RedirectResponse
     {
         $data = $request->validate([
-            'scope' => ['required', Rule::in(['tenant', 'global'])],
-            'modelo' => ['required', 'string', Rule::in(self::BANKS)],
+            'scope' => ['required', Rule::in(['global'])],
+            'modelo' => ['required', 'string', Rule::in(['SINAPI', 'SICRO3'])],
             'file' => ['required', 'file', 'mimes:csv,txt,tsv', 'max:'.self::CSV_UPLOAD_MAX_KB],
         ]);
 
-        $this->authorizeInsumoScope($request, $tenant, $data['scope']);
+        $this->authorizeInsumoScope($request, $tenant, 'global');
 
         $result = $this->importComposicoesAnaliticoCsv(
             $request->file('file')->getRealPath(),
             $tenant,
             $data['modelo'],
-            $data['scope'] === 'global',
+            true,
             $request->user()->id,
         );
+        $hasChanges = ((int) $result['created'] + (int) $result['updated']) > 0;
 
         return back()->with(
             'success',
             "Importacao analitica concluida: {$result['created']} vinculo(s) criado(s), {$result['updated']} atualizado(s), {$result['duplicated']} duplicado(s) ignorado(s), {$result['skipped']} invalido(s) ignorado(s).",
         )->with('import_result', [
             'title' => 'Resumo da importacao analitica',
-            'scope' => $data['scope'],
-            'scope_label' => $data['scope'] === 'global' ? 'Global' : 'Base propria',
+            'status' => $hasChanges ? 'success' : 'warning',
+            'message' => $hasChanges
+                ? 'Importacao analitica concluida com sucesso. Os vinculos foram gravados na base global.'
+                : 'Importacao analitica concluida, mas nenhum vinculo novo foi gravado. Verifique se as linhas ja existem, se foram duplicadas ou se ficaram invalidas.',
+            'scope' => 'global',
+            'scope_label' => 'Global',
             'base' => $data['modelo'],
             'read' => $result['read'],
             'created' => $result['created'],
@@ -960,7 +1879,7 @@ class OrcamentoController extends Controller
             'grupo' => ['grupo', 'grupo_composicao', 'tipo', 'tipo_composicao', 'classificacao', 'categoria'],
             'codigo' => ['codigo', 'cod', 'codigo_composicao', 'cod_composicao', 'codigo_servico', 'cod_servico'],
             'descricao' => ['descricao', 'desc', 'descricao_composicao', 'servico'],
-            'unidade' => ['unidade', 'unid', 'un'],
+            'unidade' => ['unidade', 'unidade_item', 'unid_item', 'unid', 'un'],
             'uf' => ['uf', 'estado'],
             'preco_nao_desonerado' => ['preco_nao_desonerado', 'valor_nao_desonerado', 'preco_onerado', 'valor_onerado'],
             'preco_desonerado' => ['preco_desonerado', 'valor_desonerado'],
@@ -1487,11 +2406,20 @@ class OrcamentoController extends Controller
         $headerMap = $this->resolveCsvHeaderMap($headers, [
             'grupo' => ['grupo', 'grupo_composicao', 'categoria'],
             'codigo_composicao' => ['codigo_da', 'codigo_da_composicao', 'codigo_composicao', 'cod_composicao', 'composicao', 'codigo'],
+            'descricao_composicao' => ['descricao_composicao', 'descricao_da_composicao', 'desc_composicao'],
+            'unidade_composicao' => ['unidade_composicao', 'unidade_da_composicao', 'unid_composicao'],
+            'producao_equipe' => ['producao_equipe', 'produção_equipe', 'producao_da_equipe'],
+            'fic' => ['fic', 'fator_influencia_chuvas', 'fator_de_influencia_de_chuvas'],
+            'secao' => ['secao', 'seção', 'grupo_item', 'categoria_item'],
             'tipo_item' => ['tipo_item', 'tipo_do_item', 'item_tipo', 'tipo'],
+            'tipo_transporte' => ['tipo_transporte', 'tipo_do_transporte', 'transporte'],
             'codigo_item' => ['codigo_do', 'codigo_do_item', 'codigo_item', 'cod_item', 'codigo_insumo', 'codigo_composicao_item'],
+            'codigo_item_referenciado' => ['codigo_item_referenciado', 'codigo_do_item_referenciado', 'item_referenciado', 'codigo_referenciado'],
             'descricao' => ['descricao', 'descricao_item', 'desc'],
             'unidade' => ['unidade', 'unid', 'un'],
             'coeficiente' => ['coeficiente', 'coef'],
+            'utilizacao_operativa' => ['utilizacao_operativa', 'utilização_operativa', 'uso_operativo'],
+            'utilizacao_improdutiva' => ['utilizacao_improdutiva', 'utilização_improdutiva', 'uso_improdutivo'],
             'uf' => ['uf', 'estado'],
             'data' => ['data', 'data_referencia', 'referencia', 'mes', 'competencia'],
         ]);
@@ -1592,6 +2520,10 @@ class OrcamentoController extends Controller
             'modelo' => mb_strtoupper($model),
             'grupo' => $value('grupo') !== '' ? Str::of($value('grupo'))->squish()->limit(120, '')->toString() : null,
             'codigo_composicao' => $codigoComposicao,
+            'descricao_composicao' => $value('descricao_composicao') !== '' ? $value('descricao_composicao') : null,
+            'unidade_composicao' => $value('unidade_composicao') !== '' ? mb_strtoupper($value('unidade_composicao')) : null,
+            'producao_equipe' => $this->parseDecimal($value('producao_equipe')),
+            'fator_influencia_chuvas' => $this->parseDecimal($value('fic')),
             'tipo_item' => $tipoItem,
             'codigo_item' => $codigoItem,
             'descricao_item' => $value('descricao') !== '' ? $value('descricao') : null,
@@ -1599,6 +2531,11 @@ class OrcamentoController extends Controller
             'uf' => in_array($state, self::BRAZILIAN_STATES, true) ? $state : null,
             'data_referencia' => $referenceDate?->toDateString(),
             'coeficiente' => $this->parseCoefficient($value('coeficiente')),
+            'secao' => $value('secao') !== '' ? mb_strtoupper($value('secao')) : null,
+            'tipo_transporte' => $value('tipo_transporte') !== '' ? mb_strtoupper($value('tipo_transporte')) : null,
+            'codigo_item_referenciado' => $value('codigo_item_referenciado') !== '' ? $value('codigo_item_referenciado') : null,
+            'utilizacao_operativa' => $this->parseDecimal($value('utilizacao_operativa')),
+            'utilizacao_improdutiva' => $this->parseDecimal($value('utilizacao_improdutiva')),
             'raw_payload' => collect($headerMap)
                 ->mapWithKeys(fn (int $index, string $field): array => [$field => $this->normalizeCsvValue((string) ($row[$index] ?? ''))])
                 ->all(),
@@ -1628,6 +2565,9 @@ class OrcamentoController extends Controller
             $payload['codigo_item'] ?? '',
             $payload['uf'] ?? null,
             $payload['data_referencia'] ?? null,
+            $payload['secao'] ?? null,
+            $payload['tipo_transporte'] ?? null,
+            $payload['codigo_item_referenciado'] ?? null,
             $tenant,
             $global,
         );
@@ -1640,6 +2580,9 @@ class OrcamentoController extends Controller
         string $itemCode,
         ?string $state,
         ?string $referenceDate,
+        ?string $section,
+        ?string $transportType,
+        ?string $referencedItemCode,
         Tenant $tenant,
         bool $global,
     ): string {
@@ -1651,6 +2594,9 @@ class OrcamentoController extends Controller
             $this->codeKey($itemCode),
             $state ? mb_strtoupper($state) : '__NULL__',
             $referenceDate ? CarbonImmutable::parse($referenceDate)->toDateString() : '__NULL__',
+            $section ? mb_strtoupper($section) : '__NULL__',
+            $transportType ? mb_strtoupper($transportType) : '__NULL__',
+            $referencedItemCode ? $this->codeKey($referencedItemCode) : '__NULL__',
         ]);
     }
 
@@ -1728,7 +2674,20 @@ class OrcamentoController extends Controller
         $hasNullState = collect($payloads)->contains(fn (array $payload): bool => empty($payload['uf']));
 
         $query = OrcamentoComposicaoAnaliticoItem::withTrashed()
-            ->select(['id', 'tenant_id', 'is_global', 'modelo', 'codigo_composicao', 'tipo_item', 'codigo_item', 'uf', 'data_referencia'])
+            ->select([
+                'id',
+                'tenant_id',
+                'is_global',
+                'modelo',
+                'codigo_composicao',
+                'tipo_item',
+                'codigo_item',
+                'uf',
+                'data_referencia',
+                'secao',
+                'tipo_transporte',
+                'codigo_item_referenciado',
+            ])
             ->where('is_global', $global)
             ->whereIn('modelo', $models)
             ->whereIn('tipo_item', $itemTypes);
@@ -1761,6 +2720,9 @@ class OrcamentoController extends Controller
                 (string) $record->codigo_item,
                 $record->uf ? (string) $record->uf : null,
                 $date ?: null,
+                $record->secao ? (string) $record->secao : null,
+                $record->tipo_transporte ? (string) $record->tipo_transporte : null,
+                $record->codigo_item_referenciado ? (string) $record->codigo_item_referenciado : null,
                 $tenant,
                 $global,
             );
@@ -3579,6 +4541,61 @@ class OrcamentoController extends Controller
         return null;
     }
 
+    private function sicro3SectionFromAnaliticoItem(OrcamentoComposicaoAnaliticoItem $item, ?string $sourceType = null): ?string
+    {
+        $section = Str::of((string) $item->secao)
+            ->ascii()
+            ->lower()
+            ->replace(['-', '_'], ' ')
+            ->squish()
+            ->toString();
+
+        $sectionMap = [
+            'a' => 'equipamentos',
+            'equipamento' => 'equipamentos',
+            'equipamentos' => 'equipamentos',
+            'b' => 'mao_de_obra',
+            'mao de obra' => 'mao_de_obra',
+            'mão de obra' => 'mao_de_obra',
+            'c' => 'material',
+            'material' => 'material',
+            'd' => 'atividades_auxiliares',
+            'atividade auxiliar' => 'atividades_auxiliares',
+            'atividades auxiliares' => 'atividades_auxiliares',
+            'e' => 'tempo_fixo',
+            'tempo fixo' => 'tempo_fixo',
+            'f' => 'momento_transporte',
+            'momento de transporte' => 'momento_transporte',
+            'momento transporte' => 'momento_transporte',
+        ];
+
+        if (isset($sectionMap[$section])) {
+            return $sectionMap[$section];
+        }
+
+        if ($item->tipo_item === 'insumo') {
+            return $this->sicro3SectionFromType($sourceType);
+        }
+
+        return null;
+    }
+
+    private function sicro3TransportCodesFromAnaliticoItem(OrcamentoComposicaoAnaliticoItem $item): array
+    {
+        $codes = ['ln' => null, 'rp' => null, 'p' => null, 'fe' => null];
+        $type = Str::of((string) $item->tipo_transporte)
+            ->ascii()
+            ->lower()
+            ->trim()
+            ->toString();
+
+        if (array_key_exists($type, $codes)) {
+            $codes[$type] = $item->codigo_item;
+        }
+
+        return $codes;
+    }
+
     private function serializeInsumoOption(OrcamentoInsumo $insumo): array
     {
         return [
@@ -3762,8 +4779,12 @@ class OrcamentoController extends Controller
             ->orderBy('id')
             ->get()
             ->unique(fn (OrcamentoComposicaoAnaliticoItem $item): string => implode('|', [
+                $item->uf,
                 $item->tipo_item,
                 $this->codeKey($item->codigo_item),
+                $item->secao ?: '',
+                $item->tipo_transporte ?: '',
+                $item->codigo_item_referenciado ?: '',
                 $item->data_referencia?->toDateString() ?? '',
                 (string) $item->coeficiente,
             ]))
@@ -3845,8 +4866,16 @@ class OrcamentoController extends Controller
         $items = $analyticItems
             ->map(fn (OrcamentoComposicaoAnaliticoItem $item): array => $this->serializeAnaliticoItemForState($item, $stateComposicao->uf, $sources, $tenant, $visited, $calculationMethod))
             ->values();
-        $computedOnerado = $this->calculateMoney($items->sum('raw_preco_onerado'), $calculationMethod);
-        $computedDesonerado = $this->calculateMoney($items->sum('raw_preco_desonerado'), $calculationMethod);
+        $isSicro3 = mb_strtoupper((string) $stateComposicao->modelo) === 'SICRO3';
+        $sicro3Summary = $isSicro3
+            ? $this->sicro3AnaliticoStateSummary($stateComposicao, $items, $analyticItems, $calculationMethod)
+            : null;
+        $computedOnerado = $sicro3Summary
+            ? (float) $sicro3Summary['preco_onerado']
+            : $this->calculateMoney($items->sum('raw_preco_onerado'), $calculationMethod);
+        $computedDesonerado = $sicro3Summary
+            ? (float) $sicro3Summary['preco_desonerado']
+            : $this->calculateMoney($items->sum('raw_preco_desonerado'), $calculationMethod);
         $rawOnerado = (float) ($stateComposicao->preco_onerado ?? 0);
         $rawDesonerado = (float) ($stateComposicao->preco_desonerado ?? 0);
         $usesAnalyticPrice = ($rawOnerado <= 0 && $computedOnerado > 0) || ($rawDesonerado <= 0 && $computedDesonerado > 0);
@@ -3856,6 +4885,9 @@ class OrcamentoController extends Controller
             'uf' => $stateComposicao->uf,
             'estado_label' => $this->stateLabel($stateComposicao->uf),
             'composicao_id' => $stateComposicao->id,
+            'data' => $stateComposicao->data_referencia?->format('m/Y'),
+            'producao_equipe' => $sicro3Summary['producao_equipe'] ?? $stateComposicao->producao_equipe,
+            'fator_influencia_chuvas' => $sicro3Summary['fic'] ?? $stateComposicao->fator_influencia_chuvas,
             'preco_onerado' => $this->calculateMoney($stateComposicao->preco_onerado, $calculationMethod),
             'preco_desonerado' => $this->calculateMoney($stateComposicao->preco_desonerado, $calculationMethod),
             'raw_preco_onerado' => $stateComposicao->preco_onerado,
@@ -3867,6 +4899,7 @@ class OrcamentoController extends Controller
             'price_source' => $usesAnalyticPrice ? 'analytic' : ($rawOnerado > 0 || $rawDesonerado > 0 ? 'stored' : 'empty'),
             'missing_price_items_count' => $missingPriceItems,
             'items_count' => $items->count(),
+            'sicro3_summary' => $sicro3Summary,
             'items' => $items->all(),
         ];
     }
@@ -3881,9 +4914,23 @@ class OrcamentoController extends Controller
         if ($source instanceof OrcamentoInsumo) {
             $unitOnerado = (float) ($source->preco_nao_desonerado ?? 0);
             $unitDesonerado = (float) ($source->preco_desonerado ?? 0);
+            $custoImprodutivoOnerado = $source->custo_improdutivo_nao_desonerado !== null
+                ? (float) $source->custo_improdutivo_nao_desonerado
+                : null;
+            $custoImprodutivoDesonerado = $source->custo_improdutivo_desonerado !== null
+                ? (float) $source->custo_improdutivo_desonerado
+                : null;
+            $typeLabel = $source->classificacao ?: $this->typeLabel($source->tipo);
+            $description = $source->descricao;
+            $unit = $source->unidade;
+            $code = $source->codigo_insumo;
+            $composicaoId = null;
         } elseif ($source instanceof OrcamentoComposicao) {
+            $isSicro3Source = mb_strtoupper((string) $source->modelo) === 'SICRO3';
             $summary = $tenant
-                ? $this->fastComposicaoPriceSummary($source)
+                ? ($isSicro3Source
+                    ? $this->composicaoPriceSummary($tenant, $source, $visited)
+                    : $this->fastComposicaoPriceSummary($source))
                 : $this->rawComposicaoPriceSummary($source);
 
             if ($tenant && (float) $summary['effective_preco_onerado'] <= 0 && (float) $summary['effective_preco_desonerado'] <= 0) {
@@ -3894,34 +4941,157 @@ class OrcamentoController extends Controller
             $unitOnerado = $this->calculateMoney($summary['effective_preco_onerado'], $sourceCalculationMethod);
             $unitDesonerado = $this->calculateMoney($summary['effective_preco_desonerado'], $sourceCalculationMethod);
             $missingPriceItems = (int) $summary['missing_price_items_count'];
+            $custoImprodutivoOnerado = null;
+            $custoImprodutivoDesonerado = null;
+            $typeLabel = $source->tipo_composicao;
+            $description = $source->descricao;
+            $unit = $source->unidade;
+            $code = $source->codigo;
+            $composicaoId = $source->id;
         } else {
             $unitOnerado = 0;
             $unitDesonerado = 0;
+            $custoImprodutivoOnerado = null;
+            $custoImprodutivoDesonerado = null;
+            $typeLabel = null;
+            $description = $item->descricao_item;
+            $unit = $item->unidade;
+            $code = $item->codigo_item;
+            $composicaoId = null;
         }
+        $sicro3Section = mb_strtoupper((string) $item->modelo) === 'SICRO3'
+            ? $this->sicro3SectionFromAnaliticoItem($item, $typeLabel)
+            : null;
+        $sicro3SectionMeta = $this->sicro3SectionMeta($sicro3Section);
+        $utilizacaoOperativa = $item->utilizacao_operativa !== null ? (float) $item->utilizacao_operativa : null;
+        $utilizacaoImprodutiva = $item->utilizacao_improdutiva !== null ? (float) $item->utilizacao_improdutiva : null;
+        $lineTotals = $sicro3Section
+            ? $this->sicro3ItemLineTotals(
+                $sicro3Section,
+                $coefficient,
+                $unitOnerado,
+                $unitDesonerado,
+                $custoImprodutivoOnerado,
+                $custoImprodutivoDesonerado,
+                $utilizacaoOperativa,
+                $utilizacaoImprodutiva,
+            )
+            : [
+                'onerado' => $unitOnerado * $coefficient,
+                'desonerado' => $unitDesonerado * $coefficient,
+                'fic_base_onerado' => 0.0,
+                'fic_base_desonerado' => 0.0,
+            ];
+        $transportCodes = $this->sicro3TransportCodesFromAnaliticoItem($item);
 
         return [
             'id' => $state.'-'.$item->id,
             'marker' => $type === 'composicao' ? 'C' : 'I',
             'item_type' => $type,
             'item_type_label' => $type === 'composicao' ? 'Composicao' : 'Insumo',
-            'composicao_id' => $source instanceof OrcamentoComposicao ? $source->id : null,
-            'codigo' => $source instanceof OrcamentoInsumo ? $source->codigo_insumo : ($source instanceof OrcamentoComposicao ? $source->codigo : $item->codigo_item),
-            'descricao' => $source instanceof OrcamentoInsumo ? $source->descricao : ($source instanceof OrcamentoComposicao ? $source->descricao : $item->descricao_item),
-            'tipo' => $source instanceof OrcamentoInsumo
-                ? ($source->classificacao ?: $this->typeLabel($source->tipo))
-                : ($source instanceof OrcamentoComposicao ? $source->tipo_composicao : null),
-            'unidade' => $source?->unidade ?? $item->unidade,
+            'composicao_id' => $composicaoId,
+            'codigo' => $code,
+            'descricao' => $description,
+            'tipo' => $typeLabel,
+            'unidade' => $unit,
             'coeficiente' => $coefficient,
+            'sicro3_section' => $sicro3Section,
+            'sicro3_section_code' => $sicro3SectionMeta['code'] ?? null,
+            'sicro3_section_label' => $sicro3SectionMeta['label'] ?? null,
+            'sicro3_utilizacao_operativa' => $utilizacaoOperativa,
+            'sicro3_utilizacao_improdutiva' => $utilizacaoImprodutiva,
+            'sicro3_referenced_item_code' => $item->codigo_item_referenciado,
+            'sicro3_referenced_item_description' => null,
+            'sicro3_transport_ln_code' => $transportCodes['ln'],
+            'sicro3_transport_rp_code' => $transportCodes['rp'],
+            'sicro3_transport_p_code' => $transportCodes['p'],
+            'sicro3_transport_fe_code' => $transportCodes['fe'],
             'preco_unitario_onerado' => $this->calculateIntermediateMoney($unitOnerado, $calculationMethod),
             'preco_unitario_desonerado' => $this->calculateIntermediateMoney($unitDesonerado, $calculationMethod),
-            'preco_onerado' => $this->calculateIntermediateMoney($unitOnerado * $coefficient, $calculationMethod),
-            'preco_desonerado' => $this->calculateIntermediateMoney($unitDesonerado * $coefficient, $calculationMethod),
+            'custo_improdutivo_onerado' => $this->calculateIntermediateMoney($custoImprodutivoOnerado, $calculationMethod),
+            'custo_improdutivo_desonerado' => $this->calculateIntermediateMoney($custoImprodutivoDesonerado, $calculationMethod),
+            'preco_onerado' => $this->calculateIntermediateMoney($lineTotals['onerado'], $calculationMethod),
+            'preco_desonerado' => $this->calculateIntermediateMoney($lineTotals['desonerado'], $calculationMethod),
             'raw_preco_unitario_onerado' => $this->storeMoney($unitOnerado),
             'raw_preco_unitario_desonerado' => $this->storeMoney($unitDesonerado),
-            'raw_preco_onerado' => $this->storeIntermediateMoney($unitOnerado * $coefficient, $calculationMethod),
-            'raw_preco_desonerado' => $this->storeIntermediateMoney($unitDesonerado * $coefficient, $calculationMethod),
+            'raw_custo_improdutivo_onerado' => $this->storeMoney($custoImprodutivoOnerado),
+            'raw_custo_improdutivo_desonerado' => $this->storeMoney($custoImprodutivoDesonerado),
+            'raw_preco_onerado' => $this->storeIntermediateMoney($lineTotals['onerado'], $calculationMethod),
+            'raw_preco_desonerado' => $this->storeIntermediateMoney($lineTotals['desonerado'], $calculationMethod),
+            'raw_fic_base_onerado' => $this->storeIntermediateMoney($lineTotals['fic_base_onerado'], $calculationMethod),
+            'raw_fic_base_desonerado' => $this->storeIntermediateMoney($lineTotals['fic_base_desonerado'], $calculationMethod),
             'source_found' => (bool) $source,
             'missing_price_items_count' => $missingPriceItems,
+        ];
+    }
+
+    private function sicro3AnaliticoStateSummary(OrcamentoComposicao $stateComposicao, \Illuminate\Support\Collection $items, \Illuminate\Support\Collection $analyticItems, string $calculationMethod): array
+    {
+        $sections = [
+            'equipamentos' => ['onerado' => 0.0, 'desonerado' => 0.0],
+            'mao_de_obra' => ['onerado' => 0.0, 'desonerado' => 0.0],
+            'material' => ['onerado' => 0.0, 'desonerado' => 0.0],
+            'atividades_auxiliares' => ['onerado' => 0.0, 'desonerado' => 0.0],
+            'tempo_fixo' => ['onerado' => 0.0, 'desonerado' => 0.0],
+            'momento_transporte' => ['onerado' => 0.0, 'desonerado' => 0.0],
+        ];
+        $ficEquipmentBaseOnerado = 0.0;
+        $ficEquipmentBaseDesonerado = 0.0;
+
+        foreach ($items as $item) {
+            $section = $item['sicro3_section'] ?? null;
+
+            if (! isset($sections[$section])) {
+                continue;
+            }
+
+            $sections[$section]['onerado'] += (float) ($item['preco_onerado'] ?? $item['raw_preco_onerado'] ?? 0);
+            $sections[$section]['desonerado'] += (float) ($item['preco_desonerado'] ?? $item['raw_preco_desonerado'] ?? 0);
+
+            if ($section === 'equipamentos') {
+                $ficEquipmentBaseOnerado += (float) ($item['raw_fic_base_onerado'] ?? 0);
+                $ficEquipmentBaseDesonerado += (float) ($item['raw_fic_base_desonerado'] ?? 0);
+            }
+        }
+
+        $analyticMeta = $analyticItems->first(fn (OrcamentoComposicaoAnaliticoItem $item): bool => $item->uf === $stateComposicao->uf)
+            ?? $analyticItems->first();
+        $production = max((float) ($stateComposicao->producao_equipe ?? $analyticMeta?->producao_equipe ?? 1), 0.000001);
+        $fic = max((float) ($stateComposicao->fator_influencia_chuvas ?? $analyticMeta?->fator_influencia_chuvas ?? 0), 0);
+        $additionalLabor = (float) ($stateComposicao->adicional_mao_obra ?? 0);
+
+        $executionHourlyOnerado = $sections['equipamentos']['onerado'] + $sections['mao_de_obra']['onerado'] + $additionalLabor;
+        $executionHourlyDesonerado = $sections['equipamentos']['desonerado'] + $sections['mao_de_obra']['desonerado'] + $additionalLabor;
+        $executionUnitOnerado = $this->calculateIntermediateMoney($executionHourlyOnerado / $production, $calculationMethod);
+        $executionUnitDesonerado = $this->calculateIntermediateMoney($executionHourlyDesonerado / $production, $calculationMethod);
+
+        $ficBaseOnerado = $ficEquipmentBaseOnerado + $sections['mao_de_obra']['onerado'] + $additionalLabor;
+        $ficBaseDesonerado = $ficEquipmentBaseDesonerado + $sections['mao_de_obra']['desonerado'] + $additionalLabor;
+        $ficCostOnerado = $this->calculateIntermediateMoney(($ficBaseOnerado / $production) * $fic, $calculationMethod);
+        $ficCostDesonerado = $this->calculateIntermediateMoney(($ficBaseDesonerado / $production) * $fic, $calculationMethod);
+
+        $directSectionsOnerado = $sections['material']['onerado']
+            + $sections['atividades_auxiliares']['onerado']
+            + $sections['tempo_fixo']['onerado'];
+        $directSectionsDesonerado = $sections['material']['desonerado']
+            + $sections['atividades_auxiliares']['desonerado']
+            + $sections['tempo_fixo']['desonerado'];
+
+        return [
+            'sections' => collect($sections)->map(fn (array $totals): array => [
+                'onerado' => $this->calculateIntermediateMoney($totals['onerado'], $calculationMethod),
+                'desonerado' => $this->calculateIntermediateMoney($totals['desonerado'], $calculationMethod),
+            ])->all(),
+            'producao_equipe' => $production,
+            'fic' => $fic,
+            'custo_horario_execucao_onerado' => $this->calculateIntermediateMoney($executionHourlyOnerado, $calculationMethod),
+            'custo_horario_execucao_desonerado' => $this->calculateIntermediateMoney($executionHourlyDesonerado, $calculationMethod),
+            'custo_unitario_execucao_onerado' => $executionUnitOnerado,
+            'custo_unitario_execucao_desonerado' => $executionUnitDesonerado,
+            'custo_fic_onerado' => $ficCostOnerado,
+            'custo_fic_desonerado' => $ficCostDesonerado,
+            'preco_onerado' => $this->calculateMoney($executionUnitOnerado + $ficCostOnerado + $directSectionsOnerado, $calculationMethod),
+            'preco_desonerado' => $this->calculateMoney($executionUnitDesonerado + $ficCostDesonerado + $directSectionsDesonerado, $calculationMethod),
         ];
     }
 
@@ -4219,17 +5389,33 @@ class OrcamentoController extends Controller
         $items = $analyticItems
             ->map(fn (OrcamentoComposicaoAnaliticoItem $item): array => $this->serializeAnaliticoItemForState($item, $composicao->uf, $sources, $tenant, $visited, $calculationMethod))
             ->values();
-        $computedOnerado = $this->calculateMoney($items->sum('raw_preco_onerado'), $calculationMethod);
-        $computedDesonerado = $this->calculateMoney($items->sum('raw_preco_desonerado'), $calculationMethod);
+        $isSicro3 = mb_strtoupper((string) $composicao->modelo) === 'SICRO3';
+        $sicro3Summary = $isSicro3
+            ? $this->sicro3AnaliticoStateSummary($composicao, $items, $analyticItems, $calculationMethod)
+            : null;
+        $computedOnerado = $sicro3Summary
+            ? (float) $sicro3Summary['preco_onerado']
+            : $this->calculateMoney($items->sum('raw_preco_onerado'), $calculationMethod);
+        $computedDesonerado = $sicro3Summary
+            ? (float) $sicro3Summary['preco_desonerado']
+            : $this->calculateMoney($items->sum('raw_preco_desonerado'), $calculationMethod);
         $rawOnerado = (float) $rawSummary['preco_onerado'];
         $rawDesonerado = (float) $rawSummary['preco_desonerado'];
-        $usesAnalyticPrice = ($rawOnerado <= 0 && $computedOnerado > 0) || ($rawDesonerado <= 0 && $computedDesonerado > 0);
+        $effectiveOnerado = $isSicro3 && $sicro3Summary
+            ? $computedOnerado
+            : $this->calculateMoney($rawOnerado > 0 ? $rawOnerado : $computedOnerado, $calculationMethod);
+        $effectiveDesonerado = $isSicro3 && $sicro3Summary
+            ? $computedDesonerado
+            : $this->calculateMoney($rawDesonerado > 0 ? $rawDesonerado : $computedDesonerado, $calculationMethod);
+        $usesAnalyticPrice = ($isSicro3 && $sicro3Summary)
+            || ($rawOnerado <= 0 && $computedOnerado > 0)
+            || ($rawDesonerado <= 0 && $computedDesonerado > 0);
 
         return $this->composicaoPriceSummaryCache[$cacheKey] = array_merge($rawSummary, [
             'computed_preco_onerado' => $computedOnerado,
             'computed_preco_desonerado' => $computedDesonerado,
-            'effective_preco_onerado' => $this->calculateMoney($rawOnerado > 0 ? $rawOnerado : $computedOnerado, $calculationMethod),
-            'effective_preco_desonerado' => $this->calculateMoney($rawDesonerado > 0 ? $rawDesonerado : $computedDesonerado, $calculationMethod),
+            'effective_preco_onerado' => $effectiveOnerado,
+            'effective_preco_desonerado' => $effectiveDesonerado,
             'price_source' => $usesAnalyticPrice ? 'analytic' : ($rawOnerado > 0 || $rawDesonerado > 0 ? 'stored' : 'empty'),
             'missing_price_items_count' => (int) $items->sum('missing_price_items_count'),
             'analytic_items_count' => $items->count(),
@@ -4507,12 +5693,10 @@ class OrcamentoController extends Controller
 
         $directSectionsOnerado = $sections['material']['onerado']
             + $sections['atividades_auxiliares']['onerado']
-            + $sections['tempo_fixo']['onerado']
-            + $sections['momento_transporte']['onerado'];
+            + $sections['tempo_fixo']['onerado'];
         $directSectionsDesonerado = $sections['material']['desonerado']
             + $sections['atividades_auxiliares']['desonerado']
-            + $sections['tempo_fixo']['desonerado']
-            + $sections['momento_transporte']['desonerado'];
+            + $sections['tempo_fixo']['desonerado'];
 
         return [
             'sections' => collect($sections)->map(fn (array $totals): array => [
@@ -4543,9 +5727,12 @@ class OrcamentoController extends Controller
         ?float $utilizacaoImprodutiva = null,
     ): array {
         if ($section === 'equipamentos') {
+            $unitOnerado = $unitOnerado > 0 ? $unitOnerado : $unitDesonerado;
             $unitDesonerado = $unitDesonerado > 0 ? $unitDesonerado : $unitOnerado;
             $custoImprodutivoOnerado ??= $unitOnerado;
             $custoImprodutivoDesonerado ??= $custoImprodutivoOnerado;
+            $custoImprodutivoOnerado = $custoImprodutivoOnerado > 0 ? $custoImprodutivoOnerado : $custoImprodutivoDesonerado;
+            $custoImprodutivoDesonerado = $custoImprodutivoDesonerado > 0 ? $custoImprodutivoDesonerado : $custoImprodutivoOnerado;
             $utilizacaoOperativa ??= 1.0;
             $utilizacaoImprodutiva ??= 0.0;
 
@@ -4557,8 +5744,10 @@ class OrcamentoController extends Controller
             ];
         }
 
+        $unitOnerado = $unitOnerado > 0 ? $unitOnerado : $unitDesonerado;
+        $unitDesonerado = $unitDesonerado > 0 ? $unitDesonerado : $unitOnerado;
         $lineOnerado = $unitOnerado * $coefficient;
-        $lineDesonerado = ($unitDesonerado > 0 ? $unitDesonerado : $unitOnerado) * $coefficient;
+        $lineDesonerado = $unitDesonerado * $coefficient;
 
         return [
             'onerado' => $lineOnerado,
@@ -4685,6 +5874,849 @@ class OrcamentoController extends Controller
             ],
             'baseReferences' => $this->compositionBaseReferences($tenant),
         ];
+    }
+
+    private function orcamentoFormOptions(Tenant $tenant): array
+    {
+        $clienteTipoId = TipoEmpresa::query()
+            ->where('nome', 'cliente')
+            ->value('id');
+
+        return [
+            'nextCode' => $this->nextOrcamentoCode($tenant),
+            'clients' => Empresa::query()
+                ->where('tenant_id', $tenant->id)
+                ->when($clienteTipoId, fn (Builder $query): Builder => $query->where('tipo_empresa_id', $clienteTipoId))
+                ->orderBy('nome')
+                ->get(['id', 'nome', 'sigla'])
+                ->map(fn (Empresa $empresa): array => [
+                    'id' => $empresa->id,
+                    'nome' => $empresa->nome,
+                    'sigla' => $empresa->sigla,
+                ])
+                ->values()
+                ->all(),
+            'categories' => collect(self::ORCAMENTO_CATEGORIES)
+                ->map(fn (string $category): array => ['value' => $category, 'label' => $category])
+                ->values()
+                ->all(),
+            'roundingMethods' => [
+                ['value' => 'round_all_2', 'label' => 'Arredondar tudo em 2 casas decimais'],
+                ['value' => 'round_compositions_2', 'label' => 'Arredondar em 2 casas decimais incluindo as composicoes auxiliares'],
+                ['value' => 'round_and_truncate_unit', 'label' => 'Arredondar em 2 casas decimais e truncar os precos unitarios'],
+                ['value' => 'truncate_all_2', 'label' => 'Truncar tudo em 2 casas decimais', 'badge' => 'Padrao TCU'],
+                ['value' => 'none', 'label' => 'Nao arredondar'],
+            ],
+            'bdiTypes' => [
+                ['value' => 'unit_price', 'label' => 'Incidir sobre o preco unitario da composicao', 'badge' => 'TCU recomenda'],
+                ['value' => 'total_budget', 'label' => 'Incidir sobre o preco final do orcamento'],
+            ],
+            'encargosOptions' => [
+                ['value' => 'desonerado', 'label' => 'Desonerado'],
+                ['value' => 'nao_desonerado', 'label' => 'Nao desonerado'],
+            ],
+            'licitacaoTipos' => [
+                ['value' => 'Concorrencia', 'label' => 'Concorrencia'],
+                ['value' => 'Tomada de precos', 'label' => 'Tomada de precos'],
+                ['value' => 'Pregao', 'label' => 'Pregao'],
+                ['value' => 'Dispensa', 'label' => 'Dispensa'],
+                ['value' => 'Inexigibilidade', 'label' => 'Inexigibilidade'],
+                ['value' => 'Outro', 'label' => 'Outro'],
+            ],
+            'baseReferences' => $this->compositionBaseReferences($tenant),
+        ];
+    }
+
+    private function nextOrcamentoCode(Tenant $tenant): string
+    {
+        $next = Orcamento::query()
+            ->where('tenant_id', $tenant->id)
+            ->withTrashed()
+            ->count() + 1;
+
+        do {
+            $code = str_pad((string) $next, 8, '0', STR_PAD_LEFT);
+            $exists = Orcamento::query()
+                ->where('tenant_id', $tenant->id)
+                ->withTrashed()
+                ->where('codigo', $code)
+                ->exists();
+            $next++;
+        } while ($exists);
+
+        return $code;
+    }
+
+    private function authorizeOrcamentoEtapa(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $etapa): void
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $etapa->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $etapa->orcamento_id === (int) $orcamento->id, 404);
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+    }
+
+    private function renumberOrcamentoEtapas(Tenant $tenant, Orcamento $orcamento): void
+    {
+        OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->orderBy('ordem')
+            ->orderBy('id')
+            ->get()
+            ->each(function (OrcamentoEtapa $etapa, int $index): void {
+                $expectedOrder = $index + 1;
+
+                if ((int) $etapa->ordem === $expectedOrder) {
+                    return;
+                }
+
+                $etapa->forceFill(['ordem' => $expectedOrder])->save();
+            });
+    }
+
+    private function authorizeOrcamentoItem(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): void
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $item->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $item->orcamento_id === (int) $orcamento->id, 404);
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+    }
+
+    private function renumberOrcamentoItems(Tenant $tenant, OrcamentoEtapa $etapa): void
+    {
+        OrcamentoItem::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_etapa_id', $etapa->id)
+            ->orderBy('ordem')
+            ->orderBy('id')
+            ->get()
+            ->each(function (OrcamentoItem $item, int $index): void {
+                $expectedOrder = $index + 1;
+
+                if ((int) $item->ordem === $expectedOrder) {
+                    return;
+                }
+
+                $item->forceFill(['ordem' => $expectedOrder])->save();
+            });
+    }
+
+    private function recalculateOrcamentoItemTotals(OrcamentoItem $item, Orcamento $orcamento): void
+    {
+        $quantity = (float) $item->quantidade;
+        $meta = $item->meta ?? [];
+        $bdiPercentual = $meta['bdi_percentual'] ?? $orcamento->bdi_percentual;
+        $bdiMultiplier = 1 + ((float) $bdiPercentual / 100);
+        $unitNaoDesonerado = (float) $item->valor_unitario_nao_desonerado;
+        $unitDesonerado = (float) $item->valor_unitario_desonerado;
+        $withBdiNaoDesonerado = $this->calculateMoney($unitNaoDesonerado * $bdiMultiplier, 'truncate_2');
+        $withBdiDesonerado = $this->calculateMoney($unitDesonerado * $bdiMultiplier, 'truncate_2');
+
+        $item->forceFill([
+            'valor_com_bdi_nao_desonerado' => $this->storeMoney($withBdiNaoDesonerado),
+            'valor_com_bdi_desonerado' => $this->storeMoney($withBdiDesonerado),
+            'valor_total_nao_desonerado' => $this->storeMoney($this->calculateMoney($withBdiNaoDesonerado * $quantity, 'truncate_2')),
+            'valor_total_desonerado' => $this->storeMoney($this->calculateMoney($withBdiDesonerado * $quantity, 'truncate_2')),
+        ])->save();
+    }
+
+    private function recalculateOrcamentoTotals(Tenant $tenant, Orcamento $orcamento): void
+    {
+        $totalsByEtapa = OrcamentoItem::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->selectRaw('orcamento_etapa_id, SUM(valor_total_nao_desonerado) as total_nao_desonerado, SUM(valor_total_desonerado) as total_desonerado')
+            ->groupBy('orcamento_etapa_id')
+            ->get()
+            ->keyBy('orcamento_etapa_id');
+
+        OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->get()
+            ->each(function (OrcamentoEtapa $etapa) use ($totalsByEtapa): void {
+                $totals = $totalsByEtapa->get($etapa->id);
+
+                $etapa->forceFill([
+                    'valor_nao_desonerado' => $this->storeMoney($totals?->total_nao_desonerado ?? 0),
+                    'valor_desonerado' => $this->storeMoney($totals?->total_desonerado ?? 0),
+                ])->save();
+            });
+
+        $orcamentoTotals = OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->selectRaw('SUM(valor_nao_desonerado) as total_nao_desonerado, SUM(valor_desonerado) as total_desonerado')
+            ->first();
+
+        $orcamento->forceFill([
+            'valor_nao_desonerado' => $this->storeMoney($orcamentoTotals?->total_nao_desonerado ?? 0),
+            'valor_desonerado' => $this->storeMoney($orcamentoTotals?->total_desonerado ?? 0),
+        ])->save();
+    }
+
+    private function orcamentoSelectedReferences(Orcamento $orcamento): array
+    {
+        return collect($orcamento->base_references ?? [])
+            ->map(function (array $reference): array {
+                return [
+                    'base' => mb_strtoupper(trim((string) ($reference['nome'] ?? ''))),
+                    'uf' => isset($reference['uf']) ? mb_strtoupper(trim((string) $reference['uf'])) : null,
+                    'date' => isset($reference['data']) ? $this->parseReferenceDateOrNull((string) $reference['data']) : null,
+                ];
+            })
+            ->filter(fn (array $reference): bool => in_array($reference['base'], ['SINAPI', 'SICRO3'], true))
+            ->values()
+            ->all();
+    }
+
+    private function composicaoAllowedForOrcamento(Tenant $tenant, Orcamento $orcamento, OrcamentoComposicao $composicao): bool
+    {
+        if (! $composicao->is_global && (int) $composicao->tenant_id === (int) $tenant->id) {
+            return true;
+        }
+
+        $references = $this->orcamentoSelectedReferences($orcamento);
+
+        return $references !== [] && $this->composicaoMatchesAnyReference($composicao, $references);
+    }
+
+    private function insumoAllowedForOrcamento(Tenant $tenant, Orcamento $orcamento, OrcamentoInsumo $insumo): bool
+    {
+        if ((int) $insumo->tenant_id === (int) $tenant->id) {
+            return true;
+        }
+
+        $references = $this->orcamentoSelectedReferences($orcamento);
+
+        return $references !== [] && $this->insumoMatchesAnyReference($insumo, $references);
+    }
+
+    private function insumoMatchesAnyReference(OrcamentoInsumo $insumo, array $references): bool
+    {
+        foreach ($references as $reference) {
+            if ($insumo->banco !== $reference['base']) {
+                continue;
+            }
+
+            if ($reference['uf'] && $insumo->uf !== $reference['uf']) {
+                continue;
+            }
+
+            if ($reference['date'] && $insumo->data_referencia?->toDateString() !== $reference['date']->toDateString()) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private function orcamentoComposicaoPrices(Tenant $tenant, OrcamentoComposicao $composicao): array
+    {
+        $summary = $this->composicaoListPriceSummaries($tenant, collect([$composicao]))[$composicao->id]
+            ?? $this->fastComposicaoPriceSummary($composicao);
+        $method = $this->calculationMethodForComposicao($composicao);
+
+        return [
+            'nao_desonerado' => $this->storeMoney($this->calculateMoney($summary['effective_preco_onerado'] ?? 0, $method)),
+            'desonerado' => $this->storeMoney($this->calculateMoney($summary['effective_preco_desonerado'] ?? 0, $method)),
+        ];
+    }
+
+    private function orcamentoInsumoPrices(OrcamentoInsumo $insumo): array
+    {
+        return [
+            'nao_desonerado' => $this->storeMoney($this->calculateMoney($insumo->preco_nao_desonerado ?? 0)),
+            'desonerado' => $this->storeMoney($this->calculateMoney($insumo->preco_desonerado ?? 0)),
+        ];
+    }
+
+    private function orcamentoComposicaoBaseLabel(OrcamentoComposicao $composicao): string
+    {
+        if (! $composicao->is_global) {
+            return 'Base propria';
+        }
+
+        $date = $this->firstReferenceDateForComposicao($composicao);
+        $dateLabel = $date ? CarbonImmutable::parse($date)->format('m/Y') : null;
+
+        return trim(implode(' - ', array_filter([
+            $composicao->modelo,
+            $composicao->uf,
+            $dateLabel,
+        ])));
+    }
+
+    private function serializeOrcamentoComposicaoOption(OrcamentoComposicao $composicao, ?array $summary = null): array
+    {
+        $method = $this->calculationMethodForComposicao($composicao);
+        $summary ??= $this->fastComposicaoPriceSummary($composicao);
+        $date = $this->firstReferenceDateForComposicao($composicao);
+
+        return [
+            'id' => $composicao->id,
+            'base' => $composicao->is_global ? $composicao->modelo : 'PROPRIA',
+            'base_label' => $this->orcamentoComposicaoBaseLabel($composicao),
+            'codigo' => $composicao->codigo,
+            'descricao' => $composicao->descricao,
+            'tipo' => $composicao->tipo_composicao,
+            'unidade' => $composicao->unidade,
+            'data' => $date ? CarbonImmutable::parse($date)->format('m/Y') : null,
+            'preco_unitario_nao_desonerado' => $this->calculateMoney($summary['effective_preco_onerado'] ?? 0, $method),
+            'preco_unitario_desonerado' => $this->calculateMoney($summary['effective_preco_desonerado'] ?? 0, $method),
+        ];
+    }
+
+    private function serializeOrcamentoInsumoOption(OrcamentoInsumo $insumo): array
+    {
+        $precoNaoDesonerado = $this->calculateMoney($insumo->preco_nao_desonerado ?? 0);
+        $precoDesonerado = $this->calculateMoney($insumo->preco_desonerado ?? 0);
+
+        return [
+            'id' => $insumo->id,
+            'base' => $insumo->banco,
+            'base_label' => trim(implode(' - ', array_filter([
+                $insumo->banco,
+                $insumo->uf,
+                $insumo->data_referencia?->format('m/Y'),
+            ]))),
+            'codigo' => $insumo->codigo_insumo,
+            'descricao' => $insumo->descricao,
+            'tipo' => $insumo->classificacao ?: $this->typeLabel($insumo->tipo),
+            'unidade' => $insumo->unidade,
+            'data' => $insumo->data_referencia?->format('m/Y'),
+            'uf' => $insumo->uf,
+            'preco_unitario_nao_desonerado' => $precoNaoDesonerado,
+            'preco_unitario_desonerado' => $precoDesonerado,
+            'has_zero_price' => $precoNaoDesonerado <= 0 || $precoDesonerado <= 0,
+        ];
+    }
+
+    private function buildOrcamentoSinteticoSpreadsheet(Tenant $tenant, Orcamento $orcamento): Spreadsheet
+    {
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getProperties()
+            ->setCreator('Deming')
+            ->setTitle('Orcamento Sintetico - '.$orcamento->codigo)
+            ->setSubject('Relatorio sintetico de orcamento');
+
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Sintetico');
+        $sheet->setShowGridlines(false);
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Calibri')->setSize(10);
+
+        foreach ([
+            'A' => 12,
+            'B' => 16,
+            'C' => 15,
+            'D' => 72,
+            'E' => 12,
+            'F' => 13,
+            'G' => 16,
+            'H' => 18,
+            'I' => 16,
+            'J' => 12,
+        ] as $column => $width) {
+            $sheet->getColumnDimension($column)->setWidth($width);
+        }
+
+        $sheet->mergeCells('A1:C2');
+        $sheet->setCellValue('A1', 'Deming');
+        $sheet->getStyle('A1:C2')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 22, 'color' => ['rgb' => '0B5FFF']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']],
+        ]);
+
+        $sheet->setCellValue('D1', 'Obra');
+        $sheet->setCellValue('D2', trim($orcamento->codigo.' - '.$orcamento->descricao));
+        $sheet->mergeCells('E1:F1');
+        $sheet->mergeCells('E2:F2');
+        $sheet->setCellValue('E1', 'Bancos');
+        $sheet->setCellValue('E2', $this->orcamentoBaseReferencesReportText($orcamento));
+        $sheet->mergeCells('G1:H1');
+        $sheet->mergeCells('G2:H2');
+        $sheet->setCellValue('G1', 'B.D.I.');
+        $sheet->setCellValue('G2', ((float) $orcamento->bdi_percentual / 100));
+        $sheet->mergeCells('I1:J1');
+        $sheet->mergeCells('I2:J2');
+        $sheet->setCellValue('I1', 'Cliente');
+        $sheet->setCellValue('I2', $orcamento->clienteEmpresa?->nome ?? 'Sem cliente');
+
+        $sheet->getStyle('D1:J1')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0B3F75']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getStyle('D2:J2')->applyFromArray([
+            'alignment' => ['wrapText' => true, 'vertical' => Alignment::VERTICAL_TOP],
+            'borders' => ['bottom' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+        ]);
+        $sheet->getStyle('G2')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_PERCENTAGE_00);
+        $sheet->getRowDimension(2)->setRowHeight(48);
+
+        $sheet->mergeCells('A3:J3');
+        $sheet->setCellValue('A3', 'Orcamento Sintetico com Formulas');
+        $sheet->getStyle('A3:J3')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => '0F172A']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F8FAFC']],
+        ]);
+
+        $sheet->mergeCells('H4:I4');
+        $sheet->setCellValue('H4', 'Valor Final do Orcamento');
+        $sheet->setCellValue('J4', 0);
+        $sheet->mergeCells('H5:I5');
+        $sheet->setCellValue('H5', 'BDI');
+        $sheet->setCellValue('J5', ((float) $orcamento->bdi_percentual / 100));
+        $sheet->getStyle('H4:J5')->applyFromArray([
+            'font' => ['bold' => true],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF2FF']],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+        ]);
+        $sheet->getStyle('J4')->getNumberFormat()->setFormatCode('"R$" #,##0.00');
+        $sheet->getStyle('J5')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_PERCENTAGE_00);
+
+        $headers = ['Item', 'Codigo', 'Banco', 'Descricao', 'Und', 'Quant.', 'Valor Unit', 'Valor Unit com BDI', 'Total', 'Peso (%)'];
+
+        foreach ($headers as $index => $header) {
+            $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1).'6', $header);
+        }
+
+        $sheet->getStyle('A6:J6')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '111827']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getRowDimension(6)->setRowHeight(24);
+
+        $row = 7;
+        $stageRows = [];
+        $useNaoDesonerado = $orcamento->encargos_sociais === 'nao_desonerado';
+
+        foreach ($orcamento->etapas as $etapa) {
+            $stageRow = $row;
+            $stageRows[] = $stageRow;
+            $stageQuantity = (float) ($etapa->quantidade ?? 1);
+            $stageQuantity = $stageQuantity > 0 ? $stageQuantity : 1;
+
+            $sheet->setCellValueExplicit("A{$stageRow}", (string) $etapa->ordem, DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("D{$stageRow}", (string) $etapa->descricao, DataType::TYPE_STRING);
+            $sheet->setCellValue("F{$stageRow}", $stageQuantity);
+
+            $row++;
+            $firstItemRow = $row;
+
+            foreach ($etapa->itens as $item) {
+                $unit = $useNaoDesonerado
+                    ? (float) $item->valor_unitario_nao_desonerado
+                    : (float) $item->valor_unitario_desonerado;
+                $meta = $item->meta ?? [];
+                $bdiPercent = (float) ($meta['bdi_percentual'] ?? $orcamento->bdi_percentual);
+                $bdiFormulaValue = number_format($bdiPercent / 100, 8, '.', '');
+                $bdiReference = (bool) ($meta['bdi_diferenciado'] ?? false) ? $bdiFormulaValue : '$J$5';
+                $itemFormula = "=TRUNC(TRUNC(G{$row}*{$bdiReference},2)+G{$row},2)";
+
+                $sheet->setCellValueExplicit("A{$row}", $etapa->ordem.'.'.$item->ordem, DataType::TYPE_STRING);
+                $sheet->setCellValueExplicit("B{$row}", (string) $item->codigo, DataType::TYPE_STRING);
+                $sheet->setCellValueExplicit("C{$row}", (string) $item->banco, DataType::TYPE_STRING);
+                $sheet->setCellValueExplicit("D{$row}", (string) $item->descricao, DataType::TYPE_STRING);
+                $sheet->setCellValueExplicit("E{$row}", (string) $item->unidade, DataType::TYPE_STRING);
+                $sheet->setCellValue("F{$row}", (float) $item->quantidade);
+                $sheet->setCellValue("G{$row}", $unit);
+                $sheet->setCellValue("H{$row}", $itemFormula);
+                $sheet->setCellValue("I{$row}", "=TRUNC(F{$row}*H{$row},2)");
+                $sheet->setCellValue("J{$row}", "=IF(\$J\$4=0,0,I{$row}/\$J\$4)");
+
+                $this->styleOrcamentoSinteticoDataRow($sheet, $row, $item->item_type === 'insumo' ? 'FEF3C7' : 'DCFCE7');
+                $row++;
+            }
+
+            $lastItemRow = $row - 1;
+            $stageTotalFormula = $lastItemRow >= $firstItemRow ? "SUM(I{$firstItemRow}:I{$lastItemRow})" : '0';
+            $sheet->setCellValue("H{$stageRow}", "=IF(F{$stageRow}=0,0,({$stageTotalFormula})/F{$stageRow})");
+            $sheet->setCellValue("I{$stageRow}", "=TRUNC(F{$stageRow}*H{$stageRow},2)");
+            $sheet->setCellValue("J{$stageRow}", "=IF(\$J\$4=0,0,I{$stageRow}/\$J\$4)");
+            $this->styleOrcamentoSinteticoDataRow($sheet, $stageRow, 'DBEAFE', true);
+        }
+
+        $lastDataRow = max(6, $row - 1);
+        $totalFormula = count($stageRows) > 0
+            ? '=SUM('.collect($stageRows)->map(fn (int $stageRow): string => "I{$stageRow}")->implode(',').')'
+            : '=0';
+        $sheet->setCellValue('J4', $totalFormula);
+
+        $summaryRow = $lastDataRow + 2;
+        $sheet->mergeCells("F{$summaryRow}:H{$summaryRow}");
+        $sheet->setCellValue("F{$summaryRow}", 'Total sem BDI');
+        $sheet->setCellValue("J{$summaryRow}", "=SUMPRODUCT(F7:F{$lastDataRow},G7:G{$lastDataRow})");
+        $sheet->mergeCells('F'.($summaryRow + 1).':H'.($summaryRow + 1));
+        $sheet->setCellValue('F'.($summaryRow + 1), 'Total do BDI');
+        $sheet->setCellValue('J'.($summaryRow + 1), "=J4-J{$summaryRow}");
+        $sheet->mergeCells('F'.($summaryRow + 3).':H'.($summaryRow + 3));
+        $sheet->setCellValue('F'.($summaryRow + 3), 'TOTAL');
+        $sheet->setCellValue('J'.($summaryRow + 3), '=J4');
+        $sheet->getStyle("F{$summaryRow}:J".($summaryRow + 3))->applyFromArray([
+            'font' => ['bold' => true],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
+            'borders' => ['top' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+        ]);
+        $sheet->getStyle('J'.($summaryRow + 3))->getFont()->setSize(16);
+
+        $sheet->getStyle("F7:F{$lastDataRow}")->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet->getStyle("G7:I{$lastDataRow}")->getNumberFormat()->setFormatCode('"R$" #,##0.00');
+        $sheet->getStyle("J7:J{$lastDataRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_PERCENTAGE_00);
+        $sheet->getStyle("J{$summaryRow}:J".($summaryRow + 3))->getNumberFormat()->setFormatCode('"R$" #,##0.00');
+        $sheet->getStyle("A6:J{$lastDataRow}")->applyFromArray([
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E2E8F0']]],
+        ]);
+        $sheet->getStyle("D7:D{$lastDataRow}")->getAlignment()->setWrapText(true);
+        $sheet->freezePane('A7');
+        $sheet->setAutoFilter("A6:J{$lastDataRow}");
+
+        return $spreadsheet;
+    }
+
+    private function buildOrcamentoResumoSpreadsheet(Tenant $tenant, Orcamento $orcamento): Spreadsheet
+    {
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getProperties()
+            ->setCreator('Deming')
+            ->setTitle('Resumo do Orcamento - '.$orcamento->codigo)
+            ->setSubject('Relatorio resumo de orcamento');
+
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Resumo do Orcamento');
+        $sheet->setShowGridlines(false);
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Calibri')->setSize(10);
+
+        foreach ([
+            'A' => 9,
+            'B' => 8,
+            'C' => 8,
+            'D' => 32,
+            'E' => 24,
+            'F' => 22,
+            'G' => 14,
+            'H' => 13,
+            'I' => 18,
+            'J' => 12,
+        ] as $column => $width) {
+            $sheet->getColumnDimension($column)->setWidth($width);
+        }
+
+        $sheet->mergeCells('A1:C2');
+        $sheet->setCellValue('A1', 'Deming');
+        $sheet->getStyle('A1:C2')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 22, 'color' => ['rgb' => '0B5FFF']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']],
+        ]);
+
+        $sheet->setCellValue('D1', 'Obra');
+        $sheet->setCellValue('D2', trim($orcamento->codigo.' - '.$orcamento->descricao));
+        $sheet->setCellValue('E1', 'Bancos');
+        $sheet->setCellValue('E2', $this->orcamentoBaseReferencesReportText($orcamento));
+        $sheet->mergeCells('F1:H1');
+        $sheet->mergeCells('F2:H2');
+        $sheet->setCellValue('F1', 'B.D.I.');
+        $sheet->setCellValue('F2', ((float) $orcamento->bdi_percentual / 100));
+        $sheet->mergeCells('I1:J1');
+        $sheet->mergeCells('I2:J2');
+        $sheet->setCellValue('I1', 'Encargos Sociais');
+        $sheet->setCellValue('I2', $this->orcamentoEncargosSociaisReportText($orcamento));
+
+        $sheet->getStyle('D1:J1')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0B3F75']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getStyle('D2:J2')->applyFromArray([
+            'alignment' => ['wrapText' => true, 'vertical' => Alignment::VERTICAL_TOP],
+            'borders' => ['bottom' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+        ]);
+        $sheet->getStyle('F2')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_PERCENTAGE_00);
+        $sheet->getRowDimension(2)->setRowHeight(48);
+
+        $sheet->mergeCells('A3:J3');
+        $sheet->setCellValue('A3', 'Planilha Orçamentária Resumida');
+        $sheet->getStyle('A3:J3')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => '0F172A']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F8FAFC']],
+        ]);
+
+        $sheet->setCellValue('A4', 'Item');
+        $sheet->mergeCells('D4:F4');
+        $sheet->setCellValue('D4', 'Descrição');
+        $sheet->setCellValue('H4', 'Quant.');
+        $sheet->setCellValue('I4', 'Total');
+        $sheet->setCellValue('J4', 'Peso (%)');
+        $sheet->getStyle('A4:J4')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '111827']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+
+        $row = 5;
+        $useNaoDesonerado = $orcamento->encargos_sociais === 'nao_desonerado';
+        $totalSemBdi = 0.0;
+        $totalGeralRow = $orcamento->etapas->count() + 8;
+
+        foreach ($orcamento->etapas as $etapa) {
+            foreach ($etapa->itens as $item) {
+                $unit = $useNaoDesonerado
+                    ? (float) $item->valor_unitario_nao_desonerado
+                    : (float) $item->valor_unitario_desonerado;
+                $totalSemBdi += ((float) $item->quantidade) * $unit;
+            }
+        }
+
+        $totalGeral = $useNaoDesonerado
+            ? (float) $orcamento->valor_nao_desonerado
+            : (float) $orcamento->valor_desonerado;
+        $totalGeral = $totalGeral > 0
+            ? $totalGeral
+            : (float) $orcamento->etapas->sum(fn (OrcamentoEtapa $etapa): float => $useNaoDesonerado
+                ? (float) $etapa->valor_nao_desonerado
+                : (float) $etapa->valor_desonerado);
+
+        foreach ($orcamento->etapas as $etapa) {
+            $quantity = (float) ($etapa->quantidade ?? 1);
+            $quantity = $quantity > 0 ? $quantity : 1;
+            $stageTotal = $this->orcamentoEtapaTotalWithBdi($etapa, $useNaoDesonerado);
+
+            $sheet->setCellValueExplicit("A{$row}", (string) $etapa->ordem, DataType::TYPE_STRING);
+            $sheet->mergeCells("D{$row}:F{$row}");
+            $sheet->setCellValueExplicit("D{$row}", (string) $etapa->descricao, DataType::TYPE_STRING);
+            $sheet->setCellValue("H{$row}", $quantity);
+            $sheet->setCellValue("I{$row}", $stageTotal);
+            $sheet->setCellValue("J{$row}", "=IF(\$H\${$totalGeralRow}=0,0,I{$row}/\$H\${$totalGeralRow})");
+
+            $sheet->getStyle("A{$row}:J{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'color' => ['rgb' => '0F172A']],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DBEAFE']],
+                'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+                'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'E2E8F0']]],
+            ]);
+            $sheet->getRowDimension($row)->setRowHeight(24);
+            $row++;
+        }
+
+        $lastDataRow = max(4, $row - 1);
+        $summaryRow = $lastDataRow + 2;
+        $totalRow = $summaryRow + 2;
+
+        if ($lastDataRow >= 5) {
+            $sheet->getStyle("H5:I{$lastDataRow}")->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle("I5:I{$lastDataRow}")->getNumberFormat()->setFormatCode('"R$" #,##0.00');
+            $sheet->getStyle("J5:J{$lastDataRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_PERCENTAGE_00);
+            $sheet->setAutoFilter("A4:J{$lastDataRow}");
+        }
+
+        $sheet->mergeCells("A{$summaryRow}:C{$summaryRow}");
+        $sheet->mergeCells("F{$summaryRow}:G{$summaryRow}");
+        $sheet->setCellValue("F{$summaryRow}", 'Total sem BDI');
+        $sheet->setCellValue("H{$summaryRow}", $this->calculateMoney($totalSemBdi, 'truncate_2'));
+
+        $sheet->mergeCells('A'.($summaryRow + 1).':C'.($summaryRow + 1));
+        $sheet->mergeCells('F'.($summaryRow + 1).':G'.($summaryRow + 1));
+        $sheet->setCellValue('F'.($summaryRow + 1), 'Total do BDI');
+        $sheet->setCellValue('H'.($summaryRow + 1), '=H'.($summaryRow + 2)."-H{$summaryRow}");
+
+        $sheet->mergeCells("A{$totalRow}:C{$totalRow}");
+        $sheet->mergeCells("F{$totalRow}:G{$totalRow}");
+        $sheet->setCellValue("F{$totalRow}", 'Total Geral');
+        $sheet->setCellValue("H{$totalRow}", $lastDataRow >= 5 ? "=SUM(I5:I{$lastDataRow})" : 0);
+
+        $sheet->getStyle("F{$summaryRow}:H{$totalRow}")->applyFromArray([
+            'font' => ['bold' => true],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
+            'borders' => ['top' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+        ]);
+        $sheet->getStyle("H{$summaryRow}:H{$totalRow}")->getNumberFormat()->setFormatCode('"R$" #,##0.00');
+        $sheet->getStyle("F{$totalRow}:H{$totalRow}")->getFont()->setSize(12);
+
+        $signatureRow = $totalRow + 2;
+        $sheet->mergeCells("A{$signatureRow}:J{$signatureRow}");
+        $sheet->setCellValue("A{$signatureRow}", "_______________________________________________________________\nResponsável técnico");
+        $sheet->getStyle("A{$signatureRow}:J{$signatureRow}")->applyFromArray([
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'wrapText' => true],
+        ]);
+        $sheet->getRowDimension($signatureRow)->setRowHeight(48);
+
+        $sheet->freezePane('A5');
+
+        return $spreadsheet;
+    }
+
+    private function styleOrcamentoSinteticoDataRow(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $row, string $fillColor, bool $bold = false): void
+    {
+        $sheet->getStyle("A{$row}:J{$row}")->applyFromArray([
+            'font' => ['bold' => $bold, 'color' => ['rgb' => '0F172A']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fillColor]],
+            'alignment' => ['vertical' => Alignment::VERTICAL_TOP],
+        ]);
+        $sheet->getRowDimension($row)->setRowHeight($bold ? 24 : 38);
+    }
+
+    private function orcamentoBaseReferencesReportText(Orcamento $orcamento): string
+    {
+        return collect($orcamento->base_references ?? [])
+            ->map(function (array $reference): string {
+                $parts = [
+                    trim((string) ($reference['nome'] ?? '')),
+                    trim((string) ($reference['data'] ?? '')),
+                    trim((string) ($reference['localidade'] ?? $reference['uf'] ?? '')),
+                ];
+
+                return collect($parts)
+                    ->filter(fn (string $part): bool => $part !== '')
+                    ->implode(' - ');
+            })
+            ->filter()
+            ->implode("\n");
+    }
+
+    private function orcamentoEncargosSociaisReportText(Orcamento $orcamento): string
+    {
+        return $orcamento->encargos_sociais === 'nao_desonerado'
+            ? 'Não desonerado'
+            : 'Desonerado';
+    }
+
+    private function serializeOrcamento(Orcamento $orcamento): array
+    {
+        return [
+            'id' => $orcamento->id,
+            'codigo' => $orcamento->codigo,
+            'descricao' => $orcamento->descricao,
+            'categoria' => $orcamento->categoria,
+            'cliente' => $orcamento->clienteEmpresa?->nome,
+            'prazo_entrega' => $orcamento->prazo_entrega_at?->format('d/m/Y H:i'),
+            'status' => $orcamento->status,
+            'status_label' => $this->orcamentoStatusLabel($orcamento->status),
+            'permitir_insumos_preco_zerado' => (bool) $orcamento->permitir_insumos_preco_zerado,
+            'is_licitacao' => (bool) $orcamento->is_licitacao,
+            'arredondamento_label' => $this->orcamentoRoundingLabel($orcamento->arredondamento),
+            'encargos_sociais' => $orcamento->encargos_sociais,
+            'encargos_sociais_label' => $orcamento->encargos_sociais === 'nao_desonerado' ? 'Nao desonerado' : 'Desonerado',
+            'bdi_percentual' => $orcamento->bdi_percentual,
+            'base_references' => $orcamento->base_references ?? [],
+            'valor_nao_desonerado' => $orcamento->valor_nao_desonerado,
+            'valor_desonerado' => $orcamento->valor_desonerado,
+            'created_at' => $orcamento->created_at?->format('d/m/Y H:i'),
+        ];
+    }
+
+    private function serializeOrcamentoEtapa(OrcamentoEtapa $etapa, ?Orcamento $orcamento = null): array
+    {
+        $orcamento ??= $etapa->relationLoaded('orcamento') ? $etapa->orcamento : null;
+
+        return [
+            'id' => $etapa->id,
+            'ordem' => $etapa->ordem,
+            'item' => (string) $etapa->ordem,
+            'descricao' => $etapa->descricao,
+            'quantidade' => $etapa->quantidade,
+            'valor_nao_desonerado' => $etapa->valor_nao_desonerado,
+            'valor_desonerado' => $etapa->valor_desonerado,
+            'valor_total' => $this->orcamentoEtapaTotalWithBdi($etapa, ($orcamento?->encargos_sociais ?? 'desonerado') === 'nao_desonerado'),
+            'is_hidden' => (bool) (($etapa->meta ?? [])['hidden'] ?? false),
+            'itens' => $etapa->relationLoaded('itens')
+                ? $etapa->itens
+                    ->map(fn (OrcamentoItem $item): array => $this->serializeOrcamentoItem($item, $etapa, $orcamento))
+                    ->values()
+                    ->all()
+                : [],
+            'created_at' => $etapa->created_at?->format('d/m/Y H:i'),
+        ];
+    }
+
+    private function serializeOrcamentoItem(OrcamentoItem $item, OrcamentoEtapa $etapa, ?Orcamento $orcamento = null): array
+    {
+        $useNaoDesonerado = ($orcamento?->encargos_sociais ?? 'desonerado') === 'nao_desonerado';
+        $unit = $useNaoDesonerado ? $item->valor_unitario_nao_desonerado : $item->valor_unitario_desonerado;
+        $unitWithBdi = $useNaoDesonerado ? $item->valor_com_bdi_nao_desonerado : $item->valor_com_bdi_desonerado;
+        $total = $this->orcamentoItemTotalWithBdi($item, $useNaoDesonerado);
+        $meta = $item->meta ?? [];
+
+        return [
+            'id' => $item->id,
+            'item_type' => $item->item_type,
+            'ordem' => $item->ordem,
+            'item' => $etapa->ordem.'.'.$item->ordem,
+            'codigo' => $item->codigo,
+            'banco' => $item->banco,
+            'descricao' => $item->descricao,
+            'unidade' => $item->unidade,
+            'quantidade' => $item->quantidade,
+            'valor_unitario' => $unit,
+            'valor_com_bdi' => $unitWithBdi,
+            'valor_total' => $total,
+            'valor_unitario_nao_desonerado' => $item->valor_unitario_nao_desonerado,
+            'valor_unitario_desonerado' => $item->valor_unitario_desonerado,
+            'valor_total_nao_desonerado' => $item->valor_total_nao_desonerado,
+            'valor_total_desonerado' => $item->valor_total_desonerado,
+            'aplicar_bdi' => (bool) $item->aplicar_bdi,
+            'bdi_percentual' => $meta['bdi_percentual'] ?? $orcamento?->bdi_percentual,
+            'bdi_diferenciado' => (bool) ($meta['bdi_diferenciado'] ?? false),
+            'base_label' => $meta['base_label'] ?? $item->banco,
+            'created_at' => $item->created_at?->format('d/m/Y H:i'),
+        ];
+    }
+
+    private function orcamentoEtapaTotalWithBdi(OrcamentoEtapa $etapa, bool $useNaoDesonerado): float
+    {
+        if ($etapa->relationLoaded('itens')) {
+            return $this->calculateMoney(
+                $etapa->itens->sum(fn (OrcamentoItem $item): float => $this->orcamentoItemTotalWithBdi($item, $useNaoDesonerado)),
+                'truncate_2'
+            );
+        }
+
+        return $useNaoDesonerado
+            ? (float) $etapa->valor_nao_desonerado
+            : (float) $etapa->valor_desonerado;
+    }
+
+    private function orcamentoItemTotalWithBdi(OrcamentoItem $item, bool $useNaoDesonerado): float
+    {
+        $unitWithBdi = $useNaoDesonerado
+            ? (float) $item->valor_com_bdi_nao_desonerado
+            : (float) $item->valor_com_bdi_desonerado;
+
+        if ($unitWithBdi <= 0) {
+            $unitWithBdi = $useNaoDesonerado
+                ? (float) $item->valor_unitario_nao_desonerado
+                : (float) $item->valor_unitario_desonerado;
+        }
+
+        return $this->calculateMoney($unitWithBdi * (float) $item->quantidade, 'truncate_2');
+    }
+
+    private function orcamentoStatusLabel(?string $status): string
+    {
+        return match ($status) {
+            'approved' => 'Aprovado',
+            'sent' => 'Enviado',
+            'archived' => 'Arquivado',
+            default => 'Em elaboracao',
+        };
+    }
+
+    private function orcamentoRoundingLabel(?string $method): string
+    {
+        return match ($method) {
+            'round_all_2' => 'Arredondar tudo em 2 casas',
+            'round_compositions_2' => 'Arredondar composicoes auxiliares',
+            'round_and_truncate_unit' => 'Arredondar e truncar unitarios',
+            'truncate_all_2' => 'Truncar tudo em 2 casas',
+            'none' => 'Nao arredondar',
+            default => 'Nao informado',
+        };
     }
 
     private function compositionBaseReferences(Tenant $tenant): array

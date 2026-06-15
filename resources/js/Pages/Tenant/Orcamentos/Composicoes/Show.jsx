@@ -33,7 +33,7 @@ export default function ShowComposicao({
         <OrcamentoShell
             tenant={tenant}
             active="composicoes"
-            title={composicao.descricao}
+            title={compositionTitle(composicao)}
             subtitle="Detalhamento da composicao, bases por UF e itens analiticos vinculados."
             showNav={false}
         >
@@ -135,6 +135,19 @@ function AnaliticoDetail({ composicao, detail, tenant }) {
     const isSicro3 = String(detail?.modelo ?? composicao.modelo ?? '').toUpperCase() === 'SICRO3';
     const itemPriceDecimals = isSicro3 ? 4 : 2;
 
+    if (isSicro3) {
+        return (
+            <Sicro3AnaliticoDetail
+                composicao={composicao}
+                detail={detail}
+                openState={openState}
+                setOpenState={setOpenState}
+                states={states}
+                tenant={tenant}
+            />
+        );
+    }
+
     return (
         <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
             <header className="border-b border-[var(--border)] bg-white px-5 py-5">
@@ -143,10 +156,12 @@ function AnaliticoDetail({ composicao, detail, tenant }) {
                 </p>
                 <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0">
-                        <h1 className="font-mono text-3xl font-semibold text-[var(--primary)]">{detail?.codigo ?? composicao.codigo}</h1>
-                        <p className="mt-2 max-w-5xl text-sm font-bold uppercase leading-6 text-[var(--ink-900)]">
-                            {detail?.descricao ?? composicao.descricao}
-                        </p>
+                        <h1 className="text-3xl font-semibold text-[var(--primary)]">
+                            {compositionTitle({
+                                codigo: detail?.codigo ?? composicao.codigo,
+                                descricao: detail?.descricao ?? composicao.descricao,
+                            })}
+                        </h1>
                     </div>
                     <div className="grid gap-2 text-xs sm:grid-cols-3 lg:min-w-[520px]">
                         <InfoTile label="Data" value={detail?.data ?? firstReferenceLabel(composicao)} />
@@ -205,6 +220,75 @@ function AnaliticoDetail({ composicao, detail, tenant }) {
     );
 }
 
+function Sicro3AnaliticoDetail({ composicao, detail, openState, setOpenState, states, tenant }) {
+    if (states.length === 0) {
+        return (
+            <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
+                <div className="p-8 text-center text-sm text-[var(--ink-500)]">
+                    Nenhum detalhamento analitico encontrado para esta composicao na data selecionada.
+                </div>
+            </section>
+        );
+    }
+
+    return (
+        <div className="space-y-4">
+            {states.map((state) => {
+                const isOpen = states.length === 1 || openState === state.uf;
+                const stateComposicao = {
+                    ...composicao,
+                    codigo: detail?.codigo ?? composicao.codigo,
+                    descricao: detail?.descricao ?? composicao.descricao,
+                    tipo_composicao: detail?.tipo ?? composicao.tipo_composicao,
+                    unidade: detail?.unidade ?? composicao.unidade,
+                    uf: state.uf,
+                    estado_label: state.estado_label,
+                    base_references: [{ data: state.data ?? detail?.data ?? firstReferenceLabel(composicao) }],
+                    producao_equipe: state.producao_equipe ?? composicao.producao_equipe,
+                    fator_influencia_chuvas: state.fator_influencia_chuvas ?? composicao.fator_influencia_chuvas,
+                    preco_onerado: state.effective_preco_onerado,
+                    preco_desonerado: state.effective_preco_desonerado,
+                    sicro3_summary: state.sicro3_summary,
+                };
+
+                return (
+                    <article key={state.uf} className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
+                        {states.length > 1 && (
+                            <button
+                                className={`flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-[var(--primary-50)]/60 ${
+                                    isOpen ? 'bg-[var(--primary-50)]/50' : ''
+                                }`}
+                                type="button"
+                                onClick={() => setOpenState(isOpen ? null : state.uf)}
+                            >
+                                <span className="flex items-center gap-3">
+                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[var(--primary)] shadow-[var(--shadow-sm)]">
+                                        {isOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                                    </span>
+                                    <span>
+                                        <span className="block text-sm font-bold text-[var(--ink-900)]">{state.estado_label}</span>
+                                        <span className="block text-xs font-semibold text-[var(--ink-400)]">{state.uf}</span>
+                                    </span>
+                                </span>
+                                <span className="text-xs font-bold text-[var(--ink-500)]">{state.items_count} itens</span>
+                            </button>
+                        )}
+
+                        {isOpen && (
+                            <Sicro3OwnCompositionItemsTable
+                                composicao={stateComposicao}
+                                items={state.items ?? []}
+                                readOnly
+                                tenant={tenant}
+                            />
+                        )}
+                    </article>
+                );
+            })}
+        </div>
+    );
+}
+
 function InfoTile({ label, value }) {
     return (
         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
@@ -212,6 +296,13 @@ function InfoTile({ label, value }) {
             <p className="mt-1 break-words text-sm font-bold text-[var(--ink-900)]">{value || '-'}</p>
         </div>
     );
+}
+
+function compositionTitle(composicao) {
+    const code = String(composicao?.codigo ?? '').trim();
+    const description = String(composicao?.descricao ?? '').trim();
+
+    return [code, description].filter(Boolean).join(' - ') || '-';
 }
 
 function StateValue({ label, value }) {
@@ -400,8 +491,7 @@ function ComposicaoHeader({ composicao }) {
     return (
         <>
             <header className="border-b border-[var(--border)] px-6 py-5">
-                <h2 className="text-[17px] font-bold text-[var(--primary)]">{composicao.descricao}</h2>
-                <p className="mt-1 font-mono text-sm text-[var(--ink-500)]">{composicao.codigo}</p>
+                <h2 className="text-[17px] font-bold text-[var(--primary)]">{compositionTitle(composicao)}</h2>
             </header>
 
             <div className="grid gap-6 border-b border-[var(--border)] px-6 py-5 lg:grid-cols-2">
@@ -1029,9 +1119,9 @@ const SICRO3_ANALYTIC_SECTIONS = [
     { key: 'equipamentos', code: 'A', label: 'EQUIPAMENTOS', columns: 'equipment' },
     { key: 'mao_de_obra', code: 'B', label: 'MAO-DE-OBRA', columns: 'labor' },
     { key: 'material', code: 'C', label: 'MATERIAL', columns: 'material' },
-    { key: 'atividades_auxiliares', code: 'D', label: 'ATIVIDADES AUXILIARES', columns: 'composition' },
-    { key: 'tempo_fixo', code: 'E', label: 'TEMPO FIXO', columns: 'composition' },
-    { key: 'momento_transporte', code: 'F', label: 'MOMENTO DE TRANSPORTE', columns: 'composition' },
+    { key: 'atividades_auxiliares', code: 'D', label: 'ATIVIDADES AUXILIARES', columns: 'activity' },
+    { key: 'tempo_fixo', code: 'E', label: 'TEMPO FIXO', columns: 'fixed' },
+    { key: 'momento_transporte', code: 'F', label: 'MOMENTO DE TRANSPORTE', columns: 'transport' },
 ];
 
 function Sicro3OwnCompositionItemsTable({
@@ -1039,11 +1129,12 @@ function Sicro3OwnCompositionItemsTable({
     editingCoefficient,
     editingId,
     items,
-    onCancelEdit,
-    onEditCoefficientChange,
-    onSaveEdit,
-    onStartEdit,
+    onCancelEdit = () => {},
+    onEditCoefficientChange = () => {},
+    onSaveEdit = () => {},
+    onStartEdit = () => {},
     processingId,
+    readOnly = false,
     tenant,
 }) {
     const sicro3Summary = composicao.sicro3_summary ?? {};
@@ -1054,13 +1145,23 @@ function Sicro3OwnCompositionItemsTable({
         <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
             <div className="border-b border-[var(--border)]">
                 <div className="bg-[var(--primary)] px-3 py-2 text-xs font-bold text-white">
-                    {composicao.descricao}
+                    {compositionTitle(composicao)}
                 </div>
-                <div className="grid gap-px bg-[var(--border)] text-xs md:grid-cols-4">
-                    <Sicro3HeaderCell label="Data" value={firstReferenceLabel(composicao)} />
-                    <Sicro3HeaderCell label="Unidade" value={composicao.unidade} />
-                    <Sicro3HeaderCell label="Producao da equipe" value={formatOptionalNumber(composicao.producao_equipe, 4)} />
-                    <Sicro3HeaderCell label="Fator de influencia da chuva - FIC" value={formatOptionalNumber(composicao.fator_influencia_chuvas, 4)} />
+                <div className="overflow-x-auto">
+                    <div className="min-w-[960px]">
+                        <div className="grid grid-cols-4 bg-[#2f2f2f] text-[10px] font-bold uppercase text-white">
+                            <div className="px-2 py-2">Data</div>
+                            <div className="px-2 py-2 text-center">Unidade</div>
+                            <div className="px-2 py-2 text-center">Producao da equipe</div>
+                            <div className="px-2 py-2 text-right">Fator de influencia da chuva - FIC</div>
+                        </div>
+                        <div className="grid grid-cols-4 border-b border-[var(--border)] bg-white text-[10px] font-semibold text-[var(--ink-900)]">
+                            <div className="px-2 py-2">{firstReferenceLabel(composicao)}</div>
+                            <div className="px-2 py-2 text-center">{composicao.unidade || '-'}</div>
+                            <div className="px-2 py-2 text-center">{formatOptionalNumber(composicao.producao_equipe, 4)}</div>
+                            <div className="px-2 py-2 text-right">{formatOptionalNumber(composicao.fator_influencia_chuvas, 4)}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1083,6 +1184,7 @@ function Sicro3OwnCompositionItemsTable({
                             onSaveEdit={onSaveEdit}
                             onStartEdit={onStartEdit}
                             processingId={processingId}
+                            readOnly={readOnly}
                             section={section}
                             summary={sicro3Summary}
                             tenant={tenant}
@@ -1118,26 +1220,30 @@ function Sicro3AnalyticSection({
     onSaveEdit,
     onStartEdit,
     processingId,
+    readOnly,
     section,
     summary,
     tenant,
 }) {
     const sectionSummary = summary?.sections?.[section.key] ?? {};
-    const subtotalOnerado = Number(sectionSummary.onerado ?? items.reduce((sum, item) => sum + Number(item.preco_onerado ?? 0), 0));
-    const subtotalDesonerado = Number(sectionSummary.desonerado ?? items.reduce((sum, item) => sum + Number(item.preco_desonerado ?? 0), 0));
+    const isTransportSection = section.key === 'momento_transporte';
+    const subtotalOnerado = isTransportSection
+        ? null
+        : Number(sectionSummary.onerado ?? items.reduce((sum, item) => sum + sicro3DisplayTotal(item, 'onerado'), 0));
+    const columnCount = sicro3ColumnCount(section, readOnly);
 
     return (
         <div className="border-b border-[var(--border)]">
-            <div className="grid grid-cols-[52px_1fr] bg-[#2f2f2f] text-xs font-bold text-white">
-                <div className="px-3 py-2">{section.code}</div>
-                <div className="px-3 py-2">{section.label}</div>
+            <div className="grid grid-cols-[42px_1fr] bg-[#2f2f2f] text-[10px] font-bold uppercase text-white">
+                <div className="px-2 py-2">{section.code}</div>
+                <div className="px-2 py-2">{section.label}</div>
             </div>
-            <table className="w-full table-fixed border-collapse text-left text-xs">
-                <Sicro3SectionHead section={section} />
+            <table className="w-full table-fixed border-collapse text-left text-[10px]">
+                <Sicro3SectionHead readOnly={readOnly} section={section} />
                 <tbody className="divide-y divide-[var(--border)] bg-white">
                     {items.length === 0 ? (
                         <tr>
-                            <td className="px-3 py-4 text-center text-[var(--ink-400)]" colSpan={10}>
+                            <td className="px-2 py-3 text-center text-[var(--ink-400)]" colSpan={columnCount}>
                                 Nenhum item nesta categoria.
                             </td>
                         </tr>
@@ -1145,11 +1251,8 @@ function Sicro3AnalyticSection({
                         const isEditing = editingId === item.id;
                         const processing = processingId === item.id;
                         const previewOnerado = isEditing
-                            ? calculatePrice(item.preco_unitario_onerado, editingCoefficient)
-                            : item.preco_onerado;
-                        const previewDesonerado = isEditing
-                            ? calculatePrice(item.preco_unitario_desonerado, editingCoefficient)
-                            : item.preco_desonerado;
+                            ? calculateSicro3BuilderPrice(item, editingCoefficient, item.sicro3_section, item.sicro3_utilizacao_operativa, item.sicro3_utilizacao_improdutiva, 'onerado')
+                            : sicro3DisplayTotal(item, 'onerado');
 
                         return (
                             <Sicro3SectionRow
@@ -1162,26 +1265,25 @@ function Sicro3AnalyticSection({
                                 onEditCoefficientChange={onEditCoefficientChange}
                                 onSaveEdit={onSaveEdit}
                                 onStartEdit={onStartEdit}
-                                previewDesonerado={previewDesonerado}
                                 previewOnerado={previewOnerado}
                                 processing={processing}
+                                readOnly={readOnly}
                                 section={section}
                                 tenant={tenant}
                             />
                         );
                     })}
-                    <tr className="bg-[var(--surface-muted)] font-bold text-[var(--ink-700)]">
-                        <td className="px-3 py-2 text-right" colSpan={8}>
-                            Total {section.label.toLowerCase()}
+                    <tr className="bg-white font-bold text-[var(--ink-700)]">
+                        <td className="px-2 py-2 text-right" colSpan={columnCount - 1}>
+                            {isTransportSection ? 'Custo unitario total de transporte' : `Total ${section.label.toLowerCase()}`}
                         </td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(subtotalOnerado)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(subtotalDesonerado)}</td>
+                        <td className="px-2 py-2 text-right">{isTransportSection ? '-' : formatCurrency(subtotalOnerado, 4)}</td>
                     </tr>
                     {section.key === 'mao_de_obra' ? (
                         <>
-                            <Sicro3SummaryRow label="Custo horario total de execucao" onerado={summary?.custo_horario_execucao_onerado} desonerado={summary?.custo_horario_execucao_desonerado} />
-                            <Sicro3SummaryRow label="Custo unitario de execucao" onerado={summary?.custo_unitario_execucao_onerado} desonerado={summary?.custo_unitario_execucao_desonerado} />
-                            <Sicro3SummaryRow label="Custo do Fator de Influencia da Chuva - FIC" onerado={summary?.custo_fic_onerado} desonerado={summary?.custo_fic_desonerado} />
+                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo horario total de execucao" value={summary?.custo_horario_execucao_onerado} />
+                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo unitario de execucao" value={summary?.custo_unitario_execucao_onerado} />
+                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo do Fator de Influencia da Chuva - FIC" value={summary?.custo_fic_onerado} />
                         </>
                     ) : null}
                 </tbody>
@@ -1190,33 +1292,83 @@ function Sicro3AnalyticSection({
     );
 }
 
-function Sicro3SummaryRow({ label, onerado, desonerado }) {
+function Sicro3SummaryRow({ colSpan, label, value }) {
     return (
         <tr className="bg-white text-[var(--ink-700)]">
-            <td className="px-3 py-2 text-right font-semibold" colSpan={8}>
+            <td className="px-2 py-2 text-right font-semibold" colSpan={colSpan}>
                 {label}
             </td>
-            <td className="px-3 py-2 text-right font-bold">{formatCurrency(onerado ?? 0, 4)}</td>
-            <td className="px-3 py-2 text-right font-bold">{formatCurrency(desonerado ?? 0, 4)}</td>
+            <td className="px-2 py-2 text-right font-bold">{formatCurrency(value ?? 0, 4)}</td>
         </tr>
     );
 }
 
-function Sicro3SectionHead({ section }) {
+function Sicro3SectionHead({ readOnly = false, section }) {
     if (section.columns === 'equipment') {
         return (
             <thead className="bg-[#2f2f2f] text-white">
                 <tr>
-                    <th className="w-[8%] px-3 py-2">CODIGO</th>
-                    <th className="w-[34%] px-3 py-2">DESCRICAO</th>
-                    <th className="w-[8%] px-3 py-2 text-right">QUANTIDADE</th>
-                    <th className="w-[9%] px-3 py-2 text-right">UTIL. OPER.</th>
-                    <th className="w-[9%] px-3 py-2 text-right">UTIL. IMPROD.</th>
-                    <th className="w-[10%] px-3 py-2 text-right">CUSTO OPER.</th>
-                    <th className="w-[10%] px-3 py-2 text-right">CUSTO IMPROD.</th>
-                    <th className="w-[8%] px-3 py-2 text-right">CUSTO HOR.</th>
-                    <th className="w-[8%] px-3 py-2 text-right">TOTAL</th>
-                    <th className="w-[8%] px-3 py-2 text-right">ACOES</th>
+                    <th className="w-[7%] px-2 py-2">CODIGO</th>
+                    <th className="w-[33%] px-2 py-2">DESCRICAO</th>
+                    <th className="w-[8%] px-2 py-2 text-right">QUANTIDADE</th>
+                    <th className="w-[8%] px-2 py-2 text-right">UTIL. OPERATIVA</th>
+                    <th className="w-[8%] px-2 py-2 text-right">UTIL. IMPRODUTIVA</th>
+                    <th className="w-[10%] px-2 py-2 text-right">CUSTO OPERATIVO</th>
+                    <th className="w-[10%] px-2 py-2 text-right">CUSTO IMPRODUTIVO</th>
+                    <th className="w-[12%] px-2 py-2 text-right">CUSTO HORARIO</th>
+                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                </tr>
+            </thead>
+        );
+    }
+
+    if (section.columns === 'labor') {
+        return (
+            <thead className="bg-[#2f2f2f] text-white">
+                <tr>
+                    <th className="w-[7%] px-2 py-2">CODIGO</th>
+                    <th className="w-[43%] px-2 py-2">DESCRICAO</th>
+                    <th className="w-[10%] px-2 py-2 text-right">QUANTIDADE</th>
+                    <th className="w-[8%] px-2 py-2">UNIDADE</th>
+                    <th className="w-[16%] px-2 py-2 text-right">CUSTO HORARIO</th>
+                    <th className="w-[16%] px-2 py-2 text-right">CUSTO HORARIO TOTAL</th>
+                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                </tr>
+            </thead>
+        );
+    }
+
+    if (section.columns === 'fixed') {
+        return (
+            <thead className="bg-[#2f2f2f] text-white">
+                <tr>
+                    <th className="w-[7%] px-2 py-2">CODIGO</th>
+                    <th className="w-[43%] px-2 py-2">DESCRICAO</th>
+                    <th className="w-[9%] px-2 py-2">CODIGO</th>
+                    <th className="w-[9%] px-2 py-2 text-right">QUANTIDADE</th>
+                    <th className="w-[8%] px-2 py-2">UNIDADE</th>
+                    <th className="w-[12%] px-2 py-2 text-right">PRECO UNITARIO</th>
+                    <th className="w-[12%] px-2 py-2 text-right">CUSTO UNITARIO</th>
+                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                </tr>
+            </thead>
+        );
+    }
+
+    if (section.columns === 'transport') {
+        return (
+            <thead className="bg-[#2f2f2f] text-white">
+                <tr>
+                    <th className="w-[7%] px-2 py-2">CODIGO</th>
+                    <th className="w-[38%] px-2 py-2">DESCRICAO</th>
+                    <th className="w-[9%] px-2 py-2 text-right">QUANTIDADE</th>
+                    <th className="w-[7%] px-2 py-2">UNIDADE</th>
+                    <th className="w-[9%] px-2 py-2 text-right">LN</th>
+                    <th className="w-[9%] px-2 py-2 text-right">RP</th>
+                    <th className="w-[9%] px-2 py-2 text-right">P</th>
+                    <th className="w-[9%] px-2 py-2 text-right">FE</th>
+                    <th className="w-[12%] px-2 py-2 text-right">CUSTO UNITARIO</th>
+                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
                 </tr>
             </thead>
         );
@@ -1225,16 +1377,13 @@ function Sicro3SectionHead({ section }) {
     return (
         <thead className="bg-[#2f2f2f] text-white">
             <tr>
-                <th className="w-[8%] px-3 py-2">CODIGO</th>
-                <th className="w-[38%] px-3 py-2">DESCRICAO</th>
-                <th className="w-[12%] px-3 py-2">TIPO</th>
-                <th className="w-[7%] px-3 py-2">UNID.</th>
-                <th className="w-[9%] px-3 py-2 text-right">QUANTIDADE</th>
-                <th className="w-[10%] px-3 py-2 text-right">UNIT. NAO DES.</th>
-                <th className="w-[10%] px-3 py-2 text-right">UNIT. DES.</th>
-                <th className="w-[10%] px-3 py-2 text-right">TOTAL NAO DES.</th>
-                <th className="w-[10%] px-3 py-2 text-right">TOTAL DES.</th>
-                <th className="w-[8%] px-3 py-2 text-right">ACOES</th>
+                <th className="w-[7%] px-2 py-2">CODIGO</th>
+                <th className="w-[43%] px-2 py-2">DESCRICAO</th>
+                <th className="w-[9%] px-2 py-2 text-right">QUANTIDADE</th>
+                <th className="w-[8%] px-2 py-2">UNIDADE</th>
+                <th className="w-[16%] px-2 py-2 text-right">PRECO UNITARIO</th>
+                <th className="w-[16%] px-2 py-2 text-right">{section.columns === 'activity' ? 'CUSTO HORARIO' : 'CUSTO UNITARIO'}</th>
+                {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
             </tr>
         </thead>
     );
@@ -1251,6 +1400,7 @@ function Sicro3SectionRow({
     previewDesonerado,
     previewOnerado,
     processing,
+    readOnly = false,
     section,
     tenant,
     composicao,
@@ -1264,66 +1414,99 @@ function Sicro3SectionRow({
     ) : (
         formatNumber(item.coeficiente, 5)
     );
+    const rowClass = isEditing ? 'bg-indigo-50/60' : 'hover:bg-[var(--primary-50)]/40';
+    const actionsCell = !readOnly && (
+        <td className="px-2 py-1.5 text-right">
+            <Sicro3RowActions
+                composicao={composicao}
+                isEditing={isEditing}
+                item={item}
+                onCancelEdit={onCancelEdit}
+                onSaveEdit={onSaveEdit}
+                onStartEdit={onStartEdit}
+                processing={processing}
+                tenant={tenant}
+            />
+        </td>
+    );
+    const unitOnerado = sicro3DisplayUnit(item, 'onerado');
+    const totalOnerado = previewOnerado ?? sicro3DisplayTotal(item, 'onerado');
 
     if (section.columns === 'equipment') {
         const operationalUse = Number(item.sicro3_utilizacao_operativa ?? 1);
         const idleUse = Number(item.sicro3_utilizacao_improdutiva ?? 0);
-        const idleCost = Number(item.custo_improdutivo_onerado ?? item.preco_unitario_onerado ?? 0);
-        const hourlyCost = (Number(item.preco_unitario_onerado ?? 0) * operationalUse) + (idleCost * idleUse);
+        const idleCost = sicro3DisplayIdleCost(item);
 
         return (
-            <tr className={isEditing ? 'bg-indigo-50/60' : 'hover:bg-[var(--primary-50)]/40'}>
-                <td className="px-3 py-2 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
-                <td className="px-3 py-2 font-semibold text-[var(--ink-800)]">{item.descricao}</td>
-                <td className="px-3 py-2 text-right">{quantityCell}</td>
-                <td className="px-3 py-2 text-right">{formatNumber(operationalUse, 2)}</td>
-                <td className="px-3 py-2 text-right">{formatNumber(idleUse, 2)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(item.preco_unitario_onerado, 4)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(idleCost, 4)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(hourlyCost, 4)}</td>
-                <td className="px-3 py-2 text-right font-bold">{formatCurrency(previewOnerado, 4)}</td>
-                <td className="px-3 py-2 text-right">
-                    <Sicro3RowActions
-                        composicao={composicao}
-                        isEditing={isEditing}
-                        item={item}
-                        onCancelEdit={onCancelEdit}
-                        onSaveEdit={onSaveEdit}
-                        onStartEdit={onStartEdit}
-                        processing={processing}
-                        tenant={tenant}
-                    />
-                </td>
+            <tr className={rowClass}>
+                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
+                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{item.descricao}</td>
+                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
+                <td className="px-2 py-1.5 text-right">{formatNumber(operationalUse, 2)}</td>
+                <td className="px-2 py-1.5 text-right">{formatNumber(idleUse, 2)}</td>
+                <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
+                <td className="px-2 py-1.5 text-right">{formatCurrency(idleCost, 4)}</td>
+                <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+                {actionsCell}
+            </tr>
+        );
+    }
+
+    if (section.columns === 'labor') {
+        return (
+            <tr className={rowClass}>
+                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
+                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{item.descricao}</td>
+                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
+                <td className="px-2 py-1.5">{item.unidade}</td>
+                <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
+                <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+                {actionsCell}
+            </tr>
+        );
+    }
+
+    if (section.columns === 'fixed') {
+        return (
+            <tr className={rowClass}>
+                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]">{item.sicro3_referenced_item_code || item.codigo}</td>
+                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{sicro3ReferenceDescription(item)}</td>
+                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
+                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
+                <td className="px-2 py-1.5">{item.unidade}</td>
+                <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
+                <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+                {actionsCell}
+            </tr>
+        );
+    }
+
+    if (section.columns === 'transport') {
+        return (
+            <tr className={rowClass}>
+                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]">{item.sicro3_referenced_item_code || item.codigo}</td>
+                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{sicro3ReferenceDescription(item)}</td>
+                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
+                <td className="px-2 py-1.5">{item.unidade}</td>
+                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_ln_code || '-'}</td>
+                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_rp_code || '-'}</td>
+                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_p_code || '-'}</td>
+                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_fe_code || '-'}</td>
+                <td className="px-2 py-1.5 text-right font-bold">-</td>
+                {actionsCell}
             </tr>
         );
     }
 
     return (
-        <tr className={isEditing ? 'bg-indigo-50/60' : 'hover:bg-[var(--primary-50)]/40'}>
-            <td className="px-3 py-2 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
-            <td className="px-3 py-2 font-semibold text-[var(--ink-800)]">
-                <span>{item.descricao}</span>
-                <Sicro3ReferenceMeta item={item} />
-            </td>
-            <td className="px-3 py-2">{item.tipo}</td>
-            <td className="px-3 py-2">{item.unidade}</td>
-            <td className="px-3 py-2 text-right">{quantityCell}</td>
-            <td className="px-3 py-2 text-right">{formatCurrency(item.preco_unitario_onerado, 4)}</td>
-            <td className="px-3 py-2 text-right">{formatCurrency(item.preco_unitario_desonerado, 4)}</td>
-            <td className="px-3 py-2 text-right font-bold">{formatCurrency(previewOnerado, 4)}</td>
-            <td className="px-3 py-2 text-right font-bold">{formatCurrency(previewDesonerado, 4)}</td>
-            <td className="px-3 py-2 text-right">
-                <Sicro3RowActions
-                    composicao={composicao}
-                    isEditing={isEditing}
-                    item={item}
-                    onCancelEdit={onCancelEdit}
-                    onSaveEdit={onSaveEdit}
-                    onStartEdit={onStartEdit}
-                    processing={processing}
-                    tenant={tenant}
-                />
-            </td>
+        <tr className={rowClass}>
+            <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
+            <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{item.descricao}</td>
+            <td className="px-2 py-1.5 text-right">{quantityCell}</td>
+            <td className="px-2 py-1.5">{item.unidade}</td>
+            <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
+            <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+            {actionsCell}
         </tr>
     );
 }
@@ -1649,18 +1832,86 @@ function calculateSicro3BuilderPrice(option, coefficient, section, operativeUse 
     }
 
     if (section !== 'equipamentos') {
-        return calculatePrice(field === 'desonerado' ? option.preco_unitario_desonerado : option.preco_unitario_onerado, coefficient);
+        return calculatePrice(sicro3DisplayUnit(option, field), coefficient);
     }
 
     const parsedCoefficient = Number(String(coefficient || '1').replace(',', '.'));
     const parsedOperativeUse = Number(String(operativeUse || '1').replace(',', '.'));
     const parsedIdleUse = Number(String(idleUse || '0').replace(',', '.'));
-    const operationalCost = Number(field === 'desonerado' ? option.preco_unitario_desonerado : option.preco_unitario_onerado) || 0;
-    const idleCost = Number(field === 'desonerado' ? option.custo_improdutivo_desonerado : option.custo_improdutivo_onerado) || operationalCost;
+    const operationalCost = sicro3DisplayUnit(option, field);
+    const idleCost = sicro3DisplayIdleCost(option, field);
 
     return (Number.isNaN(parsedCoefficient) ? 1 : parsedCoefficient)
         * ((operationalCost * (Number.isNaN(parsedOperativeUse) ? 1 : parsedOperativeUse))
             + (idleCost * (Number.isNaN(parsedIdleUse) ? 0 : parsedIdleUse)));
+}
+
+function sicro3ColumnCount(section, readOnly = false) {
+    const columns = {
+        equipment: 8,
+        labor: 6,
+        material: 6,
+        activity: 6,
+        fixed: 7,
+        transport: 9,
+    }[section.columns] ?? 6;
+
+    return readOnly ? columns : columns + 1;
+}
+
+function sicro3ValueWithFallback(primary, fallback) {
+    const parsedPrimary = Number(primary ?? 0);
+    const parsedFallback = Number(fallback ?? 0);
+
+    if (!Number.isNaN(parsedPrimary) && parsedPrimary > 0) {
+        return parsedPrimary;
+    }
+
+    return Number.isNaN(parsedFallback) ? 0 : parsedFallback;
+}
+
+function sicro3DisplayUnit(item, field = 'onerado') {
+    return field === 'desonerado'
+        ? sicro3ValueWithFallback(item.preco_unitario_desonerado, item.preco_unitario_onerado)
+        : sicro3ValueWithFallback(item.preco_unitario_onerado, item.preco_unitario_desonerado);
+}
+
+function sicro3DisplayIdleCost(item, field = 'onerado') {
+    if (field === 'desonerado') {
+        return sicro3ValueWithFallback(item.custo_improdutivo_desonerado, item.custo_improdutivo_onerado || sicro3DisplayUnit(item, field));
+    }
+
+    return sicro3ValueWithFallback(item.custo_improdutivo_onerado, item.custo_improdutivo_desonerado || sicro3DisplayUnit(item, field));
+}
+
+function sicro3DisplayTotal(item, field = 'onerado') {
+    const stored = field === 'desonerado'
+        ? sicro3ValueWithFallback(item.preco_desonerado, item.preco_onerado)
+        : sicro3ValueWithFallback(item.preco_onerado, item.preco_desonerado);
+
+    if (stored > 0) {
+        return stored;
+    }
+
+    return calculateSicro3BuilderPrice(
+        item,
+        item.coeficiente,
+        item.sicro3_section,
+        item.sicro3_utilizacao_operativa,
+        item.sicro3_utilizacao_improdutiva,
+        field,
+    );
+}
+
+function sicro3ReferenceDescription(item) {
+    const reference = String(item.sicro3_referenced_item_description ?? '').trim();
+    const description = String(item.descricao ?? '').trim();
+
+    if (reference && description && reference !== description) {
+        return `${reference} - ${description}`;
+    }
+
+    return description || reference || '-';
 }
 
 function sicro3SectionFromOption(option) {

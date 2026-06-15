@@ -17,6 +17,7 @@ use App\Notifications\ProjectSubmittedForReviewNotification;
 use App\Services\AutodeskApsService;
 use App\Support\ProjectCap;
 use App\Support\ProjectPermissions;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -266,6 +267,111 @@ class ProjectController extends Controller
             'documents' => $documents,
             'documentTypes' => self::DOCUMENT_TYPES,
         ]);
+    }
+
+    public function masterList(Request $request, Tenant $tenant): Response
+    {
+        abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
+
+        $contracts = $this->masterListContracts($request, $tenant);
+        $contractIds = $contracts->pluck('id');
+        $documents = $this->masterListDocumentsQuery($request, $tenant, $contractIds)
+            ->latest()
+            ->paginate(50)
+            ->withQueryString()
+            ->through(fn (ProjectDocument $document): array => $this->serializeMasterListDocument($document));
+
+        $obras = $tenant->obras()
+            ->whereIn('contract_id', $contractIds)
+            ->orderBy('codigo')
+            ->orderBy('nome')
+            ->get(['id', 'contract_id', 'obra_pai_id', 'nome', 'codigo', 'tipo']);
+
+        $disciplinas = $tenant->disciplinas()
+            ->whereIn('contract_id', $contractIds)
+            ->orderBy('sigla')
+            ->orderBy('nome')
+            ->get(['id', 'contract_id', 'nome', 'sigla', 'cor']);
+
+        $projectPhases = ProjectPhase::query()
+            ->where('is_active', true)
+            ->orderBy('position')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
+
+        return Inertia::render('Tenant/Projects/MasterList', [
+            'tenant' => $tenant,
+            'contracts' => $contracts->map(fn (Contract $contract): array => [
+                'id' => $contract->id,
+                'code' => $contract->code,
+                'name' => $contract->obra?->nome ?? $contract->name,
+                'status' => $contract->status,
+            ])->values(),
+            'obras' => $obras->map(fn (Obra $obra): array => [
+                'id' => $obra->id,
+                'contract_id' => $obra->contract_id,
+                'obra_pai_id' => $obra->obra_pai_id,
+                'nome' => $obra->nome,
+                'codigo' => $obra->codigo,
+                'tipo' => $obra->tipo,
+            ])->values(),
+            'disciplinas' => $disciplinas,
+            'projectPhases' => $projectPhases,
+            'documents' => $documents,
+            'documentTypes' => self::DOCUMENT_TYPES,
+            'statusLabels' => self::STATUS_LABELS,
+            'filters' => $this->masterListFilters($request),
+            'totalDocuments' => $tenant->projectDocuments()
+                ->whereIn('contract_id', $contractIds)
+                ->count(),
+        ]);
+    }
+
+    public function masterListPdf(Request $request, Tenant $tenant)
+    {
+        abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
+
+        $contracts = $this->masterListContracts($request, $tenant);
+        $documents = $this->masterListDocumentsQuery($request, $tenant, $contracts->pluck('id'))
+            ->orderBy('code')
+            ->get()
+            ->map(fn (ProjectDocument $document): array => $this->serializeMasterListDocument($document));
+
+        $pdf = Pdf::loadView('pdf.project-master-list', [
+            'tenant' => $tenant,
+            'documents' => $documents,
+            'filters' => $this->masterListFilters($request),
+            'generatedAt' => now(),
+        ])->setPaper('a4', 'landscape');
+
+        $fileName = 'lista-mestra-projetos-'.now()->format('Ymd-His').'.pdf';
+        $response = $pdf->download($fileName);
+        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+
+        return $response;
+    }
+
+    public function masterListExcel(Request $request, Tenant $tenant)
+    {
+        abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
+
+        $contracts = $this->masterListContracts($request, $tenant);
+        $documents = $this->masterListDocumentsQuery($request, $tenant, $contracts->pluck('id'))
+            ->orderBy('code')
+            ->get()
+            ->map(fn (ProjectDocument $document): array => $this->serializeMasterListDocument($document));
+        $fileName = 'lista-mestra-projetos-'.now()->format('Ymd-His').'.xls';
+
+        return response()
+            ->view('exports.project-master-list-excel', [
+                'tenant' => $tenant,
+                'documents' => $documents,
+                'generatedAt' => now(),
+            ], 200, [
+                'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+                'Cache-Control' => 'max-age=0, no-cache, must-revalidate',
+            ]);
     }
 
     public function store(Request $request, Tenant $tenant, AutodeskApsService $aps): RedirectResponse
@@ -521,6 +627,191 @@ class ProjectController extends Controller
         }
 
         return $query;
+    }
+
+    private function masterListContracts(Request $request, Tenant $tenant)
+    {
+        return $this->accessibleContracts($request, $tenant, ProjectPermissions::VIEW)
+            ->with('obra:id,nome')
+            ->orderBy('code')
+            ->get();
+    }
+
+    private function masterListDocumentsQuery(Request $request, Tenant $tenant, $contractIds)
+    {
+        $query = $tenant->projectDocuments()
+            ->whereIn('contract_id', $contractIds)
+            ->withCount(['rncs as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta')])
+            ->with([
+                'contract:id,code,name,obra_id',
+                'contract.obra:id,nome',
+                'obra:id,nome,codigo',
+                'disciplina:id,nome,sigla,cor',
+                'phase:id,name,code',
+                'creator:id,name,email',
+                'reviewer:id,name,email',
+                'approver:id,name,email',
+                'inactiveBy:id,name,email',
+                'latestVersion.uploader:id,name,email',
+                'latestVersion.reviewer:id,name,email',
+                'latestVersion.approver:id,name,email',
+            ]);
+
+        if ($contractId = $this->masterListFilterValue($request, 'contract_id')) {
+            $query->where('contract_id', $contractId);
+        }
+
+        if ($obraId = $this->masterListFilterValue($request, 'obra_id')) {
+            $query->where('obra_id', $obraId);
+        }
+
+        if ($disciplinaId = $this->masterListFilterValue($request, 'disciplina_id')) {
+            $query->where('disciplina_id', $disciplinaId);
+        }
+
+        if ($phaseId = $this->masterListFilterValue($request, 'project_phase_id')) {
+            $query->where('project_phase_id', $phaseId);
+        }
+
+        if ($documentType = $this->masterListFilterValue($request, 'document_type')) {
+            if (array_key_exists($documentType, self::DOCUMENT_TYPES)) {
+                $query->where('document_type', $documentType);
+            }
+        }
+
+        if ($status = $this->masterListFilterValue($request, 'status')) {
+            if (array_key_exists($status, self::STATUS_LABELS)) {
+                $query->where('status', $status);
+            }
+        }
+
+        if ($search = trim((string) $request->query('q', ''))) {
+            $term = '%'.mb_strtolower($search).'%';
+            $query->where(function (Builder $query) use ($term): void {
+                $query
+                    ->whereRaw('lower(title) like ?', [$term])
+                    ->orWhereRaw('lower(code) like ?', [$term])
+                    ->orWhereRaw('lower(document_number) like ?', [$term])
+                    ->orWhereHas('contract', function (Builder $query) use ($term): void {
+                        $query
+                            ->whereRaw('lower(code) like ?', [$term])
+                            ->orWhereRaw('lower(name) like ?', [$term]);
+                    })
+                    ->orWhereHas('obra', function (Builder $query) use ($term): void {
+                        $query
+                            ->whereRaw('lower(codigo) like ?', [$term])
+                            ->orWhereRaw('lower(nome) like ?', [$term]);
+                    })
+                    ->orWhereHas('disciplina', function (Builder $query) use ($term): void {
+                        $query
+                            ->whereRaw('lower(sigla) like ?', [$term])
+                            ->orWhereRaw('lower(nome) like ?', [$term]);
+                    })
+                    ->orWhereHas('phase', function (Builder $query) use ($term): void {
+                        $query
+                            ->whereRaw('lower(code) like ?', [$term])
+                            ->orWhereRaw('lower(name) like ?', [$term]);
+                    })
+                    ->orWhereHas('latestVersion', function (Builder $query) use ($term): void {
+                        $query
+                            ->whereRaw('lower(revision) like ?', [$term])
+                            ->orWhereRaw('lower(original_name) like ?', [$term])
+                            ->orWhereRaw('lower(stored_name) like ?', [$term]);
+                    });
+            });
+        }
+
+        return $query;
+    }
+
+    private function masterListFilterValue(Request $request, string $key): ?string
+    {
+        $value = $request->query($key);
+
+        if (blank($value) || $value === 'todos') {
+            return null;
+        }
+
+        return (string) $value;
+    }
+
+    private function masterListFilters(Request $request): array
+    {
+        return [
+            'contract_id' => $request->query('contract_id', 'todos'),
+            'obra_id' => $request->query('obra_id', 'todos'),
+            'disciplina_id' => $request->query('disciplina_id', 'todos'),
+            'project_phase_id' => $request->query('project_phase_id', 'todos'),
+            'document_type' => $request->query('document_type', 'todos'),
+            'status' => $request->query('status', 'todos'),
+            'q' => $request->query('q', ''),
+        ];
+    }
+
+    private function serializeMasterListDocument(ProjectDocument $document): array
+    {
+        $version = $document->latestVersion;
+
+        return [
+            'id' => $document->id,
+            'title' => $document->title,
+            'code' => $document->code,
+            'document_number' => $document->document_number,
+            'document_type' => $document->document_type,
+            'document_type_label' => self::DOCUMENT_TYPES[$document->document_type] ?? $document->document_type,
+            'status' => $document->status,
+            'status_label' => self::STATUS_LABELS[$document->status] ?? $document->status,
+            'contract' => [
+                'id' => $document->contract?->id,
+                'code' => $document->contract?->code,
+                'name' => $document->contract?->obra?->nome ?? $document->contract?->name,
+            ],
+            'obra' => [
+                'id' => $document->obra?->id,
+                'codigo' => $document->obra?->codigo,
+                'nome' => $document->obra?->nome,
+            ],
+            'disciplina' => [
+                'id' => $document->disciplina?->id,
+                'sigla' => $document->disciplina?->sigla,
+                'nome' => $document->disciplina?->nome,
+                'cor' => $document->disciplina?->cor,
+            ],
+            'phase' => [
+                'id' => $document->phase?->id,
+                'code' => $document->phase?->code,
+                'name' => $document->phase?->name,
+            ],
+            'revision' => $version?->revision,
+            'file_name' => $version?->stored_name ?: $version?->original_name,
+            'original_name' => $version?->original_name,
+            'file_size' => $version?->size_label,
+            'uploaded_by' => $version?->uploader?->name,
+            'created_by' => $document->creator?->name,
+            'reviewed_by' => $document->reviewer?->name,
+            'approved_by' => $document->approver?->name,
+            'inactive_by' => $document->inactiveBy?->name,
+            'created_at' => $this->formatMasterListDate($document->created_at),
+            'reviewed_at' => $this->formatMasterListDate($document->reviewed_at),
+            'approved_at' => $this->formatMasterListDate($document->approved_at),
+            'inactive_at' => $this->formatMasterListDate($document->inactive_at),
+            'open_rncs_count' => (int) ($document->open_rncs_count ?? 0),
+        ];
+    }
+
+    private function formatMasterListDate($value): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse($value)
+                ->timezone(config('app.timezone', 'America/Sao_Paulo'))
+                ->format('d/m/Y H:i');
+        } catch (\Throwable) {
+            return (string) $value;
+        }
     }
 
     private function queueApsProcessing(?ProjectDocumentVersion $version, AutodeskApsService $aps): bool

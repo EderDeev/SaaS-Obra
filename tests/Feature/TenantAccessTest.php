@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Contract;
+use App\Models\Empresa;
+use App\Models\Orcamento;
 use App\Models\OrcamentoComposicao;
 use App\Models\OrcamentoComposicaoAnaliticoItem;
 use App\Models\OrcamentoComposicaoItem;
@@ -350,6 +352,69 @@ class TenantAccessTest extends TestCase
             ->get(route('tenant.orcamentos.insumos.index', $tenant))
             ->assertOk()
             ->assertSee('Tenant\/Orcamentos\/Insumos', false);
+    }
+
+    public function test_tenant_admin_can_create_orcamento(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'teste',
+            'name' => 'Empresa Teste',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $user = User::factory()->create();
+        $clienteTipo = TipoEmpresa::query()->firstOrCreate(['nome' => 'cliente']);
+        $cliente = Empresa::create([
+            'tenant_id' => $tenant->id,
+            'tipo_empresa_id' => $clienteTipo->id,
+            'nome' => 'Cliente Demo',
+            'cnpj' => '12.345.678/0001-90',
+            'sigla' => 'CLI',
+        ]);
+
+        $tenant->memberships()->create([
+            'user_id' => $user->id,
+            'role' => 'tenant_admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.orcamentos.create', $tenant))
+            ->assertOk()
+            ->assertSee('Tenant\/Orcamentos\/Create', false);
+
+        $this->actingAs($user)
+            ->post(route('tenant.orcamentos.store', $tenant), [
+                'codigo' => '00000001',
+                'descricao' => 'Orcamento executivo',
+                'cliente_empresa_id' => $cliente->id,
+                'categoria' => 'Unidades habitacionais - Construcao',
+                'prazo_entrega_at' => '2026-06-20T10:00',
+                'permitir_insumos_preco_zerado' => false,
+                'is_licitacao' => false,
+                'arredondamento' => 'truncate_all_2',
+                'encargos_sociais' => 'desonerado',
+                'bdi_tipo' => 'unit_price',
+                'bdi_percentual' => '12,50',
+                'base_references' => [
+                    [
+                        'codigo' => 'SINAPI-PA-04/2026',
+                        'nome' => 'SINAPI',
+                        'uf' => 'PA',
+                        'localidade' => 'Para - PA',
+                        'data' => '04/2026',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('tenant.orcamentos.index', $tenant))
+            ->assertSessionHasNoErrors();
+
+        $orcamento = Orcamento::query()->where('tenant_id', $tenant->id)->firstOrFail();
+
+        $this->assertSame('00000001', $orcamento->codigo);
+        $this->assertSame('draft', $orcamento->status);
+        $this->assertSame('12.500000', $orcamento->bdi_percentual);
+        $this->assertSame('SINAPI', $orcamento->base_references[0]['nome']);
     }
 
     public function test_tenant_admin_can_create_orcamento_composicao(): void
@@ -1695,7 +1760,7 @@ class TenantAccessTest extends TestCase
         ]);
     }
 
-    public function test_tenant_admin_can_import_composicao_analitico_by_codes(): void
+    public function test_platform_admin_can_import_global_composicao_analitico_by_codes(): void
     {
         $tenant = Tenant::create([
             'slug' => 'teste',
@@ -1703,11 +1768,13 @@ class TenantAccessTest extends TestCase
             'plan' => 'starter',
             'status' => 'active',
         ]);
-        $admin = User::factory()->create();
-        $tenant->users()->attach($admin->id, ['role' => 'tenant_admin', 'status' => 'active']);
+        $admin = User::factory()->create([
+            'is_platform_admin' => true,
+        ]);
         $parent = OrcamentoComposicao::create([
             'tenant_id' => $tenant->id,
             'created_by_id' => $admin->id,
+            'is_global' => true,
             'codigo' => '104658',
             'descricao' => 'Piso podotatil',
             'tipo_composicao' => 'Acessibilidade',
@@ -1725,6 +1792,7 @@ class TenantAccessTest extends TestCase
         $child = OrcamentoComposicao::create([
             'tenant_id' => $tenant->id,
             'created_by_id' => $admin->id,
+            'is_global' => true,
             'codigo' => '88316',
             'descricao' => 'Servente com encargos complementares',
             'tipo_composicao' => 'Livro SINAPI',
@@ -1765,7 +1833,7 @@ class TenantAccessTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('tenant.orcamentos.composicoes.import-analitico', $tenant), [
-                'scope' => 'tenant',
+                'scope' => 'global',
                 'modelo' => 'SINAPI',
                 'file' => UploadedFile::fake()->createWithContent('analitico.csv', $csv),
             ])
@@ -1776,14 +1844,16 @@ class TenantAccessTest extends TestCase
             ->assertSessionHas('import_result.skipped', 0);
 
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
-            'tenant_id' => $tenant->id,
+            'tenant_id' => null,
+            'is_global' => true,
             'codigo_composicao' => '104658',
             'tipo_item' => 'composicao',
             'codigo_item' => '88316',
             'coeficiente' => '1.279000',
         ]);
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
-            'tenant_id' => $tenant->id,
+            'tenant_id' => null,
+            'is_global' => true,
             'codigo_composicao' => '104658',
             'tipo_item' => 'insumo',
             'codigo_item' => '36178',
@@ -1797,6 +1867,61 @@ class TenantAccessTest extends TestCase
         $this->assertSame('0.000000', $parent->preco_desonerado);
     }
 
+    public function test_sicro3_analitico_import_differentiates_transport_referenced_items(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'teste',
+            'name' => 'Empresa Teste',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $admin = User::factory()->create([
+            'is_platform_admin' => true,
+        ]);
+        $csv = implode("\n", [
+            'codigo_composicao;descricao_composicao;unidade_composicao;uf;data;producao_equipe;fic;secao;tipo_item;tipo_transporte;codigo_item;descricao_item;unidade_item;coeficiente;utilizacao_operativa;utilizacao_improdutiva;codigo_item_referenciado',
+            '0307731;Aparelho de apoio;dm3;PA;jan/26;2;0,04695;E;COMPOSICAO;TEMPO_FIXO;5914655;Apoio de neoprene - Caminhao;t;0,0032;;;M0798',
+            '0307731;Aparelho de apoio;dm3;PA;jan/26;2;0,04695;E;COMPOSICAO;TEMPO_FIXO;5914655;Placa EPS - Caminhao;t;0,00007;;;M0786',
+            '0307731;Aparelho de apoio;dm3;PA;jan/26;2;0,04695;F;COMPOSICAO;LN;5914449;Apoio de neoprene - Caminhao;tkm;0,0032;;;M0798',
+            '0307731;Aparelho de apoio;dm3;PA;jan/26;2;0,04695;F;COMPOSICAO;RP;5914464;Apoio de neoprene - Caminhao;tkm;0,0032;;;M0798',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('tenant.orcamentos.composicoes.import-analitico', $tenant), [
+                'scope' => 'global',
+                'modelo' => 'SICRO3',
+                'file' => UploadedFile::fake()->createWithContent('analitico_sicro3.csv', $csv),
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('import_result.created', 4)
+            ->assertSessionHas('import_result.duplicated', 0);
+
+        $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
+            'tenant_id' => null,
+            'is_global' => true,
+            'modelo' => 'SICRO3',
+            'codigo_composicao' => '0307731',
+            'codigo_item' => '5914655',
+            'secao' => 'E',
+            'tipo_transporte' => 'TEMPO_FIXO',
+            'codigo_item_referenciado' => 'M0798',
+            'coeficiente' => '0.003200',
+        ]);
+        $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
+            'tenant_id' => null,
+            'is_global' => true,
+            'modelo' => 'SICRO3',
+            'codigo_composicao' => '0307731',
+            'codigo_item' => '5914655',
+            'secao' => 'E',
+            'tipo_transporte' => 'TEMPO_FIXO',
+            'codigo_item_referenciado' => 'M0786',
+            'coeficiente' => '0.000070',
+        ]);
+        $this->assertSame(4, OrcamentoComposicaoAnaliticoItem::count());
+    }
+
     public function test_composicao_analitico_import_requires_reference_date_column(): void
     {
         $tenant = Tenant::create([
@@ -1805,8 +1930,9 @@ class TenantAccessTest extends TestCase
             'plan' => 'starter',
             'status' => 'active',
         ]);
-        $admin = User::factory()->create();
-        $tenant->users()->attach($admin->id, ['role' => 'tenant_admin', 'status' => 'active']);
+        $admin = User::factory()->create([
+            'is_platform_admin' => true,
+        ]);
         $csv = implode("\n", [
             'Grupo;Codigo da composicao;Tipo Item;Codigo do item;Descricao;Unidade;Coeficiente',
             'Acessibilidade;104658;INSUMO;36178;PISO TATIL;UN;6,4375',
@@ -1815,7 +1941,7 @@ class TenantAccessTest extends TestCase
         $this->actingAs($admin)
             ->from(route('tenant.orcamentos.composicoes.index', $tenant))
             ->post(route('tenant.orcamentos.composicoes.import-analitico', $tenant), [
-                'scope' => 'tenant',
+                'scope' => 'global',
                 'modelo' => 'SINAPI',
                 'file' => UploadedFile::fake()->createWithContent('analitico.csv', $csv),
             ])
@@ -1831,8 +1957,9 @@ class TenantAccessTest extends TestCase
             'plan' => 'starter',
             'status' => 'active',
         ]);
-        $admin = User::factory()->create();
-        $tenant->users()->attach($admin->id, ['role' => 'tenant_admin', 'status' => 'active']);
+        $admin = User::factory()->create([
+            'is_platform_admin' => true,
+        ]);
         $csv = implode("\n", [
             implode("\t", ['grupo', 'codigo_composicao', 'tipo_item', 'codigo_item', 'descricao', 'unidade', 'coeficiente', 'data']),
             implode("\t", ['Acessibilidade', '104658', '', '', 'PISO PODOTATIL', 'M2', '', 'abr/26']),
@@ -1842,7 +1969,7 @@ class TenantAccessTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('tenant.orcamentos.composicoes.import-analitico', $tenant), [
-                'scope' => 'tenant',
+                'scope' => 'global',
                 'modelo' => 'SINAPI',
                 'file' => UploadedFile::fake()->createWithContent('analitico.tsv', $csv),
             ])
@@ -1852,14 +1979,16 @@ class TenantAccessTest extends TestCase
             ->assertSessionHas('import_result.skipped', 0);
 
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
-            'tenant_id' => $tenant->id,
+            'tenant_id' => null,
+            'is_global' => true,
             'codigo_composicao' => '104658',
             'tipo_item' => 'composicao',
             'codigo_item' => '88316',
             'data_referencia' => '2026-04-01 00:00:00',
         ]);
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
-            'tenant_id' => $tenant->id,
+            'tenant_id' => null,
+            'is_global' => true,
             'codigo_composicao' => '104658',
             'tipo_item' => 'insumo',
             'codigo_item' => '36178',
@@ -1908,11 +2037,13 @@ class TenantAccessTest extends TestCase
             'plan' => 'starter',
             'status' => 'active',
         ]);
-        $admin = User::factory()->create();
-        $tenant->users()->attach($admin->id, ['role' => 'tenant_admin', 'status' => 'active']);
+        $admin = User::factory()->create([
+            'is_platform_admin' => true,
+        ]);
         $parent = OrcamentoComposicao::create([
             'tenant_id' => $tenant->id,
             'created_by_id' => $admin->id,
+            'is_global' => true,
             'codigo' => '104658',
             'descricao' => 'Piso podotatil maio',
             'tipo_composicao' => 'Acessibilidade',
@@ -1930,6 +2061,7 @@ class TenantAccessTest extends TestCase
         $aprilChild = OrcamentoComposicao::create([
             'tenant_id' => $tenant->id,
             'created_by_id' => $admin->id,
+            'is_global' => true,
             'codigo' => '88316',
             'descricao' => 'Servente abril',
             'tipo_composicao' => 'Livro SINAPI',
@@ -1949,6 +2081,7 @@ class TenantAccessTest extends TestCase
         $mayChild = OrcamentoComposicao::create([
             'tenant_id' => $tenant->id,
             'created_by_id' => $admin->id,
+            'is_global' => true,
             'codigo' => '88316',
             'descricao' => 'Servente maio',
             'tipo_composicao' => 'Livro SINAPI',
@@ -1972,7 +2105,7 @@ class TenantAccessTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('tenant.orcamentos.composicoes.import-analitico', $tenant), [
-                'scope' => 'tenant',
+                'scope' => 'global',
                 'modelo' => 'SINAPI',
                 'file' => UploadedFile::fake()->createWithContent('analitico.csv', $csv),
             ])
@@ -1980,7 +2113,8 @@ class TenantAccessTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
-            'tenant_id' => $tenant->id,
+            'tenant_id' => null,
+            'is_global' => true,
             'codigo_composicao' => '104658',
             'tipo_item' => 'composicao',
             'codigo_item' => '88316',

@@ -17,6 +17,7 @@ import {
     LogOut,
     PanelLeftClose,
     PanelLeftOpen,
+    Ruler,
     Search,
     Settings,
     ShieldCheck,
@@ -74,6 +75,7 @@ export default function AuthenticatedLayout({ children }) {
     const [qualidadeOpen, setQualidadeOpen] = useState(() => route().current('tenant.qualidade.*'));
     const [projectOpen, setProjectOpen] = useState(() => route().current('tenant.projects.*'));
     const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
+    const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         if (typeof window === 'undefined') {
@@ -197,6 +199,15 @@ export default function AuthenticatedLayout({ children }) {
             },
         ]
         : [];
+    const medicaoItems = tenant
+        ? [
+            {
+                label: 'Item',
+                href: route('tenant.medicao.item.index', tenant.slug),
+                active: route().current('tenant.medicao.item.*'),
+            },
+        ]
+        : [];
     const projectItems = tenant
         ? [
             ...(projectCan.view_projects ? [{
@@ -217,6 +228,11 @@ export default function AuthenticatedLayout({ children }) {
                 label: 'Analisar projeto',
                 href: route('tenant.projects.review.index', tenant.slug),
                 active: route().current('tenant.projects.review.*'),
+            }] : []),
+            ...(projectCan.view_projects ? [{
+                label: 'Lista Mestra',
+                href: route('tenant.projects.master-list.index', tenant.slug),
+                active: route().current('tenant.projects.master-list.*'),
             }] : []),
             ...(projectCan.manage_project_responsibles ? [{
                 label: 'Responsaveis',
@@ -244,6 +260,7 @@ export default function AuthenticatedLayout({ children }) {
                 { label: 'Atividades', icon: Activity, href: route('tenant.activities.index', tenant.slug), active: route().current('tenant.activities.*') },
             ] : []),
             { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
+            { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
             ...(projectItems.length > 0 ? [
                 { label: 'Projetos', icon: FolderOpen, active: route().current('tenant.projects.*'), children: projectItems },
             ] : []),
@@ -281,7 +298,7 @@ export default function AuthenticatedLayout({ children }) {
         : tenant
             ? [
                 { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
+                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -318,12 +335,20 @@ export default function AuthenticatedLayout({ children }) {
                     <div className="eyebrow px-5 pb-2 pt-1 text-[var(--side-fg-dim)]">Workspace</div>
                     {navItems.map((item) => {
                         const Icon = item.icon;
-                        const childrenOpen = item.label === 'Qualidade' ? qualidadeOpen : item.label === 'Orçamentos' ? orcamentosOpen : projectOpen;
+                        const childrenOpen = item.label === 'Qualidade'
+                            ? qualidadeOpen
+                            : item.label === 'Orçamentos'
+                                ? orcamentosOpen
+                                : item.label === 'Medição'
+                                    ? medicaoOpen
+                                    : projectOpen;
                         const toggleChildren = item.label === 'Qualidade'
                             ? () => setQualidadeOpen((open) => !open)
                             : item.label === 'Orçamentos'
                                 ? () => setOrcamentosOpen((open) => !open)
-                            : () => setProjectOpen((open) => !open);
+                                : item.label === 'Medição'
+                                    ? () => setMedicaoOpen((open) => !open)
+                                    : () => setProjectOpen((open) => !open);
 
                         if (item.children) {
                             return (

@@ -106,4 +106,9 @@ class Contract extends Model
     {
         return $this->hasMany(Obra::class);
     }
+
+    public function medicaoItens(): HasMany
+    {
+        return $this->hasMany(MedicaoItem::class);
+    }
 }
