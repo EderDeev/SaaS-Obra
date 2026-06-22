@@ -76,6 +76,7 @@ export default function AuthenticatedLayout({ children }) {
     const [projectOpen, setProjectOpen] = useState(() => route().current('tenant.projects.*'));
     const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
     const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
+    const [ordemServicoOpen, setOrdemServicoOpen] = useState(() => route().current('tenant.ordem-servico.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         if (typeof window === 'undefined') {
@@ -202,12 +203,66 @@ export default function AuthenticatedLayout({ children }) {
     const medicaoItems = tenant
         ? [
             {
+                label: 'Boletim Medição',
+                href: route('tenant.medicao.boletim-medicao.index', tenant.slug),
+                active: route().current('tenant.medicao.boletim-medicao.*'),
+            },
+            {
+                label: 'Relatórios Medição',
+                href: route('tenant.medicao.relatorios.index', tenant.slug),
+                active: route().current('tenant.medicao.relatorios.*'),
+            },
+            {
+                label: 'B.I',
+                href: route('tenant.medicao.bi.index', tenant.slug),
+                active: route().current('tenant.medicao.bi.*'),
+            },
+            {
+                label: 'Folha de Rosto',
+                href: route('tenant.medicao.folha-rosto.index', tenant.slug),
+                active: route().current('tenant.medicao.folha-rosto.*'),
+            },
+            {
+                label: 'Analisar Pleito',
+                href: route('tenant.medicao.analisar-pleito.index', tenant.slug),
+                active: route().current('tenant.medicao.analisar-pleito.index'),
+            },
+            {
                 label: 'Item',
                 href: route('tenant.medicao.item.index', tenant.slug),
                 active: route().current('tenant.medicao.item.*'),
             },
+            {
+                label: 'Índice de Reajuste',
+                href: route('tenant.medicao.indice-reajuste.index', tenant.slug),
+                active: route().current('tenant.medicao.indice-reajuste.*'),
+            },
+            {
+                label: 'Responsáveis análise',
+                href: route('tenant.medicao.analisar-pleito.responsaveis.index', tenant.slug),
+                active: route().current('tenant.medicao.analisar-pleito.responsaveis.*'),
+            },
         ]
         : [];
+    const ordemServicoItems = tenant
+        ? [
+        {
+            label: 'OS',
+            href: route('tenant.ordem-servico.os.index', tenant.slug),
+            active: route().current('tenant.ordem-servico.os.*'),
+        },
+        {
+            label: 'Análise OS',
+            href: route('tenant.ordem-servico.analise.index', tenant.slug),
+            active: route().current('tenant.ordem-servico.analise.*'),
+        },
+        {
+            label: 'Responsáveis',
+            href: route('tenant.ordem-servico.responsaveis.index', tenant.slug),
+            active: route().current('tenant.ordem-servico.responsaveis.*'),
+        },
+    ]
+    : [];
     const projectItems = tenant
         ? [
             ...(projectCan.view_projects ? [{
@@ -261,6 +316,7 @@ export default function AuthenticatedLayout({ children }) {
             ] : []),
             { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
             { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
+            { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
             ...(projectItems.length > 0 ? [
                 { label: 'Projetos', icon: FolderOpen, active: route().current('tenant.projects.*'), children: projectItems },
             ] : []),
@@ -298,7 +354,7 @@ export default function AuthenticatedLayout({ children }) {
         : tenant
             ? [
                 { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
+                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Ordem de Serviço' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -341,14 +397,18 @@ export default function AuthenticatedLayout({ children }) {
                                 ? orcamentosOpen
                                 : item.label === 'Medição'
                                     ? medicaoOpen
-                                    : projectOpen;
+                                    : item.label === 'Ordem de Serviço'
+                                        ? ordemServicoOpen
+                                        : projectOpen;
                         const toggleChildren = item.label === 'Qualidade'
                             ? () => setQualidadeOpen((open) => !open)
                             : item.label === 'Orçamentos'
                                 ? () => setOrcamentosOpen((open) => !open)
                                 : item.label === 'Medição'
                                     ? () => setMedicaoOpen((open) => !open)
-                                    : () => setProjectOpen((open) => !open);
+                                    : item.label === 'Ordem de Serviço'
+                                        ? () => setOrdemServicoOpen((open) => !open)
+                                        : () => setProjectOpen((open) => !open);
 
                         if (item.children) {
                             return (

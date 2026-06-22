@@ -312,6 +312,7 @@ function ImportProgressOverlay({ form, title }) {
 
 function ImportResultFeedback({ result }) {
     const duplicated = Number(result.duplicated ?? result.duplicates ?? 0);
+    const compositionHeaders = Number(result.composition_headers ?? 0);
     const changed = Number(result.created ?? 0) + Number(result.updated ?? 0);
     const status = result.status ?? (changed > 0 ? 'success' : 'warning');
     const isSuccess = status === 'success';
@@ -324,6 +325,9 @@ function ImportResultFeedback({ result }) {
         { label: 'Criadas', value: result.created ?? 0, tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
         { label: 'Atualizadas', value: result.updated ?? 0, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
         { label: 'Duplicadas ignoradas', value: duplicated, tone: 'text-violet-700 bg-violet-50 border-violet-200' },
+        ...(compositionHeaders > 0
+            ? [{ label: 'Cabeçalhos ignorados', value: compositionHeaders, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' }]
+            : []),
         { label: 'Linhas ignoradas', value: result.skipped ?? 0, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
         { label: 'Total lido', value: total, tone: 'text-[var(--ink-700)] bg-[var(--surface-muted)] border-[var(--border)]' },
     ];
@@ -347,7 +351,7 @@ function ImportResultFeedback({ result }) {
                 {message}
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                 {metrics.map((metric) => (
                     <div key={metric.label} className={`rounded-lg border px-4 py-3 ${metric.tone}`}>
                         <span className="block text-[11px] font-bold uppercase tracking-[0.08em]">{metric.label}</span>

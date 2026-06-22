@@ -16,6 +16,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const dateInput = (date) => (date ? String(date).slice(0, 10) : '');
+const addDays = (value, days) => {
+    const [year, month, day] = String(value).split('-').map(Number);
+    const date = new Date(year, month - 1, day, 12);
+    date.setDate(date.getDate() + days);
+
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+};
 const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
 
 const photoId = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -88,6 +99,7 @@ export default function RelatorioNaoConformidadeCreate({
     const page = usePage();
     const isEditing = mode === 'edit' && rnc;
     const defaultObraId = rnc?.obra_id ?? obras[0]?.id ?? '';
+    const initialOpenedAt = dateInput(rnc?.opened_at) || today();
     const [selectedPhotos, setSelectedPhotos] = useState(() => (rnc?.photos || []).map((photo) => ({
         id: `existing-${photo.id}`,
         existingId: photo.id,
@@ -103,7 +115,7 @@ export default function RelatorioNaoConformidadeCreate({
         project_document_id: rnc?.project_document_id ?? '',
         contratante_empresa_id: rnc?.contratante_empresa_id ?? '',
         contratada_empresa_id: rnc?.contratada_empresa_id ?? '',
-        opened_at: dateInput(rnc?.opened_at) || today(),
+        opened_at: initialOpenedAt,
         latitude: rnc?.latitude ?? '',
         longitude: rnc?.longitude ?? '',
         disciplina_id: rnc?.disciplina_id ?? '',
@@ -111,7 +123,7 @@ export default function RelatorioNaoConformidadeCreate({
         descricao_problema: rnc?.descricao_problema ?? '',
         observacao: rnc?.observacao ?? '',
         acoes_corretivas_recomendadas: rnc?.acoes_corretivas_recomendadas ?? '',
-        prazo_resposta_acao_corretiva: dateInput(rnc?.prazo_resposta_acao_corretiva),
+        prazo_resposta_acao_corretiva: dateInput(rnc?.prazo_resposta_acao_corretiva) || addDays(initialOpenedAt, 7),
     });
 
     const selectedObra = useMemo(
@@ -389,7 +401,19 @@ export default function RelatorioNaoConformidadeCreate({
                                 <input
                                     type="date"
                                     value={form.data.opened_at}
-                                    onChange={(event) => form.setData('opened_at', event.target.value)}
+                                    onChange={(event) => {
+                                        const openedAt = event.target.value;
+                                        const minimumDeadline = addDays(openedAt, 7);
+
+                                        form.setData((current) => ({
+                                            ...current,
+                                            opened_at: openedAt,
+                                            prazo_resposta_acao_corretiva: !current.prazo_resposta_acao_corretiva
+                                                || current.prazo_resposta_acao_corretiva < openedAt
+                                                ? minimumDeadline
+                                                : current.prazo_resposta_acao_corretiva,
+                                        }));
+                                    }}
                                     required
                                 />
                             </Field>
@@ -399,6 +423,7 @@ export default function RelatorioNaoConformidadeCreate({
                                     type="date"
                                     value={form.data.prazo_resposta_acao_corretiva}
                                     onChange={(event) => form.setData('prazo_resposta_acao_corretiva', event.target.value)}
+                                    min={form.data.opened_at}
                                     required
                                 />
                             </Field>

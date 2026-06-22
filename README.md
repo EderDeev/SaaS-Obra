@@ -1,14 +1,15 @@
 # Deming
 
-SaaS multi-tenant para gerenciamento de obras, baseado no escopo do projeto:
+SaaS multi-tenant para gerenciamento de obras.
 
 - Laravel 13 + Inertia.js + React + Tailwind CSS
-- Usuários globais com vínculos por empresa e por contrato
+- Usuários globais com vínculos por tenant e por contrato
 - Painel Super Admin
 - Painel Tenant Admin
-- Espaço do contrato com participantes da gerenciadora, cliente e construtora
+- Projetos com Autodesk APS
+- Orçamentos, Medição, RNC e Atividades
 
-## Rodando localmente
+## Rodando Localmente
 
 Instalação inicial:
 
@@ -20,12 +21,26 @@ php artisan migrate:fresh --seed
 npm run build
 ```
 
-Para subir a aplicação em desenvolvimento, use dois terminais.
+Para subir a aplicação em desenvolvimento, use terminais separados.
 
-Terminal 1, Laravel:
+Terminal 1, Laravel com limites corretos de upload:
+
+```bash
+npm run serve:php
+```
+
+Comando equivalente:
 
 ```bash
 php -d upload_max_filesize=100M -d post_max_size=128M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 127.0.0.1:8000 server.php
+```
+
+Não use `php artisan serve` para testar upload de projetos. Ele pode carregar o `php.ini` local com `upload_max_filesize=2M` e `post_max_size=8M`, causando erro em arquivos pequenos ou médios.
+
+Para conferir os limites carregados pelo servidor:
+
+```text
+http://127.0.0.1:8000/dev-php-limits
 ```
 
 Terminal 2, Vite:
@@ -40,13 +55,60 @@ Terminal 3, fila de jobs:
 php artisan queue:work --sleep=3 --tries=1 --timeout=600
 ```
 
-Esse worker e necessario quando `QUEUE_CONNECTION=database`. Ele processa tarefas em segundo plano, incluindo o envio automatico de projetos para o Autodesk APS apos a submissao.
+O worker é necessário quando `QUEUE_CONNECTION=database`. Ele processa tarefas em segundo plano, incluindo envio automático de projetos para o Autodesk APS depois da submissão.
 
-Acesse `http://127.0.0.1:8000`.
+Acesse:
 
-Se o Vite ficar preso em outra porta, apague `public/hot` e suba novamente o comando do Terminal 2.
+```text
+http://127.0.0.1:8000
+```
 
-## Acessos demo
+Se o Vite ficar preso em outra porta, apague `public/hot` e suba o Terminal 2 novamente.
+
+## Autodesk APS Local
+
+Variáveis necessárias no `.env`:
+
+```text
+AUTODESK_APS_CLIENT_ID=...
+AUTODESK_APS_CLIENT_SECRET=...
+AUTODESK_APS_BUCKET_KEY=sua-chave-de-bucket
+AUTODESK_APS_REGION=US
+AUTODESK_APS_SCOPES="data:read data:write data:create bucket:create bucket:read viewables:read"
+AUTODESK_APS_VERIFY_SSL=false
+AUTODESK_APS_AUTO_PROCESS=true
+```
+
+Cuidados:
+
+- Não deixe espaço depois do `=` em `AUTODESK_APS_CLIENT_SECRET`.
+- Em Windows/local, `AUTODESK_APS_VERIFY_SSL=false` evita erro de certificado local.
+- Em Railway/produção, use `AUTODESK_APS_VERIFY_SSL=true`.
+- O processamento APS acontece nos servidores da Autodesk. O status `inprogress` com `99% complete` pode ficar parado por alguns minutos mesmo com a integração funcionando.
+
+Diagnóstico local:
+
+```bash
+php scripts/check-aps-status.php
+```
+
+Para consultar o manifesto real na Autodesk:
+
+```bash
+php scripts/check-aps-status.php --manifest
+```
+
+Interpretação rápida:
+
+- `jobs > 0` e nenhum `queue:work` rodando: a fila local está parada.
+- `failed_jobs > 0`: algum job falhou e precisa ser inspecionado.
+- `status=queued` sem `aps_object_id`/`aps_urn`: o arquivo ainda não foi enviado para APS.
+- `status=processing` com `aps_object_id` e `aps_urn`: o arquivo já foi enviado e a conversão está na Autodesk.
+- Manifesto `inprogress`/`99% complete`: APS está funcionando, mas a conversão ainda não terminou.
+- Manifesto `success`: o viewer deve abrir o projeto.
+- Manifesto `failed` ou `timeout`: a Autodesk recusou ou não conseguiu converter o arquivo.
+
+## Acessos Demo
 
 Todos usam a senha `Senha1!`.
 
@@ -63,33 +125,48 @@ Em ambiente local também existe uma rota de apoio para entrar sem formulário:
 
 Essa rota só é registrada quando `APP_ENV=local`.
 
-## Fluxos já implementados
+## Fluxos Implementados
 
 - Super Admin em `/admin`
-- Criação e listagem de empresas em `/admin/tenants`
-- Dashboard da empresa em `/t/{slug}`
+- Criação e listagem de tenants em `/admin/tenants`
+- Dashboard do tenant em `/t/{slug}`
 - Gestão de usuários internos em `/t/{slug}/users`
 - Criação e listagem de contratos em `/t/{slug}/contracts`
 - Espaço do contrato em `/t/{slug}/contracts/{id}`
-- Participantes por contrato: gerenciadora, cliente e construtora
-- Middleware de resolução de tenant por rota local e preparado para subdomínio via `APP_ROOT_DOMAIN`
-- Isolamento básico por tenant e por contrato no backend
-- Testes de isolamento para participante externo
+- Participantes por contrato
+- Parametrização por contrato
+- Projetos com submissão, análise, aprovação, revisões e APS
+- RNC com fluxo de notificação, ação corretiva, análise e evidências
+- Orçamentos com insumos, composições, analíticos, relatórios e itens
+- Medição com itens por contrato, aditivos e índices de reajuste
 
-## Observação sobre Postgres e RLS
+## Postgres
 
-Os testes automatizados usam SQLite em memoria para rapidez, mas o deploy do Railway deve usar PostgreSQL. O middleware ja seta `app.current_tenant` quando a conexao for PostgreSQL. A proxima etapa de hardening e adicionar as policies RLS completas para as tabelas de dominio antes de producao real.
+O projeto usa PostgreSQL local e no Railway.
+
+Variáveis locais esperadas:
+
+```text
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=deming
+DB_USERNAME=...
+DB_PASSWORD=...
+```
+
+Se aparecer `could not find driver`, habilite/instale a extensão `pdo_pgsql` no PHP usado pelo terminal.
 
 ## Deploy no Railway
 
-O projeto ja inclui `railway.toml` com:
+O projeto inclui `railway.toml` com:
 
 - build: `npm run build`
 - pre-deploy: `php artisan migrate --force`
 - start: `sh ./railway/start-app.sh`
 - healthcheck: `/up`
 
-Variaveis obrigatorias no servico da aplicacao:
+Variáveis obrigatórias no serviço da aplicação:
 
 ```text
 APP_NAME="Deming"
@@ -107,18 +184,79 @@ DB_URL=${{Postgres.DATABASE_URL}}
 DB_SSLMODE=require
 SESSION_DRIVER=database
 CACHE_STORE=database
-QUEUE_CONNECTION=sync
 FILESYSTEM_DISK=public
 RAILPACK_PHP_VERSION=8.4
 ```
 
-Para uploads persistirem entre deploys, crie um Railway Volume no servico da aplicacao com mount path:
+Para testes simples, pode usar:
+
+```text
+QUEUE_CONNECTION=sync
+```
+
+Nesse modo, o job APS é disparado após a resposta HTTP no próprio serviço web. Funciona para teste, mas pode deixar uploads mais lentos.
+
+Para processamento APS realmente em segundo plano, use:
+
+```text
+QUEUE_CONNECTION=database
+DB_QUEUE_RETRY_AFTER=900
+```
+
+E crie um segundo serviço no Railway, apontando para o mesmo repositório, com start command:
+
+```bash
+sh ./railway/start-worker.sh
+```
+
+Esse worker precisa usar as mesmas variáveis do serviço web, principalmente `DB_URL`, `APP_KEY`, `APP_URL`, `AUTODESK_APS_*` e `MAIL_*`.
+
+O `DB_QUEUE_RETRY_AFTER` deve ser maior que o timeout do worker (`600` segundos em `railway/start-worker.sh`). Isso evita que um upload/conversão APS demorado seja colocado de volta na fila antes do job terminar.
+
+## Railway: Uploads e Arquivos
+
+Para uploads persistirem entre deploys, crie um Railway Volume no serviço da aplicação com mount path:
 
 ```text
 /app/storage/app/public
 ```
 
-Para email real via Brevo, configure no Railway:
+O `railway/start-app.sh` já sobe o PHP com:
+
+```text
+upload_max_filesize=100M
+post_max_size=128M
+memory_limit=512M
+max_execution_time=0
+max_input_time=0
+```
+
+## Railway: Autodesk APS
+
+Configure no serviço web e no serviço worker, se existir:
+
+```text
+AUTODESK_APS_CLIENT_ID=...
+AUTODESK_APS_CLIENT_SECRET=...
+AUTODESK_APS_BUCKET_KEY=...
+AUTODESK_APS_REGION=US
+AUTODESK_APS_STORAGE_LIMIT_BYTES=5368709120
+AUTODESK_APS_SCOPES="data:read data:write data:create bucket:create bucket:read viewables:read"
+AUTODESK_APS_VERIFY_SSL=true
+AUTODESK_APS_AUTO_PROCESS=true
+```
+
+Checklist quando um projeto demora:
+
+1. Verifique se `AUTODESK_APS_*` está configurado no serviço web e no worker.
+2. Verifique se `QUEUE_CONNECTION=database` tem um worker rodando.
+3. Abra o painel Super Admin de uso APS ou rode o diagnóstico local equivalente.
+4. Se o manifesto estiver em `99% complete`, aguarde a Autodesk finalizar.
+5. Se o manifesto retornar `failed`, o arquivo precisa ser reenviado ou convertido para outro formato suportado.
+
+## Railway: Email Brevo
+
+Para email real:
 
 ```text
 MAIL_MAILER=smtp
@@ -131,21 +269,11 @@ MAIL_FROM_ADDRESS=email-verificado-no-brevo@seudominio.com
 MAIL_FROM_NAME="${APP_NAME}"
 ```
 
-O `MAIL_FROM_ADDRESS` precisa ser um remetente verificado no Brevo. Se `MAIL_MAILER=log`, a aplicacao registra os emails no log e nao envia mensagens reais.
+O `MAIL_FROM_ADDRESS` precisa ser um remetente verificado no Brevo. Se `MAIL_MAILER=log`, a aplicação registra os emails no log e não envia mensagens reais.
 
-Servicos opcionais:
+## Variáveis Opcionais
 
 ```text
 VITE_MAPBOX_ACCESS_TOKEN=...
-AUTODESK_APS_CLIENT_ID=...
-AUTODESK_APS_CLIENT_SECRET=...
-AUTODESK_APS_BUCKET_KEY=...
-AUTODESK_APS_REGION=US
-AUTODESK_APS_AUTO_PROCESS=true
-```
-
-Para processamento APS realmente em segundo plano, use `QUEUE_CONNECTION=database` e crie um segundo servico no Railway com start command:
-
-```bash
-sh ./railway/start-worker.sh
+RAILWAY_RUN_SEEDER=false
 ```

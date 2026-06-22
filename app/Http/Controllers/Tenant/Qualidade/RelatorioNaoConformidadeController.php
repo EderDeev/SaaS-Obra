@@ -243,10 +243,18 @@ class RelatorioNaoConformidadeController extends Controller
 
         $sequenceYear = Carbon::parse($data['opened_at'])->year;
         $rnc = DB::transaction(function () use ($tenant, $contract, $obra, $projectDocument, $disciplina, $contratante, $contratada, $request, $data, $sequenceYear): RelatorioNaoConformidade {
-            $nextSequence = ((int) $tenant->relatorioNaoConformidades()
-                ->where('sequence_year', $sequenceYear)
+            Tenant::query()
+                ->whereKey($tenant->id)
                 ->lockForUpdate()
-                ->max('sequence_number')) + 1;
+                ->firstOrFail();
+
+            $lastSequence = $tenant->relatorioNaoConformidades()
+                ->withTrashed()
+                ->where('sequence_year', $sequenceYear)
+                ->orderByDesc('sequence_number')
+                ->lockForUpdate()
+                ->value('sequence_number');
+            $nextSequence = ((int) $lastSequence) + 1;
 
             return $tenant->relatorioNaoConformidades()->create([
                 'sequence_number' => $nextSequence,

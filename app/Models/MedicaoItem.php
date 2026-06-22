@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
@@ -74,5 +76,30 @@ class MedicaoItem extends Model
     public function sourceItem(): BelongsTo
     {
         return $this->belongsTo(OrcamentoItem::class, 'source_orcamento_item_id')->withTrashed();
+    }
+
+    public function versions(): HasMany
+    {
+        return $this->hasMany(MedicaoItemVersion::class);
+    }
+
+    public function latestVersion(): HasOne
+    {
+        return $this->hasOne(MedicaoItemVersion::class)->latestOfMany('version_number');
+    }
+
+    public function additiveItems(): HasMany
+    {
+        return $this->hasMany(MedicaoItemAdditiveItem::class);
+    }
+
+    public function reajusteIndice(): HasOne
+    {
+        return $this->hasOne(MedicaoItemReajusteIndice::class);
+    }
+
+    public function ordemServicoItens(): HasMany
+    {
+        return $this->hasMany(OrdemServicoItem::class);
     }
 }

@@ -133,7 +133,7 @@ class OrcamentoController extends Controller
             'stats' => [
                 'total' => $orcamentos->count(),
                 'draft' => $orcamentos->where('status', 'draft')->count(),
-                'approved' => $orcamentos->where('status', 'approved')->count(),
+                'closed' => $orcamentos->where('status', 'closed')->count(),
             ],
             'canManageOrcamentos' => $this->canManageTenantInsumos($request, $tenant),
         ]);
@@ -239,6 +239,7 @@ class OrcamentoController extends Controller
                 ->with(['itens' => fn ($query) => $query->orderBy('ordem')->orderBy('id')])
                 ->orderBy('ordem'),
         ]);
+        $this->sortLoadedOrcamentoEtapas($orcamento);
 
         return Inertia::render('Tenant/Orcamentos/Show', [
             'tenant' => $tenant,
@@ -246,8 +247,217 @@ class OrcamentoController extends Controller
             'etapas' => $orcamento->etapas
                 ->map(fn (OrcamentoEtapa $etapa): array => $this->serializeOrcamentoEtapa($etapa, $orcamento))
                 ->values(),
+            'copySources' => $this->orcamentoCopySources($tenant, $orcamento),
             'canManageOrcamentos' => $this->canManageTenantInsumos($request, $tenant),
         ]);
+    }
+
+    public function copyPreview(Request $request, Tenant $tenant, Orcamento $orcamento, Orcamento $sourceOrcamento): JsonResponse
+    {
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $sourceOrcamento->tenant_id === (int) $tenant->id, 404);
+        abort_if((int) $sourceOrcamento->id === (int) $orcamento->id, 422);
+
+        $sourceOrcamento->load([
+            'clienteEmpresa:id,nome',
+            'etapas' => fn ($query) => $query
+                ->with(['itens' => fn ($query) => $query->orderBy('ordem')->orderBy('id')])
+                ->orderBy('ordem'),
+        ]);
+        $this->sortLoadedOrcamentoEtapas($sourceOrcamento);
+
+        return response()->json([
+            'orcamento' => $this->serializeOrcamento($sourceOrcamento),
+            'etapas' => $sourceOrcamento->etapas
+                ->map(fn (OrcamentoEtapa $etapa): array => $this->serializeOrcamentoEtapa($etapa, $sourceOrcamento))
+                ->values(),
+        ]);
+    }
+
+    public function copyFromOrcamento(Request $request, Tenant $tenant, Orcamento $orcamento): RedirectResponse
+    {
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        $this->ensureOrcamentoIsOpen($orcamento);
+
+        $data = $request->validate([
+            'source_orcamento_id' => [
+                'required',
+                Rule::exists('orcamentos', 'id')
+                    ->where('tenant_id', $tenant->id)
+                    ->whereNull('deleted_at'),
+            ],
+            'etapa_ids' => ['nullable', 'array'],
+            'etapa_ids.*' => ['integer'],
+            'item_ids' => ['nullable', 'array'],
+            'item_ids.*' => ['integer'],
+            'price_mode' => ['nullable', 'string', Rule::in(['source'])],
+        ]);
+
+        if ((int) $data['source_orcamento_id'] === (int) $orcamento->id) {
+            throw ValidationException::withMessages([
+                'source_orcamento_id' => 'Selecione um orçamento diferente do orçamento atual.',
+            ]);
+        }
+
+        $sourceOrcamento = Orcamento::query()
+            ->where('tenant_id', $tenant->id)
+            ->with([
+                'etapas' => fn ($query) => $query
+                    ->with(['itens' => fn ($query) => $query->orderBy('ordem')->orderBy('id')])
+                    ->orderBy('ordem'),
+            ])
+            ->findOrFail($data['source_orcamento_id']);
+
+        $selectedEtapaIds = collect($data['etapa_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+        $selectedItemIds = collect($data['item_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($selectedEtapaIds->isEmpty() && $selectedItemIds->isEmpty()) {
+            throw ValidationException::withMessages([
+                'item_ids' => 'Selecione pelo menos uma etapa, composição ou insumo para copiar.',
+            ]);
+        }
+
+        $sourceEtapas = $sourceOrcamento->etapas;
+        $sourceEtapasById = $sourceEtapas->keyBy('id');
+        $sourceEtapasByOrder = $sourceEtapas->keyBy(fn (OrcamentoEtapa $etapa): string => (string) $etapa->ordem);
+        $sourceItems = $sourceEtapas
+            ->flatMap(fn (OrcamentoEtapa $etapa) => $etapa->itens)
+            ->keyBy('id');
+
+        $requiredEtapaIds = $selectedEtapaIds;
+
+        $selectedItemIds
+            ->map(fn (int $id): ?OrcamentoItem => $sourceItems->get($id))
+            ->filter()
+            ->each(function (OrcamentoItem $item) use (&$requiredEtapaIds, $sourceEtapasById, $sourceEtapasByOrder): void {
+                $etapa = $sourceEtapasById->get($item->orcamento_etapa_id);
+
+                if ($etapa) {
+                    $requiredEtapaIds->push((int) $etapa->id);
+                    $this->pushSourceEtapaAncestors($requiredEtapaIds, $etapa, $sourceEtapasByOrder);
+                }
+            });
+
+        $selectedEtapaIds
+            ->map(fn (int $id): ?OrcamentoEtapa => $sourceEtapasById->get($id))
+            ->filter()
+            ->each(fn (OrcamentoEtapa $etapa) => $this->pushSourceEtapaAncestors($requiredEtapaIds, $etapa, $sourceEtapasByOrder));
+
+        $requiredEtapaIds = $requiredEtapaIds->unique()->values();
+
+        DB::transaction(function () use ($tenant, $orcamento, $sourceOrcamento, $request, $sourceEtapas, $sourceEtapasById, $sourceItems, $requiredEtapaIds, $selectedItemIds): void {
+            $requiredEtapas = $sourceEtapas
+                ->whereIn('id', $requiredEtapaIds->all())
+                ->sortBy(fn (OrcamentoEtapa $etapa): string => $this->hierarchySortKey($etapa->ordem))
+                ->values();
+
+            $rootOrderMap = [];
+            $nextRoot = (int) $this->nextRootEtapaOrder($tenant, $orcamento);
+            $copiedEtapasBySourceId = [];
+
+            foreach ($requiredEtapas as $sourceEtapa) {
+                $sourceOrder = (string) $sourceEtapa->ordem;
+                $rootOrder = Str::before($sourceOrder, '.');
+
+                if (! isset($rootOrderMap[$rootOrder])) {
+                    $rootOrderMap[$rootOrder] = (string) $nextRoot;
+                    $nextRoot++;
+                }
+
+                $suffix = str_contains($sourceOrder, '.')
+                    ? substr($sourceOrder, strlen($rootOrder))
+                    : '';
+                $newOrder = $rootOrderMap[$rootOrder].$suffix;
+                $meta = $sourceEtapa->meta ?? [];
+                $meta['copied_from_orcamento_id'] = $sourceOrcamento->id;
+                $meta['copied_from_etapa_id'] = $sourceEtapa->id;
+
+                $copiedEtapasBySourceId[$sourceEtapa->id] = OrcamentoEtapa::create([
+                    'tenant_id' => $tenant->id,
+                    'orcamento_id' => $orcamento->id,
+                    'created_by_id' => $request->user()->id,
+                    'ordem' => $newOrder,
+                    'descricao' => $sourceEtapa->descricao,
+                    'quantidade' => '1.000000',
+                    'valor_nao_desonerado' => 0,
+                    'valor_desonerado' => 0,
+                    'meta' => $meta,
+                ]);
+            }
+
+            $sourceItems
+                ->whereIn('id', $selectedItemIds->all())
+                ->sortBy(fn (OrcamentoItem $item): string => $this->hierarchySortKey($sourceEtapasById->get($item->orcamento_etapa_id)?->ordem ?? '0').'.'.str_pad((string) $item->ordem, 8, '0', STR_PAD_LEFT))
+                ->each(function (OrcamentoItem $sourceItem) use ($tenant, $orcamento, $request, $copiedEtapasBySourceId, $sourceOrcamento): void {
+                    $targetEtapa = $copiedEtapasBySourceId[$sourceItem->orcamento_etapa_id] ?? null;
+
+                    if (! $targetEtapa) {
+                        return;
+                    }
+
+                    $meta = $sourceItem->meta ?? [];
+                    $meta['copied_from_orcamento_id'] = $sourceOrcamento->id;
+                    $meta['copied_from_item_id'] = $sourceItem->id;
+
+                    OrcamentoItem::create([
+                        'tenant_id' => $tenant->id,
+                        'orcamento_id' => $orcamento->id,
+                        'orcamento_etapa_id' => $targetEtapa->id,
+                        'created_by_id' => $request->user()->id,
+                        'item_type' => $sourceItem->item_type,
+                        'orcamento_composicao_id' => $sourceItem->orcamento_composicao_id,
+                        'orcamento_insumo_id' => $sourceItem->orcamento_insumo_id,
+                        'ordem' => $sourceItem->ordem,
+                        'codigo' => $sourceItem->codigo,
+                        'banco' => $sourceItem->banco,
+                        'descricao' => $sourceItem->descricao,
+                        'unidade' => $sourceItem->unidade,
+                        'quantidade' => $sourceItem->quantidade,
+                        'valor_unitario_nao_desonerado' => $sourceItem->valor_unitario_nao_desonerado,
+                        'valor_unitario_desonerado' => $sourceItem->valor_unitario_desonerado,
+                        'valor_com_bdi_nao_desonerado' => $sourceItem->valor_com_bdi_nao_desonerado,
+                        'valor_com_bdi_desonerado' => $sourceItem->valor_com_bdi_desonerado,
+                        'valor_total_nao_desonerado' => $sourceItem->valor_total_nao_desonerado,
+                        'valor_total_desonerado' => $sourceItem->valor_total_desonerado,
+                        'aplicar_bdi' => $sourceItem->aplicar_bdi,
+                        'meta' => $meta,
+                    ]);
+                });
+
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+        });
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with('success', 'Itens copiados para o orçamento.');
+    }
+
+    public function close(Request $request, Tenant $tenant, Orcamento $orcamento): RedirectResponse
+    {
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+
+        if ($orcamento->status === 'closed') {
+            return back()->with('success', 'Orcamento ja estava finalizado.');
+        }
+
+        $orcamento->forceFill([
+            'status' => 'closed',
+            'closed_at' => now(),
+            'closed_by_id' => $request->user()->id,
+        ])->save();
+
+        return back()->with('success', 'Orcamento finalizado. Ele agora pode ser usado na medicao e nao pode mais ser alterado.');
     }
 
     public function downloadRelatorioSintetico(Request $request, Tenant $tenant, Orcamento $orcamento): StreamedResponse
@@ -348,6 +558,7 @@ class OrcamentoController extends Controller
                 ->with(['itens' => fn ($query) => $query->orderBy('ordem')->orderBy('id')])
                 ->orderBy('ordem'),
         ]);
+        $this->sortLoadedOrcamentoEtapas($orcamento);
     }
 
     private function buildOrcamentoReportSpreadsheet(Tenant $tenant, Orcamento $orcamento, string $reportType): Spreadsheet
@@ -367,9 +578,10 @@ class OrcamentoController extends Controller
     {
         abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
         abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
-            'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
+            'ordem' => ['nullable', 'string', 'max:40', 'regex:/^\d+(\.\d+)*$/'],
             'after_etapa_id' => [
                 'nullable',
                 Rule::exists('orcamento_etapas', 'id')
@@ -378,41 +590,27 @@ class OrcamentoController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'descricao' => ['required', 'string', 'max:255'],
-            'quantidade' => ['nullable', 'string', 'max:30'],
         ]);
 
-        $quantidade = $this->parseDecimal($data['quantidade'] ?? null) ?? '1.000000';
+        DB::transaction(function () use ($data, $tenant, $orcamento, $request): void {
+            $ordem = $this->normalizeEtapaOrder($data['ordem'] ?? null);
 
-        if ((float) $quantidade <= 0) {
-            throw ValidationException::withMessages([
-                'quantidade' => 'Informe uma quantidade maior que zero.',
-            ]);
-        }
-
-        DB::transaction(function () use ($data, $tenant, $orcamento, $request, $quantidade): void {
-            $ordem = (int) ($data['ordem'] ?? 0);
-
-            if (filled($data['after_etapa_id'] ?? null)) {
+            if ($ordem === null && filled($data['after_etapa_id'] ?? null)) {
                 $afterEtapa = OrcamentoEtapa::query()
                     ->where('tenant_id', $tenant->id)
                     ->where('orcamento_id', $orcamento->id)
                     ->findOrFail($data['after_etapa_id']);
 
-                $ordem = $afterEtapa->ordem + 1;
+                $ordem = $this->nextChildEtapaOrder($tenant, $orcamento, $afterEtapa);
             }
 
-            if ($ordem <= 0) {
-                $ordem = ((int) OrcamentoEtapa::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where('orcamento_id', $orcamento->id)
-                    ->max('ordem')) + 1;
+            if ($ordem === null) {
+                $ordem = $this->nextRootEtapaOrder($tenant, $orcamento);
             }
 
-            OrcamentoEtapa::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('orcamento_id', $orcamento->id)
-                ->where('ordem', '>=', $ordem)
-                ->increment('ordem');
+            $this->assertEtapaOrderCanBeUsed($tenant, $orcamento, $ordem);
+            $this->assertEtapaParentExists($tenant, $orcamento, $ordem);
+            $this->assertEtapaOrderDoesNotConflictWithItem($tenant, $orcamento, $ordem);
 
             OrcamentoEtapa::create([
                 'tenant_id' => $tenant->id,
@@ -420,10 +618,10 @@ class OrcamentoController extends Controller
                 'created_by_id' => $request->user()->id,
                 'ordem' => $ordem,
                 'descricao' => trim($data['descricao']),
-                'quantidade' => $quantidade,
+                'quantidade' => '1.000000',
             ]);
 
-            $this->renumberOrcamentoEtapas($tenant, $orcamento);
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
         });
 
         return redirect()
@@ -434,56 +632,34 @@ class OrcamentoController extends Controller
     public function updateEtapa(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $etapa): RedirectResponse
     {
         $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
-            'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
+            'ordem' => ['nullable', 'string', 'max:40', 'regex:/^\d+(\.\d+)*$/'],
             'descricao' => ['required', 'string', 'max:255'],
-            'quantidade' => ['nullable', 'string', 'max:30'],
         ]);
 
-        $quantidade = $this->parseDecimal($data['quantidade'] ?? null) ?? '1.000000';
-
-        if ((float) $quantidade <= 0) {
-            throw ValidationException::withMessages([
-                'quantidade' => 'Informe uma quantidade maior que zero.',
-            ]);
-        }
-
-        DB::transaction(function () use ($data, $tenant, $orcamento, $etapa, $quantidade): void {
-            $currentOrder = (int) $etapa->ordem;
-            $newOrder = (int) ($data['ordem'] ?? $currentOrder);
-            $maxOrder = (int) OrcamentoEtapa::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('orcamento_id', $orcamento->id)
-                ->max('ordem');
-
-            $newOrder = max(1, min($newOrder, max(1, $maxOrder)));
+        DB::transaction(function () use ($data, $tenant, $orcamento, $etapa): void {
+            $currentOrder = (string) $etapa->ordem;
+            $newOrder = $this->normalizeEtapaOrder($data['ordem'] ?? $currentOrder) ?? $currentOrder;
 
             if ($newOrder !== $currentOrder) {
-                if ($newOrder > $currentOrder) {
-                    OrcamentoEtapa::query()
-                        ->where('tenant_id', $tenant->id)
-                        ->where('orcamento_id', $orcamento->id)
-                        ->whereKeyNot($etapa->id)
-                        ->whereBetween('ordem', [$currentOrder + 1, $newOrder])
-                        ->decrement('ordem');
-                } else {
-                    OrcamentoEtapa::query()
-                        ->where('tenant_id', $tenant->id)
-                        ->where('orcamento_id', $orcamento->id)
-                        ->whereKeyNot($etapa->id)
-                        ->whereBetween('ordem', [$newOrder, $currentOrder - 1])
-                        ->increment('ordem');
-                }
+                $this->assertEtapaOrderCanBeUsed($tenant, $orcamento, $newOrder, $etapa, $currentOrder);
+                $this->assertEtapaParentExists($tenant, $orcamento, $newOrder, $etapa, $currentOrder);
+                $this->assertEtapaOrderDoesNotConflictWithItem($tenant, $orcamento, $newOrder, $etapa, $currentOrder);
             }
 
             $etapa->update([
                 'ordem' => $newOrder,
                 'descricao' => trim($data['descricao']),
-                'quantidade' => $quantidade,
+                'quantidade' => '1.000000',
             ]);
 
-            $this->renumberOrcamentoEtapas($tenant, $orcamento);
+            if ($newOrder !== $currentOrder) {
+                $this->updateDescendantEtapaPrefixes($tenant, $orcamento, $currentOrder, $newOrder);
+            }
+
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
         });
 
         return redirect()
@@ -494,6 +670,7 @@ class OrcamentoController extends Controller
     public function toggleEtapaVisibility(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $etapa): RedirectResponse
     {
         $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         $meta = $etapa->meta ?? [];
         $hidden = ! (bool) ($meta['hidden'] ?? false);
@@ -509,6 +686,7 @@ class OrcamentoController extends Controller
     public function destroyEtapa(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $etapa): RedirectResponse
     {
         $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         DB::transaction(function () use ($tenant, $orcamento, $etapa): void {
             OrcamentoItem::query()
@@ -518,7 +696,6 @@ class OrcamentoController extends Controller
                 ->delete();
 
             $etapa->delete();
-            $this->renumberOrcamentoEtapas($tenant, $orcamento);
             $this->recalculateOrcamentoTotals($tenant, $orcamento);
         });
 
@@ -664,6 +841,7 @@ class OrcamentoController extends Controller
         OrcamentoEtapa $etapa,
     ): RedirectResponse {
         $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
             'orcamento_composicao_id' => ['required', 'integer'],
@@ -696,19 +874,10 @@ class OrcamentoController extends Controller
             $ordem = (int) ($data['ordem'] ?? 0);
 
             if ($ordem <= 0) {
-                $ordem = ((int) OrcamentoItem::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where('orcamento_id', $orcamento->id)
-                    ->where('orcamento_etapa_id', $etapa->id)
-                    ->max('ordem')) + 1;
+                $ordem = $this->nextChildItemOrder($tenant, $orcamento, $etapa);
             }
 
-            OrcamentoItem::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('orcamento_id', $orcamento->id)
-                ->where('orcamento_etapa_id', $etapa->id)
-                ->where('ordem', '>=', $ordem)
-                ->increment('ordem');
+            $this->assertOrcamentoItemOrderCanBeUsed($tenant, $orcamento, $etapa, $ordem);
 
             $prices = $this->orcamentoComposicaoPrices($tenant, $composicao);
             $item = OrcamentoItem::create([
@@ -749,6 +918,7 @@ class OrcamentoController extends Controller
         OrcamentoEtapa $etapa,
     ): RedirectResponse {
         $this->authorizeOrcamentoEtapa($request, $tenant, $orcamento, $etapa);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
             'orcamento_insumo_id' => ['required', 'integer'],
@@ -803,19 +973,10 @@ class OrcamentoController extends Controller
             $ordem = (int) ($data['ordem'] ?? 0);
 
             if ($ordem <= 0) {
-                $ordem = ((int) OrcamentoItem::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where('orcamento_id', $orcamento->id)
-                    ->where('orcamento_etapa_id', $etapa->id)
-                    ->max('ordem')) + 1;
+                $ordem = $this->nextChildItemOrder($tenant, $orcamento, $etapa);
             }
 
-            OrcamentoItem::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('orcamento_id', $orcamento->id)
-                ->where('orcamento_etapa_id', $etapa->id)
-                ->where('ordem', '>=', $ordem)
-                ->increment('ordem');
+            $this->assertOrcamentoItemOrderCanBeUsed($tenant, $orcamento, $etapa, $ordem);
 
             $baseLabel = trim(implode(' - ', array_filter([
                 $insumo->banco,
@@ -859,6 +1020,7 @@ class OrcamentoController extends Controller
     public function toggleOrcamentoItemBdi(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): RedirectResponse
     {
         $this->authorizeOrcamentoItem($request, $tenant, $orcamento, $item);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
             'bdi_percentual' => ['required', 'string', 'max:30'],
@@ -901,6 +1063,7 @@ class OrcamentoController extends Controller
     public function updateOrcamentoItem(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): RedirectResponse
     {
         $this->authorizeOrcamentoItem($request, $tenant, $orcamento, $item);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
             'ordem' => ['nullable', 'integer', 'min:1', 'max:999999'],
@@ -923,33 +1086,9 @@ class OrcamentoController extends Controller
                 ->findOrFail($item->orcamento_etapa_id);
 
             $currentOrder = (int) $item->ordem;
-            $maxOrder = (int) OrcamentoItem::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('orcamento_id', $orcamento->id)
-                ->where('orcamento_etapa_id', $etapa->id)
-                ->count();
             $newOrder = (int) ($data['ordem'] ?? $currentOrder);
-            $newOrder = max(1, min(max(1, $maxOrder), $newOrder));
-
-            if ($newOrder < $currentOrder) {
-                OrcamentoItem::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where('orcamento_id', $orcamento->id)
-                    ->where('orcamento_etapa_id', $etapa->id)
-                    ->where('id', '!=', $item->id)
-                    ->whereBetween('ordem', [$newOrder, $currentOrder - 1])
-                    ->increment('ordem');
-            }
-
-            if ($newOrder > $currentOrder) {
-                OrcamentoItem::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where('orcamento_id', $orcamento->id)
-                    ->where('orcamento_etapa_id', $etapa->id)
-                    ->where('id', '!=', $item->id)
-                    ->whereBetween('ordem', [$currentOrder + 1, $newOrder])
-                    ->decrement('ordem');
-            }
+            $newOrder = max(1, $newOrder);
+            $this->assertOrcamentoItemOrderCanBeUsed($tenant, $orcamento, $etapa, $newOrder, $item);
 
             $item->forceFill([
                 'ordem' => $newOrder,
@@ -970,6 +1109,7 @@ class OrcamentoController extends Controller
     public function destroyOrcamentoItem(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): RedirectResponse
     {
         $this->authorizeOrcamentoItem($request, $tenant, $orcamento, $item);
+        $this->ensureOrcamentoIsOpen($orcamento);
 
         DB::transaction(function () use ($tenant, $orcamento, $item): void {
             $etapa = OrcamentoEtapa::query()
@@ -1769,6 +1909,22 @@ class OrcamentoController extends Controller
             ]);
         }
 
+        if (! $request->filled('first_item_row')) {
+            $lineCount = count(file($request->file('file')->getRealPath(), FILE_IGNORE_NEW_LINES));
+            $request->merge([
+                'first_item_row' => 2,
+                'last_item_row' => max(2, $lineCount),
+                'data_column' => 'H',
+                'tipo_column' => 'A',
+                'codigo_column' => 'B',
+                'descricao_column' => 'C',
+                'unidade_column' => 'D',
+                'uf_column' => 'E',
+                'preco_nao_desonerado_column' => 'F',
+                'preco_desonerado_column' => 'G',
+            ]);
+        }
+
         $data = $request->validate([
             'scope' => ['required', Rule::in(['global'])],
             'modelo' => ['required', 'string', Rule::in(['SINAPI', 'SICRO3'])],
@@ -1841,7 +1997,7 @@ class OrcamentoController extends Controller
 
         return back()->with(
             'success',
-            "Importacao analitica concluida: {$result['created']} vinculo(s) criado(s), {$result['updated']} atualizado(s), {$result['duplicated']} duplicado(s) ignorado(s), {$result['skipped']} invalido(s) ignorado(s).",
+            "Importacao analitica concluida: {$result['created']} vinculo(s) criado(s), {$result['updated']} atualizado(s), {$result['duplicated']} duplicado(s) ignorado(s), {$result['composition_headers']} cabecalho(s) de composicao ignorado(s), {$result['skipped']} invalido(s) ignorado(s).",
         )->with('import_result', [
             'title' => 'Resumo da importacao analitica',
             'status' => $hasChanges ? 'success' : 'warning',
@@ -1855,6 +2011,7 @@ class OrcamentoController extends Controller
             'created' => $result['created'],
             'updated' => $result['updated'],
             'duplicated' => $result['duplicated'],
+            'composition_headers' => $result['composition_headers'],
             'skipped' => $result['skipped'],
         ]);
     }
@@ -2440,7 +2597,7 @@ class OrcamentoController extends Controller
             ]);
         }
 
-        $result = ['read' => 0, 'created' => 0, 'updated' => 0, 'duplicated' => 0, 'skipped' => 0];
+        $result = ['read' => 0, 'created' => 0, 'updated' => 0, 'duplicated' => 0, 'composition_headers' => 0, 'skipped' => 0];
         $seenImportKeys = [];
         $batch = [];
 
@@ -2453,6 +2610,7 @@ class OrcamentoController extends Controller
             $payload = $this->payloadFromComposicaoAnaliticoCsvRow($row, $headerMap, $model);
 
             if ($payload === []) {
+                $result['composition_headers']++;
                 continue;
             }
 
@@ -4538,6 +4696,10 @@ class OrcamentoController extends Controller
             return 'material';
         }
 
+        if (Str::contains($type, ['atividade auxiliar', 'atividades auxiliares', 'atividade', 'activity'])) {
+            return 'atividades_auxiliares';
+        }
+
         return null;
     }
 
@@ -5957,21 +6119,7 @@ class OrcamentoController extends Controller
 
     private function renumberOrcamentoEtapas(Tenant $tenant, Orcamento $orcamento): void
     {
-        OrcamentoEtapa::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('orcamento_id', $orcamento->id)
-            ->orderBy('ordem')
-            ->orderBy('id')
-            ->get()
-            ->each(function (OrcamentoEtapa $etapa, int $index): void {
-                $expectedOrder = $index + 1;
-
-                if ((int) $etapa->ordem === $expectedOrder) {
-                    return;
-                }
-
-                $etapa->forceFill(['ordem' => $expectedOrder])->save();
-            });
+        // Hierarchical budget codes are user-defined, so they must not be renumbered.
     }
 
     private function authorizeOrcamentoItem(Request $request, Tenant $tenant, Orcamento $orcamento, OrcamentoItem $item): void
@@ -5984,21 +6132,277 @@ class OrcamentoController extends Controller
 
     private function renumberOrcamentoItems(Tenant $tenant, OrcamentoEtapa $etapa): void
     {
-        OrcamentoItem::query()
+        // Item numbers are part of the analytical structure and remain stable.
+    }
+
+    private function normalizeEtapaOrder(mixed $value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+
+        if ($value === '') {
+            return null;
+        }
+
+        $segments = explode('.', $value);
+
+        foreach ($segments as $index => $segment) {
+            $segment = ltrim($segment, '0');
+            $segment = $segment === '' ? '0' : $segment;
+
+            if ((int) $segment <= 0) {
+                throw ValidationException::withMessages([
+                    'ordem' => 'Informe uma numeracao hierarquica valida. Ex: 3, 3.2 ou 3.2.1.',
+                ]);
+            }
+
+            $segments[$index] = $segment;
+        }
+
+        return implode('.', $segments);
+    }
+
+    private function nextRootEtapaOrder(Tenant $tenant, Orcamento $orcamento): string
+    {
+        $maxRoot = OrcamentoEtapa::query()
             ->where('tenant_id', $tenant->id)
-            ->where('orcamento_etapa_id', $etapa->id)
-            ->orderBy('ordem')
-            ->orderBy('id')
-            ->get()
-            ->each(function (OrcamentoItem $item, int $index): void {
-                $expectedOrder = $index + 1;
+            ->where('orcamento_id', $orcamento->id)
+            ->get(['ordem'])
+            ->map(fn (OrcamentoEtapa $etapa): string => (string) $etapa->ordem)
+            ->filter(fn (string $ordem): bool => $this->etapaOrderDepth($ordem) === 1)
+            ->map(fn (string $ordem): int => (int) $ordem)
+            ->max();
 
-                if ((int) $item->ordem === $expectedOrder) {
-                    return;
-                }
+        return (string) (((int) $maxRoot) + 1);
+    }
 
-                $item->forceFill(['ordem' => $expectedOrder])->save();
+    private function nextChildEtapaOrder(Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $parent): string
+    {
+        $next = $this->nextDirectChildSequence($tenant, $orcamento, $parent);
+
+        return ((string) $parent->ordem).'.'.$next;
+    }
+
+    private function nextChildItemOrder(Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $parent): int
+    {
+        return $this->nextDirectChildSequence($tenant, $orcamento, $parent);
+    }
+
+    private function nextDirectChildSequence(Tenant $tenant, Orcamento $orcamento, OrcamentoEtapa $parent): int
+    {
+        $parentOrder = (string) $parent->ordem;
+        $itemMax = (int) OrcamentoItem::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('orcamento_etapa_id', $parent->id)
+            ->max('ordem');
+
+        $childEtapaMax = OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('ordem', 'like', $parentOrder.'.%')
+            ->get(['ordem'])
+            ->map(fn (OrcamentoEtapa $etapa): string => (string) $etapa->ordem)
+            ->filter(fn (string $ordem): bool => $this->isDirectChildEtapaOrder($ordem, $parentOrder))
+            ->map(fn (string $ordem): int => (int) $this->lastEtapaOrderSegment($ordem))
+            ->max();
+
+        return max($itemMax, (int) $childEtapaMax) + 1;
+    }
+
+    private function assertEtapaOrderCanBeUsed(
+        Tenant $tenant,
+        Orcamento $orcamento,
+        string $ordem,
+        ?OrcamentoEtapa $ignoreEtapa = null,
+        ?string $oldPrefix = null,
+    ): void {
+        $query = OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where(function (Builder $query) use ($ordem): void {
+                $query->where('ordem', $ordem)
+                    ->orWhere('ordem', 'like', $ordem.'.%');
             });
+
+        if ($ignoreEtapa) {
+            $query->whereKeyNot($ignoreEtapa->id);
+        }
+
+        if ($oldPrefix) {
+            $query->where('ordem', 'not like', $oldPrefix.'.%');
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'ordem' => 'Ja existe uma etapa usando esta numeracao.',
+            ]);
+        }
+    }
+
+    private function assertEtapaParentExists(
+        Tenant $tenant,
+        Orcamento $orcamento,
+        string $ordem,
+        ?OrcamentoEtapa $ignoreEtapa = null,
+        ?string $oldPrefix = null,
+    ): void {
+        $parentOrder = $this->parentEtapaOrder($ordem);
+
+        if ($parentOrder === null) {
+            return;
+        }
+
+        $query = OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('ordem', $parentOrder);
+
+        if ($ignoreEtapa) {
+            $query->whereKeyNot($ignoreEtapa->id);
+        }
+
+        if (! $query->exists()) {
+            throw ValidationException::withMessages([
+                'ordem' => 'Crie a etapa pai antes de criar esta subetapa.',
+            ]);
+        }
+    }
+
+    private function assertEtapaOrderDoesNotConflictWithItem(
+        Tenant $tenant,
+        Orcamento $orcamento,
+        string $ordem,
+        ?OrcamentoEtapa $ignoreEtapa = null,
+        ?string $oldPrefix = null,
+    ): void {
+        $parentOrder = $this->parentEtapaOrder($ordem);
+
+        if ($parentOrder === null) {
+            return;
+        }
+
+        $parent = OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('ordem', $parentOrder)
+            ->first();
+
+        if (! $parent) {
+            return;
+        }
+
+        $suffix = (int) $this->lastEtapaOrderSegment($ordem);
+        $conflictsWithItem = OrcamentoItem::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('orcamento_etapa_id', $parent->id)
+            ->where('ordem', $suffix)
+            ->exists();
+
+        if ($conflictsWithItem) {
+            throw ValidationException::withMessages([
+                'ordem' => 'Ja existe um item usando esta numeracao dentro da etapa pai.',
+            ]);
+        }
+    }
+
+    private function assertOrcamentoItemOrderCanBeUsed(
+        Tenant $tenant,
+        Orcamento $orcamento,
+        OrcamentoEtapa $etapa,
+        int $ordem,
+        ?OrcamentoItem $ignoreItem = null,
+    ): void {
+        $itemQuery = OrcamentoItem::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('orcamento_etapa_id', $etapa->id)
+            ->where('ordem', $ordem);
+
+        if ($ignoreItem) {
+            $itemQuery->whereKeyNot($ignoreItem->id);
+        }
+
+        if ($itemQuery->exists()) {
+            throw ValidationException::withMessages([
+                'ordem' => 'Ja existe um item usando esta numeracao dentro da etapa.',
+            ]);
+        }
+
+        $childEtapaOrder = ((string) $etapa->ordem).'.'.$ordem;
+        $childEtapaExists = OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('ordem', $childEtapaOrder)
+            ->exists();
+
+        if ($childEtapaExists) {
+            throw ValidationException::withMessages([
+                'ordem' => 'Ja existe uma subetapa usando esta numeracao.',
+            ]);
+        }
+    }
+
+    private function updateDescendantEtapaPrefixes(Tenant $tenant, Orcamento $orcamento, string $oldPrefix, string $newPrefix): void
+    {
+        OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->where('ordem', 'like', $oldPrefix.'.%')
+            ->get()
+            ->each(function (OrcamentoEtapa $descendant) use ($oldPrefix, $newPrefix): void {
+                $suffix = substr((string) $descendant->ordem, strlen($oldPrefix));
+                $descendant->forceFill(['ordem' => $newPrefix.$suffix])->save();
+            });
+    }
+
+    private function sortLoadedOrcamentoEtapas(Orcamento $orcamento): void
+    {
+        if (! $orcamento->relationLoaded('etapas')) {
+            return;
+        }
+
+        $orcamento->setRelation(
+            'etapas',
+            $orcamento->etapas
+                ->sortBy(fn (OrcamentoEtapa $etapa): string => $this->hierarchySortKey($etapa->ordem))
+                ->values()
+        );
+    }
+
+    private function hierarchySortKey(mixed $ordem): string
+    {
+        return collect(explode('.', (string) $ordem))
+            ->map(fn (string $segment): string => str_pad((string) ((int) $segment), 8, '0', STR_PAD_LEFT))
+            ->implode('.');
+    }
+
+    private function isDirectChildEtapaOrder(mixed $candidateOrder, mixed $parentOrder): bool
+    {
+        $candidate = (string) $candidateOrder;
+        $parent = (string) $parentOrder;
+
+        return str_starts_with($candidate, $parent.'.')
+            && $this->etapaOrderDepth($candidate) === $this->etapaOrderDepth($parent) + 1;
+    }
+
+    private function etapaOrderDepth(mixed $ordem): int
+    {
+        return substr_count((string) $ordem, '.') + 1;
+    }
+
+    private function parentEtapaOrder(string $ordem): ?string
+    {
+        if (! str_contains($ordem, '.')) {
+            return null;
+        }
+
+        return Str::beforeLast($ordem, '.');
+    }
+
+    private function lastEtapaOrderSegment(string $ordem): string
+    {
+        return Str::afterLast($ordem, '.');
     }
 
     private function recalculateOrcamentoItemTotals(OrcamentoItem $item, Orcamento $orcamento): void
@@ -6022,36 +6426,53 @@ class OrcamentoController extends Controller
 
     private function recalculateOrcamentoTotals(Tenant $tenant, Orcamento $orcamento): void
     {
-        $totalsByEtapa = OrcamentoItem::query()
+        $etapas = OrcamentoEtapa::query()
             ->where('tenant_id', $tenant->id)
             ->where('orcamento_id', $orcamento->id)
-            ->selectRaw('orcamento_etapa_id, SUM(valor_total_nao_desonerado) as total_nao_desonerado, SUM(valor_total_desonerado) as total_desonerado')
-            ->groupBy('orcamento_etapa_id')
-            ->get()
-            ->keyBy('orcamento_etapa_id');
+            ->with('itens')
+            ->get();
 
-        OrcamentoEtapa::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('orcamento_id', $orcamento->id)
-            ->get()
-            ->each(function (OrcamentoEtapa $etapa) use ($totalsByEtapa): void {
-                $totals = $totalsByEtapa->get($etapa->id);
+        $memo = [];
+        $calculateEtapaTotals = function (OrcamentoEtapa $etapa) use (&$calculateEtapaTotals, &$memo, $etapas): array {
+            if (isset($memo[$etapa->id])) {
+                return $memo[$etapa->id];
+            }
 
-                $etapa->forceFill([
-                    'valor_nao_desonerado' => $this->storeMoney($totals?->total_nao_desonerado ?? 0),
-                    'valor_desonerado' => $this->storeMoney($totals?->total_desonerado ?? 0),
-                ])->save();
-            });
+            $naoDesonerado = (float) $etapa->itens->sum('valor_total_nao_desonerado');
+            $desonerado = (float) $etapa->itens->sum('valor_total_desonerado');
 
-        $orcamentoTotals = OrcamentoEtapa::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('orcamento_id', $orcamento->id)
-            ->selectRaw('SUM(valor_nao_desonerado) as total_nao_desonerado, SUM(valor_desonerado) as total_desonerado')
-            ->first();
+            $children = $etapas->filter(fn (OrcamentoEtapa $candidate): bool => $this->isDirectChildEtapaOrder(
+                $candidate->ordem,
+                $etapa->ordem
+            ));
+
+            foreach ($children as $child) {
+                $childTotals = $calculateEtapaTotals($child);
+                $naoDesonerado += $childTotals['nao_desonerado'];
+                $desonerado += $childTotals['desonerado'];
+            }
+
+            return $memo[$etapa->id] = [
+                'nao_desonerado' => $this->calculateMoney($naoDesonerado, 'truncate_2'),
+                'desonerado' => $this->calculateMoney($desonerado, 'truncate_2'),
+            ];
+        };
+
+        foreach ($etapas as $etapa) {
+            $totals = $calculateEtapaTotals($etapa);
+
+            $etapa->forceFill([
+                'valor_nao_desonerado' => $this->storeMoney($totals['nao_desonerado']),
+                'valor_desonerado' => $this->storeMoney($totals['desonerado']),
+            ])->save();
+        }
+
+        $rootEtapas = $etapas->filter(fn (OrcamentoEtapa $etapa): bool => $this->etapaOrderDepth($etapa->ordem) === 1);
+        $budgetEtapas = $rootEtapas->isNotEmpty() ? $rootEtapas : $etapas;
 
         $orcamento->forceFill([
-            'valor_nao_desonerado' => $this->storeMoney($orcamentoTotals?->total_nao_desonerado ?? 0),
-            'valor_desonerado' => $this->storeMoney($orcamentoTotals?->total_desonerado ?? 0),
+            'valor_nao_desonerado' => $this->storeMoney($budgetEtapas->sum(fn (OrcamentoEtapa $etapa): float => (float) ($memo[$etapa->id]['nao_desonerado'] ?? 0))),
+            'valor_desonerado' => $this->storeMoney($budgetEtapas->sum(fn (OrcamentoEtapa $etapa): float => (float) ($memo[$etapa->id]['desonerado'] ?? 0))),
         ])->save();
     }
 
@@ -6299,12 +6720,9 @@ class OrcamentoController extends Controller
         foreach ($orcamento->etapas as $etapa) {
             $stageRow = $row;
             $stageRows[] = $stageRow;
-            $stageQuantity = (float) ($etapa->quantidade ?? 1);
-            $stageQuantity = $stageQuantity > 0 ? $stageQuantity : 1;
 
             $sheet->setCellValueExplicit("A{$stageRow}", (string) $etapa->ordem, DataType::TYPE_STRING);
             $sheet->setCellValueExplicit("D{$stageRow}", (string) $etapa->descricao, DataType::TYPE_STRING);
-            $sheet->setCellValue("F{$stageRow}", $stageQuantity);
 
             $row++;
             $firstItemRow = $row;
@@ -6336,8 +6754,7 @@ class OrcamentoController extends Controller
 
             $lastItemRow = $row - 1;
             $stageTotalFormula = $lastItemRow >= $firstItemRow ? "SUM(I{$firstItemRow}:I{$lastItemRow})" : '0';
-            $sheet->setCellValue("H{$stageRow}", "=IF(F{$stageRow}=0,0,({$stageTotalFormula})/F{$stageRow})");
-            $sheet->setCellValue("I{$stageRow}", "=TRUNC(F{$stageRow}*H{$stageRow},2)");
+            $sheet->setCellValue("I{$stageRow}", "=TRUNC({$stageTotalFormula},2)");
             $sheet->setCellValue("J{$stageRow}", "=IF(\$J\$4=0,0,I{$stageRow}/\$J\$4)");
             $this->styleOrcamentoSinteticoDataRow($sheet, $stageRow, 'DBEAFE', true);
         }
@@ -6484,14 +6901,11 @@ class OrcamentoController extends Controller
                 : (float) $etapa->valor_desonerado);
 
         foreach ($orcamento->etapas as $etapa) {
-            $quantity = (float) ($etapa->quantidade ?? 1);
-            $quantity = $quantity > 0 ? $quantity : 1;
             $stageTotal = $this->orcamentoEtapaTotalWithBdi($etapa, $useNaoDesonerado);
 
             $sheet->setCellValueExplicit("A{$row}", (string) $etapa->ordem, DataType::TYPE_STRING);
             $sheet->mergeCells("D{$row}:F{$row}");
             $sheet->setCellValueExplicit("D{$row}", (string) $etapa->descricao, DataType::TYPE_STRING);
-            $sheet->setCellValue("H{$row}", $quantity);
             $sheet->setCellValue("I{$row}", $stageTotal);
             $sheet->setCellValue("J{$row}", "=IF(\$H\${$totalGeralRow}=0,0,I{$row}/\$H\${$totalGeralRow})");
 
@@ -6598,6 +7012,8 @@ class OrcamentoController extends Controller
             'prazo_entrega' => $orcamento->prazo_entrega_at?->format('d/m/Y H:i'),
             'status' => $orcamento->status,
             'status_label' => $this->orcamentoStatusLabel($orcamento->status),
+            'is_closed' => $orcamento->status === 'closed',
+            'closed_at' => $orcamento->closed_at?->format('d/m/Y H:i'),
             'permitir_insumos_preco_zerado' => (bool) $orcamento->permitir_insumos_preco_zerado,
             'is_licitacao' => (bool) $orcamento->is_licitacao,
             'arredondamento_label' => $this->orcamentoRoundingLabel($orcamento->arredondamento),
@@ -6611,6 +7027,40 @@ class OrcamentoController extends Controller
         ];
     }
 
+    private function orcamentoCopySources(Tenant $tenant, Orcamento $currentOrcamento): array
+    {
+        return Orcamento::query()
+            ->with(['clienteEmpresa:id,nome'])
+            ->withCount(['etapas', 'itens'])
+            ->where('tenant_id', $tenant->id)
+            ->whereKeyNot($currentOrcamento->id)
+            ->latest('updated_at')
+            ->get()
+            ->map(fn (Orcamento $orcamento): array => [
+                ...$this->serializeOrcamento($orcamento),
+                'etapas_count' => $orcamento->etapas_count,
+                'itens_count' => $orcamento->itens_count,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function pushSourceEtapaAncestors(mixed &$requiredEtapaIds, OrcamentoEtapa $etapa, mixed $sourceEtapasByOrder): void
+    {
+        $parentOrder = $this->parentEtapaOrder((string) $etapa->ordem);
+
+        while ($parentOrder !== null) {
+            $parent = $sourceEtapasByOrder->get($parentOrder);
+
+            if (! $parent) {
+                return;
+            }
+
+            $requiredEtapaIds->push((int) $parent->id);
+            $parentOrder = $this->parentEtapaOrder((string) $parent->ordem);
+        }
+    }
+
     private function serializeOrcamentoEtapa(OrcamentoEtapa $etapa, ?Orcamento $orcamento = null): array
     {
         $orcamento ??= $etapa->relationLoaded('orcamento') ? $etapa->orcamento : null;
@@ -6620,7 +7070,7 @@ class OrcamentoController extends Controller
             'ordem' => $etapa->ordem,
             'item' => (string) $etapa->ordem,
             'descricao' => $etapa->descricao,
-            'quantidade' => $etapa->quantidade,
+            'quantidade' => null,
             'valor_nao_desonerado' => $etapa->valor_nao_desonerado,
             'valor_desonerado' => $etapa->valor_desonerado,
             'valor_total' => $this->orcamentoEtapaTotalWithBdi($etapa, ($orcamento?->encargos_sociais ?? 'desonerado') === 'nao_desonerado'),
@@ -6670,13 +7120,6 @@ class OrcamentoController extends Controller
 
     private function orcamentoEtapaTotalWithBdi(OrcamentoEtapa $etapa, bool $useNaoDesonerado): float
     {
-        if ($etapa->relationLoaded('itens')) {
-            return $this->calculateMoney(
-                $etapa->itens->sum(fn (OrcamentoItem $item): float => $this->orcamentoItemTotalWithBdi($item, $useNaoDesonerado)),
-                'truncate_2'
-            );
-        }
-
         return $useNaoDesonerado
             ? (float) $etapa->valor_nao_desonerado
             : (float) $etapa->valor_desonerado;
@@ -6700,11 +7143,21 @@ class OrcamentoController extends Controller
     private function orcamentoStatusLabel(?string $status): string
     {
         return match ($status) {
+            'closed' => 'Finalizado',
             'approved' => 'Aprovado',
             'sent' => 'Enviado',
             'archived' => 'Arquivado',
             default => 'Em elaboracao',
         };
+    }
+
+    private function ensureOrcamentoIsOpen(Orcamento $orcamento): void
+    {
+        if ($orcamento->status === 'closed') {
+            throw ValidationException::withMessages([
+                'orcamento' => 'Este orcamento esta finalizado e nao pode mais ser alterado.',
+            ]);
+        }
     }
 
     private function orcamentoRoundingLabel(?string $method): string

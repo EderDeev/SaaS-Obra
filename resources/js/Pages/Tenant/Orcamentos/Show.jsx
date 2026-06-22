@@ -7,6 +7,7 @@ import {
     Box,
     Check,
     ClipboardList,
+    Copy,
     Database,
     Download,
     Eye,
@@ -31,10 +32,56 @@ const decimalFormatter = new Intl.NumberFormat('pt-BR', {
     maximumFractionDigits: 2,
 });
 
+const orderDepth = (value) => String(value ?? '').split('.').filter(Boolean).length || 1;
+
+const lastOrderSegment = (value) => Number(String(value ?? '').split('.').filter(Boolean).at(-1) ?? 0);
+
+const parentEtapaOrder = (value) => {
+    const segments = String(value ?? '').split('.').filter(Boolean);
+
+    if (segments.length <= 1) {
+        return null;
+    }
+
+    return segments.slice(0, -1).join('.');
+};
+
+const isDirectChildOrder = (candidate, parent) => {
+    const candidateOrder = String(candidate ?? '');
+    const parentOrder = String(parent ?? '');
+
+    return candidateOrder.startsWith(`${parentOrder}.`) && orderDepth(candidateOrder) === orderDepth(parentOrder) + 1;
+};
+
+const nextRootEtapaOrder = (etapas) => {
+    const maxRoot = etapas
+        .filter((etapa) => orderDepth(etapa.item ?? etapa.ordem) === 1)
+        .reduce((max, etapa) => Math.max(max, Number(etapa.item ?? etapa.ordem ?? 0)), 0);
+
+    return String(maxRoot + 1);
+};
+
+const nextDirectChildPosition = (targetEtapa, etapas) => {
+    const parentOrder = String(targetEtapa?.item ?? targetEtapa?.ordem ?? '');
+    const itemMax = (targetEtapa?.itens ?? []).reduce((max, item) => Math.max(max, Number(item.ordem ?? 0)), 0);
+    const childEtapaMax = etapas
+        .filter((etapa) => isDirectChildOrder(etapa.item ?? etapa.ordem, parentOrder))
+        .reduce((max, etapa) => Math.max(max, lastOrderSegment(etapa.item ?? etapa.ordem)), 0);
+
+    return Math.max(itemMax, childEtapaMax) + 1;
+};
+
+const nextChildEtapaOrder = (targetEtapa, etapas) => {
+    const parentOrder = String(targetEtapa?.item ?? targetEtapa?.ordem ?? '');
+
+    return `${parentOrder}.${nextDirectChildPosition(targetEtapa, etapas)}`;
+};
+
 export default function OrcamentoShow({
     tenant,
     orcamento,
     etapas = [],
+    copySources = [],
     canManageOrcamentos = false,
 }) {
     const page = usePage();
@@ -57,16 +104,22 @@ export default function OrcamentoShow({
     const [deleteItem, setDeleteItem] = useState(null);
     const [reportsModalOpen, setReportsModalOpen] = useState(false);
     const [selectedReports, setSelectedReports] = useState(['sintetico']);
+    const [copyModalOpen, setCopyModalOpen] = useState(false);
+    const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+    const [copySourceId, setCopySourceId] = useState('');
+    const [copySource, setCopySource] = useState(null);
+    const [copyEtapas, setCopyEtapas] = useState([]);
+    const [copyLoading, setCopyLoading] = useState(false);
+    const [copySubmitting, setCopySubmitting] = useState(false);
+    const [copySelectedRows, setCopySelectedRows] = useState(new Set());
     const etapaForm = useForm({
         ordem: '',
         descricao: '',
-        quantidade: '1',
         after_etapa_id: null,
     });
     const editEtapaForm = useForm({
         ordem: '',
         descricao: '',
-        quantidade: '1',
     });
     const compositionForm = useForm({
         orcamento_composicao_id: '',
@@ -89,6 +142,8 @@ export default function OrcamentoShow({
     const bdiForm = useForm({
         bdi_percentual: '',
     });
+    const isClosed = Boolean(orcamento.is_closed || orcamento.status === 'closed');
+    const canEditOrcamento = canManageOrcamentos && !isClosed;
 
     const currentItems = etapas.flatMap((etapa) => etapa.itens ?? []);
     const totalSemBdi = currentItems.reduce(
@@ -106,7 +161,6 @@ export default function OrcamentoShow({
                 etapaForm.setData({
                     ordem: '',
                     descricao: '',
-                    quantidade: '1',
                     after_etapa_id: null,
                 });
                 setAddingAfterEtapaId(null);
@@ -116,8 +170,8 @@ export default function OrcamentoShow({
     };
 
     const startAddEtapa = (afterEtapa = null) => {
-        const targetEtapa = afterEtapa ?? etapas[etapas.length - 1] ?? null;
-        const nextOrder = targetEtapa ? Number(targetEtapa.ordem ?? 0) + 1 : 1;
+        const targetEtapa = afterEtapa ?? null;
+        const nextOrder = targetEtapa ? nextChildEtapaOrder(targetEtapa, etapas) : nextRootEtapaOrder(etapas);
 
         editEtapaForm.clearErrors();
         setEditingEtapaId(null);
@@ -130,7 +184,6 @@ export default function OrcamentoShow({
         etapaForm.setData({
             ordem: String(nextOrder),
             descricao: '',
-            quantidade: '1',
             after_etapa_id: targetEtapa?.id ?? null,
         });
         setAddingAfterEtapaId(targetEtapa?.id ?? null);
@@ -143,7 +196,6 @@ export default function OrcamentoShow({
         etapaForm.setData({
             ordem: '',
             descricao: '',
-            quantidade: '1',
             after_etapa_id: null,
         });
         setAddingAfterEtapaId(null);
@@ -163,7 +215,6 @@ export default function OrcamentoShow({
         editEtapaForm.setData({
             ordem: String(etapa.ordem ?? ''),
             descricao: etapa.descricao ?? '',
-            quantidade: formatInputDecimal(etapa.quantidade ?? 1),
         });
         setEditingEtapaId(etapa.id);
     };
@@ -230,7 +281,7 @@ export default function OrcamentoShow({
         setInsumoSearch({ codigo: '', descricao: '' });
         compositionForm.setData({
             orcamento_composicao_id: '',
-            ordem: String((targetEtapa.itens?.length ?? 0) + 1),
+            ordem: String(nextDirectChildPosition(targetEtapa, etapas)),
             quantidade: '1',
             aplicar_bdi: false,
         });
@@ -271,7 +322,7 @@ export default function OrcamentoShow({
         setInsumoSearch({ codigo: '', descricao: '' });
         insumoForm.setData({
             orcamento_insumo_id: '',
-            ordem: String((targetEtapa.itens?.length ?? 0) + 1),
+            ordem: String(nextDirectChildPosition(targetEtapa, etapas)),
             quantidade: '1',
             valor_unitario_manual: '',
             aplicar_bdi: false,
@@ -623,6 +674,92 @@ export default function OrcamentoShow({
         setReportsModalOpen(false);
     };
 
+    const closeCopyDialog = () => {
+        if (copySubmitting) {
+            return;
+        }
+
+        resetCopyDialog();
+    };
+
+    const resetCopyDialog = () => {
+        setCopyModalOpen(false);
+        setCopySourceId('');
+        setCopySource(null);
+        setCopyEtapas([]);
+        setCopySelectedRows(new Set());
+    };
+
+    const loadCopySource = async (sourceId) => {
+        setCopySourceId(sourceId);
+        setCopySource(null);
+        setCopyEtapas([]);
+        setCopySelectedRows(new Set());
+
+        if (!sourceId) {
+            return;
+        }
+
+        setCopyLoading(true);
+
+        try {
+            const response = await fetch(route('tenant.orcamentos.copy.preview', [tenant.slug, orcamento.id, sourceId]), {
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Nao foi possivel carregar o orcamento de origem.');
+            }
+
+            const payload = await response.json();
+            setCopySource(payload.orcamento);
+            setCopyEtapas(payload.etapas ?? []);
+        } catch (error) {
+            window.alert(error.message);
+        } finally {
+            setCopyLoading(false);
+        }
+    };
+
+    const submitCopy = () => {
+        const etapaIds = [];
+        const itemIds = [];
+
+        copySelectedRows.forEach((rowId) => {
+            const [type, id] = String(rowId).split('-');
+
+            if (type === 'etapa') {
+                etapaIds.push(Number(id));
+            }
+
+            if (type === 'item') {
+                itemIds.push(Number(id));
+            }
+        });
+
+        setCopySubmitting(true);
+
+        router.post(route('tenant.orcamentos.copy.store', [tenant.slug, orcamento.id]), {
+            source_orcamento_id: copySourceId,
+            etapa_ids: etapaIds,
+            item_ids: itemIds,
+            price_mode: 'source',
+        }, {
+            preserveScroll: true,
+            onSuccess: resetCopyDialog,
+            onFinish: () => setCopySubmitting(false),
+        });
+    };
+
+    const confirmCloseOrcamento = () => {
+        router.patch(route('tenant.orcamentos.close', [tenant.slug, orcamento.id]), {}, {
+            preserveScroll: true,
+            onSuccess: () => setCloseConfirmOpen(false),
+        });
+    };
+
     return (
         <OrcamentoShell
             tenant={tenant}
@@ -638,6 +775,28 @@ export default function OrcamentoShow({
                 </Link>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    {canEditOrcamento && (
+                        <button
+                            className="sig-btn sig-btn-secondary"
+                            type="button"
+                            onClick={() => setCopyModalOpen(true)}
+                        >
+                            <Copy size={15} />
+                            Copiar orcamento
+                        </button>
+                    )}
+
+                    {canEditOrcamento && (
+                        <button
+                            className="sig-btn sig-btn-primary"
+                            type="button"
+                            onClick={() => setCloseConfirmOpen(true)}
+                        >
+                            <Check size={15} />
+                            Finalizar orçamento
+                        </button>
+                    )}
+
                     <button
                         className="sig-btn sig-btn-secondary"
                         type="button"
@@ -647,7 +806,7 @@ export default function OrcamentoShow({
                         Relatórios
                     </button>
 
-                    <span className="inline-flex rounded-full bg-[var(--primary-50)] px-3 py-1 text-xs font-bold text-[var(--primary)]">
+                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${isClosed ? 'bg-emerald-50 text-emerald-700' : 'bg-[var(--primary-50)] text-[var(--primary)]'}`}>
                         {orcamento.status_label}
                     </span>
                 </div>
@@ -656,6 +815,12 @@ export default function OrcamentoShow({
             {page.props.flash?.success && (
                 <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
                     {page.props.flash.success}
+                </div>
+            )}
+
+            {page.props.errors?.orcamento && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                    {page.props.errors.orcamento}
                 </div>
             )}
 
@@ -675,6 +840,7 @@ export default function OrcamentoShow({
                             <InfoLine label="Cliente" value={orcamento.cliente ?? 'Sem cliente'} />
                             <InfoLine label="Categoria" value={orcamento.categoria} />
                             <InfoLine label="Prazo" value={orcamento.prazo_entrega ?? 'Sem prazo'} />
+                            {isClosed ? <InfoLine label="Finalizado em" value={orcamento.closed_at ?? 'Finalizado'} /> : null}
                         </div>
                     </div>
                 </article>
@@ -713,20 +879,20 @@ export default function OrcamentoShow({
             </section>
 
             <section className="mt-5 flex flex-wrap gap-3">
-                {canManageOrcamentos && (
+                {canEditOrcamento && (
                     <button
                         className="sig-btn budget-toolbar-btn budget-toolbar-btn-etapa"
                         type="button"
                         onClick={() => startAddEtapa()}
                     >
                         <ListTree size={16} />
-                        Adicionar etapa
+                    Adicionar etapa
                     </button>
                 )}
 
                 <button
                     className="sig-btn budget-toolbar-btn budget-toolbar-btn-composicao"
-                    disabled={!canManageOrcamentos || etapas.length === 0}
+                    disabled={!canEditOrcamento || etapas.length === 0}
                     type="button"
                     onClick={() => startAddComposicao()}
                 >
@@ -736,7 +902,7 @@ export default function OrcamentoShow({
 
                 <button
                     className="sig-btn budget-toolbar-btn budget-toolbar-btn-insumo"
-                    disabled={!canManageOrcamentos || etapas.length === 0}
+                    disabled={!canEditOrcamento || etapas.length === 0}
                     type="button"
                     onClick={() => startAddInsumo()}
                 >
@@ -747,7 +913,7 @@ export default function OrcamentoShow({
 
             <section className="mt-5 overflow-visible rounded-md border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
                 <BudgetItemsTable
-                    canManage={canManageOrcamentos}
+                    canManage={canEditOrcamento}
                     addingAfterEtapaId={addingAfterEtapaId}
                     compositionForm={compositionForm}
                     compositionFormEtapaId={compositionFormEtapaId}
@@ -811,6 +977,31 @@ export default function OrcamentoShow({
                     onCancel={() => setReportsModalOpen(false)}
                     onDownload={downloadSelectedReports}
                     onToggle={toggleReportType}
+                />
+            )}
+
+            {copyModalOpen && (
+                <CopyBudgetDialog
+                    copyEtapas={copyEtapas}
+                    copyLoading={copyLoading}
+                    copySelectedRows={copySelectedRows}
+                    copySource={copySource}
+                    copySourceId={copySourceId}
+                    copySources={copySources}
+                    copySubmitting={copySubmitting}
+                    currentOrcamento={orcamento}
+                    onCancel={closeCopyDialog}
+                    onLoadSource={loadCopySource}
+                    onSelectedRowsChange={setCopySelectedRows}
+                    onSubmit={submitCopy}
+                />
+            )}
+
+            {closeConfirmOpen && (
+                <CloseBudgetDialog
+                    orcamento={orcamento}
+                    onCancel={() => setCloseConfirmOpen(false)}
+                    onConfirm={confirmCloseOrcamento}
                 />
             )}
 
@@ -893,6 +1084,138 @@ function BudgetItemsTable({
     const shouldRenderFormAtStart = showEtapaForm && etapas.length === 0;
     const formAnchorExists = etapas.some((etapa) => etapa.id === addingAfterEtapaId);
     const shouldRenderFormAtEnd = showEtapaForm && etapas.length > 0 && !formAnchorExists;
+    const childEtapasByParent = etapas.reduce((map, etapa) => {
+        const key = parentEtapaOrder(etapa.item ?? etapa.ordem) ?? '';
+
+        if (!map.has(key)) {
+            map.set(key, []);
+        }
+
+        map.get(key).push(etapa);
+
+        return map;
+    }, new Map());
+    const rootEtapas = childEtapasByParent.get('') ?? [];
+    const renderEtapaBranch = (etapa, level = 0) => {
+        const etapaOrder = String(etapa.item ?? etapa.ordem ?? '');
+        const childEtapas = childEtapasByParent.get(etapaOrder) ?? [];
+        const childEntries = etapa.is_hidden
+            ? []
+            : [
+                ...(etapa.itens ?? []).map((item) => ({
+                    key: `item-${item.id}`,
+                    item,
+                    position: Number(item.ordem ?? 0),
+                    type: 'item',
+                })),
+                ...childEtapas.map((childEtapa) => ({
+                    etapa: childEtapa,
+                    key: `etapa-${childEtapa.id}`,
+                    position: lastOrderSegment(childEtapa.item ?? childEtapa.ordem),
+                    type: 'etapa',
+                })),
+            ].sort((a, b) => a.position - b.position || (a.type === 'etapa' ? -1 : 1));
+
+        return (
+            <Fragment key={`branch-${etapa.id}`}>
+                {editingEtapaId === etapa.id ? (
+                    <EtapaEditRow
+                        form={editEtapaForm}
+                        key={`edit-${etapa.id}`}
+                        onCancel={onCancelEditEtapa}
+                        onSave={onSaveEditEtapa}
+                    />
+                ) : (
+                    <EtapaRow
+                        canManage={canManage}
+                        etapa={etapa}
+                        key={`etapa-${etapa.id}`}
+                        level={level}
+                        onAddComposicao={onAddComposicao}
+                        onAddEtapa={onAddEtapa}
+                        onAddInsumo={onAddInsumo}
+                        onDeleteEtapa={onDeleteEtapa}
+                        onEditEtapa={onEditEtapa}
+                        onToggleEtapaVisibility={onToggleEtapaVisibility}
+                    />
+                )}
+
+                {childEntries.map((entry) => {
+                    if (entry.type === 'etapa') {
+                        return renderEtapaBranch(entry.etapa, level + 1);
+                    }
+
+                    const item = entry.item;
+
+                    return editingItemId === item.id ? (
+                        <BudgetItemEditRow
+                            form={editItemForm}
+                            item={item}
+                            key={`edit-item-${item.id}`}
+                            onCancel={onCancelEditItem}
+                            onSave={onSaveEditItem}
+                        />
+                    ) : (
+                        <BudgetItemRow
+                            canManage={canManage}
+                            etapa={etapa}
+                            item={item}
+                            key={`item-${item.id}`}
+                            level={level + 1}
+                            onAddComposicao={onAddComposicao}
+                            onAddEtapa={onAddEtapa}
+                            onAddInsumo={onAddInsumo}
+                            onDeleteItem={onDeleteItem}
+                            onEditItem={onEditItem}
+                            onToggleItemBdi={onToggleItemBdi}
+                        />
+                    );
+                })}
+
+                {compositionFormEtapaId === etapa.id && (
+                    <ComposicaoFormRow
+                        form={compositionForm}
+                        options={compositionOptions}
+                        loading={compositionLoading}
+                        search={compositionSearch}
+                        selectedComposition={selectedComposition}
+                        encargosSociais={encargosSociais}
+                        etapa={etapa}
+                        onCancel={onCancelComposicao}
+                        onSave={onSaveComposicao}
+                        onSelect={onSelectComposicao}
+                        onSetSearch={onSetCompositionSearch}
+                    />
+                )}
+
+                {insumoFormEtapaId === etapa.id && (
+                    <InsumoFormRow
+                        encargosSociais={encargosSociais}
+                        etapa={etapa}
+                        form={insumoForm}
+                        loading={insumoLoading}
+                        onCancel={onCancelInsumo}
+                        onSave={onSaveInsumo}
+                        onSelect={onSelectInsumo}
+                        onSetSearch={onSetInsumoSearch}
+                        options={insumoOptions}
+                        permitirInsumosPrecoZerado={permitirInsumosPrecoZerado}
+                        search={insumoSearch}
+                        selectedInsumo={selectedInsumo}
+                    />
+                )}
+
+                {showEtapaForm && addingAfterEtapaId === etapa.id && (
+                    <EtapaFormRow
+                        form={etapaForm}
+                        key={`new-after-${etapa.id}`}
+                        onCancel={onCancelEtapa}
+                        onSave={onSaveEtapa}
+                    />
+                )}
+            </Fragment>
+        );
+    };
 
     return (
         <div className="budget-table-wrap">
@@ -934,97 +1257,7 @@ function BudgetItemsTable({
                         />
                     )}
 
-                    {etapas.map((etapa) => (
-                        <Fragment key={etapa.id}>
-                            {editingEtapaId === etapa.id ? (
-                                <EtapaEditRow
-                                    form={editEtapaForm}
-                                    key={`edit-${etapa.id}`}
-                                    onCancel={onCancelEditEtapa}
-                                    onSave={onSaveEditEtapa}
-                                />
-                            ) : (
-                                <EtapaRow
-                                    canManage={canManage}
-                                    etapa={etapa}
-                                    key={`etapa-${etapa.id}`}
-                                    onAddComposicao={onAddComposicao}
-                                    onAddEtapa={onAddEtapa}
-                                    onAddInsumo={onAddInsumo}
-                                    onDeleteEtapa={onDeleteEtapa}
-                                    onEditEtapa={onEditEtapa}
-                                    onToggleEtapaVisibility={onToggleEtapaVisibility}
-                                />
-                            )}
-
-                            {!etapa.is_hidden && (etapa.itens ?? []).map((item) => (
-                                editingItemId === item.id ? (
-                                    <BudgetItemEditRow
-                                        form={editItemForm}
-                                        item={item}
-                                        key={`edit-item-${item.id}`}
-                                        onCancel={onCancelEditItem}
-                                        onSave={onSaveEditItem}
-                                    />
-                                ) : (
-                                    <BudgetItemRow
-                                        canManage={canManage}
-                                        etapa={etapa}
-                                        item={item}
-                                        key={`item-${item.id}`}
-                                        onAddComposicao={onAddComposicao}
-                                        onAddEtapa={onAddEtapa}
-                                        onAddInsumo={onAddInsumo}
-                                        onDeleteItem={onDeleteItem}
-                                        onEditItem={onEditItem}
-                                        onToggleItemBdi={onToggleItemBdi}
-                                    />
-                                )
-                            ))}
-
-                            {compositionFormEtapaId === etapa.id && (
-                                <ComposicaoFormRow
-                                    form={compositionForm}
-                                    options={compositionOptions}
-                                    loading={compositionLoading}
-                                    search={compositionSearch}
-                                    selectedComposition={selectedComposition}
-                                    encargosSociais={encargosSociais}
-                                    etapa={etapa}
-                                    onCancel={onCancelComposicao}
-                                    onSave={onSaveComposicao}
-                                    onSelect={onSelectComposicao}
-                                    onSetSearch={onSetCompositionSearch}
-                                />
-                            )}
-
-                            {insumoFormEtapaId === etapa.id && (
-                                <InsumoFormRow
-                                    encargosSociais={encargosSociais}
-                                    etapa={etapa}
-                                    form={insumoForm}
-                                    loading={insumoLoading}
-                                    onCancel={onCancelInsumo}
-                                    onSave={onSaveInsumo}
-                                    onSelect={onSelectInsumo}
-                                    onSetSearch={onSetInsumoSearch}
-                                    options={insumoOptions}
-                                    permitirInsumosPrecoZerado={permitirInsumosPrecoZerado}
-                                    search={insumoSearch}
-                                    selectedInsumo={selectedInsumo}
-                                />
-                            )}
-
-                            {showEtapaForm && addingAfterEtapaId === etapa.id && (
-                                <EtapaFormRow
-                                    form={etapaForm}
-                                    key={`new-after-${etapa.id}`}
-                                    onCancel={onCancelEtapa}
-                                    onSave={onSaveEtapa}
-                                />
-                            )}
-                        </Fragment>
-                    ))}
+                    {rootEtapas.map((etapa) => renderEtapaBranch(etapa))}
 
                     {shouldRenderFormAtEnd && (
                         <EtapaFormRow
@@ -1047,7 +1280,7 @@ function BudgetItemsTable({
     );
 }
 
-function EtapaRow({ canManage, etapa, onAddComposicao, onAddEtapa, onAddInsumo, onDeleteEtapa, onEditEtapa, onToggleEtapaVisibility }) {
+function EtapaRow({ canManage, etapa, level = 0, onAddComposicao, onAddEtapa, onAddInsumo, onDeleteEtapa, onEditEtapa, onToggleEtapaVisibility }) {
     const ToggleIcon = etapa.is_hidden ? Eye : EyeOff;
 
     return (
@@ -1071,11 +1304,11 @@ function EtapaRow({ canManage, etapa, onAddComposicao, onAddEtapa, onAddInsumo, 
             <BudgetCell />
             <BudgetCell />
             <BudgetCell strong uppercase>
-                <span>{etapa.descricao}</span>
+                <span className="budget-indent" style={{ '--budget-depth': level }}>{etapa.descricao}</span>
                 {etapa.is_hidden && <span className="budget-hidden-pill">Itens ocultos</span>}
             </BudgetCell>
             <BudgetCell />
-            <BudgetCell align="right">{decimalFormatter.format(Number(etapa.quantidade ?? 1))}</BudgetCell>
+            <BudgetCell align="right" />
             <BudgetCell align="right" />
             <BudgetCell align="right" />
             <BudgetCell align="right" strong>{formatPlainMoney(etapa.valor_total)}</BudgetCell>
@@ -1083,7 +1316,7 @@ function EtapaRow({ canManage, etapa, onAddComposicao, onAddEtapa, onAddInsumo, 
     );
 }
 
-function BudgetItemRow({ canManage, etapa, item, onAddComposicao, onAddEtapa, onAddInsumo, onDeleteItem, onEditItem, onToggleItemBdi }) {
+function BudgetItemRow({ canManage, etapa, item, level = 1, onAddComposicao, onAddEtapa, onAddInsumo, onDeleteItem, onEditItem, onToggleItemBdi }) {
     const isInsumo = item.item_type === 'insumo';
 
     return (
@@ -1110,7 +1343,9 @@ function BudgetItemRow({ canManage, etapa, item, onAddComposicao, onAddEtapa, on
             <BudgetCell align="center" strong>{item.item}</BudgetCell>
             <BudgetCell strong>{item.codigo}</BudgetCell>
             <BudgetCell>{item.banco}</BudgetCell>
-            <BudgetCell strong>{item.descricao}</BudgetCell>
+            <BudgetCell strong>
+                <span className="budget-indent" style={{ '--budget-depth': level }}>{item.descricao}</span>
+            </BudgetCell>
             <BudgetCell>{item.unidade}</BudgetCell>
             <BudgetCell align="right">{formatPlainMoney(item.quantidade)}</BudgetCell>
             <BudgetCell align="right">{formatPlainMoney(item.valor_unitario)}</BudgetCell>
@@ -1356,9 +1591,9 @@ function EtapaEditRow({ form, onCancel, onSave }) {
             <td className="budget-cell">
                 <input
                     className="budget-input budget-input-center"
-                    min="1"
-                    placeholder="1"
-                    type="number"
+                    inputMode="decimal"
+                    placeholder="3.2"
+                    type="text"
                     value={form.data.ordem}
                     onChange={(event) => form.setData('ordem', event.target.value)}
                 />
@@ -1376,15 +1611,7 @@ function EtapaEditRow({ form, onCancel, onSave }) {
                 {form.errors.descricao && <ErrorText>{form.errors.descricao}</ErrorText>}
             </td>
             <td className="budget-cell" />
-            <td className="budget-cell">
-                <input
-                    className="budget-input budget-input-right"
-                    placeholder="1"
-                    value={form.data.quantidade}
-                    onChange={(event) => form.setData('quantidade', event.target.value)}
-                />
-                {form.errors.quantidade && <ErrorText>{form.errors.quantidade}</ErrorText>}
-            </td>
+            <td className="budget-cell" />
             <td className="budget-cell" />
             <td className="budget-cell budget-text-center">
                 <button
@@ -1599,9 +1826,9 @@ function EtapaFormRow({ form, onCancel, onSave }) {
             <td className="budget-cell">
                 <input
                     className="budget-input budget-input-center"
-                    min="1"
-                    placeholder="1"
-                    type="number"
+                    inputMode="decimal"
+                    placeholder="3.2"
+                    type="text"
                     value={form.data.ordem}
                     onChange={(event) => form.setData('ordem', event.target.value)}
                 />
@@ -1619,15 +1846,7 @@ function EtapaFormRow({ form, onCancel, onSave }) {
                 {form.errors.descricao && <ErrorText>{form.errors.descricao}</ErrorText>}
             </td>
             <td className="budget-cell" />
-            <td className="budget-cell">
-                <input
-                    className="budget-input budget-input-right"
-                    placeholder="1"
-                    value={form.data.quantidade}
-                    onChange={(event) => form.setData('quantidade', event.target.value)}
-                />
-                {form.errors.quantidade && <ErrorText>{form.errors.quantidade}</ErrorText>}
-            </td>
+            <td className="budget-cell" />
             <td className="budget-cell" />
             <td className="budget-cell budget-text-center">
                 <button
@@ -1682,6 +1901,333 @@ function HoverAction({ children, icon: Icon, onClick, tone }) {
             <Icon size={15} strokeWidth={2.5} />
             {children}
         </button>
+    );
+}
+
+const flattenCopyRows = (etapas = []) => {
+    const childEtapasByParent = etapas.reduce((map, etapa) => {
+        const key = parentEtapaOrder(etapa.item ?? etapa.ordem) ?? '';
+
+        if (!map.has(key)) {
+            map.set(key, []);
+        }
+
+        map.get(key).push(etapa);
+
+        return map;
+    }, new Map());
+    const rows = [];
+
+    const pushBranch = (etapa, level = 0) => {
+        const etapaOrder = String(etapa.item ?? etapa.ordem ?? '');
+        const childEtapas = childEtapasByParent.get(etapaOrder) ?? [];
+
+        rows.push({
+            banco: '-',
+            codigo: '-',
+            descricao: etapa.descricao,
+            item: etapa.item,
+            kind: 'etapa',
+            level,
+            rowId: `etapa-${etapa.id}`,
+            total: etapa.valor_total,
+            unidade: '-',
+        });
+
+        [
+            ...(etapa.itens ?? []).map((item) => ({
+                item,
+                position: Number(item.ordem ?? 0),
+                type: 'item',
+            })),
+            ...childEtapas.map((childEtapa) => ({
+                etapa: childEtapa,
+                position: lastOrderSegment(childEtapa.item ?? childEtapa.ordem),
+                type: 'etapa',
+            })),
+        ]
+            .sort((a, b) => a.position - b.position || (a.type === 'etapa' ? -1 : 1))
+            .forEach((entry) => {
+                if (entry.type === 'etapa') {
+                    pushBranch(entry.etapa, level + 1);
+
+                    return;
+                }
+
+                rows.push({
+                    banco: entry.item.banco,
+                    codigo: entry.item.codigo,
+                    descricao: entry.item.descricao,
+                    item: entry.item.item,
+                    kind: entry.item.item_type === 'insumo' ? 'insumo' : 'composicao',
+                    level: level + 1,
+                    rowId: `item-${entry.item.id}`,
+                    total: entry.item.valor_total,
+                    unidade: entry.item.unidade,
+                    quantidade: entry.item.quantidade,
+                    valorUnitario: entry.item.valor_unitario,
+                    valorComBdi: entry.item.valor_com_bdi,
+                });
+            });
+    };
+
+    (childEtapasByParent.get('') ?? []).forEach((etapa) => pushBranch(etapa));
+
+    return rows;
+};
+
+function CopyBudgetDialog({
+    copyEtapas,
+    copyLoading,
+    copySelectedRows,
+    copySource,
+    copySourceId,
+    copySources,
+    copySubmitting,
+    currentOrcamento,
+    onCancel,
+    onLoadSource,
+    onSelectedRowsChange,
+    onSubmit,
+}) {
+    const rows = flattenCopyRows(copyEtapas);
+    const selectedCount = copySelectedRows.size;
+    const allSelected = rows.length > 0 && rows.every((row) => copySelectedRows.has(row.rowId));
+    const activeStep = copySubmitting ? 3 : (copySource ? 2 : 1);
+
+    const toggleRow = (row) => {
+        const relatedRows = row.kind === 'etapa'
+            ? rows.filter((candidate) => candidate.item === row.item || String(candidate.item).startsWith(`${row.item}.`))
+            : [row];
+        const shouldSelect = relatedRows.some((candidate) => !copySelectedRows.has(candidate.rowId));
+        const next = new Set(copySelectedRows);
+
+        relatedRows.forEach((candidate) => {
+            if (shouldSelect) {
+                next.add(candidate.rowId);
+            } else {
+                next.delete(candidate.rowId);
+            }
+        });
+
+        onSelectedRowsChange(next);
+    };
+
+    const toggleAll = () => {
+        onSelectedRowsChange(allSelected ? new Set() : new Set(rows.map((row) => row.rowId)));
+    };
+
+    return (
+        <div
+            className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-[rgba(11,16,32,0.48)] px-4 py-8"
+            role="presentation"
+            onMouseDown={onCancel}
+        >
+            <section
+                className="w-full max-w-7xl overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="copy-budget-title"
+                onMouseDown={(event) => event.stopPropagation()}
+            >
+                <header className="flex items-start gap-4 border-b border-[var(--border)] px-5 py-4">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-50)] text-[var(--primary)]">
+                        <Copy size={21} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                        <h2 id="copy-budget-title" className="text-[17px] font-semibold text-[var(--ink-900)]">
+                            Copiar orçamento
+                        </h2>
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">
+                            Importe etapas, composições e insumos de outro orçamento para {currentOrcamento.codigo}.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        className="sig-btn sig-btn-ghost !min-h-9 !px-2"
+                        title="Fechar"
+                        onClick={onCancel}
+                    >
+                        <X size={17} />
+                    </button>
+                </header>
+
+                <div className="grid border-b border-[var(--border)] text-sm font-semibold md:grid-cols-3">
+                    <CopyStep active={activeStep === 1} eyebrow="Passo 1" label="Seleção do orçamento" />
+                    <CopyStep active={activeStep === 2} eyebrow="Passo 2" label="Seleção dos itens" />
+                    <CopyStep active={activeStep === 3} eyebrow="Passo 3" label="Processar a importação" />
+                </div>
+
+                <div className="max-h-[70vh] overflow-y-auto bg-[var(--surface-muted)] p-5">
+                    <section className="rounded-lg border border-[var(--border)] bg-white">
+                        <div className="border-b border-[var(--border)] bg-[var(--primary-900)] px-4 py-3 text-xs font-bold uppercase tracking-[0.06em] text-white">
+                            Escolha os itens que devem ser importados
+                        </div>
+
+                        <div className="grid gap-5 p-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+                            <div className="space-y-3">
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                                        Orçamento de origem
+                                    </span>
+                                    <select
+                                        className="sig-input"
+                                        value={copySourceId}
+                                        disabled={copyLoading || copySubmitting}
+                                        onChange={(event) => onLoadSource(event.target.value)}
+                                    >
+                                        <option value="">Selecione um orçamento</option>
+                                        {copySources.map((source) => (
+                                            <option key={source.id} value={source.id}>
+                                                {source.codigo} - {source.descricao}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+
+                                {copySource && (
+                                    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm">
+                                        <span className="text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                                            Importando itens de
+                                        </span>
+                                        <strong className="mt-1 block text-lg text-[var(--ink-900)]">{copySource.descricao}</strong>
+                                        <span className="mt-3 block text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                                            Para
+                                        </span>
+                                        <strong className="mt-1 block text-lg text-[var(--ink-900)]">{currentOrcamento.descricao}</strong>
+                                    </div>
+                                )}
+
+                                <div className="rounded-lg border border-[var(--border)] bg-white p-4 text-sm">
+                                    <span className="text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">
+                                        Usar preços de insumos e composições
+                                    </span>
+                                    <label className="mt-3 flex items-center gap-2 text-[var(--ink-700)]">
+                                        <input type="radio" checked readOnly className="accent-[var(--primary)]" />
+                                        Do orçamento de origem
+                                    </label>
+                                    <p className="mt-2 text-xs leading-relaxed text-[var(--ink-500)]">
+                                        A cópia preserva os valores, BDI diferenciado e totais já gravados no orçamento escolhido.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="min-w-0">
+                                {copyLoading ? (
+                                    <div className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] text-sm font-semibold text-[var(--ink-500)]">
+                                        <Loader2 className="mr-2 animate-spin" size={18} />
+                                        Carregando orçamento...
+                                    </div>
+                                ) : rows.length === 0 ? (
+                                    <div className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] px-4 text-center text-sm font-medium text-[var(--ink-500)]">
+                                        Selecione um orçamento para listar as etapas, composições e insumos disponíveis para cópia.
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                            <button type="button" className="sig-btn sig-btn-secondary !min-h-9" onClick={toggleAll}>
+                                                {allSelected ? 'Desmarcar tudo' : 'Marcar tudo'}
+                                            </button>
+                                            <span className="text-sm font-semibold text-[var(--ink-500)]">
+                                                {selectedCount} linha(s) selecionada(s)
+                                            </span>
+                                        </div>
+
+                                        <div className="overflow-x-auto rounded-md border border-[var(--border)]">
+                                            <table className="min-w-[1100px] w-full text-left text-xs">
+                                                <thead className="bg-[#2d2d2d] text-white">
+                                                    <tr>
+                                                        <th className="w-10 px-3 py-2"></th>
+                                                        <th className="px-3 py-2">Item</th>
+                                                        <th className="px-3 py-2">Código</th>
+                                                        <th className="px-3 py-2">Banco</th>
+                                                        <th className="px-3 py-2">Descrição</th>
+                                                        <th className="px-3 py-2">Tipo</th>
+                                                        <th className="px-3 py-2">Und</th>
+                                                        <th className="px-3 py-2 text-right">Quant.</th>
+                                                        <th className="px-3 py-2 text-right">Valor unit.</th>
+                                                        <th className="px-3 py-2 text-right">Valor com BDI</th>
+                                                        <th className="px-3 py-2 text-right">Total</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {rows.map((row) => (
+                                                        <CopyBudgetRow
+                                                            key={row.rowId}
+                                                            row={row}
+                                                            selected={copySelectedRows.has(row.rowId)}
+                                                            onToggle={() => toggleRow(row)}
+                                                        />
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] bg-white px-5 py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary" disabled={copySubmitting} onClick={onCancel}>
+                        Voltar
+                    </button>
+                    <button
+                        type="button"
+                        className="sig-btn sig-btn-primary"
+                        disabled={!copySource || selectedCount === 0 || copySubmitting}
+                        onClick={onSubmit}
+                    >
+                        {copySubmitting ? <Loader2 className="animate-spin" size={16} /> : <Copy size={16} />}
+                        Importar
+                    </button>
+                </footer>
+            </section>
+        </div>
+    );
+}
+
+function CopyStep({ active, eyebrow, label }) {
+    return (
+        <div className={active ? 'bg-[var(--primary-900)] px-4 py-3 text-white' : 'bg-white px-4 py-3 text-[var(--ink-500)]'}>
+            <span className="block text-xs">{eyebrow}</span>
+            <span className="mt-1 block text-[11px] uppercase tracking-[0.06em]">{label}</span>
+        </div>
+    );
+}
+
+function CopyBudgetRow({ onToggle, row, selected }) {
+    const rowClass = row.kind === 'etapa'
+        ? 'bg-[#dceff8] font-semibold'
+        : row.kind === 'insumo'
+            ? 'bg-[#fff7dd]'
+            : 'bg-[#e5f7dd]';
+    const typeLabel = row.kind === 'etapa' ? '-' : (row.kind === 'insumo' ? 'Insumo' : 'Composição');
+
+    return (
+        <tr className={`${rowClass} border-t border-[rgba(15,23,42,0.08)]`}>
+            <td className="px-3 py-2 align-top">
+                <input
+                    className="h-4 w-4 accent-[var(--primary)]"
+                    type="checkbox"
+                    checked={selected}
+                    onChange={onToggle}
+                />
+            </td>
+            <td className="px-3 py-2 align-top font-semibold">{row.item}</td>
+            <td className="px-3 py-2 align-top mono">{row.codigo}</td>
+            <td className="px-3 py-2 align-top">{row.banco}</td>
+            <td className="px-3 py-2 align-top">
+                <span className="budget-indent" style={{ '--budget-depth': row.level }}>{row.descricao}</span>
+            </td>
+            <td className="px-3 py-2 align-top">{typeLabel}</td>
+            <td className="px-3 py-2 align-top">{row.unidade}</td>
+            <td className="px-3 py-2 text-right align-top">{row.quantidade ? formatPlainMoney(row.quantidade) : ''}</td>
+            <td className="px-3 py-2 text-right align-top">{row.valorUnitario ? formatPlainMoney(row.valorUnitario) : ''}</td>
+            <td className="px-3 py-2 text-right align-top">{row.valorComBdi ? formatPlainMoney(row.valorComBdi) : ''}</td>
+            <td className="px-3 py-2 text-right align-top font-semibold">{formatPlainMoney(row.total)}</td>
+        </tr>
     );
 }
 
@@ -1938,6 +2484,55 @@ function DeleteItemDialog({ item, onCancel, onConfirm }) {
                         onClick={onConfirm}
                     >
                         Excluir
+                    </button>
+                </footer>
+            </section>
+        </div>
+    );
+}
+
+function CloseBudgetDialog({ orcamento, onCancel, onConfirm }) {
+    return (
+        <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.48)] px-4 py-6"
+            role="presentation"
+            onMouseDown={onCancel}
+        >
+            <section
+                className="w-full max-w-lg overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="close-budget-title"
+                onMouseDown={(event) => event.stopPropagation()}
+            >
+                <header className="flex items-start gap-4 border-b border-[var(--border)] px-5 py-4">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                        <Check size={22} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                        <h2 id="close-budget-title" className="text-[16px] font-semibold text-[var(--ink-900)]">
+                            Finalizar orçamento
+                        </h2>
+                        <p className="mt-1 text-[13px] leading-5 text-[var(--ink-500)]">
+                            Deseja finalizar o orçamento "{orcamento.codigo} - {orcamento.descricao}"? Depois disso ele poderá ser usado na medição e não poderá mais ser alterado.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        className="sig-btn sig-btn-ghost !min-h-9 !px-2"
+                        title="Fechar"
+                        onClick={onCancel}
+                    >
+                        <X size={17} />
+                    </button>
+                </header>
+
+                <footer className="flex flex-wrap justify-end gap-2 bg-[var(--surface-muted)] px-5 py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onCancel}>
+                        Cancelar
+                    </button>
+                    <button type="button" className="sig-btn sig-btn-primary" onClick={onConfirm}>
+                        Finalizar orçamento
                     </button>
                 </footer>
             </section>

@@ -4,7 +4,10 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "dev:app": "composer run dev",
+        "serve:php": "php -d upload_max_filesize=100M -d post_max_size=128M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 127.0.0.1:8000 server.php",
+        "serve:mobile": "php -d upload_max_filesize=100M -d post_max_size=128M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 0.0.0.0:8000 server.php"
     },
     "devDependencies": {
         "@tailwindcss/forms": "^0.5.3",
@@ -20,6 +23,8 @@
     },
     "dependencies": {
         "@inertiajs/react": "^2.3.23",
+        "echarts": "^6.1.0",
+        "echarts-for-react": "^3.0.6",
         "lucide-react": "^1.16.0",
         "mapbox-gl": "^3.24.0",
         "react": "^19.2.6",

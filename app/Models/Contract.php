@@ -111,4 +111,14 @@ class Contract extends Model
     {
         return $this->hasMany(MedicaoItem::class);
     }
+
+    public function boletinsMedicao(): HasMany
+    {
+        return $this->hasMany(BoletimMedicao::class);
+    }
+
+    public function ordemServicos(): HasMany
+    {
+        return $this->hasMany(OrdemServico::class);
+    }
 }

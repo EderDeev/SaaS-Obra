@@ -766,6 +766,11 @@ body.sig-viewer-body .sig-main > main {
     text-transform: uppercase;
 }
 
+.budget-indent {
+    display: inline-block;
+    padding-left: calc(var(--budget-depth, 0) * 18px);
+}
+
 .budget-arrow {
     display: inline-block;
     width: 0;

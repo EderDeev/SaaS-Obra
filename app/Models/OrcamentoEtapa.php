@@ -28,7 +28,7 @@ class OrcamentoEtapa extends Model
     protected function casts(): array
     {
         return [
-            'ordem' => 'integer',
+            'ordem' => 'string',
             'quantidade' => 'decimal:6',
             'valor_nao_desonerado' => 'decimal:6',
             'valor_desonerado' => 'decimal:6',

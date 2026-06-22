@@ -406,7 +406,7 @@ class TenantAccessTest extends TestCase
                     ],
                 ],
             ])
-            ->assertRedirect(route('tenant.orcamentos.index', $tenant))
+            ->assertRedirect(route('tenant.orcamentos.show', [$tenant, 1]))
             ->assertSessionHasNoErrors();
 
         $orcamento = Orcamento::query()->where('tenant_id', $tenant->id)->firstOrFail();

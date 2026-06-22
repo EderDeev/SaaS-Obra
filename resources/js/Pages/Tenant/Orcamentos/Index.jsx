@@ -56,8 +56,8 @@ export default function OrcamentosIndex({
                 <InfoCard
                     description="Orçamentos liberados para uso."
                     icon={Scale}
-                    title="Aprovados"
-                    value={stats.approved ?? 0}
+                    title="Finalizados"
+                    value={stats.closed ?? 0}
                 />
             </div>
 
@@ -107,7 +107,11 @@ export default function OrcamentosIndex({
                                 </div>
 
                                 <div>
-                                    <span className="inline-flex rounded-full bg-[var(--primary-50)] px-3 py-1 text-xs font-bold text-[var(--primary)]">
+                                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
+                                        orcamento.status === 'closed'
+                                            ? 'bg-emerald-50 text-emerald-700'
+                                            : 'bg-[var(--primary-50)] text-[var(--primary)]'
+                                    }`}>
                                         {orcamento.status_label}
                                     </span>
                                     <p className="mt-2 text-xs text-[var(--ink-500)]">{orcamento.prazo_entrega ?? 'Sem prazo'}</p>

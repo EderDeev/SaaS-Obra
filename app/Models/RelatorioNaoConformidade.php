@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'tenant_id',
+    'mobile_local_uuid',
     'sequence_number',
     'sequence_year',
     'contract_id',

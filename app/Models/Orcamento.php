@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'tenant_id',
     'created_by_id',
+    'closed_by_id',
     'cliente_empresa_id',
     'codigo',
     'descricao',
@@ -27,6 +28,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'bdi_percentual',
     'base_references',
     'status',
+    'closed_at',
     'valor_nao_desonerado',
     'valor_desonerado',
 ])]
@@ -43,6 +45,7 @@ class Orcamento extends Model
             'is_licitacao' => 'boolean',
             'base_references' => 'array',
             'bdi_percentual' => 'decimal:6',
+            'closed_at' => 'datetime',
             'valor_nao_desonerado' => 'decimal:6',
             'valor_desonerado' => 'decimal:6',
         ];
@@ -56,6 +59,11 @@ class Orcamento extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function closer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'closed_by_id');
     }
 
     public function clienteEmpresa(): BelongsTo

@@ -967,7 +967,7 @@ class ProjectController extends Controller
     private function uploadFailureMessage(int $error): string
     {
         return match ($error) {
-            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'Falha ao enviar: o PHP ainda esta limitando o upload abaixo do tamanho do arquivo. Reinicie o servidor local com upload_max_filesize e post_max_size em 64M.',
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'Falha ao enviar: o PHP ainda esta limitando o upload abaixo do tamanho do arquivo. Reinicie o servidor local usando npm run serve:php ou composer run dev para carregar upload_max_filesize=100M e post_max_size=128M.',
             UPLOAD_ERR_PARTIAL => 'Falha ao enviar: o upload foi interrompido antes de terminar. Tente novamente.',
             UPLOAD_ERR_NO_TMP_DIR => 'Falha ao enviar: o servidor nao encontrou a pasta temporaria de upload.',
             UPLOAD_ERR_CANT_WRITE => 'Falha ao enviar: o servidor nao conseguiu gravar o arquivo temporario.',
