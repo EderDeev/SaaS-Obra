@@ -260,16 +260,18 @@ Para email real:
 
 ```text
 MAIL_MAILER=smtp
-MAIL_SCHEME=null
+MAIL_SCHEME=smtp
 MAIL_HOST=smtp-relay.brevo.com
 MAIL_PORT=587
 MAIL_USERNAME=seu-login-smtp-brevo
 MAIL_PASSWORD=sua-chave-smtp-brevo
 MAIL_FROM_ADDRESS=email-verificado-no-brevo@seudominio.com
 MAIL_FROM_NAME="${APP_NAME}"
+MAIL_TIMEOUT=30
 ```
 
 O `MAIL_FROM_ADDRESS` precisa ser um remetente verificado no Brevo. Se `MAIL_MAILER=log`, a aplicação registra os emails no log e não envia mensagens reais.
+No Railway, não configure `MAIL_SCHEME` com o texto literal `"null"`; remova a variável ou use `smtp`.
 
 ## Variáveis Opcionais
 
