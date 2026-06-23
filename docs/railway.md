@@ -80,4 +80,14 @@ Sem volume ou S3, uploads locais funcionam para teste, mas o armazenamento do Ra
 
 Se alterar variaveis `VITE_*`, faca redeploy porque elas entram no build do frontend.
 
-Para emails reais, troque `MAIL_MAILER=log` pelas credenciais SMTP da Brevo.
+Para emails reais, use a API HTTPS da Brevo:
+
+```text
+MAIL_MAILER=brevo
+BREVO_API_KEY=xkeysib-sua-chave-api-v3
+MAIL_FROM_ADDRESS=email-verificado-no-brevo@seudominio.com
+MAIL_FROM_NAME=Deming
+```
+
+A chave deve ser uma chave de API v3, não uma chave SMTP. O remetente precisa
+estar verificado na Brevo.

@@ -3,9 +3,12 @@
 namespace App\Providers;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use InvalidArgumentException;
+use Symfony\Component\Mailer\Transport;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,6 +25,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Mail::extend('brevo', function (array $config) {
+            $apiKey = trim((string) ($config['key'] ?? ''));
+
+            if ($apiKey === '') {
+                throw new InvalidArgumentException(
+                    'BREVO_API_KEY não está configurada. Use uma chave de API v3 da Brevo.'
+                );
+            }
+
+            return Transport::fromDsn(
+                'brevo+api://'.rawurlencode($apiKey).'@default'
+            );
+        });
+
         if ($this->app->isProduction()) {
             URL::forceScheme('https');
         }

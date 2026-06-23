@@ -254,24 +254,21 @@ Checklist quando um projeto demora:
 4. Se o manifesto estiver em `99% complete`, aguarde a Autodesk finalizar.
 5. Se o manifesto retornar `failed`, o arquivo precisa ser reenviado ou convertido para outro formato suportado.
 
-## Railway: Email Brevo
+## Railway: Email Brevo por API HTTPS
 
 Para email real:
 
 ```text
-MAIL_MAILER=smtp
-MAIL_SCHEME=smtp
-MAIL_HOST=smtp-relay.brevo.com
-MAIL_PORT=587
-MAIL_USERNAME=seu-login-smtp-brevo
-MAIL_PASSWORD=sua-chave-smtp-brevo
+MAIL_MAILER=brevo
+BREVO_API_KEY=xkeysib-sua-chave-api-v3
 MAIL_FROM_ADDRESS=email-verificado-no-brevo@seudominio.com
-MAIL_FROM_NAME="${APP_NAME}"
-MAIL_TIMEOUT=30
+MAIL_FROM_NAME=Deming
 ```
 
-O `MAIL_FROM_ADDRESS` precisa ser um remetente verificado no Brevo. Se `MAIL_MAILER=log`, a aplicação registra os emails no log e não envia mensagens reais.
-No Railway, não configure `MAIL_SCHEME` com o texto literal `"null"`; remova a variável ou use `smtp`.
+Use uma chave de API v3 da Brevo, não a chave SMTP. O `MAIL_FROM_ADDRESS`
+precisa ser um remetente verificado no Brevo. A API usa HTTPS na porta 443 e
+funciona sem liberar as portas SMTP 587, 465 ou 2525. Se `MAIL_MAILER=log`, a
+aplicação registra os emails no log e não envia mensagens reais.
 
 ## Variáveis Opcionais
 
