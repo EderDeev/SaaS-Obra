@@ -42,14 +42,22 @@ class RdoSignatureRequestedNotification extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         $rdo = $this->signatureRequest->rdo;
-        $url = $this->signingUrl ?: route('tenant.diario-obra.rdo.show', [$this->tenant->slug, $rdo->id]);
+        $rdo->loadMissing('contract');
+        $rdoUrl = route('tenant.diario-obra.rdo.show', [$this->tenant->slug, $rdo->id]);
 
         return (new MailMessage)
             ->subject("RDO {$rdo->code} - assinatura solicitada")
-            ->greeting("Olá, {$notifiable->name}!")
-            ->line('Você foi indicado como responsável pela assinatura do RDO.')
-            ->line("RDO: {$rdo->code}")
-            ->line('Acesse o link abaixo para visualizar o documento e seguir com a assinatura.')
-            ->action('Acessar assinatura', $url);
+            ->view('emails.rdo-signature-requested', [
+                'notifiable' => $notifiable,
+                'rdo' => $rdo,
+                'signingUrl' => $this->signingUrl,
+                'rdoUrl' => $rdoUrl,
+            ])
+            ->text('emails.rdo-signature-requested-text', [
+                'notifiable' => $notifiable,
+                'rdo' => $rdo,
+                'signingUrl' => $this->signingUrl,
+                'rdoUrl' => $rdoUrl,
+            ]);
     }
 }

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\RdoConfiguracao;
 use App\Models\RdoDiario;
 use App\Models\RdoResponsavel;
+use App\Models\RdoSignatureRequest;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\RdoFlowChangedNotification;
@@ -755,14 +756,22 @@ class TenantRdoTest extends TestCase
         ]);
         Storage::fake('public');
         Notification::fake();
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+
         Http::fake([
             'https://sandbox.opensign.test/api/v1.2/draftdocument' => Http::response([
                 'document_id' => 'doc-rdo-123',
-                'url' => 'https://sandbox.opensign.test/sign/doc-rdo-123',
+                'url' => 'https://sandbox.opensign.test/documents/doc-rdo-123',
+            ]),
+            'https://sandbox.opensign.test/api/v1.2/signinglinks/doc-rdo-123' => Http::response([
+                'signinglinks' => [[
+                    'email' => $user->email,
+                    'url' => 'https://sandbox.opensign.test/sign/signer-rdo-123',
+                    'objectId' => 'signer-rdo-123',
+                ]],
             ]),
         ]);
 
-        [$tenant, $user, $contract, $obra] = $this->scenario();
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
@@ -795,9 +804,15 @@ class TenantRdoTest extends TestCase
                 && str_contains((string) $request->header('Content-Type')[0], 'application/json')
                 && base64_decode((string) ($payload['file'] ?? ''), true) !== false
                 && ($payload['send_email'] ?? null) === true
+                && ($payload['hide_signer_signing_links'] ?? null) === false
+                && str_contains((string) ($payload['email_body'] ?? ''), '{{signing_url}}')
                 && data_get($payload, 'signers.0.signer_role') === 'signer'
                 && data_get($payload, 'signers.0.widgets.0.type') === 'signature';
         });
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'GET'
+            && $request->url() === 'https://sandbox.opensign.test/api/v1.2/signinglinks/doc-rdo-123'
+            && $request->hasHeader('x-api-token', 'test-api-key'));
 
         $this->assertDatabaseHas('rdo_signature_requests', [
             'rdo_diario_id' => $rdo->id,
@@ -805,6 +820,32 @@ class TenantRdoTest extends TestCase
             'provider_document_id' => 'doc-rdo-123',
             'status' => 'sent',
         ]);
+        $this->assertDatabaseHas('rdo_signature_signers', [
+            'rdo_signature_request_id' => RdoSignatureRequest::query()->latest('id')->value('id'),
+            'email' => $user->email,
+            'provider_signer_id' => 'signer-rdo-123',
+            'signing_url' => 'https://sandbox.opensign.test/sign/signer-rdo-123',
+        ]);
+
+        Notification::assertSentTo(
+            $user,
+            \App\Notifications\RdoSignatureRequestedNotification::class,
+            fn ($notification): bool => $notification->signingUrl === 'https://sandbox.opensign.test/sign/signer-rdo-123'
+        );
+
+        $signatureRequest = RdoSignatureRequest::query()->with('rdo')->latest('id')->firstOrFail();
+        $mail = (new \App\Notifications\RdoSignatureRequestedNotification(
+            $signatureRequest,
+            $tenant,
+            'https://sandbox.opensign.test/sign/signer-rdo-123',
+        ))->toMail($user);
+
+        $this->assertSame('emails.rdo-signature-requested', data_get($mail->view, 'html'));
+        $this->assertSame('emails.rdo-signature-requested-text', data_get($mail->view, 'text'));
+        $this->assertSame(
+            'https://sandbox.opensign.test/sign/signer-rdo-123',
+            data_get($mail->viewData, 'signingUrl')
+        );
     }
 
     private function scenario(): array
