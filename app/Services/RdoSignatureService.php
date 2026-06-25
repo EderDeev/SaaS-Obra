@@ -15,6 +15,7 @@ use App\Services\Signatures\OpenSignSignatureProvider;
 use App\Services\Signatures\SignatureProviderInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -126,6 +127,11 @@ class RdoSignatureService
             ?? data_get($payload, 'request_id')
             ?? data_get($payload, 'document_id')
             ?? data_get($payload, 'objectId')
+            ?? data_get($payload, 'data.id')
+            ?? data_get($payload, 'data.document_id')
+            ?? data_get($payload, 'data.objectId')
+            ?? data_get($payload, 'document.id')
+            ?? data_get($payload, 'document.objectId')
             ?? data_get($payload, 'metadata.rdo_signature_request_id');
 
         if (! $providerRequestId) {
@@ -133,24 +139,145 @@ class RdoSignatureService
         }
 
         $request = RdoSignatureRequest::query()
-            ->where('provider_request_id', $providerRequestId)
-            ->when(is_numeric($providerRequestId), fn ($query) => $query->orWhere('id', (int) $providerRequestId))
+            ->where(function ($query) use ($providerRequestId): void {
+                $query->where('provider_request_id', $providerRequestId)
+                    ->orWhere('provider_document_id', $providerRequestId)
+                    ->when(is_numeric($providerRequestId), fn ($query) => $query->orWhere('id', (int) $providerRequestId));
+            })
             ->first();
 
         if (! $request) {
             return null;
         }
 
-        $status = $this->normalizeProviderStatus((string) (data_get($payload, 'status') ?? data_get($payload, 'event') ?? 'sent'));
+        $status = $this->normalizeProviderStatus((string) (
+            data_get($payload, 'status')
+            ?? data_get($payload, 'data.status')
+            ?? data_get($payload, 'document.status')
+            ?? data_get($payload, 'event')
+            ?? 'sent'
+        ));
         $request->update([
             'status' => $status,
             'webhook_payload' => $payload,
             'completed_at' => $status === 'completed' ? now() : $request->completed_at,
         ]);
 
-        $this->syncProviderSigners($request->fresh('signers'), data_get($payload, 'signers', []));
+        $this->syncProviderSigners(
+            $request->fresh('signers'),
+            data_get($payload, 'signers')
+                ?? data_get($payload, 'data.signers')
+                ?? data_get($payload, 'document.signers')
+                ?? [],
+        );
+
+        if ($status === 'completed') {
+            $this->storeCompletedArtifacts($request->fresh(['tenant', 'rdo']), $payload);
+        }
 
         return $request->fresh(['rdo', 'signers']);
+    }
+
+    private function storeCompletedArtifacts(RdoSignatureRequest $request, array $payload): void
+    {
+        $providerPayload = $payload;
+        if ($request->provider === 'opensign' && $request->provider_document_id) {
+            $document = app(OpenSignSignatureProvider::class)->getDocument($request->provider_document_id);
+            if ($document !== []) {
+                $providerPayload = array_replace_recursive($providerPayload, ['document' => $document]);
+            }
+        }
+
+        $signedUrl = $this->findProviderUrl($providerPayload, [
+            'signedurl',
+            'signedpdfurl',
+            'signeddocumenturl',
+            'completeddocumenturl',
+        ]);
+        $certificateUrl = $this->findProviderUrl($providerPayload, [
+            'certificateurl',
+            'completioncertificateurl',
+            'audittrailurl',
+        ]);
+        $updates = ['provider_payload' => $providerPayload];
+
+        if ($signedUrl && ! $request->signed_pdf_path) {
+            $updates['signed_pdf_path'] = $this->downloadSignatureArtifact(
+                $request,
+                $signedUrl,
+                'assinado',
+            );
+        }
+
+        if ($certificateUrl && ! $request->audit_trail_path) {
+            $updates['audit_trail_path'] = $this->downloadSignatureArtifact(
+                $request,
+                $certificateUrl,
+                'certificado',
+            );
+        }
+
+        $request->update(array_filter($updates, fn ($value) => $value !== null));
+    }
+
+    private function findProviderUrl(array $payload, array $acceptedKeys): ?string
+    {
+        $found = null;
+        $walk = function (mixed $node) use (&$walk, &$found, $acceptedKeys): void {
+            if ($found || ! is_array($node)) {
+                return;
+            }
+
+            foreach ($node as $key => $value) {
+                $normalizedKey = is_string($key)
+                    ? Str::of($key)->lower()->replaceMatches('/[^a-z0-9]/', '')->toString()
+                    : '';
+
+                if (
+                    in_array($normalizedKey, $acceptedKeys, true)
+                    && is_string($value)
+                    && filter_var($value, FILTER_VALIDATE_URL)
+                ) {
+                    $found = $value;
+
+                    return;
+                }
+
+                if (is_array($value)) {
+                    $walk($value);
+                }
+            }
+        };
+
+        $walk($payload);
+
+        return $found;
+    }
+
+    private function downloadSignatureArtifact(
+        RdoSignatureRequest $request,
+        string $url,
+        string $suffix,
+    ): ?string {
+        if (! in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true)) {
+            return null;
+        }
+
+        $response = Http::timeout(90)->get($url);
+        if ($response->failed() || $response->body() === '') {
+            return null;
+        }
+
+        $fileName = sprintf(
+            'rdo-%s-%s-%d.pdf',
+            Str::slug($request->rdo?->code ?: (string) $request->rdo_diario_id),
+            $suffix,
+            $request->id,
+        );
+        $path = "tenant-{$request->tenant_id}/rdo/{$request->rdo_diario_id}/assinaturas/{$fileName}";
+        Storage::disk('public')->put($path, $response->body());
+
+        return $path;
     }
 
     private function storeUnsignedPdf(Tenant $tenant, RdoDiario $rdo, RdoSignatureRequest $request): string
@@ -193,13 +320,14 @@ class RdoSignatureService
             return $signatureResponsibles
                 ->unique('email')
                 ->values()
-                ->map(function (User $user) {
+                ->map(function (User $user) use ($rdo) {
                     $membership = $user->tenantMemberships->first();
+                    $empresaId = $membership?->empresa_id;
 
                     return [
-                        'role' => 'assinatura',
+                        'role' => $this->signatureRoleForCompany($rdo, $empresaId),
                         'user_id' => $user->id,
-                        'empresa_id' => $membership?->empresa_id,
+                        'empresa_id' => $empresaId,
                         'name' => $user->name,
                         'email' => Str::lower($user->email),
                     ];
@@ -247,6 +375,20 @@ class RdoSignatureService
             })
             ->unique(fn (array $signer) => $signer['role'].'|'.$signer['email'])
             ->values();
+    }
+
+    private function signatureRoleForCompany(RdoDiario $rdo, ?int $empresaId): string
+    {
+        if (! $empresaId) {
+            return 'assinatura';
+        }
+
+        return match ((int) $empresaId) {
+            (int) $rdo->contract?->construtora_empresa_id => 'construtora',
+            (int) $rdo->contract?->fiscalizadora_empresa_id => 'gerenciadora',
+            (int) $rdo->contract?->cliente_empresa_id => 'cliente',
+            default => 'assinatura',
+        };
     }
 
     private function notifySigners(RdoSignatureRequest $request): void

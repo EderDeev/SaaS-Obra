@@ -768,6 +768,15 @@ class TenantRdoTest extends TestCase
         Storage::fake('public');
         Notification::fake();
         [$tenant, $user, $contract, $obra] = $this->scenario();
+        $clientCompany = $tenant->empresas()->create([
+            'contract_id' => $contract->id,
+            'tipo_empresa_id' => DB::table('tipos_empresa')->where('nome', 'cliente')->value('id'),
+            'nome' => 'Cliente do RDO',
+            'cnpj' => '12.345.678/0001-95',
+            'sigla' => 'CLI',
+        ]);
+        $contract->update(['cliente_empresa_id' => $clientCompany->id]);
+        $tenant->memberships()->where('user_id', $user->id)->update(['empresa_id' => $clientCompany->id]);
 
         Http::fake([
             'https://sandbox.opensign.test/api/v1.2/createdocument' => Http::response([
@@ -818,7 +827,13 @@ class TenantRdoTest extends TestCase
                 && ($payload['hide_signer_signing_links'] ?? null) === false
                 && str_contains((string) ($payload['email_body'] ?? ''), '{{signing_url}}')
                 && data_get($payload, 'signers.0.signer_role') === 'signer'
-                && data_get($payload, 'signers.0.widgets.0.type') === 'signature';
+                && data_get($payload, 'signers.0.role') === 'cliente'
+                && data_get($payload, 'signers.0.widgets.0.type') === 'signature'
+                && data_get($payload, 'signers.0.widgets.0.name') === 'assinatura_cliente'
+                && data_get($payload, 'signers.0.widgets.0.x') === 431
+                && data_get($payload, 'signers.0.widgets.0.y') === 710
+                && data_get($payload, 'signers.0.widgets.0.w') === 112
+                && data_get($payload, 'signers.0.widgets.0.h') === 34;
         });
 
         Http::assertSent(fn ($request): bool => $request->method() === 'GET'
@@ -856,6 +871,60 @@ class TenantRdoTest extends TestCase
         $this->assertSame(
             'https://sandbox.opensign.test/sign/signer-rdo-123',
             data_get($mail->viewData, 'signingUrl')
+        );
+    }
+
+    public function test_completed_opensign_webhook_downloads_signed_pdf_and_certificate(): void
+    {
+        config([
+            'signatures.opensign.base_url' => 'https://sandbox.opensign.test/api/v1.2',
+            'signatures.opensign.api_key' => 'test-api-key',
+        ]);
+        Storage::fake('public');
+        Http::fake([
+            'https://sandbox.opensign.test/api/v1.2/document/doc-completed-123' => Http::response([
+                'objectId' => 'doc-completed-123',
+                'SignedUrl' => 'https://files.opensign.test/rdo-assinado.pdf',
+                'CertificateUrl' => 'https://files.opensign.test/certificado.pdf',
+            ]),
+            'https://files.opensign.test/rdo-assinado.pdf' => Http::response('%PDF-1.4 signed rdo'),
+            'https://files.opensign.test/certificado.pdf' => Http::response('%PDF-1.4 certificate'),
+        ]);
+
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
+            $configuration,
+            CarbonImmutable::parse('2026-06-25'),
+            false,
+            $user->id,
+        );
+        $signatureRequest = RdoSignatureRequest::create([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'requested_by_id' => $user->id,
+            'provider' => 'opensign',
+            'provider_request_id' => 'request-completed-123',
+            'provider_document_id' => 'doc-completed-123',
+            'status' => 'sent',
+            'title' => 'Assinatura RDO',
+        ]);
+
+        app(\App\Services\RdoSignatureService::class)->applyWebhook([
+            'document_id' => 'doc-completed-123',
+            'event' => 'completed',
+        ]);
+
+        $signatureRequest->refresh();
+        $this->assertSame('completed', $signatureRequest->status);
+        $this->assertNotNull($signatureRequest->completed_at);
+        $this->assertNotNull($signatureRequest->signed_pdf_path);
+        $this->assertNotNull($signatureRequest->audit_trail_path);
+        Storage::disk('public')->assertExists($signatureRequest->signed_pdf_path);
+        Storage::disk('public')->assertExists($signatureRequest->audit_trail_path);
+        $this->assertSame(
+            '%PDF-1.4 signed rdo',
+            Storage::disk('public')->get($signatureRequest->signed_pdf_path)
         );
     }
 

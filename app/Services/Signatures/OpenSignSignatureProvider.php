@@ -12,6 +12,7 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
 {
     public function createRequest(RdoSignatureRequest $request, string $absolutePdfPath): array
     {
+        $request->loadMissing(['rdo.contract', 'signers']);
         $baseUrl = rtrim((string) config('signatures.opensign.base_url'), '/');
         $apiKey = (string) config('signatures.opensign.api_key');
         $path = '/'.ltrim((string) config('signatures.opensign.create_request_path'), '/');
@@ -51,7 +52,7 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
                     'email' => $signer->email,
                     'role' => $signer->role,
                     'signer_role' => 'signer',
-                    'widgets' => [$this->signatureWidget($index)],
+                    'widgets' => [$this->signatureWidget($signer->role, $index)],
                 ])
                 ->all(),
         ];
@@ -223,19 +224,42 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
 HTML;
     }
 
-    private function signatureWidget(int $index): array
+    public function getDocument(string $documentId): array
     {
-        $column = $index % 2;
-        $row = intdiv($index, 2);
+        $baseUrl = rtrim((string) config('signatures.opensign.base_url'), '/');
+        $apiKey = (string) config('signatures.opensign.api_key');
+
+        if ($baseUrl === '' || $apiKey === '') {
+            return [];
+        }
+
+        $response = Http::withHeaders(['x-api-token' => $apiKey])
+            ->acceptJson()
+            ->timeout(30)
+            ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
+            ->get($baseUrl.'/document/'.rawurlencode($documentId));
+
+        return $response->successful() ? ($response->json() ?? []) : [];
+    }
+
+    private function signatureWidget(string $role, int $index): array
+    {
+        $positions = [
+            'construtora' => ['x' => 51, 'name' => 'assinatura_construtora'],
+            'gerenciadora' => ['x' => 241, 'name' => 'assinatura_gerenciadora'],
+            'cliente' => ['x' => 431, 'name' => 'assinatura_cliente'],
+        ];
+        $fallbackRoles = ['construtora', 'gerenciadora', 'cliente'];
+        $position = $positions[$role] ?? $positions[$fallbackRoles[$index] ?? 'cliente'];
 
         return [
-            'name' => 'assinatura_'.($index + 1),
+            'name' => $position['name'],
             'type' => 'signature',
             'page' => 1,
-            'x' => 45 + ($column * 280),
-            'y' => 690 + ($row * 65),
-            'w' => 220,
-            'h' => 45,
+            'x' => $position['x'],
+            'y' => 710,
+            'w' => 112,
+            'h' => 34,
         ];
     }
 }
