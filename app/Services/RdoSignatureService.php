@@ -33,11 +33,26 @@ class RdoSignatureService
         $rdo->loadMissing(['contract', 'configuracao.obras']);
 
         $activeRequest = RdoSignatureRequest::query()
+            ->with('signers')
             ->where('tenant_id', $tenant->id)
             ->where('rdo_diario_id', $rdo->id)
             ->whereIn('status', ['draft', 'sent', 'pending', 'completed'])
             ->latest('id')
             ->first();
+
+        if (
+            $activeRequest
+            && $activeRequest->provider === 'opensign'
+            && in_array($activeRequest->status, ['sent', 'pending'], true)
+            && $activeRequest->signers->isNotEmpty()
+            && $activeRequest->signers->every(fn (RdoSignatureSigner $signer) => blank($signer->signing_url))
+        ) {
+            $activeRequest->update([
+                'status' => 'failed',
+                'error_message' => 'Solicitação anterior criada sem links de assinatura; liberada para reenvio.',
+            ]);
+            $activeRequest = null;
+        }
 
         abort_if($activeRequest && $activeRequest->status !== 'failed', 422, 'Este RDO já possui uma solicitação de assinatura em andamento ou concluída.');
 

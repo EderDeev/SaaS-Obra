@@ -16,8 +16,8 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
         $apiKey = (string) config('signatures.opensign.api_key');
         $path = '/'.ltrim((string) config('signatures.opensign.create_request_path'), '/');
 
-        if (in_array($path, ['/createdocument', '/api/v1/documents'], true)) {
-            $path = '/draftdocument';
+        if (in_array($path, ['/draftdocument', '/api/v1/documents'], true)) {
+            $path = '/createdocument';
         }
 
         if ($baseUrl === '' || $apiKey === '') {

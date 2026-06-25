@@ -752,14 +752,14 @@ class TenantRdoTest extends TestCase
             'signatures.driver' => 'opensign',
             'signatures.opensign.base_url' => 'https://sandbox.opensign.test/api/v1.2',
             'signatures.opensign.api_key' => 'test-api-key',
-            'signatures.opensign.create_request_path' => '/draftdocument',
+            'signatures.opensign.create_request_path' => '/createdocument',
         ]);
         Storage::fake('public');
         Notification::fake();
         [$tenant, $user, $contract, $obra] = $this->scenario();
 
         Http::fake([
-            'https://sandbox.opensign.test/api/v1.2/draftdocument' => Http::response([
+            'https://sandbox.opensign.test/api/v1.2/createdocument' => Http::response([
                 'document_id' => 'doc-rdo-123',
                 'url' => 'https://sandbox.opensign.test/documents/doc-rdo-123',
             ]),
@@ -799,7 +799,7 @@ class TenantRdoTest extends TestCase
         Http::assertSent(function ($request): bool {
             $payload = $request->data();
 
-            return $request->url() === 'https://sandbox.opensign.test/api/v1.2/draftdocument'
+            return $request->url() === 'https://sandbox.opensign.test/api/v1.2/createdocument'
                 && $request->hasHeader('x-api-token', 'test-api-key')
                 && str_contains((string) $request->header('Content-Type')[0], 'application/json')
                 && base64_decode((string) ($payload['file'] ?? ''), true) !== false

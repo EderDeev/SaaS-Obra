@@ -288,7 +288,7 @@ Para usar OpenSign via API:
 SIGNATURE_DRIVER=opensign
 OPENSIGN_BASE_URL=https://sandbox.opensignlabs.com/api/v1.2
 OPENSIGN_API_KEY=sua-chave-api
-OPENSIGN_CREATE_REQUEST_PATH=/draftdocument
+OPENSIGN_CREATE_REQUEST_PATH=/createdocument
 OPENSIGN_WEBHOOK_SECRET=um-segredo-forte
 OPENSIGN_VERIFY_SSL=true
 OPENSIGN_TIME_TO_COMPLETE_DAYS=15
