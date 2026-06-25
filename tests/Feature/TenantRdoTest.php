@@ -541,7 +541,18 @@ class TenantRdoTest extends TestCase
             ])
             ->assertSessionHasNoErrors();
 
-        Notification::assertSentTo($manager, RdoFlowChangedNotification::class);
+        Notification::assertSentTo(
+            $manager,
+            RdoFlowChangedNotification::class,
+            function (RdoFlowChangedNotification $notification) use ($manager): bool {
+                $mail = $notification->toMail($manager);
+
+                return data_get($mail->view, 'html') === 'emails.rdo-flow-changed'
+                    && data_get($mail->view, 'text') === 'emails.rdo-flow-changed-text'
+                    && data_get($mail->viewData, 'statusLabel') === 'Em aprovação'
+                    && str_contains((string) data_get($mail->viewData, 'rdoUrl'), '/diario-obra/rdo/');
+            }
+        );
     }
 
     public function test_rdo_responsibilities_are_scoped_by_front_and_each_stage_waits_for_all_fronts(): void

@@ -41,11 +41,32 @@ class RdoFlowChangedNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
+        $this->rdo->loadMissing(['contract', 'configuracao.obras']);
+        $rdoUrl = route('tenant.diario-obra.rdo.show', [$this->tenant->slug, $this->rdo->id]);
+        $viewData = [
+            'notifiable' => $notifiable,
+            'rdo' => $this->rdo,
+            'actor' => $this->actor,
+            'message' => $this->message,
+            'statusLabel' => $this->statusLabel(),
+            'rdoUrl' => $rdoUrl,
+        ];
+
         return (new MailMessage)
             ->subject("RDO {$this->rdo->code} - atualização no fluxo")
-            ->greeting("Olá, {$notifiable->name}!")
-            ->line($this->message)
-            ->line("Ação realizada por {$this->actor->name}.")
-            ->action('Acessar RDO', route('tenant.diario-obra.rdo.show', [$this->tenant->slug, $this->rdo->id]));
+            ->view('emails.rdo-flow-changed', $viewData)
+            ->text('emails.rdo-flow-changed-text', $viewData);
+    }
+
+    private function statusLabel(): string
+    {
+        return match ($this->rdo->status) {
+            'rascunho' => 'Rascunho',
+            'em_aprovacao' => 'Em aprovação',
+            'devolvido_construtora' => 'Devolvido à construtora',
+            'pendente_comprovacao' => 'Pendente de comprovação',
+            'arquivado' => 'Aprovado e arquivado',
+            default => ucfirst(str_replace('_', ' ', (string) $this->rdo->status)),
+        };
     }
 }
