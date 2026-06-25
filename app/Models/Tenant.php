@@ -75,6 +75,11 @@ class Tenant extends Model
         return $this->hasMany(Obra::class);
     }
 
+    public function rdoResponsaveis(): HasMany
+    {
+        return $this->hasMany(RdoResponsavel::class);
+    }
+
     public function disciplinas(): HasMany
     {
         return $this->hasMany(Disciplina::class);

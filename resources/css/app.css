@@ -76,6 +76,59 @@ button {
     cursor: pointer;
 }
 
+.rdo-calendar .fc {
+    --fc-border-color: var(--border);
+    --fc-button-bg-color: var(--primary);
+    --fc-button-border-color: var(--primary);
+    --fc-button-hover-bg-color: var(--primary-600);
+    --fc-button-hover-border-color: var(--primary-600);
+    --fc-today-bg-color: var(--primary-50);
+}
+
+.rdo-calendar .fc .fc-toolbar-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    text-transform: capitalize;
+}
+
+.rdo-calendar .fc .fc-col-header-cell-cushion {
+    padding: 10px 4px;
+    font-weight: 800;
+    text-transform: lowercase;
+}
+
+.rdo-calendar .fc .fc-daygrid-day-frame {
+    min-height: 145px;
+}
+
+.rdo-calendar .fc .fc-daygrid-day-top {
+    display: block;
+    padding: 5px;
+}
+
+.rdo-calendar .fc .fc-daygrid-event {
+    margin: 3px 5px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    white-space: normal;
+}
+
+.rdo-calendar .fc .fc-event-main {
+    color: inherit;
+}
+
+@media (max-width: 768px) {
+    .rdo-calendar .fc .fc-daygrid-day-frame {
+        min-height: 100px;
+    }
+
+    .rdo-calendar .fc .fc-toolbar {
+        align-items: flex-start;
+        gap: 10px;
+    }
+}
+
 a {
     color: inherit;
     text-decoration: none;

@@ -63,6 +63,11 @@ class User extends Authenticatable
         return $this->belongsToMany(Activity::class, 'activity_user')->withTimestamps();
     }
 
+    public function rdoResponsabilidades(): HasMany
+    {
+        return $this->hasMany(RdoResponsavel::class);
+    }
+
     public function createdActivities(): HasMany
     {
         return $this->hasMany(Activity::class, 'created_by_id');

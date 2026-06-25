@@ -270,6 +270,42 @@ precisa ser um remetente verificado no Brevo. A API usa HTTPS na porta 443 e
 funciona sem liberar as portas SMTP 587, 465 ou 2525. Se `MAIL_MAILER=log`, a
 aplicação registra os emails no log e não envia mensagens reais.
 
+## Assinatura Digital do RDO
+
+O RDO usa uma camada de assinatura desacoplada. A aplicação gera o PDF final,
+cria uma solicitação em `rdo_signature_requests`, registra os signatários em
+`rdo_signature_signers` e entrega o documento para o provedor configurado.
+
+Para homologar o fluxo sem chamar API externa:
+
+```text
+SIGNATURE_DRIVER=local
+```
+
+Para usar OpenSign via API:
+
+```text
+SIGNATURE_DRIVER=opensign
+OPENSIGN_BASE_URL=https://seu-opensign-ou-api
+OPENSIGN_API_KEY=sua-chave-api
+OPENSIGN_CREATE_REQUEST_PATH=/api/v1/documents
+OPENSIGN_WEBHOOK_SECRET=um-segredo-forte
+OPENSIGN_VERIFY_SSL=true
+```
+
+Webhook que deve ser configurado no OpenSign:
+
+```text
+https://www.deming.com.br/api/webhooks/opensign?secret=um-segredo-forte
+```
+
+Em homologação, use a URL da aplicação de homologação. Em produção, use
+`https://www.deming.com.br`. O `OPENSIGN_CREATE_REQUEST_PATH` ficou em variável
+porque a API do provedor pode mudar entre OpenSign self-hosted/cloud. Se no
+futuro trocarmos para DocuSign, Dropbox Sign ou outro serviço, crie um novo
+provider implementando `App\Services\Signatures\SignatureProviderInterface` e
+altere apenas o driver/configuração, mantendo o fluxo do RDO intacto.
+
 ## Variáveis Opcionais
 
 ```text

@@ -865,6 +865,21 @@ export default function OrcamentoShow({
                             ))}
                         />
                         <SummaryRow label="Encargos sociais" value={orcamento.encargos_sociais_label} />
+                        {(orcamento.encargos_horista !== null || orcamento.encargos_mensalista !== null) && (
+                            <SummaryRow
+                                label="Taxas dos encargos"
+                                value={
+                                    <span className="inline-flex flex-wrap gap-3">
+                                        {orcamento.encargos_horista !== null && (
+                                            <span>Horista: {decimalFormatter.format(Number(orcamento.encargos_horista))}%</span>
+                                        )}
+                                        {orcamento.encargos_mensalista !== null && (
+                                            <span>Mensalista: {decimalFormatter.format(Number(orcamento.encargos_mensalista))}%</span>
+                                        )}
+                                    </span>
+                                }
+                            />
+                        )}
                         <SummaryRow
                             label="BDI"
                             value={

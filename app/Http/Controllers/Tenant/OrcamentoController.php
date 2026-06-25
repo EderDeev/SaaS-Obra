@@ -149,6 +149,16 @@ class OrcamentoController extends Controller
         ]);
     }
 
+    public function createImport(Request $request, Tenant $tenant): Response
+    {
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+
+        return Inertia::render('Tenant/Orcamentos/Import', [
+            'tenant' => $tenant,
+            'options' => $this->orcamentoFormOptions($tenant),
+        ]);
+    }
+
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
         abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
@@ -227,6 +237,129 @@ class OrcamentoController extends Controller
         return redirect()
             ->route('tenant.orcamentos.show', [$tenant, $orcamento])
             ->with('success', 'Orcamento criado.');
+    }
+
+    public function storeImport(Request $request, Tenant $tenant): RedirectResponse
+    {
+        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+
+        $data = $request->validate([
+            'codigo' => ['required', 'string', 'max:50', Rule::unique('orcamentos', 'codigo')->where('tenant_id', $tenant->id)->whereNull('deleted_at')],
+            'descricao' => ['required', 'string', 'max:255'],
+            'cliente_empresa_id' => [
+                'nullable',
+                Rule::exists('empresas', 'id')->where('tenant_id', $tenant->id),
+            ],
+            'categoria' => ['required', 'string', Rule::in(self::ORCAMENTO_CATEGORIES)],
+            'permitir_insumos_preco_zerado' => ['boolean'],
+            'arredondamento' => ['required', 'string', Rule::in(self::ORCAMENTO_ROUNDING_METHODS)],
+            'encargos_sociais' => ['required', 'string', Rule::in(['desonerado', 'nao_desonerado'])],
+            'encargos_horista' => ['nullable', 'string', 'max:30'],
+            'encargos_mensalista' => ['nullable', 'string', 'max:30'],
+            'bdi_tipo' => ['required', 'string', Rule::in(['unit_price', 'total_budget'])],
+            'bdi_percentual' => ['required', 'string', 'max:30'],
+            'base_references' => ['required', 'array', 'min:1'],
+            'base_references.*.nome' => ['required', 'string', 'max:40'],
+            'base_references.*.uf' => ['nullable', 'string', Rule::in(self::BRAZILIAN_STATES)],
+            'base_references.*.localidade' => ['nullable', 'string', 'max:120'],
+            'base_references.*.data' => ['required', 'string', 'max:20'],
+            'file' => ['required', 'file', 'mimes:csv,txt,tsv', 'max:'.self::CSV_UPLOAD_MAX_KB],
+        ]);
+
+        $bdiPercentual = $this->parseDecimal($data['bdi_percentual']);
+        $encargosHorista = $this->parseOptionalPercentage($data['encargos_horista'] ?? null, 'encargos_horista');
+        $encargosMensalista = $this->parseOptionalPercentage($data['encargos_mensalista'] ?? null, 'encargos_mensalista');
+
+        if ($bdiPercentual === null || (float) $bdiPercentual < 0) {
+            throw ValidationException::withMessages([
+                'bdi_percentual' => 'Informe um percentual de BDI válido.',
+            ]);
+        }
+
+        $baseReferences = collect($data['base_references'])
+            ->map(function (array $reference): array {
+                $name = mb_strtoupper(trim($reference['nome']));
+                $uf = mb_strtoupper(trim((string) ($reference['uf'] ?? '')));
+                $date = trim($reference['data']);
+
+                return [
+                    'codigo' => implode('-', array_filter([$name, $uf, $date])),
+                    'nome' => $name,
+                    'uf' => $uf,
+                    'localidade' => trim((string) ($reference['localidade'] ?? '')),
+                    'data' => $date,
+                ];
+            })
+            ->unique('codigo')
+            ->values()
+            ->all();
+
+        $filePath = $request->file('file')?->getRealPath();
+
+        if (! $filePath) {
+            throw ValidationException::withMessages(['file' => 'Não foi possível ler o arquivo enviado.']);
+        }
+
+        $result = DB::transaction(function () use (
+            $tenant,
+            $request,
+            $data,
+            $bdiPercentual,
+            $encargosHorista,
+            $encargosMensalista,
+            $baseReferences,
+            $filePath,
+        ): array {
+            $orcamento = Orcamento::create([
+                'tenant_id' => $tenant->id,
+                'created_by_id' => $request->user()->id,
+                'cliente_empresa_id' => $data['cliente_empresa_id'] ?? null,
+                'codigo' => trim($data['codigo']),
+                'descricao' => trim($data['descricao']),
+                'categoria' => $data['categoria'],
+                'permitir_insumos_preco_zerado' => (bool) ($data['permitir_insumos_preco_zerado'] ?? false),
+                'is_licitacao' => false,
+                'arredondamento' => $data['arredondamento'],
+                'encargos_sociais' => $data['encargos_sociais'],
+                'encargos_horista' => $encargosHorista,
+                'encargos_mensalista' => $encargosMensalista,
+                'bdi_tipo' => $data['bdi_tipo'],
+                'bdi_percentual' => $bdiPercentual,
+                'base_references' => $baseReferences,
+                'status' => 'draft',
+            ]);
+
+            $stats = $this->importOrcamentoItemsCsv(
+                $filePath,
+                $tenant,
+                $orcamento,
+                (int) $request->user()->id,
+            );
+
+            if ($stats['items'] === 0) {
+                throw ValidationException::withMessages([
+                    'file' => 'Nenhum item válido foi encontrado no CSV. Verifique o cabeçalho e a estrutura do arquivo.',
+                ]);
+            }
+
+            $this->recalculateOrcamentoTotals($tenant, $orcamento);
+            $this->restoreImportedOrcamentoStageTotals($tenant, $orcamento);
+
+            return [
+                'orcamento' => $orcamento,
+                ...$stats,
+            ];
+        });
+
+        /** @var Orcamento $orcamento */
+        $orcamento = $result['orcamento'];
+
+        return redirect()
+            ->route('tenant.orcamentos.show', [$tenant, $orcamento])
+            ->with(
+                'success',
+                "Orçamento importado: {$result['stages']} etapa(s), {$result['items']} item(ns) e {$result['skipped']} linha(s) ignorada(s)."
+            );
     }
 
     public function show(Request $request, Tenant $tenant, Orcamento $orcamento): Response
@@ -5991,6 +6124,258 @@ class OrcamentoController extends Controller
         return round((float) $value, 6);
     }
 
+    private function parseOptionalPercentage(mixed $value, string $field): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $parsed = $this->parseDecimal((string) $value);
+
+        if ($parsed === null || (float) $parsed < 0) {
+            throw ValidationException::withMessages([
+                $field => 'Informe um percentual válido.',
+            ]);
+        }
+
+        return $parsed;
+    }
+
+    private function importOrcamentoItemsCsv(
+        string $path,
+        Tenant $tenant,
+        Orcamento $orcamento,
+        int $userId,
+    ): array {
+        $this->prepareLongRunningImport();
+
+        $handle = fopen($path, 'rb');
+
+        if (! $handle) {
+            throw ValidationException::withMessages(['file' => 'Não foi possível abrir o arquivo CSV.']);
+        }
+
+        $firstLine = fgets($handle) ?: '';
+        $delimiter = $this->detectCsvDelimiter($firstLine);
+        rewind($handle);
+
+        $headers = $this->readCsvHeaders($handle, $delimiter);
+        $columns = $this->resolveCsvHeaderMap($headers, [
+            'item' => ['item'],
+            'codigo' => ['codigo', 'codigo item'],
+            'banco' => ['banco', 'base'],
+            'descricao' => ['descricao'],
+            'unidade' => ['und', 'unidade'],
+            'quantidade' => ['quant', 'quantidade', 'qtd'],
+            'valor_unitario' => ['valor unit', 'valor unitario', 'preco unitario', 'preco unitario p0'],
+            'valor_com_bdi' => ['valor unit com bdi', 'valor com bdi', 'preco unitario com bdi'],
+            'valor_total' => ['total', 'valor total'],
+        ]);
+
+        $required = ['item', 'descricao', 'quantidade', 'valor_unitario', 'valor_com_bdi', 'valor_total'];
+        $missing = collect($required)
+            ->reject(fn (string $field): bool => array_key_exists($field, $columns))
+            ->values()
+            ->all();
+
+        if ($missing !== []) {
+            fclose($handle);
+
+            throw ValidationException::withMessages([
+                'file' => 'Colunas ausentes no CSV: '.implode(', ', $missing).'.',
+            ]);
+        }
+
+        $rows = [];
+
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $row = str_getcsv(rtrim($line, "\r\n"), $delimiter);
+
+                if ($this->isBlankCsvRow($row)) {
+                    continue;
+                }
+
+                $value = fn (string $field): string => array_key_exists($field, $columns)
+                    ? $this->normalizeCsvValue((string) ($row[$columns[$field]] ?? ''))
+                    : '';
+                $itemCode = trim($value('item'));
+                $description = trim($value('descricao'));
+
+                if ($itemCode === '' || $description === '') {
+                    continue;
+                }
+
+                $rows[] = [
+                    'item' => preg_replace('/\s+/', '', $itemCode) ?: $itemCode,
+                    'codigo' => trim($value('codigo')),
+                    'banco' => trim($value('banco')),
+                    'descricao' => $description,
+                    'unidade' => trim($value('unidade')),
+                    'quantidade' => $value('quantidade'),
+                    'valor_unitario' => $value('valor_unitario'),
+                    'valor_com_bdi' => $value('valor_com_bdi'),
+                    'valor_total' => $value('valor_total'),
+                ];
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        $stageRows = collect($rows)
+            ->filter(fn (array $row): bool => $this->isImportedOrcamentoStage($row))
+            ->unique('item', true)
+            ->sortBy(fn (array $row): string => $this->hierarchySortKey($row['item']))
+            ->values();
+        $stagesByOrder = [];
+
+        foreach ($stageRows as $row) {
+            $stage = OrcamentoEtapa::create([
+                'tenant_id' => $tenant->id,
+                'orcamento_id' => $orcamento->id,
+                'created_by_id' => $userId,
+                'ordem' => $row['item'],
+                'descricao' => $row['descricao'],
+                'quantidade' => '1.000000',
+                'valor_nao_desonerado' => 0,
+                'valor_desonerado' => 0,
+                'meta' => [
+                    'created_from' => 'budget_csv_import',
+                    'original_total' => $this->parseDecimal($row['valor_total']),
+                ],
+            ]);
+
+            $stagesByOrder[$row['item']] = $stage;
+        }
+
+        $items = 0;
+        $skipped = count($rows) - $stageRows->count();
+        $ordersByStage = [];
+        $bdiMultiplier = 1 + ((float) $orcamento->bdi_percentual / 100);
+
+        foreach ($rows as $row) {
+            if ($this->isImportedOrcamentoStage($row)) {
+                continue;
+            }
+
+            $parentOrder = $this->parentEtapaOrder($row['item']);
+            $stage = $parentOrder ? ($stagesByOrder[$parentOrder] ?? null) : null;
+
+            if (! $stage) {
+                continue;
+            }
+
+            $quantity = $this->parseDecimal($row['quantidade']) ?? '0.000000';
+            $unitValue = $this->parseDecimal($row['valor_unitario']) ?? '0.000000';
+            $valueWithBdi = $this->parseDecimal($row['valor_com_bdi']);
+
+            if ($valueWithBdi === null) {
+                $valueWithBdi = $this->storeMoney(
+                    $this->calculateMoney((float) $unitValue * $bdiMultiplier, 'truncate_2')
+                );
+            }
+
+            $totalValue = $this->parseDecimal($row['valor_total']);
+
+            if ($totalValue === null) {
+                $totalValue = $this->storeMoney(
+                    $this->calculateMoney((float) $quantity * (float) $valueWithBdi, 'truncate_2')
+                );
+            }
+
+            $suggestedOrder = (int) $this->lastEtapaOrderSegment($row['item']);
+            $nextOrder = ($ordersByStage[$stage->id] ?? 0) + 1;
+            $order = $suggestedOrder > 0 ? $suggestedOrder : $nextOrder;
+
+            while (OrcamentoItem::query()
+                ->where('orcamento_etapa_id', $stage->id)
+                ->where('ordem', $order)
+                ->exists()) {
+                $order++;
+            }
+
+            $ordersByStage[$stage->id] = max($nextOrder, $order);
+
+            OrcamentoItem::create([
+                'tenant_id' => $tenant->id,
+                'orcamento_id' => $orcamento->id,
+                'orcamento_etapa_id' => $stage->id,
+                'created_by_id' => $userId,
+                'item_type' => 'importado',
+                'ordem' => $order,
+                'codigo' => $row['codigo'] !== '' ? $row['codigo'] : $row['item'],
+                'banco' => $row['banco'] !== '' ? mb_strtoupper($row['banco']) : null,
+                'descricao' => $row['descricao'],
+                'unidade' => $row['unidade'] !== '' ? $row['unidade'] : null,
+                'quantidade' => $quantity,
+                'valor_unitario_nao_desonerado' => $unitValue,
+                'valor_unitario_desonerado' => $unitValue,
+                'valor_com_bdi_nao_desonerado' => $valueWithBdi,
+                'valor_com_bdi_desonerado' => $valueWithBdi,
+                'valor_total_nao_desonerado' => $totalValue,
+                'valor_total_desonerado' => $totalValue,
+                'aplicar_bdi' => true,
+                'meta' => [
+                    'created_from' => 'budget_csv_import',
+                    'source_item' => $row['item'],
+                    'base_label' => $row['banco'] !== '' ? mb_strtoupper($row['banco']) : null,
+                    'imported_value_with_bdi' => $valueWithBdi,
+                    'imported_total' => $totalValue,
+                ],
+            ]);
+
+            $items++;
+            $skipped--;
+        }
+
+        return [
+            'stages' => count($stagesByOrder),
+            'items' => $items,
+            'skipped' => max(0, $skipped),
+        ];
+    }
+
+    private function isImportedOrcamentoStage(array $row): bool
+    {
+        return trim((string) ($row['codigo'] ?? '')) === ''
+            && trim((string) ($row['banco'] ?? '')) === ''
+            && trim((string) ($row['unidade'] ?? '')) === '';
+    }
+
+    private function restoreImportedOrcamentoStageTotals(Tenant $tenant, Orcamento $orcamento): void
+    {
+        $stages = OrcamentoEtapa::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('orcamento_id', $orcamento->id)
+            ->get();
+
+        foreach ($stages as $stage) {
+            $originalTotal = ($stage->meta ?? [])['original_total'] ?? null;
+
+            if ($originalTotal === null) {
+                continue;
+            }
+
+            $stage->forceFill([
+                'valor_nao_desonerado' => $originalTotal,
+                'valor_desonerado' => $originalTotal,
+            ])->save();
+        }
+
+        $rootTotal = $stages
+            ->filter(fn (OrcamentoEtapa $stage): bool => $this->etapaOrderDepth($stage->ordem) === 1)
+            ->sum(function (OrcamentoEtapa $stage): float {
+                $originalTotal = ($stage->meta ?? [])['original_total'] ?? null;
+
+                return (float) ($originalTotal ?? $stage->valor_desonerado);
+            });
+
+        $orcamento->forceFill([
+            'valor_nao_desonerado' => $this->storeMoney($rootTotal),
+            'valor_desonerado' => $this->storeMoney($rootTotal),
+        ])->save();
+    }
+
     private function compositionFormOptions(Tenant $tenant): array
     {
         return [
@@ -7019,6 +7404,8 @@ class OrcamentoController extends Controller
             'arredondamento_label' => $this->orcamentoRoundingLabel($orcamento->arredondamento),
             'encargos_sociais' => $orcamento->encargos_sociais,
             'encargos_sociais_label' => $orcamento->encargos_sociais === 'nao_desonerado' ? 'Nao desonerado' : 'Desonerado',
+            'encargos_horista' => $orcamento->encargos_horista,
+            'encargos_mensalista' => $orcamento->encargos_mensalista,
             'bdi_percentual' => $orcamento->bdi_percentual,
             'base_references' => $orcamento->base_references ?? [],
             'valor_nao_desonerado' => $orcamento->valor_nao_desonerado,

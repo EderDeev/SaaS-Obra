@@ -10,6 +10,9 @@ fi
 
 php artisan storage:link || true
 
+# Mantém o agendador do RDO ativo no mesmo serviço web.
+php artisan schedule:work &
+
 exec php -d upload_max_filesize=100M \
     -d post_max_size=128M \
     -d memory_limit=512M \

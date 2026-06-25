@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { CalendarClock, ClipboardList, Eye, FilePlus2, FolderOpen, Scale } from 'lucide-react';
+import { CalendarClock, ClipboardList, Eye, FilePlus2, FolderOpen, Scale, Upload } from 'lucide-react';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
 export default function OrcamentosIndex({
@@ -33,10 +33,16 @@ export default function OrcamentosIndex({
                 </div>
 
                 {canManageOrcamentos && (
-                    <Link className="sig-btn sig-btn-primary" href={route('tenant.orcamentos.create', tenant.slug)}>
-                        <FilePlus2 size={16} />
-                        Criar orçamento
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                        <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.import.create', tenant.slug)}>
+                            <Upload size={16} />
+                            Importar Orçamento
+                        </Link>
+                        <Link className="sig-btn sig-btn-primary" href={route('tenant.orcamentos.create', tenant.slug)}>
+                            <FilePlus2 size={16} />
+                            Criar orçamento
+                        </Link>
+                    </div>
                 )}
             </div>
 

@@ -7,6 +7,7 @@ import {
     BookOpen,
     Building2,
     Calculator,
+    CalendarDays,
     ChevronRight,
     ClipboardList,
     FolderOpen,
@@ -77,6 +78,8 @@ export default function AuthenticatedLayout({ children }) {
     const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
     const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
     const [ordemServicoOpen, setOrdemServicoOpen] = useState(() => route().current('tenant.ordem-servico.*'));
+    const [diarioObraOpen, setDiarioObraOpen] = useState(() => route().current('tenant.diario-obra.*'));
+    const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         if (typeof window === 'undefined') {
@@ -263,6 +266,34 @@ export default function AuthenticatedLayout({ children }) {
         },
     ]
     : [];
+    const diarioObraItems = tenant
+        ? [{
+            label: 'RDO',
+            active: route().current('tenant.diario-obra.rdo.*'),
+            children: [
+                {
+                    label: 'Calendário',
+                    href: route('tenant.diario-obra.rdo.calendar', tenant.slug),
+                    active: route().current('tenant.diario-obra.rdo.calendar') || route().current('tenant.diario-obra.rdo.show'),
+                },
+                {
+                    label: 'Parametrização',
+                    href: route('tenant.diario-obra.rdo.settings', tenant.slug),
+                    active: route().current('tenant.diario-obra.rdo.settings*'),
+                },
+                {
+                    label: 'Cadastros',
+                    href: route('tenant.diario-obra.rdo.cadastros.index', tenant.slug),
+                    active: route().current('tenant.diario-obra.rdo.cadastros.*'),
+                },
+                {
+                    label: 'Responsáveis',
+                    href: route('tenant.diario-obra.rdo.responsaveis.index', tenant.slug),
+                    active: route().current('tenant.diario-obra.rdo.responsaveis.*'),
+                },
+            ],
+        }]
+        : [];
     const projectItems = tenant
         ? [
             ...(projectCan.view_projects ? [{
@@ -317,6 +348,7 @@ export default function AuthenticatedLayout({ children }) {
             { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
             { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
             { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
+            { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
             ...(projectItems.length > 0 ? [
                 { label: 'Projetos', icon: FolderOpen, active: route().current('tenant.projects.*'), children: projectItems },
             ] : []),
@@ -354,7 +386,7 @@ export default function AuthenticatedLayout({ children }) {
         : tenant
             ? [
                 { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Ordem de Serviço' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
+                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Ordem de Serviço' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -393,6 +425,8 @@ export default function AuthenticatedLayout({ children }) {
                         const Icon = item.icon;
                         const childrenOpen = item.label === 'Qualidade'
                             ? qualidadeOpen
+                            : item.label === 'Diário de Obra'
+                                ? diarioObraOpen
                             : item.label === 'Orçamentos'
                                 ? orcamentosOpen
                                 : item.label === 'Medição'
@@ -402,6 +436,8 @@ export default function AuthenticatedLayout({ children }) {
                                         : projectOpen;
                         const toggleChildren = item.label === 'Qualidade'
                             ? () => setQualidadeOpen((open) => !open)
+                            : item.label === 'Diário de Obra'
+                                ? () => setDiarioObraOpen((open) => !open)
                             : item.label === 'Orçamentos'
                                 ? () => setOrcamentosOpen((open) => !open)
                                 : item.label === 'Medição'
@@ -427,7 +463,33 @@ export default function AuthenticatedLayout({ children }) {
                                     </button>
                                     {childrenOpen && (
                                         <div className="ml-7">
-                                            {item.children.map((child) => (
+                                            {item.children.map((child) => child.children ? (
+                                                <div key={child.label}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setRdoOpen((open) => !open)}
+                                                        className={`sig-nav-item !w-[calc(100%_-_16px)] border-0 bg-transparent !py-2 text-left !text-[12.5px] ${child.active ? 'active' : ''}`}
+                                                    >
+                                                        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
+                                                        <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                                                        <ChevronRight size={13} className={`transition-transform ${rdoOpen ? 'rotate-90' : ''}`} />
+                                                    </button>
+                                                    {rdoOpen && (
+                                                        <div className="ml-5">
+                                                            {child.children.map((grandchild) => (
+                                                                <Link
+                                                                    key={grandchild.label}
+                                                                    href={grandchild.href}
+                                                                    className={`sig-nav-item !w-[calc(100%_-_16px)] !py-1.5 !text-[12px] ${grandchild.active ? 'active' : ''}`}
+                                                                >
+                                                                    <span className="h-1 w-1 rounded-full bg-current opacity-50" />
+                                                                    <span className="min-w-0 flex-1 truncate">{grandchild.label}</span>
+                                                                </Link>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
                                                 <Link
                                                     key={child.label}
                                                     href={child.href}

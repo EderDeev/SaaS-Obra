@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\OpenSignWebhookController;
 use App\Http\Controllers\Api\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\MobileRncController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('/webhooks/opensign', OpenSignWebhookController::class)->name('api.webhooks.opensign');
 
 Route::prefix('mobile')
     ->name('api.mobile.')
