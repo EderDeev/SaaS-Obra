@@ -16,41 +16,59 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
         $apiKey = (string) config('signatures.opensign.api_key');
         $path = '/'.ltrim((string) config('signatures.opensign.create_request_path'), '/');
 
+        if (in_array($path, ['/createdocument', '/api/v1/documents'], true)) {
+            $path = '/draftdocument';
+        }
+
         if ($baseUrl === '' || $apiKey === '') {
             throw new RuntimeException('OpenSign não está configurado. Defina OPENSIGN_BASE_URL e OPENSIGN_API_KEY.');
         }
 
+        $pdf = file_get_contents($absolutePdfPath);
+
+        if ($pdf === false) {
+            throw new RuntimeException('Não foi possível ler o PDF do RDO para enviá-lo ao OpenSign.');
+        }
+
         $payload = [
+            'file' => base64_encode($pdf),
             'title' => $request->title,
-            'external_id' => 'rdo-signature-'.$request->id,
-            'callback_url' => url('/api/webhooks/opensign'),
-            'metadata' => [
-                'tenant_id' => $request->tenant_id,
-                'rdo_diario_id' => $request->rdo_diario_id,
-                'rdo_signature_request_id' => $request->id,
-            ],
+            'note' => 'Assinatura digital do RDO '.$request->rdo?->code,
+            'description' => 'Documento gerado pelo Deming para assinatura dos responsáveis.',
+            'timeToCompleteDays' => (int) config('signatures.opensign.time_to_complete_days', 15),
+            'send_email' => true,
+            'sendInOrder' => false,
+            'enableOTP' => false,
+            'merge_certificate' => true,
+            'notify_on_signatures' => true,
             'signers' => $request->signers
                 ->values()
                 ->map(fn ($signer, int $index) => [
                     'name' => $signer->name,
                     'email' => $signer->email,
                     'role' => $signer->role,
-                    'order' => $index + 1,
+                    'signer_role' => 'signer',
+                    'widgets' => [$this->signatureWidget($index)],
                 ])
                 ->all(),
         ];
 
         $response = Http::withHeaders(['x-api-token' => $apiKey])
             ->acceptJson()
-            ->asMultipart()
+            ->asJson()
+            ->timeout(90)
             ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
-            ->attach('document', file_get_contents($absolutePdfPath), basename($absolutePdfPath))
-            ->post($baseUrl.$path, [
-                ['name' => 'payload', 'contents' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)],
-            ]);
+            ->post($baseUrl.$path, $payload);
 
         if ($response->failed()) {
-            throw new RuntimeException('OpenSign recusou a solicitação: '.$response->body());
+            $message = (string) ($response->json('error') ?? $response->json('message') ?? strip_tags($response->body()));
+            $message = Str::of($message)->squish()->limit(800)->toString();
+
+            throw new RuntimeException(sprintf(
+                'OpenSign recusou a solicitação (HTTP %d): %s',
+                $response->status(),
+                $message !== '' ? $message : 'resposta sem detalhes'
+            ));
         }
 
         $data = $response->json() ?? [];
@@ -75,6 +93,22 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
                 ->values()
                 ->all(),
             'raw' => $data,
+        ];
+    }
+
+    private function signatureWidget(int $index): array
+    {
+        $column = $index % 2;
+        $row = intdiv($index, 2);
+
+        return [
+            'name' => 'assinatura_'.($index + 1),
+            'type' => 'signature',
+            'page' => 1,
+            'x' => 45 + ($column * 280),
+            'y' => 690 + ($row * 65),
+            'w' => 220,
+            'h' => 45,
         ];
     }
 }

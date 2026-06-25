@@ -286,21 +286,22 @@ Para usar OpenSign via API:
 
 ```text
 SIGNATURE_DRIVER=opensign
-OPENSIGN_BASE_URL=https://seu-opensign-ou-api
+OPENSIGN_BASE_URL=https://sandbox.opensignlabs.com/api/v1.2
 OPENSIGN_API_KEY=sua-chave-api
-OPENSIGN_CREATE_REQUEST_PATH=/api/v1/documents
+OPENSIGN_CREATE_REQUEST_PATH=/draftdocument
 OPENSIGN_WEBHOOK_SECRET=um-segredo-forte
 OPENSIGN_VERIFY_SSL=true
+OPENSIGN_TIME_TO_COMPLETE_DAYS=15
 ```
 
 Webhook que deve ser configurado no OpenSign:
 
 ```text
-https://www.deming.com.br/api/webhooks/opensign?secret=um-segredo-forte
+https://deming.com.br/api/webhooks/opensign?secret=um-segredo-forte
 ```
 
 Em homologação, use a URL da aplicação de homologação. Em produção, use
-`https://www.deming.com.br`. O `OPENSIGN_CREATE_REQUEST_PATH` ficou em variável
+`https://deming.com.br`. O `OPENSIGN_CREATE_REQUEST_PATH` ficou em variável
 porque a API do provedor pode mudar entre OpenSign self-hosted/cloud. Se no
 futuro trocarmos para DocuSign, Dropbox Sign ou outro serviço, crie um novo
 provider implementando `App\Services\Signatures\SignatureProviderInterface` e

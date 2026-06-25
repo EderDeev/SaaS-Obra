@@ -13,6 +13,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -742,6 +743,68 @@ class TenantRdoTest extends TestCase
         ]);
         $this->assertDatabaseCount('rdo_signature_signers', 1);
         Notification::assertSentTo($signer, \App\Notifications\RdoSignatureRequestedNotification::class);
+    }
+
+    public function test_rdo_signature_sends_opensign_v12_json_payload(): void
+    {
+        config([
+            'signatures.driver' => 'opensign',
+            'signatures.opensign.base_url' => 'https://sandbox.opensign.test/api/v1.2',
+            'signatures.opensign.api_key' => 'test-api-key',
+            'signatures.opensign.create_request_path' => '/draftdocument',
+        ]);
+        Storage::fake('public');
+        Notification::fake();
+        Http::fake([
+            'https://sandbox.opensign.test/api/v1.2/draftdocument' => Http::response([
+                'document_id' => 'doc-rdo-123',
+                'url' => 'https://sandbox.opensign.test/sign/doc-rdo-123',
+            ]),
+        ]);
+
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
+            $configuration,
+            CarbonImmutable::parse('2026-06-25'),
+            false,
+            $user->id,
+        );
+        $rdo->update(['status' => 'arquivado', 'approved_at' => now()]);
+
+        RdoResponsavel::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'user_id' => $user->id,
+            'created_by_id' => $user->id,
+            'etapa' => 'assinatura',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.signatures.store', [$tenant, $rdo]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        Http::assertSent(function ($request): bool {
+            $payload = $request->data();
+
+            return $request->url() === 'https://sandbox.opensign.test/api/v1.2/draftdocument'
+                && $request->hasHeader('x-api-token', 'test-api-key')
+                && str_contains((string) $request->header('Content-Type')[0], 'application/json')
+                && base64_decode((string) ($payload['file'] ?? ''), true) !== false
+                && ($payload['send_email'] ?? null) === true
+                && data_get($payload, 'signers.0.signer_role') === 'signer'
+                && data_get($payload, 'signers.0.widgets.0.type') === 'signature';
+        });
+
+        $this->assertDatabaseHas('rdo_signature_requests', [
+            'rdo_diario_id' => $rdo->id,
+            'provider' => 'opensign',
+            'provider_document_id' => 'doc-rdo-123',
+            'status' => 'sent',
+        ]);
     }
 
     private function scenario(): array
