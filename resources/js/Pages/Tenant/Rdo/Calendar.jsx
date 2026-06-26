@@ -12,7 +12,20 @@ const statusTone = {
     devolvido_construtora: 'bg-red-50 text-red-700',
     pendente_comprovacao: 'bg-amber-50 text-amber-700',
     arquivado: 'bg-emerald-50 text-emerald-700',
+    aguardando_assinatura: 'bg-blue-50 text-blue-700',
+    pronto_assinatura: 'bg-violet-50 text-violet-700',
+    assinado: 'bg-emerald-50 text-emerald-700',
 };
+
+function calendarStatusTone(rdo) {
+    if (rdo.status === 'arquivado') {
+        if (rdo.signature_status === 'completed') return statusTone.assinado;
+        if (rdo.signature_status === 'waiting') return statusTone.aguardando_assinatura;
+        return statusTone.pronto_assinatura;
+    }
+
+    return statusTone[rdo.status] || statusTone.rascunho;
+}
 
 function formatLocalDate(date) {
     const year = date.getFullYear();
@@ -177,8 +190,8 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                                 <div className="w-full rounded-lg border border-[var(--border)] bg-white p-2 shadow-sm">
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="mono truncate text-[11px] font-bold">{rdo.code}</span>
-                                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${statusTone[rdo.status] || statusTone.rascunho}`}>
-                                            {rdo.status_label}
+                                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${calendarStatusTone(rdo)}`}>
+                                            {rdo.calendar_status_label || rdo.status_label}
                                         </span>
                                     </div>
                                     <div className="mt-2 grid gap-1">

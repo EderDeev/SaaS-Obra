@@ -55,7 +55,7 @@ class RdoController extends Controller
             ->first();
 
         $rdos = RdoDiario::query()
-            ->with(['configuracao.obras:id,nome,codigo', 'secoes'])
+            ->with(['configuracao.obras:id,nome,codigo', 'secoes', 'signatureRequests'])
             ->where('tenant_id', $tenant->id)
             ->where('contract_id', $selectedContractId)
             ->when($configuration, fn ($query) => $query->where('rdo_configuracao_id', $configuration->id))
@@ -656,6 +656,7 @@ class RdoController extends Controller
     {
         $missingSubmissionObraIds = $this->missingSubmissionObraIds($rdo);
         $submissionReady = empty($missingSubmissionObraIds);
+        $signatureStatus = $this->calendarSignatureStatus($rdo);
 
         return [
             'id' => $rdo->id,
@@ -674,6 +675,8 @@ class RdoController extends Controller
             'copied_from_rdo_id' => $rdo->copied_from_rdo_id,
             'submission_ready' => $submissionReady,
             'missing_submission_obra_ids' => $missingSubmissionObraIds,
+            'signature_status' => $signatureStatus,
+            'calendar_status_label' => $this->calendarStatusLabel($rdo, $signatureStatus),
             'calendar_action_label' => $this->calendarActionLabel($rdo, $submissionReady),
             'show_url' => route('tenant.diario-obra.rdo.show', [$tenant->slug, $rdo->id]),
         ];
@@ -729,6 +732,43 @@ class RdoController extends Controller
                 ])
                 ->values(),
         ];
+    }
+
+    private function calendarSignatureStatus(RdoDiario $rdo): ?string
+    {
+        if ($rdo->status !== 'arquivado') {
+            return null;
+        }
+
+        $signature = $rdo->relationLoaded('signatureRequests')
+            ? $rdo->signatureRequests->sortByDesc('id')->first()
+            : $rdo->signatureRequests()->latest('id')->first();
+
+        if (! $signature) {
+            return 'ready';
+        }
+
+        return $signature->status === 'completed' && $signature->signed_pdf_path
+            ? 'completed'
+            : 'waiting';
+    }
+
+    private function calendarStatusLabel(RdoDiario $rdo, ?string $signatureStatus): string
+    {
+        if ($rdo->status === 'arquivado') {
+            return match ($signatureStatus) {
+                'completed' => 'Assinado',
+                'waiting' => 'Aguardando assinatura',
+                default => 'Pronto para assinatura',
+            };
+        }
+
+        return match ($rdo->status) {
+            'em_aprovacao' => 'Aprovação da gerenciadora e do cliente',
+            'devolvido_construtora' => 'Devolvido à construtora',
+            'pendente_comprovacao' => 'Pendente de comprovação',
+            default => 'Rascunho',
+        };
     }
 
     private function calendarActionLabel(RdoDiario $rdo, bool $submissionReady): string
