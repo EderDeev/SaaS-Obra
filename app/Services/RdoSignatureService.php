@@ -276,7 +276,11 @@ class RdoSignatureService
     private function findProviderUrl(array $payload, array $acceptedKeys): ?string
     {
         $found = null;
-        $walk = function (mixed $node) use (&$walk, &$found, $acceptedKeys): void {
+        $acceptedKeys = array_map(
+            fn (string $key): string => Str::of($key)->lower()->replaceMatches('/[^a-z0-9]/', '')->toString(),
+            $acceptedKeys,
+        );
+        $walk = function (mixed $node, string $path = '') use (&$walk, &$found, $acceptedKeys): void {
             if ($found || ! is_array($node)) {
                 return;
             }
@@ -285,19 +289,23 @@ class RdoSignatureService
                 $normalizedKey = is_string($key)
                     ? Str::of($key)->lower()->replaceMatches('/[^a-z0-9]/', '')->toString()
                     : '';
+                $normalizedPath = $path.$normalizedKey;
+                $url = is_string($value) ? $this->normalizeProviderUrl($value) : null;
 
                 if (
-                    in_array($normalizedKey, $acceptedKeys, true)
-                    && is_string($value)
-                    && filter_var($value, FILTER_VALIDATE_URL)
+                    $url
+                    && (
+                        in_array($normalizedKey, $acceptedKeys, true)
+                        || collect($acceptedKeys)->contains(fn (string $acceptedKey): bool => Str::contains($normalizedPath, $acceptedKey))
+                    )
                 ) {
-                    $found = $value;
+                    $found = $url;
 
                     return;
                 }
 
                 if (is_array($value)) {
-                    $walk($value);
+                    $walk($value, $normalizedPath);
                 }
             }
         };
@@ -305,6 +313,33 @@ class RdoSignatureService
         $walk($payload);
 
         return $found;
+    }
+
+    private function normalizeProviderUrl(string $value): ?string
+    {
+        $value = trim($value);
+
+        if (filter_var($value, FILTER_VALIDATE_URL)) {
+            return $value;
+        }
+
+        if (! Str::startsWith($value, '/')) {
+            return null;
+        }
+
+        $baseUrl = (string) config('signatures.opensign.base_url');
+        if ($baseUrl === '') {
+            return null;
+        }
+
+        $parts = parse_url($baseUrl);
+        if (empty($parts['scheme']) || empty($parts['host'])) {
+            return null;
+        }
+
+        $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
+
+        return $origin.$value;
     }
 
     private function downloadSignatureArtifact(
@@ -317,6 +352,15 @@ class RdoSignatureService
         }
 
         $response = Http::timeout(90)->get($url);
+        if ($response->failed()) {
+            $apiKey = (string) config('signatures.opensign.api_key');
+            if ($apiKey !== '') {
+                $response = Http::withHeaders(['x-api-token' => $apiKey])
+                    ->timeout(90)
+                    ->get($url);
+            }
+        }
+
         if ($response->failed() || $response->body() === '') {
             return null;
         }
