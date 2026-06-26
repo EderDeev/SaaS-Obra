@@ -1037,6 +1037,53 @@ class TenantRdoTest extends TestCase
         );
     }
 
+    public function test_refresh_completed_opensign_signature_uses_file_as_signed_pdf_fallback(): void
+    {
+        config([
+            'signatures.opensign.base_url' => 'https://sandbox.opensign.test/api/v1.2',
+            'signatures.opensign.api_key' => 'test-api-key',
+        ]);
+        Storage::fake('public');
+        Http::fake([
+            'https://sandbox.opensign.test/api/v1.2/document/doc-file-123' => Http::response([
+                'objectId' => 'doc-file-123',
+                'status' => 'completed',
+                'file' => 'https://files.opensign.test/rdo-file-assinado.pdf',
+            ]),
+            'https://files.opensign.test/rdo-file-assinado.pdf' => Http::response('%PDF-1.4 signed file fallback rdo'),
+        ]);
+
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
+            $configuration,
+            CarbonImmutable::parse('2026-06-25'),
+            false,
+            $user->id,
+        );
+        $signatureRequest = RdoSignatureRequest::create([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'requested_by_id' => $user->id,
+            'provider' => 'opensign',
+            'provider_request_id' => 'request-file-123',
+            'provider_document_id' => 'doc-file-123',
+            'status' => 'completed',
+            'title' => 'Assinatura RDO',
+            'completed_at' => now(),
+        ]);
+
+        app(\App\Services\RdoSignatureService::class)->refreshFromProvider($signatureRequest);
+
+        $signatureRequest->refresh();
+        $this->assertNotNull($signatureRequest->signed_pdf_path);
+        $this->assertNull($signatureRequest->error_message);
+        $this->assertSame(
+            '%PDF-1.4 signed file fallback rdo',
+            Storage::disk('public')->get($signatureRequest->signed_pdf_path)
+        );
+    }
+
     private function scenario(): array
     {
         $tenant = Tenant::create([

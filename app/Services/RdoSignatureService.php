@@ -248,6 +248,7 @@ class RdoSignatureService
         }
 
         $signedUrl = $this->findProviderUrl($providerPayload, [
+            'file',
             'signedurl',
             'signed_url',
             'signedpdfurl',
