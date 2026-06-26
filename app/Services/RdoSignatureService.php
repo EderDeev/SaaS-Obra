@@ -169,6 +169,12 @@ class RdoSignatureService
             $request = $request->fresh(['tenant', 'rdo', 'signers']);
             $this->markAllSignersCompleted($request, $payload);
             $this->storeCompletedArtifacts($request, $payload);
+            $request->refresh();
+            $request->update([
+                'error_message' => $request->signed_pdf_path
+                    ? null
+                    : $this->completedWithoutSignedPdfMessage($request->provider_payload ?? $payload),
+            ]);
         }
 
         return $request->fresh(['rdo', 'signers']);
@@ -193,6 +199,10 @@ class RdoSignatureService
 
         $document = app(OpenSignSignatureProvider::class)->getDocument((string) $documentId);
         if ($document === []) {
+            $request->update([
+                'error_message' => "OpenSign marcou a assinatura como {$request->status}, mas a consulta do documento {$documentId} não retornou dados.",
+            ]);
+
             return $request->fresh(['rdo', 'signers']);
         }
 
@@ -216,6 +226,12 @@ class RdoSignatureService
             $request = $request->fresh(['tenant', 'rdo', 'signers']);
             $this->markAllSignersCompleted($request, $document);
             $this->storeCompletedArtifacts($request, $document);
+            $request->refresh();
+            $request->update([
+                'error_message' => $request->signed_pdf_path
+                    ? null
+                    : $this->completedWithoutSignedPdfMessage($request->provider_payload ?? $document),
+            ]);
         }
 
         return $request->fresh(['rdo', 'signers']);
@@ -534,6 +550,70 @@ class RdoSignatureService
                 'provider_payload' => $providerPayload,
             ]);
         });
+    }
+
+    private function completedWithoutSignedPdfMessage(array $payload): string
+    {
+        $keys = $this->payloadKeyHints($payload);
+        $urlHints = $this->payloadUrlKeyHints($payload);
+
+        return 'OpenSign retornou a assinatura como concluída, mas não informou uma URL de PDF assinado nos campos conhecidos. '
+            .'Chaves recebidas: '.($keys !== [] ? implode(', ', array_slice($keys, 0, 30)) : 'nenhuma').'. '
+            .'Campos com URL: '.($urlHints !== [] ? implode(', ', array_slice($urlHints, 0, 20)) : 'nenhum').'.';
+    }
+
+    private function payloadKeyHints(array $payload): array
+    {
+        $keys = [];
+        $walk = function (mixed $node, string $prefix = '') use (&$walk, &$keys): void {
+            if (! is_array($node) || count($keys) >= 80) {
+                return;
+            }
+
+            foreach ($node as $key => $value) {
+                if (! is_string($key)) {
+                    continue;
+                }
+
+                $path = $prefix === '' ? $key : "{$prefix}.{$key}";
+                if (is_array($value)) {
+                    $walk($value, $path);
+                } else {
+                    $keys[] = $path;
+                }
+            }
+        };
+
+        $walk($payload);
+
+        return collect($keys)->unique()->values()->all();
+    }
+
+    private function payloadUrlKeyHints(array $payload): array
+    {
+        $keys = [];
+        $walk = function (mixed $node, string $prefix = '') use (&$walk, &$keys): void {
+            if (! is_array($node) || count($keys) >= 40) {
+                return;
+            }
+
+            foreach ($node as $key => $value) {
+                if (! is_string($key)) {
+                    continue;
+                }
+
+                $path = $prefix === '' ? $key : "{$prefix}.{$key}";
+                if (is_string($value) && $this->normalizeProviderUrl($value)) {
+                    $keys[] = $path;
+                } elseif (is_array($value)) {
+                    $walk($value, $path);
+                }
+            }
+        };
+
+        $walk($payload);
+
+        return collect($keys)->unique()->values()->all();
     }
 
     private function statusFromProviderPayload(array $payload, string $fallback = 'sent'): string
