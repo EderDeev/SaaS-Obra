@@ -150,13 +150,7 @@ class RdoSignatureService
             return null;
         }
 
-        $status = $this->normalizeProviderStatus((string) (
-            data_get($payload, 'status')
-            ?? data_get($payload, 'data.status')
-            ?? data_get($payload, 'document.status')
-            ?? data_get($payload, 'event')
-            ?? 'sent'
-        ));
+        $status = $this->statusFromProviderPayload($payload, 'sent');
         $request->update([
             'status' => $status,
             'webhook_payload' => $payload,
@@ -172,7 +166,56 @@ class RdoSignatureService
         );
 
         if ($status === 'completed') {
-            $this->storeCompletedArtifacts($request->fresh(['tenant', 'rdo']), $payload);
+            $request = $request->fresh(['tenant', 'rdo', 'signers']);
+            $this->markAllSignersCompleted($request, $payload);
+            $this->storeCompletedArtifacts($request, $payload);
+        }
+
+        return $request->fresh(['rdo', 'signers']);
+    }
+
+    public function refreshFromProvider(RdoSignatureRequest $request): RdoSignatureRequest
+    {
+        $request->loadMissing(['tenant', 'rdo', 'signers']);
+
+        if ($request->provider !== 'opensign') {
+            if ($request->status === 'completed') {
+                $this->markAllSignersCompleted($request, $request->provider_payload ?? []);
+            }
+
+            return $request->fresh(['rdo', 'signers']);
+        }
+
+        $documentId = $request->provider_document_id ?: $request->provider_request_id;
+        if (! $documentId) {
+            return $request->fresh(['rdo', 'signers']);
+        }
+
+        $document = app(OpenSignSignatureProvider::class)->getDocument((string) $documentId);
+        if ($document === []) {
+            return $request->fresh(['rdo', 'signers']);
+        }
+
+        $status = $this->statusFromProviderPayload($document, $request->status ?: 'sent');
+        $request->update([
+            'status' => $status,
+            'provider_payload' => array_replace_recursive($request->provider_payload ?? [], ['document' => $document]),
+            'completed_at' => $status === 'completed' ? ($request->completed_at ?: now()) : $request->completed_at,
+        ]);
+
+        $this->syncProviderSigners(
+            $request->fresh('signers'),
+            data_get($document, 'signers')
+                ?? data_get($document, 'Signers')
+                ?? data_get($document, 'data.signers')
+                ?? data_get($document, 'document.signers')
+                ?? [],
+        );
+
+        if ($status === 'completed') {
+            $request = $request->fresh(['tenant', 'rdo', 'signers']);
+            $this->markAllSignersCompleted($request, $document);
+            $this->storeCompletedArtifacts($request, $document);
         }
 
         return $request->fresh(['rdo', 'signers']);
@@ -190,14 +233,24 @@ class RdoSignatureService
 
         $signedUrl = $this->findProviderUrl($providerPayload, [
             'signedurl',
+            'signed_url',
             'signedpdfurl',
+            'signedpdf',
             'signeddocumenturl',
+            'signeddocument',
             'completeddocumenturl',
+            'completeddocument',
+            'completedurl',
+            'completedfile',
+            'finalpdfurl',
+            'documenturl',
         ]);
         $certificateUrl = $this->findProviderUrl($providerPayload, [
             'certificateurl',
+            'certificate',
             'completioncertificateurl',
             'audittrailurl',
+            'audittrail',
         ]);
         $updates = ['provider_payload' => $providerPayload];
 
@@ -421,12 +474,60 @@ class RdoSignatureService
         });
     }
 
+    private function markAllSignersCompleted(RdoSignatureRequest $request, array $payload = []): void
+    {
+        $signedAt = $request->completed_at ?: now();
+
+        $request->signers->each(function (RdoSignatureSigner $signer) use ($signedAt, $payload): void {
+            $providerPayload = $signer->provider_payload;
+            if ($providerPayload === null && $payload !== []) {
+                $providerPayload = ['completed_document' => true];
+            }
+
+            $signer->update([
+                'status' => 'completed',
+                'signed_at' => $signer->signed_at ?: $signedAt,
+                'provider_payload' => $providerPayload,
+            ]);
+        });
+    }
+
+    private function statusFromProviderPayload(array $payload, string $fallback = 'sent'): string
+    {
+        $status = data_get($payload, 'status')
+            ?? data_get($payload, 'Status')
+            ?? data_get($payload, 'data.status')
+            ?? data_get($payload, 'data.Status')
+            ?? data_get($payload, 'document.status')
+            ?? data_get($payload, 'document.Status')
+            ?? data_get($payload, 'event')
+            ?? data_get($payload, 'eventType')
+            ?? data_get($payload, 'EventType');
+
+        if ($status) {
+            return $this->normalizeProviderStatus((string) $status);
+        }
+
+        $completed = data_get($payload, 'isCompleted')
+            ?? data_get($payload, 'IsCompleted')
+            ?? data_get($payload, 'completed')
+            ?? data_get($payload, 'Completed')
+            ?? data_get($payload, 'data.isCompleted')
+            ?? data_get($payload, 'document.isCompleted');
+
+        if ($completed === true || $completed === 1 || $completed === 'true' || $completed === '1') {
+            return 'completed';
+        }
+
+        return $this->normalizeProviderStatus($fallback);
+    }
+
     private function normalizeProviderStatus(string $status): string
     {
         $normalized = Str::of($status)->lower()->replace([' ', '-'], '_')->toString();
 
         return match ($normalized) {
-            'completed', 'complete', 'signed', 'document_completed', 'document_signed' => 'completed',
+            'completed', 'complete', 'signed', 'document_completed', 'document_signed', 'document_completed_event', 'completed_event', 'finish', 'finished' => 'completed',
             'declined', 'rejected', 'cancelled', 'canceled' => 'cancelled',
             'failed', 'error' => 'failed',
             'sent', 'pending', 'created', 'viewed', 'opened' => 'sent',

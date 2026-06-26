@@ -27,6 +27,21 @@ class RdoSignatureController extends Controller
         return $this->download($tenant, $rdo, $signature, 'unsigned_pdf_path', 'rdo-para-assinatura.pdf');
     }
 
+    public function refresh(Tenant $tenant, RdoDiario $rdo, RdoSignatureRequest $signature, RdoSignatureService $signatureService): RedirectResponse
+    {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $signature->tenant_id === (int) $tenant->id && (int) $signature->rdo_diario_id === (int) $rdo->id, 404);
+
+        $signature = $signatureService->refreshFromProvider($signature);
+
+        return back()->with(
+            $signature->signed_pdf_path ? 'success' : 'info',
+            $signature->signed_pdf_path
+                ? 'Assinatura atualizada. O PDF assinado já está disponível para download.'
+                : 'Assinatura atualizada. O PDF assinado ainda não foi disponibilizado pelo provedor.',
+        );
+    }
+
     public function downloadSigned(Tenant $tenant, RdoDiario $rdo, RdoSignatureRequest $signature): Response
     {
         return $this->download($tenant, $rdo, $signature, 'signed_pdf_path', 'rdo-assinado.pdf');

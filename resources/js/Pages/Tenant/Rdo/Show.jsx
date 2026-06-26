@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, ClipboardList, CloudSun, Construction, FileText, History, ImagePlus, MessageSquareText, Plus, Save, Send, Trash2, Users, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, ClipboardList, CloudSun, Construction, FileText, History, ImagePlus, MessageSquareText, Plus, RefreshCw, Save, Send, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const sections = [
@@ -37,6 +37,7 @@ export default function Show({ rdo, catalogs = {} }) {
     const [completeOpen, setCompleteOpen] = useState(false);
     const [flowProcessing, setFlowProcessing] = useState(false);
     const [signatureProcessing, setSignatureProcessing] = useState(false);
+    const [signatureRefreshProcessing, setSignatureRefreshProcessing] = useState(false);
     const sectionForm = useForm({ obra_id: '', dados: {}, fotos: [] });
     const completeForm = useForm({ obra_id: '', secoes: {}, fotos: [] });
     const flowForm = useForm({ comment: '', obra_ids: rdo.flow_obra_ids || [] });
@@ -127,6 +128,15 @@ export default function Show({ rdo, catalogs = {} }) {
             preserveScroll: true,
             preserveState: false,
             onFinish: () => setSignatureProcessing(false),
+        });
+    };
+
+    const refreshSignature = (signatureId) => {
+        setSignatureRefreshProcessing(true);
+        router.post(route('tenant.diario-obra.rdo.signatures.refresh', [currentTenant.slug, rdo.id, signatureId]), {}, {
+            preserveScroll: true,
+            preserveState: false,
+            onFinish: () => setSignatureRefreshProcessing(false),
         });
     };
 
@@ -223,7 +233,13 @@ export default function Show({ rdo, catalogs = {} }) {
                     <WorkflowPanel rdo={rdo} form={flowForm} processing={flowProcessing} onAction={changeFlow} />
                 </div>
 
-                <SignaturePanel rdo={rdo} processing={signatureProcessing} onSend={sendSignature} />
+                <SignaturePanel
+                    rdo={rdo}
+                    processing={signatureProcessing}
+                    refreshProcessing={signatureRefreshProcessing}
+                    onSend={sendSignature}
+                    onRefresh={refreshSignature}
+                />
             </div>
 
             {activeSection && (
@@ -345,7 +361,7 @@ function CompleteModal({ form, catalogs, obras, activeObraId, onChangeObra, onCl
     );
 }
 
-function SignaturePanel({ rdo, processing = false, onSend }) {
+function SignaturePanel({ rdo, processing = false, refreshProcessing = false, onSend, onRefresh }) {
     const signature = rdo.signature;
 
     if (rdo.status !== 'arquivado' && !signature) {
@@ -353,6 +369,7 @@ function SignaturePanel({ rdo, processing = false, onSend }) {
     }
 
     const canSend = rdo.status === 'arquivado' && (!signature || ['failed', 'cancelled'].includes(signature.status));
+    const canRefresh = signature && ['sent', 'pending', 'completed'].includes(signature.status) && (!signature.signed_download_url || (signature.signers || []).some((signer) => signer.status !== 'completed'));
 
     return (
         <section className="mt-5 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
@@ -367,6 +384,11 @@ function SignaturePanel({ rdo, processing = false, onSend }) {
                 {canSend && (
                     <button type="button" disabled={processing} onClick={onSend} className="sig-btn sig-btn-primary">
                         <Send size={16} /> {processing ? 'Enviando...' : 'Enviar para assinatura'}
+                    </button>
+                )}
+                {canRefresh && (
+                    <button type="button" disabled={refreshProcessing} onClick={() => onRefresh(signature.id)} className="sig-btn">
+                        <RefreshCw size={16} className={refreshProcessing ? 'animate-spin' : ''} /> {refreshProcessing ? 'Atualizando...' : 'Atualizar assinatura'}
                     </button>
                 )}
             </header>

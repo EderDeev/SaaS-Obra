@@ -928,6 +928,67 @@ class TenantRdoTest extends TestCase
         );
     }
 
+    public function test_refresh_completed_opensign_signature_marks_signers_and_downloads_pdf(): void
+    {
+        config([
+            'signatures.opensign.base_url' => 'https://sandbox.opensign.test/api/v1.2',
+            'signatures.opensign.api_key' => 'test-api-key',
+        ]);
+        Storage::fake('public');
+        Http::fake([
+            'https://sandbox.opensign.test/api/v1.2/document/doc-refresh-123' => Http::response([
+                'objectId' => 'doc-refresh-123',
+                'status' => 'completed',
+                'SignedUrl' => 'https://files.opensign.test/rdo-refresh-assinado.pdf',
+            ]),
+            'https://files.opensign.test/rdo-refresh-assinado.pdf' => Http::response('%PDF-1.4 signed refreshed rdo'),
+        ]);
+
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
+            $configuration,
+            CarbonImmutable::parse('2026-06-25'),
+            false,
+            $user->id,
+        );
+        $rdo->update(['status' => 'arquivado']);
+        $signatureRequest = RdoSignatureRequest::create([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'requested_by_id' => $user->id,
+            'provider' => 'opensign',
+            'provider_request_id' => 'request-refresh-123',
+            'provider_document_id' => 'doc-refresh-123',
+            'status' => 'completed',
+            'title' => 'Assinatura RDO',
+            'completed_at' => now(),
+        ]);
+        foreach (['construtora', 'gerenciadora', 'cliente'] as $role) {
+            \App\Models\RdoSignatureSigner::create([
+                'tenant_id' => $tenant->id,
+                'rdo_signature_request_id' => $signatureRequest->id,
+                'role' => $role,
+                'name' => ucfirst($role),
+                'email' => "{$role}@example.test",
+                'status' => 'pending',
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.signatures.refresh', [$tenant, $rdo, $signatureRequest]))
+            ->assertSessionHas('success');
+
+        $signatureRequest->refresh();
+        $this->assertNotNull($signatureRequest->signed_pdf_path);
+        $this->assertDatabaseMissing('rdo_signature_signers', [
+            'rdo_signature_request_id' => $signatureRequest->id,
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseCount('rdo_signature_signers', 3);
+        Storage::disk('public')->assertExists($signatureRequest->signed_pdf_path);
+    }
+
     private function scenario(): array
     {
         $tenant = Tenant::create([
