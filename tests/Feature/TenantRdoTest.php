@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\RdoConfiguracao;
+use App\Models\RdoAnalise;
 use App\Models\RdoDiario;
 use App\Models\RdoResponsavel;
 use App\Models\RdoSignatureRequest;
@@ -1082,6 +1083,61 @@ class TenantRdoTest extends TestCase
             '%PDF-1.4 signed file fallback rdo',
             Storage::disk('public')->get($signatureRequest->signed_pdf_path)
         );
+    }
+
+    public function test_rdo_history_is_loaded_on_demand_with_flow_and_signature_events(): void
+    {
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
+            $configuration,
+            CarbonImmutable::parse('2026-06-25'),
+            false,
+            $user->id,
+        );
+        RdoAnalise::create([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'obra_id' => $obra->id,
+            'user_id' => $user->id,
+            'etapa' => 'construtora',
+            'decisao' => 'submit',
+            'status_anterior' => 'rascunho',
+            'status_novo' => 'em_aprovacao',
+        ]);
+        $signatureRequest = RdoSignatureRequest::create([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'requested_by_id' => $user->id,
+            'provider' => 'local',
+            'status' => 'completed',
+            'title' => 'Assinatura RDO',
+            'sent_at' => now(),
+            'completed_at' => now(),
+            'signed_pdf_path' => 'tenant-1/rdo-assinado.pdf',
+        ]);
+        \App\Models\RdoSignatureSigner::create([
+            'tenant_id' => $tenant->id,
+            'rdo_signature_request_id' => $signatureRequest->id,
+            'role' => 'cliente',
+            'name' => 'Cliente Teste',
+            'email' => 'cliente@example.test',
+            'status' => 'completed',
+            'signed_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson(route('tenant.diario-obra.rdo.history', [$tenant, $rdo]))
+            ->assertOk();
+
+        $events = collect($response->json('events'));
+
+        $this->assertGreaterThanOrEqual(5, $events->count());
+        $this->assertTrue($events->contains(fn (array $event): bool => $event['type'] === 'created'));
+        $this->assertTrue($events->contains(fn (array $event): bool => $event['type'] === 'flow' && $event['tone'] === 'primary'));
+        $this->assertTrue($events->contains(fn (array $event): bool => $event['type'] === 'signature' && $event['tone'] === 'primary'));
+        $this->assertTrue($events->contains(fn (array $event): bool => $event['type'] === 'signature' && $event['tone'] === 'success' && str_contains($event['title'], 'assinou')));
+        $this->assertTrue($events->contains(fn (array $event): bool => $event['type'] === 'signature' && $event['tone'] === 'success' && str_contains($event['title'], 'PDF')));
     }
 
     private function scenario(): array

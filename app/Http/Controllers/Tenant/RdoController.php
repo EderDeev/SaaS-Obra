@@ -23,6 +23,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -311,9 +312,6 @@ class RdoController extends Controller
             'copiedFrom:id,code,reference_date',
             'configuracao.obras:id,nome,codigo',
             'secoes',
-            'analises.user:id,name,email',
-            'analises.empresa:id,nome,sigla',
-            'analises.obra:id,codigo,nome',
             'signatureRequests.signers',
         ]);
         $capabilities = $this->flowCapabilities($tenant, $rdo, request()->user());
@@ -334,21 +332,6 @@ class RdoController extends Controller
                 'editable_obra_ids' => $capabilities['editable_obra_ids'],
                 'flow_actions' => $capabilities['actions'],
                 'flow_obra_ids' => $capabilities['flow_obra_ids'],
-                'analyses' => $rdo->analises
-                    ->sortByDesc('created_at')
-                    ->values()
-                    ->map(fn (RdoAnalise $analysis) => [
-                        'id' => $analysis->id,
-                        'stage' => $analysis->etapa,
-                        'stage_label' => $this->stageLabel($analysis->etapa),
-                        'decision' => $analysis->decisao,
-                        'decision_label' => $this->decisionLabel($analysis->decisao),
-                        'comment' => $analysis->comentario,
-                        'user' => $analysis->user?->only(['id', 'name', 'email']),
-                        'company' => $analysis->empresa?->only(['id', 'nome', 'sigla']),
-                        'obra' => $analysis->obra?->only(['id', 'codigo', 'nome']),
-                        'created_at' => $analysis->created_at?->format('d/m/Y H:i'),
-                    ]),
                 'signature' => $this->signaturePayload($tenant, $rdo),
                 'sections' => $rdo->secoes
                     ->groupBy('obra_id')
@@ -384,6 +367,129 @@ class RdoController extends Controller
         $fileName = sprintf('rdo-%s-%s.pdf', $rdo->code, $rdo->reference_date?->format('Ymd'));
 
         return $pdfRenderer->render($tenant, $rdo)->stream($fileName);
+    }
+
+    public function history(Tenant $tenant, RdoDiario $rdo): JsonResponse
+    {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
+
+        $rdo->loadMissing(['responsible:id,name,email', 'copiedFrom:id,code,reference_date']);
+
+        $events = collect([
+            [
+                'id' => 'rdo-created-'.$rdo->id,
+                'type' => 'created',
+                'tone' => 'neutral',
+                'title' => $rdo->generated_automatically ? 'RDO gerado automaticamente' : 'RDO criado manualmente',
+                'description' => $rdo->copiedFrom
+                    ? 'Dados copiados de '.$rdo->copiedFrom->code.' - '.$rdo->copiedFrom->reference_date?->format('d/m/Y')
+                    : null,
+                'actor' => $rdo->responsible?->name,
+                'company' => null,
+                'obra' => null,
+                'comment' => null,
+                'created_at' => $rdo->created_at,
+            ],
+        ]);
+
+        $analysisEvents = RdoAnalise::query()
+            ->with(['user:id,name,email', 'empresa:id,nome,sigla', 'obra:id,codigo,nome'])
+            ->where('tenant_id', $tenant->id)
+            ->where('rdo_diario_id', $rdo->id)
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (RdoAnalise $analysis) => [
+                'id' => 'analysis-'.$analysis->id,
+                'type' => 'flow',
+                'tone' => match ($analysis->decisao) {
+                    'approve' => 'success',
+                    'approve_with_reservations' => 'warning',
+                    'return' => 'danger',
+                    default => 'primary',
+                },
+                'title' => $this->stageLabel($analysis->etapa).' · '.$this->decisionLabel($analysis->decisao),
+                'description' => $analysis->status_anterior !== $analysis->status_novo
+                    ? $this->statusLabel($analysis->status_anterior).' → '.$this->statusLabel($analysis->status_novo)
+                    : null,
+                'actor' => $analysis->user?->name,
+                'company' => $analysis->empresa?->nome,
+                'obra' => $analysis->obra ? "{$analysis->obra->codigo} - {$analysis->obra->nome}" : null,
+                'comment' => $analysis->comentario,
+                'created_at' => $analysis->created_at,
+            ]);
+
+        $signatureEvents = $rdo->signatureRequests()
+            ->with(['requestedBy:id,name,email', 'signers'])
+            ->orderBy('created_at')
+            ->get()
+            ->flatMap(function ($signature) {
+                $items = collect();
+
+                $items->push([
+                    'id' => 'signature-request-'.$signature->id,
+                    'type' => 'signature',
+                    'tone' => $signature->status === 'failed' ? 'danger' : 'primary',
+                    'title' => 'RDO enviado para assinatura',
+                    'description' => $signature->provider ? 'Provedor: '.ucfirst($signature->provider) : null,
+                    'actor' => $signature->requestedBy?->name,
+                    'company' => null,
+                    'obra' => null,
+                    'comment' => $signature->error_message,
+                    'created_at' => $signature->sent_at ?: $signature->created_at,
+                ]);
+
+                foreach ($signature->signers as $signer) {
+                    if (! $signer->signed_at) {
+                        continue;
+                    }
+
+                    $items->push([
+                        'id' => 'signature-signer-'.$signer->id,
+                        'type' => 'signature',
+                        'tone' => 'success',
+                        'title' => $this->stageLabel($signer->role).' assinou o RDO',
+                        'description' => $signer->email,
+                        'actor' => $signer->name,
+                        'company' => null,
+                        'obra' => null,
+                        'comment' => null,
+                        'created_at' => $signer->signed_at,
+                    ]);
+                }
+
+                if ($signature->completed_at) {
+                    $items->push([
+                        'id' => 'signature-completed-'.$signature->id,
+                        'type' => 'signature',
+                        'tone' => $signature->signed_pdf_path ? 'success' : 'warning',
+                        'title' => $signature->signed_pdf_path ? 'PDF assinado disponível' : 'Assinatura concluída',
+                        'description' => $signature->signed_pdf_path ? 'Documento final pronto para download.' : 'Aguardando arquivo final do provedor.',
+                        'actor' => null,
+                        'company' => null,
+                        'obra' => null,
+                        'comment' => null,
+                        'created_at' => $signature->completed_at,
+                    ]);
+                }
+
+                return $items;
+            });
+
+        $events = $events
+            ->merge($analysisEvents)
+            ->merge($signatureEvents)
+            ->filter(fn (array $event) => $event['created_at'] !== null)
+            ->sortByDesc('created_at')
+            ->values()
+            ->map(fn (array $event) => [
+                ...$event,
+                'created_at' => $event['created_at']?->format('d/m/Y H:i'),
+                'date_group' => $event['created_at']?->isToday()
+                    ? 'Hoje'
+                    : ($event['created_at']?->isYesterday() ? 'Ontem' : $event['created_at']?->format('d/m/Y')),
+            ]);
+
+        return response()->json(['events' => $events]);
     }
 
     public function saveSection(Request $request, Tenant $tenant, RdoDiario $rdo, string $secao): RedirectResponse
@@ -1154,6 +1260,18 @@ class RdoController extends Controller
             'approve_with_reservations' => 'Aprovado com ressalvas',
             'return' => 'Devolvido',
             default => 'Enviado para análise',
+        };
+    }
+
+    private function statusLabel(?string $status): string
+    {
+        return match ($status) {
+            'em_aprovacao' => 'Em aprovação',
+            'devolvido_construtora' => 'Devolvido à construtora',
+            'pendente_comprovacao' => 'Pendente de comprovação',
+            'arquivado' => 'Arquivado',
+            'rascunho' => 'Rascunho',
+            default => $status ?: '-',
         };
     }
 }

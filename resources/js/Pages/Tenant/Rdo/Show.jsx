@@ -38,6 +38,10 @@ export default function Show({ rdo, catalogs = {} }) {
     const [flowProcessing, setFlowProcessing] = useState(false);
     const [signatureProcessing, setSignatureProcessing] = useState(false);
     const [signatureRefreshProcessing, setSignatureRefreshProcessing] = useState(false);
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyEvents, setHistoryEvents] = useState([]);
+    const [historyError, setHistoryError] = useState('');
     const sectionForm = useForm({ obra_id: '', dados: {}, fotos: [] });
     const completeForm = useForm({ obra_id: '', secoes: {}, fotos: [] });
     const flowForm = useForm({ comment: '', obra_ids: rdo.flow_obra_ids || [] });
@@ -140,6 +144,29 @@ export default function Show({ rdo, catalogs = {} }) {
         });
     };
 
+    const openHistory = async () => {
+        setHistoryOpen(true);
+        setHistoryLoading(true);
+        setHistoryError('');
+
+        try {
+            const response = await fetch(route('tenant.diario-obra.rdo.history', [currentTenant.slug, rdo.id]), {
+                headers: { Accept: 'application/json' },
+            });
+
+            if (!response.ok) {
+                throw new Error('Não foi possível carregar o histórico.');
+            }
+
+            const data = await response.json();
+            setHistoryEvents(data.events || []);
+        } catch (error) {
+            setHistoryError(error.message || 'Não foi possível carregar o histórico.');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!activeSection) return undefined;
         const onKeyDown = (event) => event.key === 'Escape' && closeSection();
@@ -230,7 +257,7 @@ export default function Show({ rdo, catalogs = {} }) {
                 </div>
 
                 <div className="mt-5">
-                    <WorkflowPanel rdo={rdo} form={flowForm} processing={flowProcessing} onAction={changeFlow} />
+                    <WorkflowPanel rdo={rdo} form={flowForm} processing={flowProcessing} onAction={changeFlow} onOpenHistory={openHistory} />
                 </div>
 
                 <SignaturePanel
@@ -264,6 +291,14 @@ export default function Show({ rdo, catalogs = {} }) {
                     onChangeObra={loadCompleteForObra}
                     onClose={() => !completeForm.processing && setCompleteOpen(false)}
                     onSubmit={saveComplete}
+                />
+            )}
+            {historyOpen && (
+                <HistoryModal
+                    events={historyEvents}
+                    loading={historyLoading}
+                    error={historyError}
+                    onClose={() => setHistoryOpen(false)}
                 />
             )}
         </AuthenticatedLayout>
@@ -456,7 +491,7 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
     );
 }
 
-function WorkflowPanel({ rdo, form, processing = false, onAction }) {
+function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory }) {
     const steps = [
         ['construtora', 'Construtora', rdo.contract?.construtora?.nome],
         ['aprovacao', 'Aprovação conjunta', [rdo.contract?.gerenciadora?.nome, rdo.contract?.cliente?.nome].filter(Boolean).join(' + ')],
@@ -484,9 +519,14 @@ function WorkflowPanel({ rdo, form, processing = false, onAction }) {
                     <span className="eyebrow">Fluxo de análise e aprovação</span>
                     <h2 className="mt-1 text-lg font-bold">{rdo.status_label}</h2>
                 </div>
-                <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${rdo.status === 'arquivado' ? 'bg-emerald-50 text-emerald-700' : rdo.status.includes('devolvido') || rdo.status.includes('pendente') ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
-                    {rdo.status_label}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={onOpenHistory} className="sig-btn">
+                        <History size={16} /> HistÃ³rico
+                    </button>
+                    <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${rdo.status === 'arquivado' ? 'bg-emerald-50 text-emerald-700' : rdo.status.includes('devolvido') || rdo.status.includes('pendente') ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
+                        {rdo.status_label}
+                    </span>
+                </div>
             </header>
 
             <div className="grid gap-2 border-b border-[var(--border)] bg-slate-50/70 p-4 md:grid-cols-3">
@@ -568,7 +608,7 @@ function WorkflowPanel({ rdo, form, processing = false, onAction }) {
                 </div>
             )}
 
-            <div className="p-5">
+            <div className="hidden">
                 <div className="mb-3 flex items-center gap-2">
                     <History size={18} className="text-[var(--primary)]" />
                     <h3 className="font-bold">Histórico do fluxo</h3>
@@ -590,6 +630,80 @@ function WorkflowPanel({ rdo, form, processing = false, onAction }) {
                 ) : <p className="text-sm text-[var(--ink-500)]">O RDO ainda não foi submetido para análise.</p>}
             </div>
         </section>
+    );
+}
+
+function HistoryModal({ events = [], loading = false, error = '', onClose }) {
+    const toneClasses = {
+        success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        warning: 'border-amber-200 bg-amber-50 text-amber-700',
+        danger: 'border-red-200 bg-red-50 text-red-700',
+        primary: 'border-blue-200 bg-blue-50 text-blue-700',
+        neutral: 'border-slate-200 bg-slate-50 text-slate-700',
+    };
+    const grouped = events.reduce((acc, event) => {
+        const key = event.date_group || 'Sem data';
+        acc[key] = acc[key] || [];
+        acc[key].push(event);
+        return acc;
+    }, {});
+
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+            <section className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label="HistÃ³rico do RDO">
+                <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+                    <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]"><History size={21} /></span>
+                        <div>
+                            <span className="eyebrow">Auditoria do RDO</span>
+                            <h2 className="text-xl font-bold">HistÃ³rico</h2>
+                        </div>
+                    </div>
+                    <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar"><X size={21} /></button>
+                </header>
+
+                <div className="overflow-y-auto bg-slate-50/60 p-5">
+                    {loading && <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">Carregando histÃ³rico...</div>}
+                    {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+                    {!loading && !error && events.length === 0 && (
+                        <div className="rounded-lg border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink-500)]">Nenhum evento registrado para este RDO.</div>
+                    )}
+                    {!loading && !error && Object.entries(grouped).map(([date, items]) => (
+                        <div key={date} className="mb-5 last:mb-0">
+                            <div className="sticky top-0 z-10 mb-3 bg-slate-50/95 py-1">
+                                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--ink-500)] shadow-sm">{date}</span>
+                            </div>
+                            <div className="space-y-3">
+                                {items.map((event) => (
+                                    <article key={event.id} className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${toneClasses[event.tone] || toneClasses.neutral}`}>
+                                                    {event.type === 'signature' ? 'Assinatura' : event.type === 'flow' ? 'Fluxo' : 'RDO'}
+                                                </span>
+                                                <h3 className="mt-2 text-sm font-bold">{event.title}</h3>
+                                            </div>
+                                            <time className="text-xs font-semibold text-[var(--ink-500)]">{event.created_at}</time>
+                                        </div>
+                                        {event.description && <p className="mt-2 text-sm text-[var(--ink-600)]">{event.description}</p>}
+                                        {(event.actor || event.company || event.obra) && (
+                                            <p className="mt-2 text-xs text-[var(--ink-500)]">
+                                                {[event.actor, event.company, event.obra && `Frente: ${event.obra}`].filter(Boolean).join(' Â· ')}
+                                            </p>
+                                        )}
+                                        {event.comment && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm">{event.comment}</p>}
+                                    </article>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <footer className="flex justify-end border-t border-[var(--border)] px-5 py-4">
+                    <button type="button" onClick={onClose} className="sig-btn">Fechar</button>
+                </footer>
+            </section>
+        </div>
     );
 }
 

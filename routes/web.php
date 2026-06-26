@@ -143,6 +143,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::post('/diario-obra/rdo/{rdo}/assinaturas/{signature}/atualizar', [RdoSignatureController::class, 'refresh'])->name('diario-obra.rdo.signatures.refresh');
         Route::get('/diario-obra/rdo/{rdo}/assinaturas/{signature}/pdf-original', [RdoSignatureController::class, 'downloadUnsigned'])->name('diario-obra.rdo.signatures.unsigned');
         Route::get('/diario-obra/rdo/{rdo}/assinaturas/{signature}/pdf-assinado', [RdoSignatureController::class, 'downloadSigned'])->name('diario-obra.rdo.signatures.signed');
+        Route::get('/diario-obra/rdo/{rdo}/historico', [RdoController::class, 'history'])->name('diario-obra.rdo.history');
         Route::get('/diario-obra/rdo/{rdo}/pdf', [RdoController::class, 'pdf'])->name('diario-obra.rdo.pdf');
         Route::get('/diario-obra/rdo/{rdo}', [RdoController::class, 'show'])->name('diario-obra.rdo.show');
         Route::get('/medicao/item', [MedicaoController::class, 'item'])->name('medicao.item.index');
