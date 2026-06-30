@@ -2106,6 +2106,7 @@ class OrcamentoController extends Controller
     private function queueComposicoesImport(Request $request, Tenant $tenant, string $type, array $data, string $message): RedirectResponse
     {
         $path = $request->file('file')->store('imports/orcamentos/composicoes', 'local');
+        unset($data['file']);
 
         ImportOrcamentoComposicoesJob::dispatch(
             $tenant->id,

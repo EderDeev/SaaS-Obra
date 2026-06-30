@@ -518,7 +518,7 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
             )}
 
             {hasSearched && pagination && (
-                <Pagination pagination={pagination} />
+                <Pagination filters={filters} pagination={pagination} tenant={tenant} />
             )}
         </section>
     );
@@ -573,10 +573,14 @@ function OpenButton({ compact = false, composicao, tenant }) {
     );
 }
 
-function Pagination({ pagination }) {
-    const goTo = (url) => {
-        if (url) {
-            router.get(url, {}, { preserveScroll: true, preserveState: true });
+function Pagination({ filters, pagination, tenant }) {
+    const goTo = (page) => {
+        if (page) {
+            router.get(route('tenant.orcamentos.composicoes.index', tenant.slug), {
+                ...filters,
+                page,
+                searched: 1,
+            }, { preserveScroll: true, preserveState: true, replace: true });
         }
     };
 
@@ -587,7 +591,7 @@ function Pagination({ pagination }) {
                     className={`sig-btn sig-btn-secondary min-h-9 ${!pagination.prev_page_url ? 'cursor-not-allowed opacity-45' : ''}`}
                     disabled={!pagination.prev_page_url}
                     type="button"
-                    onClick={() => goTo(pagination.prev_page_url)}
+                    onClick={() => goTo(Math.max(1, Number(pagination.current_page ?? 1) - 1))}
                 >
                     Anterior
                 </button>
@@ -595,7 +599,7 @@ function Pagination({ pagination }) {
                     className={`sig-btn sig-btn-primary min-h-9 ${!pagination.next_page_url ? 'cursor-not-allowed opacity-45' : ''}`}
                     disabled={!pagination.next_page_url}
                     type="button"
-                    onClick={() => goTo(pagination.next_page_url)}
+                    onClick={() => goTo(Math.min(Number(pagination.last_page ?? 1), Number(pagination.current_page ?? 1) + 1))}
                 >
                     Proxima
                 </button>
@@ -609,6 +613,7 @@ function Pagination({ pagination }) {
                     .filter((link) => !String(link.label).includes('Previous') && !String(link.label).includes('Next'))
                     .map((link, index) => {
                         const label = paginationLabel(link.label);
+                        const page = Number(label);
 
                         return (
                             <button
@@ -618,9 +623,9 @@ function Pagination({ pagination }) {
                                         ? 'border-[var(--primary)] bg-[var(--primary)] text-white'
                                         : 'border-[var(--border)] bg-white text-[var(--ink-600)] hover:bg-[var(--primary-50)]'
                                 } ${!link.url ? 'cursor-not-allowed opacity-45' : ''}`}
-                                disabled={!link.url}
+                                disabled={!link.url || !Number.isFinite(page)}
                                 type="button"
-                                onClick={() => goTo(link.url)}
+                                onClick={() => goTo(page)}
                             >
                                 {label}
                             </button>
