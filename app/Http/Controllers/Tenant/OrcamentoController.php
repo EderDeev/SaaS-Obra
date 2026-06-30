@@ -97,7 +97,9 @@ class OrcamentoController extends Controller
 
     private const CSV_IMPORT_BATCH_SIZE = 500;
 
-    private const POSTGRES_CSV_IMPORT_BATCH_SIZE = 2000;
+    private const POSTGRES_CSV_IMPORT_BATCH_SIZE = 250;
+
+    private const POSTGRES_CSV_INSERT_CHUNK_SIZE = 100;
 
     private const CSV_UPLOAD_MAX_KB = 102400;
 
@@ -2647,7 +2649,7 @@ class OrcamentoController extends Controller
             return;
         }
 
-        $chunkSize = DB::connection()->getDriverName() === 'pgsql' ? 1000 : 50;
+        $chunkSize = $this->csvInsertChunkSize();
 
         foreach (array_chunk($rows, $chunkSize) as $chunk) {
             OrcamentoComposicao::insert($chunk);
@@ -2827,9 +2829,6 @@ class OrcamentoController extends Controller
             'codigo_item_referenciado' => $value('codigo_item_referenciado') !== '' ? $value('codigo_item_referenciado') : null,
             'utilizacao_operativa' => $this->parseDecimal($value('utilizacao_operativa')),
             'utilizacao_improdutiva' => $this->parseDecimal($value('utilizacao_improdutiva')),
-            'raw_payload' => collect($headerMap)
-                ->mapWithKeys(fn (int $index, string $field): array => [$field => $this->normalizeCsvValue((string) ($row[$index] ?? ''))])
-                ->all(),
         ];
     }
 
@@ -2920,6 +2919,7 @@ class OrcamentoController extends Controller
                         'tenant_id' => $tenantId,
                         'created_by_id' => $record->created_by_id ?: $userId,
                         'is_global' => $global,
+                        'raw_payload' => null,
                     ]))->save();
                 }
 
@@ -2933,7 +2933,7 @@ class OrcamentoController extends Controller
                 'tenant_id' => $tenantId,
                 'created_by_id' => $userId,
                 'is_global' => $global,
-                'raw_payload' => json_encode($payload['raw_payload'] ?? [], JSON_UNESCAPED_UNICODE),
+                'raw_payload' => null,
                 'created_at' => $now,
                 'updated_at' => $now,
                 'deleted_at' => null,
@@ -3030,7 +3030,7 @@ class OrcamentoController extends Controller
             return;
         }
 
-        $chunkSize = DB::connection()->getDriverName() === 'pgsql' ? 1000 : 50;
+        $chunkSize = $this->csvInsertChunkSize();
 
         foreach (array_chunk($rows, $chunkSize) as $chunk) {
             OrcamentoComposicaoAnaliticoItem::insert($chunk);
@@ -3316,7 +3316,7 @@ class OrcamentoController extends Controller
         }
 
         if ($insertRows !== []) {
-            $chunkSize = DB::connection()->getDriverName() === 'pgsql' ? 1000 : 50;
+            $chunkSize = $this->csvInsertChunkSize();
 
             foreach (array_chunk($insertRows, $chunkSize) as $chunk) {
                 OrcamentoComposicaoItem::insert($chunk);
@@ -4255,7 +4255,7 @@ class OrcamentoController extends Controller
             return;
         }
 
-        $chunkSize = DB::connection()->getDriverName() === 'pgsql' ? 2000 : 50;
+        $chunkSize = $this->csvInsertChunkSize();
 
         foreach (array_chunk($rows, $chunkSize) as $chunk) {
             OrcamentoInsumo::insert($chunk);
@@ -4288,6 +4288,13 @@ class OrcamentoController extends Controller
         return DB::connection()->getDriverName() === 'pgsql'
             ? self::POSTGRES_CSV_IMPORT_BATCH_SIZE
             : self::CSV_IMPORT_BATCH_SIZE;
+    }
+
+    private function csvInsertChunkSize(): int
+    {
+        return DB::connection()->getDriverName() === 'pgsql'
+            ? self::POSTGRES_CSV_INSERT_CHUNK_SIZE
+            : 50;
     }
 
     private function detectCsvDelimiter(string $line): string
