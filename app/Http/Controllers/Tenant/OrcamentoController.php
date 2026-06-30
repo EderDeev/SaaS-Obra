@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\DeleteStoredImportFileJob;
+use App\Jobs\ImportOrcamentoComposicoesJob;
 use App\Models\Empresa;
 use App\Models\Orcamento;
 use App\Models\OrcamentoComposicao;
@@ -21,6 +23,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -2021,27 +2024,13 @@ class OrcamentoController extends Controller
                 ]);
             }
 
-            $result = $this->importOwnMappedComposicaoCsv(
-                $request->file('file')->getRealPath(),
+            return $this->queueComposicoesImport(
+                $request,
                 $tenant,
-                $request->user()->id,
+                'tenant_mapped',
                 $data,
+                'Importacao de composicoes da base propria enviada para processamento. Voce pode continuar usando o sistema enquanto o servidor grava os lotes em segundo plano.',
             );
-
-            return back()->with(
-                'success',
-                "Importacao de composicoes da base propria concluida: {$result['created']} criada(s), {$result['updated']} atualizada(s), {$result['duplicated']} duplicada(s) ignorada(s), {$result['skipped']} invalida(s) ignorada(s).",
-            )->with('import_result', [
-                'title' => 'Resumo da importacao de composicoes da base propria',
-                'scope' => 'tenant',
-                'scope_label' => 'Base propria',
-                'base' => 'PROPRIA',
-                'read' => $result['read'],
-                'created' => $result['created'],
-                'updated' => $result['updated'],
-                'duplicated' => $result['duplicated'],
-                'skipped' => $result['skipped'],
-            ]);
         }
 
         if (! $request->filled('first_item_row')) {
@@ -2086,29 +2075,13 @@ class OrcamentoController extends Controller
 
         $this->authorizeInsumoScope($request, $tenant, $data['scope']);
 
-        $result = $this->importMappedComposicaoCsv(
-            $request->file('file')->getRealPath(),
+        return $this->queueComposicoesImport(
+            $request,
             $tenant,
-            $request->user()->id,
+            'global_mapped',
             $data,
-            mb_strtoupper($data['modelo']),
-            true,
+            'Importacao global de composicoes enviada para processamento. Voce pode continuar usando o sistema enquanto o servidor grava os lotes em segundo plano.',
         );
-
-        return back()->with(
-            'success',
-            "Importacao de composicoes concluida: {$result['created']} criada(s), {$result['updated']} atualizada(s), {$result['duplicated']} duplicada(s) ignorada(s), {$result['skipped']} invalida(s) ignorada(s).",
-        )->with('import_result', [
-            'title' => 'Resumo da importacao de composicoes',
-            'scope' => $data['scope'],
-            'scope_label' => $data['scope'] === 'global' ? 'Global' : 'Base propria',
-            'base' => $data['modelo'],
-            'read' => $result['read'],
-            'created' => $result['created'],
-            'updated' => $result['updated'],
-            'duplicated' => $result['duplicated'],
-            'skipped' => $result['skipped'],
-        ]);
     }
 
     public function importComposicoesAnalitico(Request $request, Tenant $tenant): RedirectResponse
@@ -2121,34 +2094,40 @@ class OrcamentoController extends Controller
 
         $this->authorizeInsumoScope($request, $tenant, 'global');
 
-        $result = $this->importComposicoesAnaliticoCsv(
-            $request->file('file')->getRealPath(),
+        return $this->queueComposicoesImport(
+            $request,
             $tenant,
-            $data['modelo'],
-            true,
-            $request->user()->id,
+            'global_analytic',
+            $data,
+            'Importacao analitica enviada para processamento. Voce pode continuar usando o sistema enquanto o servidor grava os vinculos em segundo plano.',
         );
-        $hasChanges = ((int) $result['created'] + (int) $result['updated']) > 0;
+    }
 
-        return back()->with(
-            'success',
-            "Importacao analitica concluida: {$result['created']} vinculo(s) criado(s), {$result['updated']} atualizado(s), {$result['duplicated']} duplicado(s) ignorado(s), {$result['composition_headers']} cabecalho(s) de composicao ignorado(s), {$result['skipped']} invalido(s) ignorado(s).",
-        )->with('import_result', [
-            'title' => 'Resumo da importacao analitica',
-            'status' => $hasChanges ? 'success' : 'warning',
-            'message' => $hasChanges
-                ? 'Importacao analitica concluida com sucesso. Os vinculos foram gravados na base global.'
-                : 'Importacao analitica concluida, mas nenhum vinculo novo foi gravado. Verifique se as linhas ja existem, se foram duplicadas ou se ficaram invalidas.',
-            'scope' => 'global',
-            'scope_label' => 'Global',
-            'base' => $data['modelo'],
-            'read' => $result['read'],
-            'created' => $result['created'],
-            'updated' => $result['updated'],
-            'duplicated' => $result['duplicated'],
-            'composition_headers' => $result['composition_headers'],
-            'skipped' => $result['skipped'],
-        ]);
+    private function queueComposicoesImport(Request $request, Tenant $tenant, string $type, array $data, string $message): RedirectResponse
+    {
+        $path = $request->file('file')->store('imports/orcamentos/composicoes', 'local');
+
+        ImportOrcamentoComposicoesJob::dispatch(
+            $tenant->id,
+            $request->user()->id,
+            $type,
+            $path,
+            $data,
+        );
+
+        DeleteStoredImportFileJob::dispatch($path)->delay(now()->addHours(6));
+
+        return back()->with('success', $message.' O arquivo temporario sera removido automaticamente apos o processamento ou em ate 6 horas.');
+    }
+
+    public function runQueuedComposicoesImport(string $type, string $path, Tenant $tenant, int $userId, array $data): array
+    {
+        return match ($type) {
+            'tenant_mapped' => $this->importOwnMappedComposicaoCsv($path, $tenant, $userId, $data),
+            'global_mapped' => $this->importMappedComposicaoCsv($path, $tenant, $userId, $data, mb_strtoupper((string) ($data['modelo'] ?? 'SINAPI')), true),
+            'global_analytic' => $this->importComposicoesAnaliticoCsv($path, $tenant, mb_strtoupper((string) ($data['modelo'] ?? 'SINAPI')), true, $userId),
+            default => throw new \InvalidArgumentException("Tipo de importacao de composicoes invalido: {$type}"),
+        };
     }
 
     private function importComposicoesCsv(string $path, Tenant $tenant, string $model, bool $global, int $userId): array

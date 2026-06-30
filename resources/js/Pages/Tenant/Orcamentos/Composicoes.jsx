@@ -283,7 +283,7 @@ function ImportProgressOverlay({ form, title }) {
                         <p className="mt-0.5 text-xs text-[var(--ink-500)]">
                             {isUploading
                                 ? 'Enviando arquivo para o servidor.'
-                                : 'Upload concluido. Processando e gravando os lotes no PostgreSQL.'}
+                                : 'Upload concluido. A importacao sera processada em segundo plano.'}
                         </p>
                     </div>
                 </div>
@@ -302,7 +302,7 @@ function ImportProgressOverlay({ form, title }) {
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[var(--ink-500)]">
                     <CheckCircle2 size={14} className={progress >= 100 ? 'text-emerald-600' : 'text-blue-600'} />
                     <span>
-                        Mantenha esta tela aberta ate o resumo final aparecer.
+                        Depois do upload, voce pode continuar usando o sistema. A importacao segue na fila do servidor.
                     </span>
                 </div>
             </div>
