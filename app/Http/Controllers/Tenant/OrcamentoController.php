@@ -2113,9 +2113,11 @@ class OrcamentoController extends Controller
             $type,
             $path,
             $data,
-        );
+        )->onConnection('database');
 
-        DeleteStoredImportFileJob::dispatch($path)->delay(now()->addHours(6));
+        DeleteStoredImportFileJob::dispatch($path)
+            ->onConnection('database')
+            ->delay(now()->addHours(6));
 
         return back()->with('success', $message.' O arquivo temporario sera removido automaticamente apos o processamento ou em ate 6 horas.');
     }
