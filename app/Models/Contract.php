@@ -121,4 +121,9 @@ class Contract extends Model
     {
         return $this->hasMany(OrdemServico::class);
     }
+
+    public function rdoConfiguracoes(): HasMany
+    {
+        return $this->hasMany(RdoConfiguracao::class);
+    }
 }

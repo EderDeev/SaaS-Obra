@@ -47,7 +47,7 @@ class RdoFlowChangedNotification extends Notification
             'notifiable' => $notifiable,
             'rdo' => $this->rdo,
             'actor' => $this->actor,
-            'message' => $this->message,
+            'bodyText' => $this->message,
             'statusLabel' => $this->statusLabel(),
             'rdoUrl' => $rdoUrl,
         ];

@@ -25,7 +25,7 @@
 
                             <div style="margin:0 0 20px;padding:16px;border:1px solid #dbe7ff;border-radius:10px;background:#f5f8ff;">
                                 <div style="margin:0 0 7px;color:#0b5fff;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">Atualização</div>
-                                <p style="margin:0;font-size:14px;line-height:1.6;color:#111827;">{{ $message }}</p>
+                                <p style="margin:0;font-size:14px;line-height:1.6;color:#111827;">{{ $bodyText }}</p>
                             </div>
 
                             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border-collapse:collapse;">

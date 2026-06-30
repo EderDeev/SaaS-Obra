@@ -3,7 +3,7 @@ Atualização no fluxo do RDO
 
 Olá, {{ $notifiable->name }}.
 
-{{ $message }}
+{{ $bodyText }}
 
 RDO: {{ $rdo->code }}
 Data de referência: {{ $rdo->reference_date?->format('d/m/Y') }}

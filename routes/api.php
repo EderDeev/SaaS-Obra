@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\OpenSignWebhookController;
 use App\Http\Controllers\Api\Mobile\MobileAuthController;
+use App\Http\Controllers\Api\Mobile\MobileRdaController;
 use App\Http\Controllers\Api\Mobile\MobileRncController;
 use Illuminate\Support\Facades\Route;
 
@@ -15,5 +16,6 @@ Route::prefix('mobile')
         Route::middleware('mobile.token')->group(function (): void {
             Route::get('/bootstrap', [MobileRncController::class, 'bootstrap'])->name('bootstrap');
             Route::post('/rnc/offline', [MobileRncController::class, 'storeOffline'])->name('rnc.offline.store');
+            Route::post('/rda/offline', [MobileRdaController::class, 'storeOffline'])->name('rda.offline.store');
         });
     });

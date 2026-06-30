@@ -423,6 +423,7 @@ class RdoSignatureService
                     ->where('status', 'active'),
             ])
             ->where('tenant_id', $tenant->id)
+            ->where('modulo', 'rdo')
             ->where('contract_id', $rdo->contract_id)
             ->where('etapa', 'assinatura')
             ->where('status', 'active')
@@ -459,6 +460,7 @@ class RdoSignatureService
                 $users = RdoResponsavel::query()
                     ->with('user:id,name,email')
                     ->where('tenant_id', $tenant->id)
+                    ->where('modulo', 'rdo')
                     ->where('contract_id', $rdo->contract_id)
                     ->where('etapa', $role)
                     ->where('status', 'active')

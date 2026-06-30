@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Mobile\MobileRdaController;
 use App\Models\Contract;
 use App\Models\Disciplina;
 use App\Models\Empresa;
@@ -59,6 +60,7 @@ class MobileRncController extends Controller
                 ->orderBy('nome')
                 ->get(['id', 'tenant_id', 'contract_id', 'nome', 'sigla', 'cor']),
             'gravidades' => self::GRAVIDADES,
+            ...MobileRdaController::bootstrapPayload($tenant, $user),
         ]);
     }
 

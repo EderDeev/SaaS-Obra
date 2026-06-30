@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'obra_id',
     'user_id',
     'created_by_id',
+    'modulo',
     'etapa',
     'status',
 ])]

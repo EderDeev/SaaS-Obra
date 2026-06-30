@@ -80,6 +80,7 @@ export default function AuthenticatedLayout({ children }) {
     const [ordemServicoOpen, setOrdemServicoOpen] = useState(() => route().current('tenant.ordem-servico.*'));
     const [diarioObraOpen, setDiarioObraOpen] = useState(() => route().current('tenant.diario-obra.*'));
     const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*'));
+    const [rdaOpen, setRdaOpen] = useState(() => route().current('tenant.diario-obra.rda.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         if (typeof window === 'undefined') {
@@ -277,9 +278,14 @@ export default function AuthenticatedLayout({ children }) {
                     active: route().current('tenant.diario-obra.rdo.calendar') || route().current('tenant.diario-obra.rdo.show'),
                 },
                 {
-                    label: 'Parametrização',
-                    href: route('tenant.diario-obra.rdo.settings', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.settings*'),
+                    label: 'Dashboard',
+                    href: route('tenant.diario-obra.rdo.dashboard', tenant.slug),
+                    active: route().current('tenant.diario-obra.rdo.dashboard'),
+                },
+                {
+                    label: 'Responsáveis',
+                    href: route('tenant.diario-obra.rdo.responsaveis.index', tenant.slug),
+                    active: route().current('tenant.diario-obra.rdo.responsaveis.*'),
                 },
                 {
                     label: 'Cadastros',
@@ -287,9 +293,25 @@ export default function AuthenticatedLayout({ children }) {
                     active: route().current('tenant.diario-obra.rdo.cadastros.*'),
                 },
                 {
+                    label: 'Parametrização',
+                    href: route('tenant.diario-obra.rdo.settings', tenant.slug),
+                    active: route().current('tenant.diario-obra.rdo.settings*'),
+                },
+            ],
+        },
+        {
+            label: 'RDA',
+            active: route().current('tenant.diario-obra.rda.*'),
+            children: [
+                {
+                    label: 'Calendário',
+                    href: route('tenant.diario-obra.rda.index', tenant.slug),
+                    active: route().current('tenant.diario-obra.rda.index') || route().current('tenant.diario-obra.rda.show'),
+                },
+                {
                     label: 'Responsáveis',
-                    href: route('tenant.diario-obra.rdo.responsaveis.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.responsaveis.*'),
+                    href: route('tenant.diario-obra.rda.responsaveis.index', tenant.slug),
+                    active: route().current('tenant.diario-obra.rda.responsaveis.*'),
                 },
             ],
         }]
@@ -463,18 +485,22 @@ export default function AuthenticatedLayout({ children }) {
                                     </button>
                                     {childrenOpen && (
                                         <div className="ml-7">
-                                            {item.children.map((child) => child.children ? (
+                                            {item.children.map((child) => {
+                                                const nestedOpen = child.label === 'RDA' ? rdaOpen : rdoOpen;
+                                                const toggleNestedOpen = child.label === 'RDA' ? setRdaOpen : setRdoOpen;
+
+                                                return child.children ? (
                                                 <div key={child.label}>
                                                     <button
                                                         type="button"
-                                                        onClick={() => setRdoOpen((open) => !open)}
+                                                        onClick={() => toggleNestedOpen((open) => !open)}
                                                         className={`sig-nav-item !w-[calc(100%_-_16px)] border-0 bg-transparent !py-2 text-left !text-[12.5px] ${child.active ? 'active' : ''}`}
                                                     >
                                                         <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
                                                         <span className="min-w-0 flex-1 truncate">{child.label}</span>
-                                                        <ChevronRight size={13} className={`transition-transform ${rdoOpen ? 'rotate-90' : ''}`} />
+                                                        <ChevronRight size={13} className={`transition-transform ${nestedOpen ? 'rotate-90' : ''}`} />
                                                     </button>
-                                                    {rdoOpen && (
+                                                    {nestedOpen && (
                                                         <div className="ml-5">
                                                             {child.children.map((grandchild) => (
                                                                 <Link
@@ -498,7 +524,8 @@ export default function AuthenticatedLayout({ children }) {
                                                     <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
                                                     <span className="min-w-0 flex-1 truncate">{child.label}</span>
                                                 </Link>
-                                            ))}
+                                            );
+                                            })}
                                         </div>
                                     )}
                                 </div>

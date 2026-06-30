@@ -42,9 +42,11 @@ export default function Show({ rdo, catalogs = {} }) {
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyEvents, setHistoryEvents] = useState([]);
     const [historyError, setHistoryError] = useState('');
+    const [importingRdaId, setImportingRdaId] = useState(null);
+    const [previewRda, setPreviewRda] = useState(null);
     const sectionForm = useForm({ obra_id: '', dados: {}, fotos: [] });
     const completeForm = useForm({ obra_id: '', secoes: {}, fotos: [] });
-    const flowForm = useForm({ comment: '', obra_ids: rdo.flow_obra_ids || [] });
+    const flowForm = useForm({ comment: '', comments_by_obra: {}, obra_ids: rdo.flow_obra_ids || [] });
     const allObras = rdo.obras || [rdo.obra];
     const editableObras = rdo.can_edit
         ? allObras.filter((obra) => rdo.editable_obra_ids?.includes(Number(obra.id)))
@@ -114,6 +116,7 @@ export default function Show({ rdo, catalogs = {} }) {
         router.post(route('tenant.diario-obra.rdo.flow', [currentTenant.slug, rdo.id]), {
             action,
             comment: action === 'submit' && rdo.status === 'rascunho' ? '' : flowForm.data.comment,
+            comments_by_obra: rdo.status === 'em_aprovacao' ? flowForm.data.comments_by_obra : {},
             obra_ids: action === 'submit'
                 ? (rdo.flow_obra_ids || [])
                 : (flowForm.data.obra_ids?.length ? flowForm.data.obra_ids : (rdo.flow_obra_ids || [])),
@@ -121,7 +124,7 @@ export default function Show({ rdo, catalogs = {} }) {
             preserveScroll: true,
             preserveState: false,
             onError: (errors) => flowForm.setError(errors),
-            onSuccess: () => flowForm.setData('comment', ''),
+            onSuccess: () => flowForm.setData({ ...flowForm.data, comment: '', comments_by_obra: {} }),
             onFinish: () => setFlowProcessing(false),
         });
     };
@@ -150,7 +153,7 @@ export default function Show({ rdo, catalogs = {} }) {
         setHistoryError('');
 
         try {
-            const response = await fetch(route('tenant.diario-obra.rdo.history', [currentTenant.slug, rdo.id]), {
+            const response = await fetch(`${route('tenant.diario-obra.rdo.history', [currentTenant.slug, rdo.id])}?limit=8`, {
                 headers: { Accept: 'application/json' },
             });
 
@@ -165,6 +168,16 @@ export default function Show({ rdo, catalogs = {} }) {
         } finally {
             setHistoryLoading(false);
         }
+    };
+
+    const importRda = (rda) => {
+        setImportingRdaId(rda.id);
+        router.post(rda.import_url, {}, {
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => setPreviewRda(null),
+            onFinish: () => setImportingRdaId(null),
+        });
     };
 
     useEffect(() => {
@@ -223,6 +236,12 @@ export default function Show({ rdo, catalogs = {} }) {
                         </div>
                     </div>
                 )}
+
+                <RdaReferencePanel
+                    rdas={rdo.published_rdas || []}
+                    canImport={rdo.can_edit}
+                    onPreview={setPreviewRda}
+                />
 
                 {rdo.can_edit && (
                     <div className="mb-4 flex justify-end">
@@ -301,12 +320,186 @@ export default function Show({ rdo, catalogs = {} }) {
                     onClose={() => setHistoryOpen(false)}
                 />
             )}
+            {previewRda && (
+                <RdaPreviewModal
+                    rda={previewRda}
+                    canImport={rdo.can_edit}
+                    importing={importingRdaId === previewRda.id}
+                    onImport={() => importRda(previewRda)}
+                    onClose={() => setPreviewRda(null)}
+                />
+            )}
         </AuthenticatedLayout>
+    );
+}
+
+function RdaReferencePanel({ rdas = [], canImport = false, onPreview }) {
+    if (!rdas.length) return null;
+
+    return (
+        <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <span className="eyebrow">RDA publicado</span>
+                    <h2 className="text-lg font-black text-[var(--ink-900)]">Registros disponíveis para este RDO</h2>
+                    <p className="mt-1 text-sm text-[var(--ink-500)]">
+                        Use os dados publicados no RDA para preencher clima, atividades, mão de obra, equipamentos e fotos da obra correspondente.
+                    </p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-blue-700">{rdas.length} RDA(s)</span>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+                {rdas.map((rda) => (
+                    <div key={rda.id} className="rounded-xl border border-blue-100 bg-white p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p className="font-mono text-sm font-black text-[var(--primary)]">{rda.code}</p>
+                                <h3 className="mt-1 font-black text-[var(--ink-900)]">
+                                    {rda.obra ? `${rda.obra.codigo} - ${rda.obra.nome}` : 'Obra não identificada'}
+                                </h3>
+                                <p className="mt-1 text-xs font-semibold text-[var(--ink-500)]">
+                                    Publicado em {rda.published_at || '—'} · {rda.activities_count} atividade(s) · {rda.photos_count} foto(s)
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => onPreview(rda)}
+                                className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-bold text-white"
+                            >
+                                <ClipboardList size={16} />
+                                Visualizar RDA
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function RdaPreviewModal({ rda, canImport = false, importing = false, onImport, onClose }) {
+    const dados = rda.dados || {};
+    const clima = dados.clima || {};
+    const atividades = dados.atividades || [];
+    const maoObra = dados.mao_obra || [];
+    const equipamentos = dados.equipamentos || [];
+    const subcontratadas = dados.subcontratadas || [];
+    const fotos = dados.fotos || [];
+    const weatherLabels = {
+        ensolarado: 'Ensolarado',
+        nublado: 'Nublado',
+        chuvoso: 'Chuvoso',
+        nao_aplicavel: 'Não aplicável',
+    };
+    const periodLabel = (period) => weatherLabels[Array.isArray(clima[period]) ? clima[period][0] : clima[period]] || 'Não informado';
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+            <div className="flex max-h-[88vh] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl">
+                <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--border)] p-5">
+                    <div>
+                        <span className="eyebrow">RDA publicado</span>
+                        <h2 className="mt-1 text-2xl font-black text-[var(--ink-900)]">{rda.code}</h2>
+                        <p className="mt-1 text-sm font-semibold text-[var(--ink-500)]">
+                            {rda.obra ? `${rda.obra.codigo} - ${rda.obra.nome}` : 'Obra não identificada'} · Publicado em {rda.published_at || '—'}
+                        </p>
+                    </div>
+                    <button type="button" onClick={onClose} className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-bold">
+                        Fechar
+                    </button>
+                </header>
+
+                <div className="overflow-y-auto p-5">
+                    <div className="grid gap-4 lg:grid-cols-3">
+                        <section className="rounded-xl border border-[var(--border)] bg-slate-50 p-4">
+                            <h3 className="font-black text-[var(--ink-900)]">Condições do tempo</h3>
+                            <div className="mt-3 grid gap-2 text-sm">
+                                {['manha', 'tarde', 'noite'].map((period) => (
+                                    <div key={period} className="rounded-lg bg-white px-3 py-2">
+                                        <span className="font-black capitalize">{period}</span>
+                                        <span className="ml-2 text-[var(--ink-600)]">{periodLabel(period)}</span>
+                                        <span className="ml-2 text-xs text-[var(--ink-500)]">
+                                            {clima[`precipitacao_${period}_mm`] ? `${clima[`precipitacao_${period}_mm`]} mm` : 'sem chuva informada'}
+                                        </span>
+                                    </div>
+                                ))}
+                                {clima.dia_impraticavel && (
+                                    <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">Dia impraticável</span>
+                                )}
+                            </div>
+                        </section>
+
+                        <section className="rounded-xl border border-[var(--border)] bg-slate-50 p-4 lg:col-span-2">
+                            <h3 className="font-black text-[var(--ink-900)]">Atividades e ocorrências</h3>
+                            <div className="mt-3 space-y-2">
+                                {atividades.length === 0 && <p className="text-sm font-semibold text-[var(--ink-500)]">Nenhuma atividade registrada.</p>}
+                                {atividades.map((item, index) => (
+                                    <div key={`${item.titulo}-${index}`} className="rounded-lg bg-white p-3">
+                                        <p className="font-black text-[var(--ink-900)]">{item.titulo || 'Sem título'}</p>
+                                        {item.ocorrencia && <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-600)]">{item.ocorrencia}</p>}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                        <RdaPreviewResource title="Mão de obra" items={maoObra} />
+                        <RdaPreviewResource title="Equipamentos" items={equipamentos} />
+                        <RdaPreviewResource title="Subcontratadas" items={subcontratadas} />
+                    </div>
+
+                    <section className="mt-4 rounded-xl border border-[var(--border)] bg-slate-50 p-4">
+                        <h3 className="font-black text-[var(--ink-900)]">Registros fotográficos</h3>
+                        {fotos.length === 0 && <p className="mt-3 text-sm font-semibold text-[var(--ink-500)]">Nenhuma foto registrada.</p>}
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {fotos.map((foto, index) => (
+                                <a key={`${foto.path}-${index}`} href={`/storage/${foto.path}`} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--border)] bg-white p-2">
+                                    <img src={`/storage/${foto.path}`} alt={foto.nome || `Foto ${index + 1}`} className="h-32 w-full rounded-md object-cover" />
+                                    <p className="mt-2 text-xs font-semibold text-[var(--ink-600)]">{foto.comment || foto.legenda || 'Sem comentário'}</p>
+                                </a>
+                            ))}
+                        </div>
+                    </section>
+                </div>
+
+                <footer className="flex flex-wrap justify-end gap-3 border-t border-[var(--border)] p-5">
+                    <button type="button" onClick={onClose} className="rounded-lg border border-[var(--border)] px-4 py-2.5 font-bold">
+                        Cancelar
+                    </button>
+                    {canImport && (
+                        <button type="button" onClick={onImport} disabled={importing} className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 font-bold text-white disabled:opacity-60">
+                            <ClipboardList size={17} />
+                            {importing ? 'Importando...' : 'Usar no RDO'}
+                        </button>
+                    )}
+                </footer>
+            </div>
+        </div>
+    );
+}
+
+function RdaPreviewResource({ title, items = [] }) {
+    return (
+        <section className="rounded-xl border border-[var(--border)] bg-slate-50 p-4">
+            <h3 className="font-black text-[var(--ink-900)]">{title}</h3>
+            <div className="mt-3 space-y-2">
+                {items.length === 0 && <p className="text-sm font-semibold text-[var(--ink-500)]">Nenhum registro.</p>}
+                {items.map((item, index) => (
+                    <div key={`${item.cadastro_id}-${index}`} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm">
+                        <span className="font-bold text-[var(--ink-700)]">{item.descricao || 'Item sem descrição'}</span>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black">{item.quantidade || 0}</span>
+                    </div>
+                ))}
+            </div>
+        </section>
     );
 }
 
 function CompleteModal({ form, catalogs, obras, activeObraId, onChangeObra, onClose, onSubmit }) {
     const activeObra = obras.find((obra) => Number(obra.id) === Number(activeObraId));
+    const visibleError = Object.values(form.errors).find((error) => error && !String(error).startsWith('validation.'));
     const scoped = (key) => ({
         data: {
             dados: form.data.secoes?.[key] || emptySection[key],
@@ -385,7 +578,7 @@ function CompleteModal({ form, catalogs, obras, activeObraId, onChangeObra, onCl
                         <FullSection title="Registro fotográfico" icon={Camera}><PhotoFields form={scoped('fotos')} /></FullSection>
                         <FullSection title="Comentários" icon={MessageSquareText}><CommentFields form={scoped('comentarios')} /></FullSection>
                     </div>
-                    {Object.values(form.errors).length > 0 && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{Object.values(form.errors)[0]}</p>}
+                    {visibleError && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{visibleError}</p>}
                 </div>
                 <footer className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
                     <button type="button" onClick={onClose} className="sig-btn">Cancelar</button>
@@ -521,7 +714,7 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <button type="button" onClick={onOpenHistory} className="sig-btn">
-                        <History size={16} /> HistÃ³rico
+                        <History size={16} /> Histórico
                     </button>
                     <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${rdo.status === 'arquivado' ? 'bg-emerald-50 text-emerald-700' : rdo.status.includes('devolvido') || rdo.status.includes('pendente') ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
                         {rdo.status_label}
@@ -571,7 +764,10 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                             {form.errors.obra_ids && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.obra_ids}</p>}
                         </div>
                     )}
-                    {showCommentField && (
+                    {showCommentField && rdo.status === 'em_aprovacao' && (
+                        <ApprovalCommentFields rdo={rdo} form={form} selectedObraIds={selectedFlowObraIds} needsComment={needsComment} />
+                    )}
+                    {showCommentField && rdo.status !== 'em_aprovacao' && (
                         <>
                     <Field label={rdo.status === 'rascunho' ? 'Comentário de envio (opcional)' : needsComment ? 'Parecer / resposta' : 'Comentário (opcional)'}>
                         <textarea
@@ -608,7 +804,8 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                 </div>
             )}
 
-            <div className="hidden">
+            {false && (
+            <div>
                 <div className="mb-3 flex items-center gap-2">
                     <History size={18} className="text-[var(--primary)]" />
                     <h3 className="font-bold">Histórico do fluxo</h3>
@@ -629,79 +826,135 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                     </div>
                 ) : <p className="text-sm text-[var(--ink-500)]">O RDO ainda não foi submetido para análise.</p>}
             </div>
+            )}
         </section>
     );
 }
 
-function HistoryModal({ events = [], loading = false, error = '', onClose }) {
-    const toneClasses = {
-        success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-        warning: 'border-amber-200 bg-amber-50 text-amber-700',
-        danger: 'border-red-200 bg-red-50 text-red-700',
-        primary: 'border-blue-200 bg-blue-50 text-blue-700',
-        neutral: 'border-slate-200 bg-slate-50 text-slate-700',
+function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment = false }) {
+    const activeStage = rdo.active_stage;
+    const comments = rdo.approval_comments || {};
+    const stageLabel = activeStage === 'cliente' ? 'cliente' : 'gerenciadora';
+    const fieldLabel = activeStage === 'cliente' ? 'Parecer do cliente' : 'Parecer da gerenciadora';
+    const company = activeStage === 'cliente' ? rdo.contract?.cliente?.nome : rdo.contract?.gerenciadora?.nome;
+    const selectedObras = (rdo.obras || []).filter((obra) => selectedObraIds.includes(Number(obra.id)));
+    const otherStage = activeStage === 'cliente' ? 'gerenciadora' : 'cliente';
+    const otherStageLabel = otherStage === 'cliente' ? 'Cliente' : 'Gerenciadora';
+
+    const setObraComment = (obraId, value) => {
+        form.setData('comments_by_obra', {
+            ...(form.data.comments_by_obra || {}),
+            [obraId]: value,
+        });
     };
-    const grouped = events.reduce((acc, event) => {
-        const key = event.date_group || 'Sem data';
-        acc[key] = acc[key] || [];
-        acc[key].push(event);
-        return acc;
-    }, {});
 
     return (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-            <section className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label="HistÃ³rico do RDO">
-                <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
-                    <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]"><History size={21} /></span>
-                        <div>
-                            <span className="eyebrow">Auditoria do RDO</span>
-                            <h2 className="text-xl font-bold">HistÃ³rico</h2>
-                        </div>
+        <div>
+            <div className="mb-3">
+                <span className="eyebrow block">Parecer / resposta por frente</span>
+                <p className="mt-1 text-sm text-[var(--ink-500)]">
+                    Preencha o parecer da {stageLabel} separadamente para cada frente selecionada.
+                    {company ? ` Empresa: ${company}.` : ''}
+                </p>
+            </div>
+
+            <div className="grid gap-3">
+                {selectedObras.map((obra) => {
+                    const obraId = Number(obra.id);
+                    const savedFromOtherStage = comments?.[otherStage]?.[obraId];
+                    const value = form.data.comments_by_obra?.[obraId] ?? '';
+
+                    return (
+                        <section key={obra.id} className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
+                            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <span className="eyebrow">{obra.codigo}</span>
+                                    <h4 className="mt-1 text-base font-black text-[var(--ink-900)]">{obra.nome}</h4>
+                                </div>
+                                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">{fieldLabel}</span>
+                            </div>
+
+                            {savedFromOtherStage?.comment && (
+                                <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                    <p className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Parecer da {otherStageLabel}</p>
+                                    <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-700)]">{savedFromOtherStage.comment}</p>
+                                    <p className="mt-1 text-xs text-[var(--ink-500)]">
+                                        {savedFromOtherStage.decision || 'Decisão registrada'}{savedFromOtherStage.user ? ` por ${savedFromOtherStage.user}` : ''}{savedFromOtherStage.created_at ? ` em ${savedFromOtherStage.created_at}` : ''}
+                                    </p>
+                                </div>
+                            )}
+
+                            <Field label={fieldLabel}>
+                                <textarea
+                                    className="sig-input min-h-24"
+                                    value={value}
+                                    onChange={(event) => setObraComment(obraId, event.target.value)}
+                                    placeholder={needsComment
+                                        ? `Descreva as ressalvas ou o motivo da devolução para a frente ${obra.codigo}.`
+                                        : `Registre uma observação para a frente ${obra.codigo}.`}
+                                />
+                            </Field>
+                        </section>
+                    );
+                })}
+            </div>
+            {form.errors.comments_by_obra && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.comments_by_obra}</p>}
+            {form.errors.comment && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.comment}</p>}
+        </div>
+    );
+}
+
+function HistoryModal({ events = [], loading = false, error = '', onClose }) {
+    const typeLabel = (event) => {
+        if (event.type === 'signature') return 'Assinatura';
+        if (event.type === 'flow') return 'Fluxo';
+        return 'RDO';
+    };
+
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/50 p-2" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+            <section className="flex max-h-[min(520px,calc(100dvh-1rem))] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl" role="dialog" aria-modal="true" aria-label="Histórico do RDO">
+                <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3 py-2">
+                    <div className="min-w-0">
+                        <span className="eyebrow">Auditoria do RDO</span>
+                        <h2 className="text-base font-bold">Histórico</h2>
                     </div>
-                    <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar"><X size={21} /></button>
+                    <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar"><X size={18} /></button>
                 </header>
 
-                <div className="overflow-y-auto bg-slate-50/60 p-5">
-                    {loading && <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">Carregando histÃ³rico...</div>}
-                    {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                    {loading && <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">Carregando histórico...</div>}
+                    {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</div>}
                     {!loading && !error && events.length === 0 && (
                         <div className="rounded-lg border border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink-500)]">Nenhum evento registrado para este RDO.</div>
                     )}
-                    {!loading && !error && Object.entries(grouped).map(([date, items]) => (
-                        <div key={date} className="mb-5 last:mb-0">
-                            <div className="sticky top-0 z-10 mb-3 bg-slate-50/95 py-1">
-                                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--ink-500)] shadow-sm">{date}</span>
-                            </div>
-                            <div className="space-y-3">
-                                {items.map((event) => (
-                                    <article key={event.id} className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
-                                        <div className="flex flex-wrap items-start justify-between gap-3">
-                                            <div>
-                                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${toneClasses[event.tone] || toneClasses.neutral}`}>
-                                                    {event.type === 'signature' ? 'Assinatura' : event.type === 'flow' ? 'Fluxo' : 'RDO'}
-                                                </span>
-                                                <h3 className="mt-2 text-sm font-bold">{event.title}</h3>
+                    {!loading && !error && events.length > 0 && (
+                        <ul className="divide-y divide-[var(--border)]">
+                            {events.map((event) => (
+                                <li key={event.id} className="px-3 py-2">
+                                    <div className="flex min-w-0 items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--ink-500)]">{typeLabel(event)}</span>
+                                                <strong className="truncate text-sm">{event.title}</strong>
                                             </div>
-                                            <time className="text-xs font-semibold text-[var(--ink-500)]">{event.created_at}</time>
-                                        </div>
-                                        {event.description && <p className="mt-2 text-sm text-[var(--ink-600)]">{event.description}</p>}
-                                        {(event.actor || event.company || event.obra) && (
-                                            <p className="mt-2 text-xs text-[var(--ink-500)]">
-                                                {[event.actor, event.company, event.obra && `Frente: ${event.obra}`].filter(Boolean).join(' Â· ')}
+                                            <p className="mt-0.5 truncate text-xs text-[var(--ink-500)]">
+                                                {[event.actor, event.company, event.obra && `Frente: ${event.obra}`].filter(Boolean).join(' · ')}
                                             </p>
-                                        )}
-                                        {event.comment && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm">{event.comment}</p>}
-                                    </article>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
+                                        </div>
+                                        <time className="shrink-0 text-right text-[11px] font-semibold text-[var(--ink-500)]">{event.created_at}</time>
+                                    </div>
+                                    {event.comment && <p className="mt-1 line-clamp-1 text-xs text-[var(--ink-600)]">{event.comment}</p>}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
-
-                <footer className="flex justify-end border-t border-[var(--border)] px-5 py-4">
-                    <button type="button" onClick={onClose} className="sig-btn">Fechar</button>
-                </footer>
+                {!loading && !error && events.length > 0 && (
+                    <div className="shrink-0 border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--ink-500)]">
+                        Mostrando os últimos {events.length} eventos.
+                    </div>
+                )}
             </section>
         </div>
     );
@@ -778,19 +1031,35 @@ function SectionModal({ section, form, catalogs, obras, activeObraId, onChangeOb
 function WeatherFields({ form }) {
     const set = (key, value) => form.setData('dados', { ...form.data.dados, [key]: value });
     const periodLabels = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' };
+    const weatherOptions = [
+        ['ensolarado', 'Ensolarado'],
+        ['nublado', 'Nublado'],
+        ['chuvoso', 'Chuvoso'],
+        ['nao_aplicavel', 'Não aplicável'],
+    ];
+    const selectedFor = (period) => Array.isArray(form.data.dados[period]) ? (form.data.dados[period][0] || '') : (form.data.dados[period] || '');
+    const toggleSituation = (period, option) => {
+        set(period, selectedFor(period) === option ? '' : option);
+    };
     return <div className="grid gap-4 md:grid-cols-3">
         {['manha', 'tarde', 'noite'].map((period) => (
             <section key={period} className="rounded-lg border border-[var(--border)] bg-slate-50 p-4">
                 <h4 className="mb-3 font-bold">{periodLabels[period]}</h4>
                 <div className="grid gap-3">
                     <Field label="Condição climática">
-                        <select className="sig-input" value={form.data.dados[period] || ''} onChange={(e) => set(period, e.target.value)}>
-                            <option value="">Selecione</option>
-                            <option value="ensolarado">Ensolarado</option>
-                            <option value="nublado">Nublado</option>
-                            <option value="chuvoso">Chuvoso</option>
-                            <option value="nao_aplicavel">Não aplicável</option>
-                        </select>
+                        <div className="grid gap-2">
+                            {weatherOptions.map(([option, label]) => (
+                                <label key={option} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded text-[var(--primary)]"
+                                        checked={selectedFor(period) === option}
+                                        onChange={() => toggleSituation(period, option)}
+                                    />
+                                    {label}
+                                </label>
+                            ))}
+                        </div>
                     </Field>
                     <Field label="Pluviosidade (mm)">
                         <input

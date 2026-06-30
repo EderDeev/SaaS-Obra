@@ -195,7 +195,7 @@
         'nao_aplicavel' => 'N/A',
         default => $value ?: '-',
     };
-    $weatherMark = fn ($value, $expected) => $value === $expected ? 'X' : '';
+    $weatherMark = fn ($value, $expected) => in_array($expected, is_array($value) ? $value : ($value ? [$value] : []), true) ? 'X' : '';
     $decisionText = fn ($value) => match ($value) {
         'approve' => 'Aprovado',
         'approve_with_reservations' => 'Aprovado com ressalvas',

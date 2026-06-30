@@ -3,7 +3,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ClipboardPenLine, Copy, Eye, Plus, Settings, X } from 'lucide-react';
+import { ClipboardPenLine, Copy, Download, Eye, Plus, Settings, X } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 
 const statusTone = {
@@ -34,7 +34,7 @@ function formatLocalDate(date) {
     return `${year}-${month}-${day}`;
 }
 
-export default function Calendar({ contracts, obras, filters, configuration, rdos, copyOptions = [] }) {
+export default function Calendar({ contracts, obras, filters, configuration, rdos, copyOptions = [], batch_download_url = null }) {
     const { currentTenant } = usePage().props;
     const initialRender = useRef(true);
     const [createDate, setCreateDate] = useState(null);
@@ -51,9 +51,6 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
 
     const changeFilter = (key, value) => {
         const next = { ...filters, [key]: value || undefined };
-        if (key === 'contract_id') {
-            delete next.obra_id;
-        }
         router.get(route('tenant.diario-obra.rdo.calendar', currentTenant.slug), next, {
             preserveState: false,
             replace: true,
@@ -98,7 +95,7 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                     </Link>
                 </div>
 
-                <div className="mb-4 grid gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm md:grid-cols-2">
+                <div className="mb-4 grid gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm md:grid-cols-[1.2fr_0.7fr_0.7fr_auto]">
                     <label>
                         <span className="eyebrow mb-1.5 block">Contrato</span>
                         <select className="sig-input w-full" value={filters.contract_id || ''} onChange={(event) => changeFilter('contract_id', event.target.value)}>
@@ -106,11 +103,21 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                         </select>
                     </label>
                     <label>
-                        <span className="eyebrow mb-1.5 block">Obra / frente</span>
-                        <select className="sig-input w-full" value={filters.obra_id || ''} onChange={(event) => changeFilter('obra_id', event.target.value)}>
-                            {obras.map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}
-                        </select>
+                        <span className="eyebrow mb-1.5 block">Data inicial</span>
+                        <input className="sig-input w-full" type="date" value={filters.date_from || ''} onChange={(event) => changeFilter('date_from', event.target.value)} />
                     </label>
+                    <label>
+                        <span className="eyebrow mb-1.5 block">Data final</span>
+                        <input className="sig-input w-full" type="date" value={filters.date_to || ''} onChange={(event) => changeFilter('date_to', event.target.value)} />
+                    </label>
+                    <div className="flex items-end">
+                        <a
+                            href={batch_download_url || '#'}
+                            className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-bold ${rdos.length ? 'bg-emerald-600 text-white' : 'pointer-events-none bg-slate-100 text-slate-400'}`}
+                        >
+                            <Download size={17} /> Baixar lote
+                        </a>
+                    </div>
                 </div>
 
                 {configuration?.obras?.length > 0 && (
@@ -132,7 +139,6 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                         <Link className="font-bold underline" href={route('tenant.diario-obra.rdo.settings', {
                             tenant: currentTenant.slug,
                             contract_id: filters.contract_id,
-                            obra_id: filters.obra_id,
                         })}>Configurar agora</Link>
                     </div>
                 )}
@@ -141,7 +147,7 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                     <FullCalendar
                         plugins={[dayGridPlugin, interactionPlugin]}
                         initialView="dayGridMonth"
-                        initialDate={`${filters.month}-01`}
+                        initialDate={filters.date_from || `${filters.month}-01`}
                         locale="pt-br"
                         firstDay={0}
                         height="auto"

@@ -1,9 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { BellRing, Building2, Plus, Trash2, UserCheck } from 'lucide-react';
-import { useMemo } from 'react';
+import { BellRing, Building2, ChevronDown, Plus, Trash2, UserCheck } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 const stageColors = {
+    campo: 'bg-blue-50 text-blue-700',
     construtora: 'bg-blue-50 text-blue-700',
     gerenciadora: 'bg-amber-50 text-amber-700',
     cliente: 'bg-indigo-50 text-indigo-700',
@@ -11,6 +12,14 @@ const stageColors = {
 };
 
 export default function Responsaveis({
+    module = 'rdo',
+    moduleLabel = 'RDO',
+    pageDescription = 'Defina quem preenche pela construtora e quem aprova pela gerenciadora e pelo cliente em cada obra ou frente de serviço.',
+    routeNames = {
+        index: 'tenant.diario-obra.rdo.responsaveis.index',
+        store: 'tenant.diario-obra.rdo.responsaveis.store',
+        destroy: 'tenant.diario-obra.rdo.responsaveis.destroy',
+    },
     contracts = [],
     selectedContractId,
     contractCompanies,
@@ -20,13 +29,15 @@ export default function Responsaveis({
     responsaveis = [],
 }) {
     const { currentTenant, flash = {}, errors = {} } = usePage().props;
+    const [openUsers, setOpenUsers] = useState(() => new Set());
     const form = useForm({
         contract_id: selectedContractId || '',
         obra_id: '',
         user_id: '',
-        etapa: 'construtora',
+        etapa: stages?.[0]?.value || 'construtora',
     });
     const companyId = {
+        campo: contractCompanies?.construtora?.id,
         construtora: contractCompanies?.construtora?.id,
         gerenciadora: contractCompanies?.gerenciadora?.id,
         cliente: contractCompanies?.cliente?.id,
@@ -40,7 +51,7 @@ export default function Responsaveis({
 
     const changeContract = (contractId) => {
         router.get(
-            route('tenant.diario-obra.rdo.responsaveis.index', currentTenant.slug),
+            route(routeNames.index, currentTenant.slug),
             { contract_id: contractId },
             { preserveScroll: true, preserveState: false }
         );
@@ -52,7 +63,7 @@ export default function Responsaveis({
 
     const submit = (event) => {
         event.preventDefault();
-        form.post(route('tenant.diario-obra.rdo.responsaveis.store', currentTenant.slug), {
+        form.post(route(routeNames.store, currentTenant.slug), {
             preserveScroll: true,
             onSuccess: () => form.reset('obra_id', 'user_id'),
         });
@@ -60,20 +71,28 @@ export default function Responsaveis({
 
     const remove = (user, vinculo) => {
         if (!window.confirm(`Remover ${user?.name} de ${vinculo.obra?.codigo} - ${vinculo.obra?.nome}?`)) return;
-        router.delete(route('tenant.diario-obra.rdo.responsaveis.destroy', [currentTenant.slug, vinculo.id]), {
+        router.delete(route(routeNames.destroy, [currentTenant.slug, vinculo.id]), {
             preserveScroll: true,
+        });
+    };
+    const toggleUser = (userId) => {
+        setOpenUsers((current) => {
+            const next = new Set(current);
+            next.has(userId) ? next.delete(userId) : next.add(userId);
+
+            return next;
         });
     };
 
     return (
         <AuthenticatedLayout>
-            <Head title="RDO - Responsáveis" />
+            <Head title={`${moduleLabel} - Responsáveis`} />
             <div className="space-y-6 p-4 sm:p-6 lg:p-8">
                 <header>
-                    <span className="eyebrow">Diário de Obra · RDO</span>
+                    <span className="eyebrow">Diário de Obra · {moduleLabel}</span>
                     <h1 className="mt-2 text-3xl font-bold">Responsáveis</h1>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--ink-500)]">
-                        Defina quem preenche pela construtora e quem aprova pela gerenciadora e pelo cliente em cada obra ou frente de serviço.
+                        {pageDescription}
                     </p>
                 </header>
 
@@ -98,7 +117,11 @@ export default function Responsaveis({
                         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]"><UserCheck size={20} /></span>
                         <div>
                             <h2 className="text-lg font-bold">Cadastrar responsável</h2>
-                            <p className="text-sm text-[var(--ink-500)]">A lista de usuários é filtrada pela empresa da etapa; na assinatura, qualquer usuário ativo do tenant pode ser escolhido.</p>
+                            <p className="text-sm text-[var(--ink-500)]">
+                                {module === 'rda'
+                                    ? 'A lista de usuários é filtrada pela construtora vinculada ao contrato.'
+                                    : 'A lista de usuários é filtrada pela empresa da etapa; na assinatura, qualquer usuário ativo do tenant pode ser escolhido.'}
+                            </p>
                         </div>
                     </header>
                     <div className="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
@@ -128,43 +151,85 @@ export default function Responsaveis({
                     <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <h2 className="text-lg font-bold">Responsáveis por frente</h2>
-                            <p className="text-sm text-[var(--ink-500)]">{responsaveis.length} vínculo(s) ativo(s)</p>
+                            <p className="text-sm text-[var(--ink-500)]">{responsaveis.length} usuário(s) com vínculo ativo</p>
                         </div>
                         <BellRing size={21} className="text-[var(--ink-400)]" />
                     </header>
                     {responsaveis.length ? (
                         <div className="divide-y divide-[var(--border)]">
                             {responsaveis.map((responsavel) => (
-                                <article key={responsavel.user?.id} className="grid gap-4 p-5 lg:grid-cols-[280px_1fr]">
-                                    <div className="min-w-0">
-                                        <p className="truncate font-bold">{responsavel.user?.name}</p>
-                                        <p className="truncate text-xs text-[var(--ink-500)]">{responsavel.user?.email}</p>
-                                        <span className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">
-                                            {responsavel.vinculos?.length || 0} responsabilidade(s)
-                                        </span>
-                                    </div>
-                                    <div className="grid gap-2">
-                                        {responsavel.vinculos?.map((vinculo) => (
-                                            <div key={vinculo.id} className="flex flex-col gap-3 rounded-lg border border-[var(--border)] bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                                <div className="min-w-0">
-                                                    <p className="text-sm font-bold">{vinculo.obra?.codigo} - {vinculo.obra?.nome}</p>
-                                                    <span className={`mt-1 inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-bold ${stageColors[vinculo.etapa]}`}>
-                                                        {vinculo.etapa_label}
-                                                    </span>
-                                                </div>
-                                                <button type="button" onClick={() => remove(responsavel.user, vinculo)} className="sig-btn shrink-0 border-red-200 bg-red-50 text-red-700">
-                                                    <Trash2 size={15} /> Remover
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </article>
+                                <ResponsibilityUserRow
+                                    key={responsavel.user?.id}
+                                    responsavel={responsavel}
+                                    open={openUsers.has(responsavel.user?.id)}
+                                    onToggle={() => toggleUser(responsavel.user?.id)}
+                                    onRemove={remove}
+                                />
                             ))}
                         </div>
                     ) : <p className="p-8 text-center text-sm text-[var(--ink-500)]">Nenhum responsável cadastrado para este contrato.</p>}
                 </section>
             </div>
         </AuthenticatedLayout>
+    );
+}
+
+function ResponsibilityUserRow({ responsavel, open = false, onToggle, onRemove }) {
+    const vinculos = responsavel.vinculos || [];
+    const stageSummary = vinculos.reduce((acc, vinculo) => {
+        acc[vinculo.etapa] = {
+            label: vinculo.etapa_label,
+            count: (acc[vinculo.etapa]?.count || 0) + 1,
+        };
+
+        return acc;
+    }, {});
+
+    return (
+        <article className="bg-white">
+            <button
+                type="button"
+                onClick={onToggle}
+                className="grid w-full gap-3 px-5 py-4 text-left transition hover:bg-slate-50 md:grid-cols-[minmax(220px,1fr)_auto_auto] md:items-center"
+            >
+                <div className="min-w-0">
+                    <p className="truncate font-bold">{responsavel.user?.name}</p>
+                    <p className="truncate text-xs text-[var(--ink-500)]">{responsavel.user?.email}</p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(stageSummary).map(([stage, summary]) => (
+                        <span key={stage} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${stageColors[stage] || 'bg-slate-100 text-slate-700'}`}>
+                            {summary.label} · {summary.count}
+                        </span>
+                    ))}
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">
+                        {vinculos.length} vínculo(s)
+                    </span>
+                </div>
+                <span className="inline-flex items-center justify-end gap-2 text-xs font-bold text-[var(--primary)]">
+                    {open ? 'Ocultar permissões' : 'Ver permissões'}
+                    <ChevronDown size={16} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+                </span>
+            </button>
+
+            {open && (
+                <div className="grid gap-2 border-t border-[var(--border)] bg-slate-50/70 px-5 py-4">
+                    {vinculos.map((vinculo) => (
+                        <div key={vinculo.id} className="flex flex-col gap-3 rounded-lg border border-[var(--border)] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                                <p className="text-sm font-bold">{vinculo.obra?.codigo} - {vinculo.obra?.nome}</p>
+                                <span className={`mt-1 inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-bold ${stageColors[vinculo.etapa] || 'bg-slate-100 text-slate-700'}`}>
+                                    {vinculo.etapa_label}
+                                </span>
+                            </div>
+                            <button type="button" onClick={() => onRemove(responsavel.user, vinculo)} className="sig-btn shrink-0 border-red-200 bg-red-50 text-red-700">
+                                <Trash2 size={15} /> Remover
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </article>
     );
 }
 

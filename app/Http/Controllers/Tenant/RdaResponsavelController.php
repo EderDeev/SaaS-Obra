@@ -14,13 +14,10 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class RdoResponsavelController extends Controller
+class RdaResponsavelController extends Controller
 {
     private const STAGES = [
-        'construtora' => 'Preenchimento da construtora',
-        'gerenciadora' => 'Aprovação da gerenciadora',
-        'cliente' => 'Aprovação do cliente',
-        'assinatura' => 'Assinatura do RDO',
+        'campo' => 'Apontamento de campo',
     ];
 
     public function index(Request $request, Tenant $tenant): Response
@@ -58,7 +55,7 @@ class RdoResponsavelController extends Controller
 
         $responsaveis = RdoResponsavel::query()
             ->where('tenant_id', $tenant->id)
-            ->where('modulo', 'rdo')
+            ->where('modulo', 'rda')
             ->when($selectedContractId, fn ($query) => $query->where('contract_id', $selectedContractId))
             ->with(['obra:id,codigo,nome', 'user:id,name,email,avatar_url'])
             ->orderBy('obra_id')
@@ -75,7 +72,7 @@ class RdoResponsavelController extends Controller
                         ->map(fn (RdoResponsavel $responsavel) => [
                             'id' => $responsavel->id,
                             'etapa' => $responsavel->etapa,
-                            'etapa_label' => self::STAGES[$responsavel->etapa],
+                            'etapa_label' => self::STAGES[$responsavel->etapa] ?? $responsavel->etapa,
                             'obra' => $responsavel->obra,
                         ])
                         ->sortBy(fn (array $link) => ($link['etapa_label'] ?? '').($link['obra']?->codigo ?? ''))
@@ -86,13 +83,13 @@ class RdoResponsavelController extends Controller
             ->values();
 
         return Inertia::render('Tenant/Rdo/Responsaveis', [
-            'module' => 'rdo',
-            'moduleLabel' => 'RDO',
-            'pageDescription' => 'Defina quem preenche pela construtora e quem aprova pela gerenciadora e pelo cliente em cada obra ou frente de serviço.',
+            'module' => 'rda',
+            'moduleLabel' => 'RDA',
+            'pageDescription' => 'Defina quem pode preencher os apontamentos de campo do RDA em cada obra ou frente de serviço.',
             'routeNames' => [
-                'index' => 'tenant.diario-obra.rdo.responsaveis.index',
-                'store' => 'tenant.diario-obra.rdo.responsaveis.store',
-                'destroy' => 'tenant.diario-obra.rdo.responsaveis.destroy',
+                'index' => 'tenant.diario-obra.rda.responsaveis.index',
+                'store' => 'tenant.diario-obra.rda.responsaveis.store',
+                'destroy' => 'tenant.diario-obra.rda.responsaveis.destroy',
             ],
             'contracts' => $contracts,
             'selectedContractId' => $selectedContractId,
@@ -124,36 +121,28 @@ class RdoResponsavelController extends Controller
             'A frente de serviço selecionada não pertence ao contrato.'
         );
 
-        $expectedCompanyId = match ($validated['etapa']) {
-            'construtora' => $contract->construtora_empresa_id,
-            'gerenciadora' => $contract->fiscalizadora_empresa_id,
-            'cliente' => $contract->cliente_empresa_id,
-            'assinatura' => null,
-        };
-        abort_if($validated['etapa'] !== 'assinatura' && ! $expectedCompanyId, 422, 'Vincule a empresa desta etapa ao contrato antes de cadastrar o responsável.');
+        abort_if(! $contract->construtora_empresa_id, 422, 'Vincule a construtora ao contrato antes de cadastrar o responsável do RDA.');
         abort_unless(
             TenantUser::query()
                 ->where('tenant_id', $tenant->id)
                 ->where('user_id', $validated['user_id'])
-                ->when($expectedCompanyId, fn ($query) => $query->where('empresa_id', $expectedCompanyId))
+                ->where('empresa_id', $contract->construtora_empresa_id)
                 ->where('status', 'active')
                 ->exists(),
             422,
-            $validated['etapa'] === 'assinatura'
-                ? 'O usuário selecionado não possui vínculo ativo neste tenant.'
-                : 'O usuário selecionado não pertence à empresa responsável por esta etapa.'
+            'O usuário selecionado não pertence à construtora vinculada ao contrato.'
         );
 
         $responsavel = RdoResponsavel::withTrashed()->firstOrNew([
             'tenant_id' => $tenant->id,
-            'modulo' => 'rdo',
+            'modulo' => 'rda',
             'obra_id' => $validated['obra_id'],
             'user_id' => $validated['user_id'],
             'etapa' => $validated['etapa'],
         ]);
         $responsavel->fill([
             'contract_id' => $contract->id,
-            'modulo' => 'rdo',
+            'modulo' => 'rda',
             'created_by_id' => $request->user()?->id,
             'status' => 'active',
         ]);
@@ -162,15 +151,15 @@ class RdoResponsavelController extends Controller
         }
         $responsavel->save();
 
-        return back()->with('success', 'Responsável do RDO cadastrado com sucesso.');
+        return back()->with('success', 'Responsável do RDA cadastrado com sucesso.');
     }
 
     public function destroy(Tenant $tenant, RdoResponsavel $responsavel): RedirectResponse
     {
-        abort_unless((int) $responsavel->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $responsavel->tenant_id === (int) $tenant->id && $responsavel->modulo === 'rda', 404);
         $responsavel->update(['status' => 'inactive']);
         $responsavel->delete();
 
-        return back()->with('success', 'Responsável removido do RDO.');
+        return back()->with('success', 'Responsável removido do RDA.');
     }
 }
