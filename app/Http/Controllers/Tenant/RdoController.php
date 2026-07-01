@@ -1194,13 +1194,41 @@ class RdoController extends Controller
             return null;
         }
 
+        $signers = $signature->signers
+            ->map(function ($signer) use ($signature): array {
+                $status = $this->effectiveSignatureSignerStatus($signature, $signer);
+
+                return [
+                    'id' => $signer->id,
+                    'role' => $signer->role,
+                    'role_label' => $this->stageLabel($signer->role),
+                    'name' => $signer->name,
+                    'email' => $signer->email,
+                    'status' => $status,
+                    'status_label' => match ($status) {
+                        'completed' => 'Assinado',
+                        'cancelled' => 'Cancelado',
+                        'failed' => 'Falha',
+                        default => 'Pendente',
+                    },
+                    'signed_at' => $status === 'completed' ? $signer->signed_at?->format('d/m/Y H:i') : null,
+                    'signing_url' => $signer->signing_url,
+                ];
+            })
+            ->values();
+        $allProviderSignersCompleted = $signature->provider !== 'opensign'
+            || ($signers->isNotEmpty() && $signers->every(fn (array $signer): bool => $signer['status'] === 'completed'));
+        $effectiveStatus = $signature->status === 'completed' && ! $allProviderSignersCompleted
+            ? 'pending'
+            : $signature->status;
+
         return [
             'id' => $signature->id,
             'provider' => $signature->provider,
-            'status' => $signature->status,
+            'status' => $effectiveStatus,
             'status_label' => $signature->provider === 'manual' && $signature->status === 'completed'
                 ? 'Documento assinado enviado'
-                : match ($signature->status) {
+                : match ($effectiveStatus) {
                     'completed' => 'Assinado',
                     'failed' => 'Falha no envio',
                     'cancelled' => 'Cancelado',
@@ -1214,28 +1242,38 @@ class RdoController extends Controller
             'unsigned_download_url' => $signature->unsigned_pdf_path
                 ? route('tenant.diario-obra.rdo.signatures.unsigned', [$tenant->slug, $rdo->id, $signature->id])
                 : null,
-            'signed_download_url' => $signature->signed_pdf_path
+            'signed_download_url' => $signature->signed_pdf_path && $allProviderSignersCompleted
                 ? route('tenant.diario-obra.rdo.signatures.signed', [$tenant->slug, $rdo->id, $signature->id])
                 : null,
-            'signers' => $signature->signers
-                ->map(fn ($signer) => [
-                    'id' => $signer->id,
-                    'role' => $signer->role,
-                    'role_label' => $this->stageLabel($signer->role),
-                    'name' => $signer->name,
-                    'email' => $signer->email,
-                    'status' => $signer->status,
-                    'status_label' => match ($signer->status) {
-                        'completed' => 'Assinado',
-                        'cancelled' => 'Cancelado',
-                        'failed' => 'Falha',
-                        default => 'Pendente',
-                    },
-                    'signed_at' => $signer->signed_at?->format('d/m/Y H:i'),
-                    'signing_url' => $signer->signing_url,
-                ])
-                ->values(),
+            'signers' => $signers,
         ];
+    }
+
+    private function effectiveSignatureSignerStatus($signature, $signer): string
+    {
+        if ($signature->provider !== 'opensign' || $signer->status !== 'completed') {
+            return $signer->status;
+        }
+
+        $payload = $signer->provider_payload ?? [];
+        $status = data_get($payload, 'status')
+            ?? data_get($payload, 'Status')
+            ?? data_get($payload, 'signerStatus')
+            ?? data_get($payload, 'signer_status')
+            ?? data_get($payload, 'raw.status')
+            ?? data_get($payload, 'raw.Status')
+            ?? data_get($payload, 'raw.signerStatus')
+            ?? data_get($payload, 'raw.signer_status');
+
+        if (! $status) {
+            return 'sent';
+        }
+
+        $normalized = str($status)->lower()->replace([' ', '-'], '_')->toString();
+
+        return in_array($normalized, ['completed', 'complete', 'signed', 'document_signed', 'finished'], true)
+            ? 'completed'
+            : 'sent';
     }
 
     private function calendarSignatureStatus(RdoDiario $rdo): ?string
@@ -1253,7 +1291,14 @@ class RdoController extends Controller
             return $digitalSignatureEnabled ? 'ready' : 'manual_waiting';
         }
 
-        return $signature->status === 'completed' && $signature->signed_pdf_path
+        $allProviderSignersCompleted = true;
+        if ($signature->provider === 'opensign') {
+            $signature->loadMissing('signers');
+            $allProviderSignersCompleted = $signature->signers->isNotEmpty()
+                && $signature->signers->every(fn ($signer): bool => $this->effectiveSignatureSignerStatus($signature, $signer) === 'completed');
+        }
+
+        return $signature->status === 'completed' && $signature->signed_pdf_path && $allProviderSignersCompleted
             ? 'completed'
             : 'waiting';
     }

@@ -150,11 +150,12 @@ class RdoSignatureService
             return null;
         }
 
-        $status = $this->statusFromProviderPayload($payload, 'sent');
+        $providerStatus = $this->statusFromProviderPayload($payload, 'sent');
+        $status = $providerStatus === 'completed' ? 'pending' : $providerStatus;
         $request->update([
             'status' => $status,
             'webhook_payload' => $payload,
-            'completed_at' => $status === 'completed' ? now() : $request->completed_at,
+            'completed_at' => null,
         ]);
 
         $this->syncProviderSigners(
@@ -165,9 +166,14 @@ class RdoSignatureService
                 ?? [],
         );
 
-        if ($status === 'completed') {
+        $request = $request->fresh(['tenant', 'rdo', 'signers']);
+
+        if ($providerStatus === 'completed' && $this->allSignersConfirmedCompleted($request)) {
             $request = $request->fresh(['tenant', 'rdo', 'signers']);
-            $this->markAllSignersCompleted($request, $payload);
+            $request->update([
+                'status' => 'completed',
+                'completed_at' => $request->completed_at ?: now(),
+            ]);
             $this->storeCompletedArtifacts($request, $payload);
             $request->refresh();
             $request->update([
@@ -206,11 +212,12 @@ class RdoSignatureService
             return $request->fresh(['rdo', 'signers']);
         }
 
-        $status = $this->statusFromProviderPayload($document, $request->status ?: 'sent');
+        $providerStatus = $this->statusFromProviderPayload($document, $request->status ?: 'sent');
+        $status = $providerStatus === 'completed' ? 'pending' : $providerStatus;
         $request->update([
             'status' => $status,
             'provider_payload' => array_replace_recursive($request->provider_payload ?? [], ['document' => $document]),
-            'completed_at' => $status === 'completed' ? ($request->completed_at ?: now()) : $request->completed_at,
+            'completed_at' => null,
         ]);
 
         $this->syncProviderSigners(
@@ -222,9 +229,14 @@ class RdoSignatureService
                 ?? [],
         );
 
-        if ($status === 'completed') {
+        $request = $request->fresh(['tenant', 'rdo', 'signers']);
+
+        if ($providerStatus === 'completed' && $this->allSignersConfirmedCompleted($request)) {
             $request = $request->fresh(['tenant', 'rdo', 'signers']);
-            $this->markAllSignersCompleted($request, $document);
+            $request->update([
+                'status' => 'completed',
+                'completed_at' => $request->completed_at ?: now(),
+            ]);
             $this->storeCompletedArtifacts($request, $document);
             $request->refresh();
             $request->update([
@@ -525,16 +537,66 @@ class RdoSignatureService
                 return;
             }
 
-            $request->signers
-                ->first(fn (RdoSignatureSigner $signer) => Str::lower($signer->email) === $email)
-                ?->update([
-                    'provider_signer_id' => $providerSigner['provider_signer_id'] ?? null,
-                    'status' => $this->normalizeProviderStatus((string) ($providerSigner['status'] ?? 'sent')),
-                    'signing_url' => $providerSigner['signing_url'] ?? null,
-                    'provider_payload' => $providerSigner['raw'] ?? $providerSigner,
-                    'signed_at' => $this->normalizeProviderStatus((string) ($providerSigner['status'] ?? '')) === 'completed' ? now() : null,
-                ]);
+            $signer = $request->signers
+                ->first(fn (RdoSignatureSigner $signer) => Str::lower($signer->email) === $email);
+
+            if (! $signer) {
+                return;
+            }
+
+            $status = $this->statusFromProviderSigner($providerSigner);
+            $keepExistingCompletion = $status === 'sent' && $signer->status === 'completed';
+            $status = $keepExistingCompletion ? 'completed' : $status;
+
+            $signer->update([
+                'provider_signer_id' => $providerSigner['provider_signer_id'] ?? null,
+                'status' => $status,
+                'signing_url' => $providerSigner['signing_url'] ?? null,
+                'provider_payload' => $keepExistingCompletion ? $signer->provider_payload : ($providerSigner['raw'] ?? $providerSigner),
+                'signed_at' => $status === 'completed' ? ($signer->signed_at ?: now()) : null,
+            ]);
         });
+    }
+
+    private function allSignersConfirmedCompleted(RdoSignatureRequest $request): bool
+    {
+        return $request->signers->isNotEmpty()
+            && $request->signers->every(fn (RdoSignatureSigner $signer): bool => $this->signerIsConfirmedCompleted($signer));
+    }
+
+    private function signerIsConfirmedCompleted(RdoSignatureSigner $signer): bool
+    {
+        return $signer->status === 'completed'
+            && $this->statusFromProviderSigner($signer->provider_payload ?? []) === 'completed';
+    }
+
+    private function statusFromProviderSigner(array $providerSigner): string
+    {
+        $status = data_get($providerSigner, 'status')
+            ?? data_get($providerSigner, 'Status')
+            ?? data_get($providerSigner, 'signerStatus')
+            ?? data_get($providerSigner, 'signer_status')
+            ?? data_get($providerSigner, 'SignerStatus')
+            ?? data_get($providerSigner, 'raw.status')
+            ?? data_get($providerSigner, 'raw.Status')
+            ?? data_get($providerSigner, 'raw.signerStatus')
+            ?? data_get($providerSigner, 'raw.signer_status');
+
+        if ($status) {
+            return $this->normalizeProviderStatus((string) $status);
+        }
+
+        $signedAt = data_get($providerSigner, 'signed_at')
+            ?? data_get($providerSigner, 'signedAt')
+            ?? data_get($providerSigner, 'SignedAt')
+            ?? data_get($providerSigner, 'completed_at')
+            ?? data_get($providerSigner, 'completedAt')
+            ?? data_get($providerSigner, 'raw.signed_at')
+            ?? data_get($providerSigner, 'raw.signedAt')
+            ?? data_get($providerSigner, 'raw.completed_at')
+            ?? data_get($providerSigner, 'raw.completedAt');
+
+        return $signedAt ? 'completed' : 'sent';
     }
 
     private function markAllSignersCompleted(RdoSignatureRequest $request, array $payload = []): void

@@ -99,7 +99,39 @@ class RdoSignatureController extends Controller
 
     public function downloadSigned(Tenant $tenant, RdoDiario $rdo, RdoSignatureRequest $signature): Response
     {
+        abort_if($signature->provider === 'opensign' && ! $this->allOpenSignSignersCompleted($signature), 404);
+
         return $this->download($tenant, $rdo, $signature, 'signed_pdf_path', 'rdo-assinado.pdf');
+    }
+
+    private function allOpenSignSignersCompleted(RdoSignatureRequest $signature): bool
+    {
+        $signature->loadMissing('signers');
+
+        return $signature->signers->isNotEmpty()
+            && $signature->signers->every(function ($signer): bool {
+                if ($signer->status !== 'completed') {
+                    return false;
+                }
+
+                $payload = $signer->provider_payload ?? [];
+                $status = data_get($payload, 'status')
+                    ?? data_get($payload, 'Status')
+                    ?? data_get($payload, 'signerStatus')
+                    ?? data_get($payload, 'signer_status')
+                    ?? data_get($payload, 'raw.status')
+                    ?? data_get($payload, 'raw.Status')
+                    ?? data_get($payload, 'raw.signerStatus')
+                    ?? data_get($payload, 'raw.signer_status');
+
+                if (! $status) {
+                    return false;
+                }
+
+                $normalized = str($status)->lower()->replace([' ', '-'], '_')->toString();
+
+                return in_array($normalized, ['completed', 'complete', 'signed', 'document_signed', 'finished'], true);
+            });
     }
 
     private function download(Tenant $tenant, RdoDiario $rdo, RdoSignatureRequest $signature, string $column, string $fileName): Response
