@@ -2,7 +2,7 @@ import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Bell, CheckCircle2, ClipboardCheck, ClipboardX, Download, Eye, ImagePlus, MapPin, Pencil, Plus, SearchCheck, Trash2 } from 'lucide-react';
+import { Bell, CheckCircle2, ChevronDown, ClipboardCheck, ClipboardX, Download, Eye, ImagePlus, MapPin, Pencil, Plus, SearchCheck, Trash2 } from 'lucide-react';
 
 const gravityClass = {
     Leve: 'sig-pill-blue',
@@ -37,6 +37,48 @@ const can = (rnc, permission) => rnc.user_permissions?.includes(permission);
 
 export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateRnc }) {
     const page = usePage();
+
+    const actions = (rnc) => (
+        <>
+            <Link
+                href={route('tenant.qualidade.rnc.show', [tenant.slug, rnc.id])}
+                className="sig-btn sig-btn-secondary sig-btn-sm"
+            >
+                <Eye size={13} />
+                Abrir
+            </Link>
+            {can(rnc, RNC_PERMISSION.edit) && (
+                <Link
+                    href={route('tenant.qualidade.rnc.edit', [tenant.slug, rnc.id])}
+                    className="sig-btn sig-btn-secondary sig-btn-sm"
+                >
+                    <Pencil size={13} />
+                    Editar
+                </Link>
+            )}
+            {actionButton(rnc)}
+            <a
+                href={pdfUrl(tenant, rnc)}
+                className="sig-btn sig-btn-secondary sig-btn-sm"
+                target="_blank"
+                rel="noreferrer"
+            >
+                <Download size={13} />
+                PDF
+            </a>
+            {can(rnc, RNC_PERMISSION.delete) && (
+                <ConfirmActionButton
+                    title="Excluir RNC"
+                    message={`Deseja mesmo excluir a RNC ${rnc.formatted_number}? Ela saira da listagem, mas o historico sera mantido.`}
+                    confirmLabel="Excluir RNC"
+                    onConfirm={() => router.delete(route('tenant.qualidade.rnc.destroy', [tenant.slug, rnc.id]), { preserveScroll: true })}
+                >
+                    <Trash2 size={13} />
+                    Excluir
+                </ConfirmActionButton>
+            )}
+        </>
+    );
 
     const actionButton = (rnc) => {
         const latestAction = rnc.acoes_corretivas?.[0];
@@ -166,7 +208,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                                     <th>Empresas</th>
                                     <th>Abertura</th>
                                     <th>Status</th>
-                                    <th className="text-right">Acoes</th>
+                                    <th className="hidden text-right sm:table-cell">Acoes</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -174,6 +216,15 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                                     <tr key={rnc.id}>
                                         <td>
                                             <span className="mono font-semibold text-[var(--ink-900)]">{rnc.formatted_number}</span>
+                                            <details className="group mt-3 sm:hidden">
+                                                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-bold text-[var(--primary)] shadow-sm">
+                                                    Ações da RNC
+                                                    <ChevronDown size={15} className="transition group-open:rotate-180" />
+                                                </summary>
+                                                <div className="mt-2 grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-2">
+                                                    {actions(rnc)}
+                                                </div>
+                                            </details>
                                         </td>
                                         <td>
                                             <div className="flex flex-wrap items-center gap-2">
@@ -209,46 +260,8 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                                         <td>
                                             <span className="sig-pill">{rnc.status}</span>
                                         </td>
-                                        <td>
-                                            <div className="flex flex-wrap justify-end gap-2">
-                                                <Link
-                                                    href={route('tenant.qualidade.rnc.show', [tenant.slug, rnc.id])}
-                                                    className="sig-btn sig-btn-secondary sig-btn-sm"
-                                                >
-                                                    <Eye size={13} />
-                                                    Abrir
-                                                </Link>
-                                                {can(rnc, RNC_PERMISSION.edit) && (
-                                                    <Link
-                                                        href={route('tenant.qualidade.rnc.edit', [tenant.slug, rnc.id])}
-                                                        className="sig-btn sig-btn-secondary sig-btn-sm"
-                                                    >
-                                                        <Pencil size={13} />
-                                                        Editar
-                                                    </Link>
-                                                )}
-                                                {actionButton(rnc)}
-                                                <a
-                                                    href={pdfUrl(tenant, rnc)}
-                                                    className="sig-btn sig-btn-secondary sig-btn-sm"
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                >
-                                                    <Download size={13} />
-                                                    PDF
-                                                </a>
-                                                {can(rnc, RNC_PERMISSION.delete) && (
-                                                    <ConfirmActionButton
-                                                        title="Excluir RNC"
-                                                        message={`Deseja mesmo excluir a RNC ${rnc.formatted_number}? Ela saira da listagem, mas o historico sera mantido.`}
-                                                        confirmLabel="Excluir RNC"
-                                                        onConfirm={() => router.delete(route('tenant.qualidade.rnc.destroy', [tenant.slug, rnc.id]), { preserveScroll: true })}
-                                                    >
-                                                        <Trash2 size={13} />
-                                                        Excluir
-                                                    </ConfirmActionButton>
-                                                )}
-                                            </div>
+                                        <td className="hidden sm:table-cell">
+                                            <div className="flex flex-wrap justify-end gap-2">{actions(rnc)}</div>
                                         </td>
                                     </tr>
                                 ))}

@@ -169,6 +169,7 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                     </div>
                 )}
 
+                <p className="mb-2 text-xs font-semibold text-[var(--ink-500)] sm:hidden">Deslize lateralmente para ver todos os dias da semana.</p>
                 <div className="rdo-calendar rounded-xl border border-[var(--border)] bg-white p-3 shadow-sm sm:p-5">
                     <FullCalendar
                         plugins={[dayGridPlugin, interactionPlugin]}

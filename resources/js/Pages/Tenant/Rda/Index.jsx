@@ -187,6 +187,7 @@ export default function RdaIndex({
                 )}
 
                 <div className="grid gap-5">
+                    <p className="mb-[-0.75rem] text-xs font-semibold text-[var(--ink-500)] sm:hidden">Deslize lateralmente para ver todos os dias da semana.</p>
                     <section className="rdo-calendar rounded-xl border border-[var(--border)] bg-white p-3 shadow-sm sm:p-5">
                         <FullCalendar
                             plugins={[dayGridPlugin, interactionPlugin]}

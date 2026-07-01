@@ -119,13 +119,41 @@ button {
 }
 
 @media (max-width: 768px) {
-    .rdo-calendar .fc .fc-daygrid-day-frame {
-        min-height: 100px;
+    .rdo-calendar {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .rdo-calendar .fc {
+        min-width: 760px;
     }
 
     .rdo-calendar .fc .fc-toolbar {
         align-items: flex-start;
         gap: 10px;
+    }
+
+    .rdo-calendar .fc .fc-toolbar-title {
+        font-size: 1rem;
+        line-height: 1.25;
+    }
+
+    .rdo-calendar .fc .fc-button {
+        padding: 0.35rem 0.55rem;
+        font-size: 0.78rem;
+    }
+
+    .rdo-calendar .fc .fc-daygrid-day-frame {
+        min-height: 112px;
+    }
+
+    .rdo-calendar .fc .fc-daygrid-day-top {
+        padding: 4px;
+    }
+
+    .rdo-calendar .fc .fc-daygrid-event {
+        margin: 2px 4px;
     }
 }
 
