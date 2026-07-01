@@ -348,6 +348,7 @@ class RdoController extends Controller
                 'copy_equipment' => $configuration->copy_equipment,
                 'copy_pending_activities' => $configuration->copy_pending_activities,
                 'require_photos' => $configuration->require_photos,
+                'digital_signature_enabled' => $configuration->digital_signature_enabled,
                 'submission_deadline_days' => $configuration->submission_deadline_days,
                 'active' => $configuration->active,
             ] : null,
@@ -393,6 +394,7 @@ class RdoController extends Controller
             'copy_equipment' => ['required', 'boolean'],
             'copy_pending_activities' => ['required', 'boolean'],
             'require_photos' => ['required', 'boolean'],
+            'digital_signature_enabled' => ['required', 'boolean'],
             'submission_deadline_days' => ['required', 'integer', 'min:1', 'max:365'],
             'active' => ['required', 'boolean'],
         ]);
@@ -538,6 +540,7 @@ class RdoController extends Controller
                 'flow_obra_ids' => $capabilities['flow_obra_ids'],
                 'active_stage' => $capabilities['active_stage'],
                 'approval_comments' => $this->approvalCommentsByStage($rdo),
+                'digital_signature_enabled' => (bool) ($rdo->configuracao?->digital_signature_enabled ?? true),
                 'signature' => $this->signaturePayload($tenant, $rdo),
                 'published_rdas' => $publishedRdas,
                 'sections' => $rdo->secoes
@@ -1195,13 +1198,15 @@ class RdoController extends Controller
             'id' => $signature->id,
             'provider' => $signature->provider,
             'status' => $signature->status,
-            'status_label' => match ($signature->status) {
-                'completed' => 'Assinado',
-                'failed' => 'Falha no envio',
-                'cancelled' => 'Cancelado',
-                'sent', 'pending' => 'Aguardando assinaturas',
-                default => 'Rascunho da assinatura',
-            },
+            'status_label' => $signature->provider === 'manual' && $signature->status === 'completed'
+                ? 'Documento assinado enviado'
+                : match ($signature->status) {
+                    'completed' => 'Assinado',
+                    'failed' => 'Falha no envio',
+                    'cancelled' => 'Cancelado',
+                    'sent', 'pending' => 'Aguardando assinaturas',
+                    default => 'Rascunho da assinatura',
+                },
             'sent_at' => $signature->sent_at?->format('d/m/Y H:i'),
             'completed_at' => $signature->completed_at?->format('d/m/Y H:i'),
             'signing_url' => $signature->signing_url,
@@ -1239,12 +1244,13 @@ class RdoController extends Controller
             return null;
         }
 
+        $digitalSignatureEnabled = (bool) ($rdo->configuracao?->digital_signature_enabled ?? true);
         $signature = $rdo->relationLoaded('signatureRequests')
             ? $rdo->signatureRequests->sortByDesc('id')->first()
             : $rdo->signatureRequests()->latest('id')->first();
 
         if (! $signature) {
-            return 'ready';
+            return $digitalSignatureEnabled ? 'ready' : 'manual_waiting';
         }
 
         return $signature->status === 'completed' && $signature->signed_pdf_path
@@ -1258,6 +1264,7 @@ class RdoController extends Controller
             return match ($signatureStatus) {
                 'completed' => 'Assinado',
                 'waiting' => 'Aguardando assinatura',
+                'manual_waiting' => 'Aguardando upload assinado',
                 default => 'Pronto para assinatura',
             };
         }

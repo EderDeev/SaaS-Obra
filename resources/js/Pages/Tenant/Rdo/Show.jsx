@@ -47,6 +47,7 @@ export default function Show({ rdo, catalogs = {} }) {
     const sectionForm = useForm({ obra_id: '', dados: {}, fotos: [] });
     const completeForm = useForm({ obra_id: '', secoes: {}, fotos: [] });
     const flowForm = useForm({ comment: '', comments_by_obra: {}, obra_ids: rdo.flow_obra_ids || [] });
+    const manualSignatureForm = useForm({ signed_pdf: null });
     const allObras = rdo.obras || [rdo.obra];
     const editableObras = rdo.can_edit
         ? allObras.filter((obra) => rdo.editable_obra_ids?.includes(Number(obra.id)))
@@ -144,6 +145,16 @@ export default function Show({ rdo, catalogs = {} }) {
             preserveScroll: true,
             preserveState: false,
             onFinish: () => setSignatureRefreshProcessing(false),
+        });
+    };
+
+    const uploadManualSignature = (event) => {
+        event.preventDefault();
+        manualSignatureForm.post(route('tenant.diario-obra.rdo.signatures.manual', [currentTenant.slug, rdo.id]), {
+            forceFormData: true,
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => manualSignatureForm.reset(),
         });
     };
 
@@ -285,6 +296,8 @@ export default function Show({ rdo, catalogs = {} }) {
                     refreshProcessing={signatureRefreshProcessing}
                     onSend={sendSignature}
                     onRefresh={refreshSignature}
+                    manualForm={manualSignatureForm}
+                    onManualUpload={uploadManualSignature}
                 />
             </div>
 
@@ -589,25 +602,34 @@ function CompleteModal({ form, catalogs, obras, activeObraId, onChangeObra, onCl
     );
 }
 
-function SignaturePanel({ rdo, processing = false, refreshProcessing = false, onSend, onRefresh }) {
+function SignaturePanel({ rdo, processing = false, refreshProcessing = false, onSend, onRefresh, manualForm, onManualUpload }) {
     const signature = rdo.signature;
+    const digitalEnabled = rdo.digital_signature_enabled ?? true;
 
     if (rdo.status !== 'arquivado' && !signature) {
         return null;
     }
 
-    const canSend = rdo.status === 'arquivado' && (!signature || ['failed', 'cancelled'].includes(signature.status));
-    const canRefresh = signature && ['sent', 'pending', 'completed'].includes(signature.status) && (!signature.signed_download_url || (signature.signers || []).some((signer) => signer.status !== 'completed'));
+    const canSend = digitalEnabled && rdo.status === 'arquivado' && (!signature || ['failed', 'cancelled'].includes(signature.status));
+    const canManualUpload = !digitalEnabled && rdo.status === 'arquivado' && (!signature || !signature.signed_download_url);
+    const canRefresh = digitalEnabled && signature && ['sent', 'pending', 'completed'].includes(signature.status) && (!signature.signed_download_url || (signature.signers || []).some((signer) => signer.status !== 'completed'));
 
     return (
         <section className="mt-5 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
             <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                 <div>
-                    <span className="eyebrow">Assinatura digital</span>
-                    <h2 className="mt-1 text-lg font-bold">{signature?.status_label || 'Pronto para assinatura'}</h2>
-                    <p className="mt-1 text-sm text-[var(--ink-500)]">
+                    <span className="eyebrow">{digitalEnabled ? 'Assinatura digital' : 'Assinatura manual'}</span>
+                    <h2 className="mt-1 text-lg font-bold">
+                        {signature?.status_label || (digitalEnabled ? 'Pronto para assinatura' : 'Aguardando upload do documento assinado')}
+                    </h2>
+                    <p className={`mt-1 text-sm text-[var(--ink-500)] ${digitalEnabled ? '' : 'hidden'}`}>
                         Após o RDO ser aprovado, envie o PDF para assinatura da construtora, gerenciadora e cliente.
                     </p>
+                    {!digitalEnabled && (
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">
+                            Este contrato nao utiliza assinatura digital. Faca upload do PDF assinado para arquivar o documento final.
+                        </p>
+                    )}
                 </div>
                 {canSend && (
                     <button type="button" disabled={processing} onClick={onSend} className="sig-btn sig-btn-primary">
@@ -637,6 +659,7 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
                         {signature.completed_at && <span className="text-[var(--ink-500)]">Concluído em {signature.completed_at}</span>}
                     </div>
 
+                    {(signature.signers || []).length > 0 && (
                     <div className="grid gap-3 md:grid-cols-3">
                         {(signature.signers || []).map((signer) => (
                             <article key={signer.id} className="rounded-lg border border-[var(--border)] p-3">
@@ -656,6 +679,7 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
                             </article>
                         ))}
                     </div>
+                    )}
 
                     <div className="flex flex-wrap gap-2">
                         {signature.unsigned_download_url && (
@@ -675,6 +699,26 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
                         )}
                     </div>
                 </div>
+            ) : canManualUpload ? (
+                <form onSubmit={onManualUpload} className="space-y-3 p-5">
+                    <div>
+                        <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-[var(--ink-500)]">
+                            PDF assinado manualmente
+                        </label>
+                        <input
+                            type="file"
+                            accept="application/pdf"
+                            className="sig-input w-full"
+                            onChange={(event) => manualForm.setData('signed_pdf', event.target.files?.[0] || null)}
+                        />
+                        {manualForm.errors.signed_pdf && (
+                            <p className="mt-1 text-xs font-semibold text-red-600">{manualForm.errors.signed_pdf}</p>
+                        )}
+                    </div>
+                    <button type="submit" disabled={manualForm.processing || !manualForm.data.signed_pdf} className="sig-btn sig-btn-primary disabled:opacity-50">
+                        <FileText size={16} /> {manualForm.processing ? 'Enviando...' : 'Enviar PDF assinado'}
+                    </button>
+                </form>
             ) : (
                 <div className="p-5 text-sm text-[var(--ink-500)]">
                     Nenhuma solicitação de assinatura foi criada para este RDO.

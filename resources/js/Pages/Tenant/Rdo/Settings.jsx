@@ -31,6 +31,7 @@ export default function Settings({ contracts, obras, users, filters, configurati
         copy_equipment: configuration?.copy_equipment ?? true,
         copy_pending_activities: configuration?.copy_pending_activities ?? true,
         require_photos: configuration?.require_photos ?? false,
+        digital_signature_enabled: configuration?.digital_signature_enabled ?? true,
         submission_deadline_days: configuration?.submission_deadline_days ?? 7,
         active: configuration?.active ?? true,
     });
@@ -51,6 +52,7 @@ export default function Settings({ contracts, obras, users, filters, configurati
             copy_equipment: configuration?.copy_equipment ?? true,
             copy_pending_activities: configuration?.copy_pending_activities ?? true,
             require_photos: configuration?.require_photos ?? false,
+            digital_signature_enabled: configuration?.digital_signature_enabled ?? true,
             submission_deadline_days: configuration?.submission_deadline_days ?? 7,
             active: configuration?.active ?? true,
         }));
@@ -191,6 +193,7 @@ export default function Settings({ contracts, obras, users, filters, configurati
                         <h2 className="text-lg font-bold">Regras de preenchimento</h2>
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
                             <Toggle compact label="Exigir ao menos uma foto para envio" checked={data.require_photos} onChange={(value) => setData('require_photos', value)} />
+                            <Toggle compact label="Usar assinatura digital" checked={data.digital_signature_enabled} onChange={(value) => setData('digital_signature_enabled', value)} />
                             <Field label="Prazo para envio (dias)" error={errors.submission_deadline_days}>
                                 <input
                                     type="number"
@@ -206,6 +209,11 @@ export default function Settings({ contracts, obras, users, filters, configurati
                             </Field>
                             <Toggle compact label="Parametrização ativa" checked={data.active} onChange={(value) => setData('active', value)} />
                         </div>
+                        {!data.digital_signature_enabled && (
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                                Com a assinatura digital desativada, o RDO aprovado ficará aguardando upload manual do documento assinado.
+                            </div>
+                        )}
                     </section>
 
                     <div className="flex justify-end">

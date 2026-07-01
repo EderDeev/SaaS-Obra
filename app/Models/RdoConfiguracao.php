@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'copy_equipment',
     'copy_pending_activities',
     'require_photos',
+    'digital_signature_enabled',
     'submission_deadline_days',
     'active',
 ])]
@@ -44,6 +45,7 @@ class RdoConfiguracao extends Model
             'copy_equipment' => 'boolean',
             'copy_pending_activities' => 'boolean',
             'require_photos' => 'boolean',
+            'digital_signature_enabled' => 'boolean',
             'active' => 'boolean',
         ];
     }

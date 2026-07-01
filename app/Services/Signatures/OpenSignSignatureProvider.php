@@ -12,7 +12,13 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
 {
     public function createRequest(RdoSignatureRequest $request, string $absolutePdfPath): array
     {
-        $request->loadMissing(['rdo.contract', 'signers']);
+        $request->loadMissing([
+            'rdo.contract',
+            'rdo.obra:id,nome,codigo',
+            'rdo.configuracao.obras:id,nome,codigo',
+            'rdo.secoes',
+            'signers',
+        ]);
         $baseUrl = rtrim((string) config('signatures.opensign.base_url'), '/');
         $apiKey = (string) config('signatures.opensign.api_key');
         $path = '/'.ltrim((string) config('signatures.opensign.create_request_path'), '/');
@@ -52,7 +58,7 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
                     'email' => $signer->email,
                     'role' => $signer->role,
                     'signer_role' => 'signer',
-                    'widgets' => [$this->signatureWidget($signer->role, $index)],
+                    'widgets' => $this->signatureWidgets($request, $signer->role, $index),
                 ])
                 ->all(),
         ];
@@ -242,7 +248,51 @@ HTML;
         return $response->successful() ? ($response->json() ?? []) : [];
     }
 
-    private function signatureWidget(string $role, int $index): array
+    private function signatureWidgets(RdoSignatureRequest $request, string $role, int $index): array
+    {
+        return collect($this->rdoMainPageNumbers($request))
+            ->map(fn (int $page, int $pageIndex): array => $this->signatureWidget($role, $index, $page, $pageIndex))
+            ->values()
+            ->all();
+    }
+
+    private function rdoMainPageNumbers(RdoSignatureRequest $request): array
+    {
+        $rdo = $request->rdo;
+
+        if (! $rdo) {
+            return [1];
+        }
+
+        $obras = $rdo->configuracao?->obras;
+
+        if (! $obras || $obras->isEmpty()) {
+            $obras = collect([$rdo->obra])->filter();
+        }
+
+        if ($obras->isEmpty()) {
+            return [1];
+        }
+
+        $sectionsByObra = $rdo->secoes
+            ->groupBy('obra_id')
+            ->map(fn ($sections) => $sections->keyBy('secao'));
+
+        $page = 1;
+        $pages = [];
+
+        foreach ($obras as $obra) {
+            $pages[] = $page;
+
+            $photos = data_get($sectionsByObra->get($obra->id)?->get('fotos')?->dados, 'arquivos', []);
+            $photoPages = (int) ceil(count(is_array($photos) ? $photos : []) / 6);
+            $page += 1 + $photoPages;
+        }
+
+        return $pages ?: [1];
+    }
+
+    private function signatureWidget(string $role, int $index, int $page = 1, int $pageIndex = 0): array
     {
         $positions = [
             'construtora' => ['x' => 51, 'name' => 'assinatura_construtora'],
@@ -253,9 +303,9 @@ HTML;
         $position = $positions[$role] ?? $positions[$fallbackRoles[$index] ?? 'cliente'];
 
         return [
-            'name' => $position['name'],
+            'name' => $position['name'].'_pagina_'.$page,
             'type' => 'signature',
-            'page' => 1,
+            'page' => $page,
             'x' => $position['x'],
             'y' => 710,
             'w' => 112,

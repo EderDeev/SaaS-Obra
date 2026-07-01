@@ -153,6 +153,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::post('/diario-obra/rdo/{rdo}/importar-rda/{rda}', [RdoController::class, 'importRda'])->name('diario-obra.rdo.import-rda');
         Route::post('/diario-obra/rdo/{rdo}/fluxo', [RdoController::class, 'changeFlow'])->name('diario-obra.rdo.flow');
         Route::post('/diario-obra/rdo/{rdo}/assinaturas', [RdoSignatureController::class, 'store'])->name('diario-obra.rdo.signatures.store');
+        Route::post('/diario-obra/rdo/{rdo}/assinaturas/manual', [RdoSignatureController::class, 'uploadManual'])->name('diario-obra.rdo.signatures.manual');
         Route::post('/diario-obra/rdo/{rdo}/assinaturas/{signature}/atualizar', [RdoSignatureController::class, 'refresh'])->name('diario-obra.rdo.signatures.refresh');
         Route::get('/diario-obra/rdo/{rdo}/assinaturas/{signature}/pdf-original', [RdoSignatureController::class, 'downloadUnsigned'])->name('diario-obra.rdo.signatures.unsigned');
         Route::get('/diario-obra/rdo/{rdo}/assinaturas/{signature}/pdf-assinado', [RdoSignatureController::class, 'downloadSigned'])->name('diario-obra.rdo.signatures.signed');
