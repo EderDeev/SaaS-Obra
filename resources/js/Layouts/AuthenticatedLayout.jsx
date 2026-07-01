@@ -462,6 +462,11 @@ export default function AuthenticatedLayout({ children }) {
             children: parametrizacaoItems,
         }] : []),
     ];
+    const normalizedMobileNavItems = mobileNavItems.map((item) => (
+        item.children === parametrizacaoItems
+            ? { ...item, label: 'Parametrização' }
+            : item
+    ));
 
     return (
         <div className={`sig-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -666,7 +671,7 @@ export default function AuthenticatedLayout({ children }) {
                                 aria-label="Menu principal"
                             >
                                 <div className="max-h-[70vh] overflow-y-auto p-2">
-                                    <MobileNavList items={mobileNavItems} onNavigate={() => setMobileNavOpen(false)} />
+                                    <MobileNavList items={normalizedMobileNavItems} onNavigate={() => setMobileNavOpen(false)} />
                                 </div>
                             </div>
                         )}
@@ -674,7 +679,7 @@ export default function AuthenticatedLayout({ children }) {
 
                     <button
                         type="button"
-                        className="hidden sig-btn sig-btn-ghost !min-h-9 !px-2 lg:inline-flex"
+                        className="sig-btn sig-btn-ghost !hidden !min-h-9 !px-2 lg:!inline-flex"
                         title={sidebarCollapsed ? 'Mostrar menu lateral' : 'Esconder menu lateral'}
                         aria-label={sidebarCollapsed ? 'Mostrar menu lateral' : 'Esconder menu lateral'}
                         aria-pressed={sidebarCollapsed}
