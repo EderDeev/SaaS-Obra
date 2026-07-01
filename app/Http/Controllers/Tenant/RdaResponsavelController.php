@@ -8,6 +8,7 @@ use App\Models\Obra;
 use App\Models\RdoResponsavel;
 use App\Models\Tenant;
 use App\Models\TenantUser;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -36,21 +37,28 @@ class RdaResponsavelController extends Controller
             ->orderBy('nome')
             ->get(['id', 'codigo', 'nome']);
 
-        $users = TenantUser::query()
+        $membershipsByUserId = TenantUser::query()
             ->where('tenant_id', $tenant->id)
             ->where('status', 'active')
-            ->with(['user:id,name,email,avatar_url', 'empresa:id,nome'])
+            ->with(['empresa:id,nome'])
             ->get()
-            ->filter(fn (TenantUser $membership) => $membership->user !== null)
-            ->map(fn (TenantUser $membership) => [
-                'id' => $membership->user_id,
-                'name' => $membership->user->name,
-                'email' => $membership->user->email,
-                'avatar_url' => $membership->user->avatar_url,
-                'empresa_id' => $membership->empresa_id,
-                'empresa' => $membership->empresa?->nome,
-            ])
-            ->sortBy('name')
+            ->keyBy('user_id');
+
+        $users = User::query()
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'avatar_url', 'is_platform_admin'])
+            ->map(function (User $user) use ($membershipsByUserId): array {
+                $membership = $membershipsByUserId->get($user->id);
+
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'avatar_url' => $user->avatar_url,
+                    'empresa_id' => $membership?->empresa_id,
+                    'empresa' => $membership?->empresa?->nome ?: ($user->is_platform_admin ? 'Admin plataforma' : null),
+                ];
+            })
             ->values();
 
         $responsaveis = RdoResponsavel::query()
@@ -119,18 +127,6 @@ class RdaResponsavelController extends Controller
             Obra::query()->where('tenant_id', $tenant->id)->where('contract_id', $contract->id)->whereKey($validated['obra_id'])->exists(),
             422,
             'A frente de serviço selecionada não pertence ao contrato.'
-        );
-
-        abort_if(! $contract->construtora_empresa_id, 422, 'Vincule a construtora ao contrato antes de cadastrar o responsável do RDA.');
-        abort_unless(
-            TenantUser::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('user_id', $validated['user_id'])
-                ->where('empresa_id', $contract->construtora_empresa_id)
-                ->where('status', 'active')
-                ->exists(),
-            422,
-            'O usuário selecionado não pertence à construtora vinculada ao contrato.'
         );
 
         $responsavel = RdoResponsavel::withTrashed()->firstOrNew([

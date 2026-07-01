@@ -30,42 +30,67 @@ export default function Responsaveis({
 }) {
     const { currentTenant, flash = {}, errors = {} } = usePage().props;
     const [openUsers, setOpenUsers] = useState(() => new Set());
+    const [userSearch, setUserSearch] = useState('');
+    const [userPickerOpen, setUserPickerOpen] = useState(false);
     const form = useForm({
         contract_id: selectedContractId || '',
         obra_id: '',
         user_id: '',
         etapa: stages?.[0]?.value || 'construtora',
     });
+
     const companyId = {
         campo: contractCompanies?.construtora?.id,
         construtora: contractCompanies?.construtora?.id,
         gerenciadora: contractCompanies?.gerenciadora?.id,
         cliente: contractCompanies?.cliente?.id,
     }[form.data.etapa];
-    const eligibleUsers = useMemo(
-        () => form.data.etapa === 'assinatura'
+
+    const baseEligibleUsers = useMemo(() => (
+        module === 'rda' || form.data.etapa === 'assinatura'
             ? users
-            : users.filter((user) => Number(user.empresa_id) === Number(companyId)),
-        [users, companyId, form.data.etapa]
-    );
+            : users.filter((user) => Number(user.empresa_id) === Number(companyId))
+    ), [users, companyId, form.data.etapa, module]);
+
+    const eligibleUsers = useMemo(() => {
+        const search = userSearch.trim().toLowerCase();
+
+        if (!search) return baseEligibleUsers;
+
+        return baseEligibleUsers.filter((user) => [
+            user.name,
+            user.email,
+            user.empresa,
+        ].filter(Boolean).some((value) => String(value).toLowerCase().includes(search)));
+    }, [baseEligibleUsers, userSearch]);
+
+    const selectedUser = useMemo(() => (
+        baseEligibleUsers.find((user) => String(user.id) === String(form.data.user_id)) || null
+    ), [baseEligibleUsers, form.data.user_id]);
 
     const changeContract = (contractId) => {
         router.get(
             route(routeNames.index, currentTenant.slug),
             { contract_id: contractId },
-            { preserveScroll: true, preserveState: false }
+            { preserveScroll: true, preserveState: false },
         );
     };
 
     const changeStage = (stage) => {
         form.setData({ ...form.data, etapa: stage, user_id: '' });
+        setUserSearch('');
+        setUserPickerOpen(false);
     };
 
     const submit = (event) => {
         event.preventDefault();
         form.post(route(routeNames.store, currentTenant.slug), {
             preserveScroll: true,
-            onSuccess: () => form.reset('obra_id', 'user_id'),
+            onSuccess: () => {
+                form.reset('obra_id', 'user_id');
+                setUserSearch('');
+                setUserPickerOpen(false);
+            },
         });
     };
 
@@ -75,6 +100,7 @@ export default function Responsaveis({
             preserveScroll: true,
         });
     };
+
     const toggleUser = (userId) => {
         setOpenUsers((current) => {
             const next = new Set(current);
@@ -112,14 +138,14 @@ export default function Responsaveis({
                     </div>
                 </section>
 
-                <form onSubmit={submit} className="sig-card overflow-hidden">
+                <form onSubmit={submit} className="sig-card">
                     <header className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-4">
                         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]"><UserCheck size={20} /></span>
                         <div>
                             <h2 className="text-lg font-bold">Cadastrar responsável</h2>
                             <p className="text-sm text-[var(--ink-500)]">
                                 {module === 'rda'
-                                    ? 'A lista de usuários é filtrada pela construtora vinculada ao contrato.'
+                                    ? 'Qualquer usuário ativo do tenant pode ser responsável pelo apontamento de campo.'
                                     : 'A lista de usuários é filtrada pela empresa da etapa; na assinatura, qualquer usuário ativo do tenant pode ser escolhido.'}
                             </p>
                         </div>
@@ -137,13 +163,41 @@ export default function Responsaveis({
                             </select>
                         </Field>
                         <Field label="Usuário" error={form.errors.user_id}>
-                            <select value={form.data.user_id} onChange={(event) => form.setData('user_id', event.target.value)} className="sig-input">
-                                <option value="">Selecione</option>
-                                {eligibleUsers.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.email}</option>)}
-                            </select>
-                            {eligibleUsers.length === 0 && <span className="text-xs text-amber-700">Nenhum usuário ativo está vinculado a esta empresa.</span>}
+                            <UserCombobox
+                                users={eligibleUsers}
+                                selectedUser={selectedUser}
+                                search={userSearch}
+                                open={userPickerOpen}
+                                placeholder="Selecione ou pesquise um usuário"
+                                onFocus={() => setUserPickerOpen(true)}
+                                onBlur={() => {
+                                    window.setTimeout(() => setUserPickerOpen(false), 120);
+                                }}
+                                onSearch={(value) => {
+                                    setUserSearch(value);
+                                    setUserPickerOpen(true);
+                                    form.setData('user_id', '');
+                                }}
+                                onSelect={(user) => {
+                                    form.setData('user_id', user.id);
+                                    setUserSearch('');
+                                    setUserPickerOpen(false);
+                                }}
+                                onClear={() => {
+                                    form.setData('user_id', '');
+                                    setUserSearch('');
+                                    setUserPickerOpen(false);
+                                }}
+                            />
+                            {eligibleUsers.length === 0 && (
+                                <span className="text-xs text-amber-700">
+                                    {module === 'rda'
+                                        ? 'Nenhum usuário ativo encontrado para esta pesquisa.'
+                                        : 'Nenhum usuário ativo está vinculado a esta empresa ou pesquisa.'}
+                                </span>
+                            )}
                         </Field>
-                        <button type="submit" disabled={form.processing || !eligibleUsers.length} className="sig-btn sig-btn-primary"><Plus size={16} /> Cadastrar</button>
+                        <button type="submit" disabled={form.processing || !baseEligibleUsers.length} className="sig-btn sig-btn-primary"><Plus size={16} /> Cadastrar</button>
                     </div>
                 </form>
 
@@ -231,6 +285,73 @@ function ResponsibilityUserRow({ responsavel, open = false, onToggle, onRemove }
             )}
         </article>
     );
+}
+
+function UserCombobox({
+    users = [],
+    selectedUser = null,
+    search = '',
+    open = false,
+    placeholder = 'Selecione ou pesquise um usuário',
+    onFocus,
+    onBlur,
+    onSearch,
+    onSelect,
+    onClear,
+}) {
+    const inputValue = selectedUser ? formatUserLabel(selectedUser) : search;
+
+    return (
+        <div className="grid gap-2">
+            <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-3 py-2 focus-within:border-[var(--primary)] focus-within:ring-2 focus-within:ring-blue-100">
+                <input
+                    type="search"
+                    value={inputValue}
+                    onFocus={onFocus}
+                    onBlur={onBlur}
+                    onChange={(event) => onSearch(event.target.value)}
+                    placeholder={placeholder}
+                    className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-[var(--ink)] outline-none ring-0 placeholder:font-medium placeholder:text-[var(--ink-400)]"
+                />
+                {selectedUser && (
+                    <button
+                        type="button"
+                        onClick={onClear}
+                        className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-[var(--ink-500)] transition hover:bg-slate-200"
+                    >
+                        Limpar
+                    </button>
+                )}
+            </div>
+
+            {open && (
+                <div className="max-h-56 overflow-y-auto rounded-xl border border-[var(--border)] bg-white shadow-sm">
+                    {users.length ? users.map((user) => (
+                        <button
+                            type="button"
+                            key={user.id}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => onSelect(user)}
+                            className="block w-full border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-blue-50"
+                        >
+                            <span className="block truncate text-sm font-bold text-[var(--ink)]">{user.name}</span>
+                            <span className="block truncate text-xs text-[var(--ink-500)]">
+                                {user.email}{user.empresa ? ` · ${user.empresa}` : ''}
+                            </span>
+                        </button>
+                    )) : (
+                        <p className="px-3 py-3 text-xs font-semibold text-amber-700">Nenhum usuário encontrado.</p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function formatUserLabel(user) {
+    if (!user) return '';
+
+    return `${user.name} · ${user.email}${user.empresa ? ` · ${user.empresa}` : ''}`;
 }
 
 function Company({ label, company }) {

@@ -34,6 +34,19 @@ function formatLocalDate(date) {
     return `${year}-${month}-${day}`;
 }
 
+function monthBounds(month) {
+    const [year, monthNumber] = String(month).split('-').map(Number);
+
+    if (!year || !monthNumber) {
+        return {};
+    }
+
+    return {
+        date_from: `${String(year).padStart(4, '0')}-${String(monthNumber).padStart(2, '0')}-01`,
+        date_to: formatLocalDate(new Date(year, monthNumber, 0)),
+    };
+}
+
 export default function Calendar({ contracts, obras, filters, configuration, rdos, copyOptions = [], batch_download_url = null }) {
     const { currentTenant } = usePage().props;
     const initialRender = useRef(true);
@@ -51,6 +64,19 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
 
     const changeFilter = (key, value) => {
         const next = { ...filters, [key]: value || undefined };
+
+        if (key === 'month' && value) {
+            Object.assign(next, monthBounds(value));
+        }
+
+        if (key === 'date_from' && value) {
+            next.month = value.slice(0, 7);
+        }
+
+        if (key === 'date_to' && value && !next.date_from) {
+            next.month = value.slice(0, 7);
+        }
+
         router.get(route('tenant.diario-obra.rdo.calendar', currentTenant.slug), next, {
             preserveState: false,
             replace: true,

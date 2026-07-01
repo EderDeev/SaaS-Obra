@@ -192,7 +192,7 @@ class RdoController extends Controller
         $contracts = $this->contracts($tenant);
         $selectedContractId = (int) ($filters['contract_id'] ?? $contracts->first()?->id ?? 0);
         $obras = $this->obras($tenant, $selectedContractId);
-        $month = CarbonImmutable::createFromFormat('Y-m', $filters['month'] ?? (! empty($filters['date_from'] ?? null) ? substr($filters['date_from'], 0, 7) : now()->format('Y-m')))->startOfMonth();
+        $month = CarbonImmutable::createFromFormat('Y-m', ! empty($filters['date_from'] ?? null) ? substr($filters['date_from'], 0, 7) : ($filters['month'] ?? now()->format('Y-m')))->startOfMonth();
         $dateFrom = ! empty($filters['date_from']) ? CarbonImmutable::parse($filters['date_from'])->startOfDay() : $month->startOfMonth();
         $dateTo = ! empty($filters['date_to']) ? CarbonImmutable::parse($filters['date_to'])->endOfDay() : $month->endOfMonth();
         if ($dateTo->lt($dateFrom)) {

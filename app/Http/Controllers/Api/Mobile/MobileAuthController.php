@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Controllers\Controller;
 use App\Models\MobileApiToken;
+use App\Models\RdoResponsavel;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -50,10 +51,28 @@ class MobileAuthController extends Controller
             ->unique()
             ->values();
 
-        $tenantIds = $membershipTenantIds
-            ->merge($contractTenantIds)
+        $rdoResponsibleTenantIds = RdoResponsavel::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->pluck('tenant_id')
             ->unique()
             ->values();
+
+        $tenantIds = $membershipTenantIds
+            ->merge($contractTenantIds)
+            ->merge($rdoResponsibleTenantIds)
+            ->unique()
+            ->values();
+
+        if ($tenantIds->isEmpty() && $user->is_platform_admin) {
+            $tenantIds = Tenant::query()
+                ->where('status', 'active')
+                ->orderByDesc('id')
+                ->pluck('id')
+                ->values();
+        }
 
         if ($tenantIds->isEmpty()) {
             return response()->json(['message' => 'Usuário sem acesso a um ambiente ativo.'], 403);
@@ -88,6 +107,7 @@ class MobileAuthController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'avatar_url' => $user->avatar_url,
             ],
             'tenant' => [
                 'id' => $tenant->id,
