@@ -56,7 +56,7 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
 
             <section className="sig-content space-y-6">
                 {formOpen && (
-                    <form className="sig-card p-5" onSubmit={submit}>
+                    <form className="sig-card p-4 sm:p-5" onSubmit={submit}>
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                                 <div className="eyebrow">Platform</div>
@@ -105,12 +105,12 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
                             <Field label="Email do owner" error={form.errors.owner_email}><input type="email" value={form.data.owner_email} onChange={(e) => form.setData('owner_email', e.target.value)} required /></Field>
                         </div>
 
-                        <button className="sig-btn sig-btn-primary mt-5" disabled={form.processing}><Plus size={15} /> Criar tenant</button>
+                        <button className="sig-btn sig-btn-primary mt-5 w-full justify-center sm:w-auto" disabled={form.processing}><Plus size={15} /> Criar tenant</button>
                     </form>
                 )}
 
                 <section className="sig-card overflow-hidden">
-                    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+                    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-4 sm:px-5">
                         <div>
                             <div className="eyebrow">Platform</div>
                             <h2 className="mt-1 text-[15px] font-semibold">Tenants cadastrados</h2>
@@ -125,30 +125,84 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
                             {page.props.flash.success}
                         </div>
                     )}
-                    <table className="sig-table">
-                        <thead>
-                            <tr><th>Tenant</th><th>Plano</th><th>Status</th><th>Uso</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                            {tenants.map((tenant) => (
-                                <tr key={tenant.id}>
-                                    <td><div className="font-semibold">{tenant.name}</div><div className="mono text-xs text-[var(--ink-500)]">{tenant.slug}</div></td>
-                                    <td>{tenant.plan}</td>
-                                    <td>
-                                        <span className={`sig-pill ${statusPills[tenant.status] || 'sig-pill-muted'}`}>
-                                            <span className="sig-pill-dot" />
-                                            {statusLabels[tenant.status] || tenant.status}
-                                        </span>
-                                    </td>
-                                    <td>{tenant.users_count} usuários · {tenant.contracts_count} contratos</td>
-                                    <td className="text-right"><Link href={route('tenant.dashboard', tenant.slug)} className="sig-btn sig-btn-secondary sig-btn-sm">Abrir</Link></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+
+                    <div className="divide-y divide-[var(--border)] md:hidden">
+                        {tenants.map((tenant) => (
+                            <TenantCard key={tenant.id} tenant={tenant} />
+                        ))}
+                    </div>
+
+                    <div className="hidden overflow-x-auto md:block">
+                        <table className="sig-table min-w-[760px]">
+                            <thead>
+                                <tr><th>Tenant</th><th>Plano</th><th>Status</th><th>Uso</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                {tenants.map((tenant) => (
+                                    <tr key={tenant.id}>
+                                        <td><div className="font-semibold">{tenant.name}</div><div className="mono text-xs text-[var(--ink-500)]">{tenant.slug}</div></td>
+                                        <td>{tenant.plan}</td>
+                                        <td><StatusPill status={tenant.status} /></td>
+                                        <td>{tenant.users_count} usuários · {tenant.contracts_count} contratos</td>
+                                        <td className="text-right"><AccessButton tenant={tenant} compact /></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </section>
             </section>
         </AuthenticatedLayout>
+    );
+}
+
+function TenantCard({ tenant }) {
+    return (
+        <article className="space-y-4 p-4">
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <h3 className="truncate text-base font-semibold text-[var(--ink-900)]">{tenant.name}</h3>
+                    <p className="mono mt-1 truncate text-xs text-[var(--ink-500)]">{tenant.slug}</p>
+                </div>
+                <StatusPill status={tenant.status} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+                <Info label="Plano" value={tenant.plan} />
+                <Info label="Uso" value={`${tenant.users_count} usuários · ${tenant.contracts_count} contratos`} />
+            </div>
+
+            <AccessButton tenant={tenant} />
+        </article>
+    );
+}
+
+function Info({ label, value }) {
+    return (
+        <div className="rounded-xl bg-[var(--bg-soft)] px-3 py-2">
+            <div className="eyebrow text-[10px]">{label}</div>
+            <div className="mt-1 break-words text-sm font-semibold text-[var(--ink-900)]">{value}</div>
+        </div>
+    );
+}
+
+function StatusPill({ status }) {
+    return (
+        <span className={`sig-pill shrink-0 ${statusPills[status] || 'sig-pill-muted'}`}>
+            <span className="sig-pill-dot" />
+            {statusLabels[status] || status}
+        </span>
+    );
+}
+
+function AccessButton({ tenant, compact = false }) {
+    return (
+        <Link
+            href={route('tenant.dashboard', tenant.slug)}
+            className={`sig-btn sig-btn-primary ${compact ? 'sig-btn-sm' : 'w-full justify-center'}`}
+        >
+            Acessar
+        </Link>
     );
 }
 

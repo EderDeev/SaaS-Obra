@@ -8,6 +8,7 @@ import {
     Building2,
     Calculator,
     CalendarDays,
+    ChevronDown,
     ChevronRight,
     ClipboardList,
     FolderOpen,
@@ -16,6 +17,7 @@ import {
     Home,
     KeyRound,
     LogOut,
+    Menu,
     PanelLeftClose,
     PanelLeftOpen,
     Ruler,
@@ -64,6 +66,7 @@ export default function AuthenticatedLayout({ children }) {
     const tenantRole = props.currentTenantRole;
     const tenantRoleLabel = props.currentTenantRoleLabel;
     const contract = props.contract;
+    const navigationContracts = props.navigationContracts || [];
     const isPlatformAdmin = Boolean(user?.is_platform_admin);
     const userCan = props.userPermissions?.can || {};
     const canManageTenantUsers = Boolean(userCan.view_users);
@@ -82,6 +85,8 @@ export default function AuthenticatedLayout({ children }) {
     const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*'));
     const [rdaOpen, setRdaOpen] = useState(() => route().current('tenant.diario-obra.rda.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         if (typeof window === 'undefined') {
             return false;
@@ -90,6 +95,8 @@ export default function AuthenticatedLayout({ children }) {
         return window.localStorage.getItem('deming:sidebar-collapsed') === 'true';
     });
     const notificationsRef = useRef(null);
+    const mobileNavRef = useRef(null);
+    const userMenuRef = useRef(null);
     const notifications = props.notifications?.items || [];
     const unreadNotificationsCount = props.notifications?.unread_count ?? notifications.filter((notification) => notification.unread).length;
 
@@ -124,6 +131,37 @@ export default function AuthenticatedLayout({ children }) {
             document.removeEventListener('keydown', handleKeyDown);
         };
     }, [notificationsOpen]);
+
+    useEffect(() => {
+        if (!mobileNavOpen && !userMenuOpen) {
+            return undefined;
+        }
+
+        function handlePointerDown(event) {
+            if (mobileNavOpen && !mobileNavRef.current?.contains(event.target)) {
+                setMobileNavOpen(false);
+            }
+
+            if (userMenuOpen && !userMenuRef.current?.contains(event.target)) {
+                setUserMenuOpen(false);
+            }
+        }
+
+        function handleKeyDown(event) {
+            if (event.key === 'Escape') {
+                setMobileNavOpen(false);
+                setUserMenuOpen(false);
+            }
+        }
+
+        document.addEventListener('mousedown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.removeEventListener('mousedown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [mobileNavOpen, userMenuOpen]);
     const parametrizacaoItems = tenant && parametrizacaoCan.view_parametrizacao
         ? [
             ...(parametrizacaoCan.view_parametrizacao_empresas ? [{
@@ -415,11 +453,21 @@ export default function AuthenticatedLayout({ children }) {
                 { label: route().current('platform.tenants.*') ? 'Tenants' : route().current('platform.aps.*') ? 'Uso APS' : 'Super Admin' },
             ];
 
+    const mobileNavItems = [
+        ...navItems,
+        ...(parametrizacaoItems.length > 0 ? [{
+            label: 'ParametrizaÃ§Ã£o',
+            icon: SlidersHorizontal,
+            active: route().current('tenant.parametrizacao.*'),
+            children: parametrizacaoItems,
+        }] : []),
+    ];
+
     return (
         <div className={`sig-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
             <aside className="sig-side">
                 <div className="flex h-[60px] items-center border-b border-[var(--side-border)] px-[18px]">
-                    <Link href={route('dashboard')}>
+                    <Link href={tenant ? route('tenant.dashboard', tenant.slug) : route('dashboard')}>
                         <SigLogo size={24} />
                     </Link>
                 </div>
@@ -598,9 +646,35 @@ export default function AuthenticatedLayout({ children }) {
 
             <section className="sig-main">
                 <header className="sig-topbar">
+                    <div ref={mobileNavRef} className="relative lg:hidden">
+                        <button
+                            type="button"
+                            className="sig-btn sig-btn-primary !min-h-9 !px-3"
+                            aria-haspopup="menu"
+                            aria-expanded={mobileNavOpen}
+                            onClick={() => setMobileNavOpen((open) => !open)}
+                        >
+                            <Menu size={17} />
+                            Menu
+                            <ChevronDown size={14} className={`transition-transform ${mobileNavOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {mobileNavOpen && (
+                            <div
+                                className="absolute left-0 top-[calc(100%+10px)] z-50 w-[min(340px,calc(100vw-32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.14)]"
+                                role="menu"
+                                aria-label="Menu principal"
+                            >
+                                <div className="max-h-[70vh] overflow-y-auto p-2">
+                                    <MobileNavList items={mobileNavItems} onNavigate={() => setMobileNavOpen(false)} />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <button
                         type="button"
-                        className="sig-btn sig-btn-ghost !min-h-9 !px-2"
+                        className="hidden sig-btn sig-btn-ghost !min-h-9 !px-2 lg:inline-flex"
                         title={sidebarCollapsed ? 'Mostrar menu lateral' : 'Esconder menu lateral'}
                         aria-label={sidebarCollapsed ? 'Mostrar menu lateral' : 'Esconder menu lateral'}
                         aria-pressed={sidebarCollapsed}
@@ -720,10 +794,136 @@ export default function AuthenticatedLayout({ children }) {
                             </div>
                         )}
                     </div>
+
+                    <div ref={userMenuRef} className="relative">
+                        <button
+                            type="button"
+                            className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-white p-1 pr-2 shadow-sm transition hover:bg-[var(--surface-muted)]"
+                            aria-haspopup="menu"
+                            aria-expanded={userMenuOpen}
+                            title="Menu do usuário"
+                            onClick={() => setUserMenuOpen((open) => !open)}
+                        >
+                            <UserAvatar user={user} className="!h-8 !w-8 !text-[11px]" />
+                            <ChevronDown size={14} className={`hidden text-[var(--ink-500)] transition-transform sm:block ${userMenuOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {userMenuOpen && (
+                            <div
+                                className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(340px,calc(100vw-32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.14)]"
+                                role="menu"
+                                aria-label="Menu do usuário"
+                            >
+                                <div className="border-b border-[var(--border)] px-4 py-3">
+                                    <div className="flex items-center gap-3">
+                                        <UserAvatar user={user} />
+                                        <div className="min-w-0">
+                                            <div className="truncate text-sm font-semibold text-[var(--ink-900)]">{user.name}</div>
+                                            <div className="truncate text-xs text-[var(--ink-500)]">{user.email}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {tenant && navigationContracts.length > 0 && (
+                                    <div className="border-b border-[var(--border)] p-2">
+                                        <div className="eyebrow px-2 py-1 text-[10px]">Contratos</div>
+                                        <div className="max-h-56 overflow-y-auto">
+                                            {navigationContracts.map((navigationContract) => {
+                                                const active = String(contract?.id) === String(navigationContract.id);
+
+                                                return (
+                                                    <Link
+                                                        key={navigationContract.id}
+                                                        href={route('tenant.contracts.show', [tenant.slug, navigationContract.id])}
+                                                        onClick={() => setUserMenuOpen(false)}
+                                                        className={`flex items-start gap-2 rounded-lg px-2 py-2 text-sm hover:bg-[var(--surface-muted)] ${active ? 'bg-[var(--blue-50)] text-[var(--primary)]' : 'text-[var(--ink-700)]'}`}
+                                                        role="menuitem"
+                                                    >
+                                                        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${active ? 'bg-[var(--primary)]' : 'bg-[var(--ink-300)]'}`} />
+                                                        <span className="min-w-0">
+                                                            <span className="mono block truncate text-[12px] font-semibold">{navigationContract.code}</span>
+                                                            <span className="block truncate text-xs text-[var(--ink-500)]">{navigationContract.name}</span>
+                                                        </span>
+                                                    </Link>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="p-2">
+                                    <Link
+                                        href={route('profile.edit')}
+                                        onClick={() => setUserMenuOpen(false)}
+                                        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-700)] hover:bg-[var(--surface-muted)]"
+                                        role="menuitem"
+                                    >
+                                        <Settings size={16} />
+                                        Editar perfil / foto
+                                    </Link>
+                                    <Link
+                                        href={route('logout')}
+                                        method="post"
+                                        as="button"
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[var(--red)] hover:bg-[var(--red-50)]"
+                                        role="menuitem"
+                                    >
+                                        <LogOut size={16} />
+                                        Sair
+                                    </Link>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </header>
 
                 <main>{children}</main>
             </section>
         </div>
+    );
+}
+
+function MobileNavList({ items, onNavigate, level = 0 }) {
+    return (
+        <div className={level > 0 ? 'ml-3 border-l border-[var(--border)] pl-2' : ''}>
+            {items.map((item) => (
+                <MobileNavItem key={`${level}-${item.label}`} item={item} onNavigate={onNavigate} level={level} />
+            ))}
+        </div>
+    );
+}
+
+function MobileNavItem({ item, onNavigate, level }) {
+    const [open, setOpen] = useState(Boolean(item.active));
+    const Icon = item.icon;
+
+    if (item.children?.length) {
+        return (
+            <div>
+                <button
+                    type="button"
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold ${item.active ? 'bg-[var(--primary-50)] text-[var(--primary)]' : 'text-[var(--ink-700)] hover:bg-[var(--surface-muted)]'}`}
+                    onClick={() => setOpen((current) => !current)}
+                    role="menuitem"
+                >
+                    {Icon ? <Icon size={16} /> : <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />}
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    <ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+                </button>
+                {open && <MobileNavList items={item.children} onNavigate={onNavigate} level={level + 1} />}
+            </div>
+        );
+    }
+
+    return (
+        <Link
+            href={item.href}
+            onClick={onNavigate}
+            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${item.active ? 'bg-[var(--primary-50)] text-[var(--primary)]' : 'text-[var(--ink-700)] hover:bg-[var(--surface-muted)]'}`}
+            role="menuitem"
+        >
+            {Icon ? <Icon size={16} /> : <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />}
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        </Link>
     );
 }

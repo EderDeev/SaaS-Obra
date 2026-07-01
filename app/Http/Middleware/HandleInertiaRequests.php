@@ -93,6 +93,35 @@ class HandleInertiaRequests extends Middleware
                     ? TenantRoles::label($request->user()->tenantRole($tenant))
                     : null;
             },
+            'navigationContracts' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+                $user = $request->user();
+
+                if (! $user || ! $tenant) {
+                    return [];
+                }
+
+                $query = $tenant->contracts()
+                    ->select(['id', 'tenant_id', 'code', 'name', 'status'])
+                    ->orderBy('code');
+
+                $tenantRole = $user->tenantRole($tenant);
+
+                if (! $user->is_platform_admin && ! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
+                    $query->whereHas('participants', function ($query) use ($user): void {
+                        $query->where('user_id', $user->id)->where('status', 'active');
+                    });
+                }
+
+                return $query->get()
+                    ->map(fn ($contract): array => [
+                        'id' => $contract->id,
+                        'code' => $contract->code,
+                        'name' => $contract->name,
+                        'status' => $contract->status,
+                    ])
+                    ->all();
+            },
             'rncPermissions' => function () use ($request, $tenantForNavigation): array {
                 $tenant = $tenantForNavigation();
 

@@ -1232,14 +1232,6 @@ body.sig-viewer-body .sig-main > main {
     }
 
     .sig-side {
-        position: static;
-        height: auto;
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .sig-side nav,
-    .sig-side .sig-user-block {
         display: none;
     }
 
@@ -1248,6 +1240,7 @@ body.sig-viewer-body .sig-main > main {
     }
 
     .sig-topbar {
+        gap: 8px;
         padding: 0 16px;
     }
 }
