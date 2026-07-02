@@ -151,6 +151,18 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
             ->all();
     }
 
+    public function getSigningLinks(string $documentId, RdoSignatureRequest $request): array
+    {
+        $baseUrl = rtrim((string) config('signatures.opensign.base_url'), '/');
+        $apiKey = (string) config('signatures.opensign.api_key');
+
+        if ($baseUrl === '' || $apiKey === '') {
+            return [];
+        }
+
+        return $this->fetchSigningLinks($baseUrl, $apiKey, $documentId, $request, []);
+    }
+
     private function extractSigners(array $data): array
     {
         $found = [];
@@ -170,12 +182,27 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
                 $url = $node['url'] ?? $node['URL'] ?? null;
             }
 
-            if ($url) {
+            $status = $node['status']
+                ?? $node['Status']
+                ?? $node['signerStatus']
+                ?? $node['signer_status']
+                ?? $node['signed']
+                ?? $node['isSigned']
+                ?? $node['completed']
+                ?? $node['isCompleted']
+                ?? null;
+            $signedAt = $node['signed_at']
+                ?? $node['signedAt']
+                ?? $node['completed_at']
+                ?? $node['completedAt']
+                ?? null;
+
+            if ($email !== '' && ($url || $status !== null || $signedAt !== null)) {
                 $found[] = [
                     'email' => $email,
                     'provider_signer_id' => $node['id'] ?? $node['objectId'] ?? $node['signer_id'] ?? null,
-                    'status' => $node['status'] ?? 'sent',
-                    'signing_url' => (string) $url,
+                    'status' => $status ?? ($signedAt ? 'completed' : 'sent'),
+                    'signing_url' => $url ? (string) $url : null,
                     'raw' => $node,
                 ];
             }
@@ -198,7 +225,7 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
         $walk($data);
 
         return collect($found)
-            ->filter(fn (array $signer) => filter_var($signer['signing_url'], FILTER_VALIDATE_URL))
+            ->filter(fn (array $signer) => filter_var($signer['email'], FILTER_VALIDATE_EMAIL))
             ->unique(fn (array $signer) => $signer['email'].'|'.$signer['signing_url'])
             ->values()
             ->all();

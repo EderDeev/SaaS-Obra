@@ -217,9 +217,11 @@ class RdoSignatureService
             'completed_at' => null,
         ]);
 
+        $providerSigners = $this->providerSignersFromPayload($document);
+        $linkSigners = app(OpenSignSignatureProvider::class)->getSigningLinks((string) $documentId, $request->fresh('signers'));
         $this->syncProviderSigners(
             $request->fresh('signers'),
-            $this->providerSignersFromPayload($document),
+            $this->mergeProviderSigners($providerSigners, $linkSigners),
         );
 
         $request = $request->fresh(['tenant', 'rdo', 'signers']);
@@ -633,6 +635,27 @@ class RdoSignatureService
                 return $items
                     ->sortByDesc(fn (array $item): int => $this->statusFromProviderSigner($item) === 'completed' ? 1 : 0)
                     ->first();
+            })
+            ->values()
+            ->all();
+    }
+
+    private function mergeProviderSigners(array ...$groups): array
+    {
+        return collect($groups)
+            ->flatten(1)
+            ->filter(fn ($signer): bool => is_array($signer) && filter_var($signer['email'] ?? null, FILTER_VALIDATE_EMAIL))
+            ->groupBy(fn (array $signer): string => Str::lower((string) $signer['email']))
+            ->map(function ($items): array {
+                return $items
+                    ->sortByDesc(fn (array $item): int => $this->statusFromProviderSigner($item) === 'completed' ? 1 : 0)
+                    ->reduce(function (?array $carry, array $item): array {
+                        if ($carry === null) {
+                            return $item;
+                        }
+
+                        return array_replace($carry, array_filter($item, fn ($value): bool => $value !== null && $value !== ''));
+                    });
             })
             ->values()
             ->all();
