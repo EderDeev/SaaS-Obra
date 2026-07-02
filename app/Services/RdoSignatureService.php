@@ -651,8 +651,10 @@ class RdoSignatureService
             ->filter(fn ($signer): bool => is_array($signer) && filter_var($signer['email'] ?? null, FILTER_VALIDATE_EMAIL))
             ->groupBy(fn (array $signer): string => Str::lower((string) $signer['email']))
             ->map(function ($items): array {
-                return $items
-                    ->sortByDesc(fn (array $item): int => $this->statusFromProviderSigner($item) === 'completed' ? 1 : 0)
+                $hasCompleted = $items->contains(fn (array $item): bool => $this->statusFromProviderSigner($item) === 'completed');
+
+                $merged = $items
+                    ->sortBy(fn (array $item): int => $this->statusFromProviderSigner($item) === 'completed' ? 1 : 0)
                     ->reduce(function (?array $carry, array $item): array {
                         if ($carry === null) {
                             return $item;
@@ -660,6 +662,12 @@ class RdoSignatureService
 
                         return array_replace($carry, array_filter($item, fn ($value): bool => $value !== null && $value !== ''));
                     });
+
+                if ($hasCompleted) {
+                    $merged['status'] = 'completed';
+                }
+
+                return $merged;
             })
             ->values()
             ->all();
