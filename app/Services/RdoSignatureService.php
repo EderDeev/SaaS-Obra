@@ -162,6 +162,7 @@ class RdoSignatureService
             $request->fresh('signers'),
             $this->providerSignersFromPayload($payload),
         );
+        $this->syncAuditTrailSignatures($request->fresh('signers'), $payload);
 
         $request = $request->fresh(['tenant', 'rdo', 'signers']);
 
@@ -223,6 +224,7 @@ class RdoSignatureService
             $request->fresh('signers'),
             $this->mergeProviderSigners($providerSigners, $linkSigners),
         );
+        $this->syncAuditTrailSignatures($request->fresh('signers'), $document);
 
         $request = $request->fresh(['tenant', 'rdo', 'signers']);
 
@@ -671,6 +673,64 @@ class RdoSignatureService
             })
             ->values()
             ->all();
+    }
+
+    private function syncAuditTrailSignatures(RdoSignatureRequest $request, array $payload): void
+    {
+        $auditTrail = collect(data_get($payload, 'AuditTrail', []))
+            ->merge(data_get($payload, 'auditTrail', []))
+            ->merge(data_get($payload, 'result.AuditTrail', []))
+            ->merge(data_get($payload, 'result.auditTrail', []))
+            ->merge(data_get($payload, 'document.AuditTrail', []))
+            ->merge(data_get($payload, 'document.auditTrail', []))
+            ->filter(fn ($entry): bool => is_array($entry));
+
+        if ($auditTrail->isEmpty()) {
+            return;
+        }
+
+        $request->loadMissing('signers');
+
+        $auditTrail->each(function (array $entry) use ($request): void {
+            $email = Str::lower((string) (
+                data_get($entry, 'UserPtr.Email')
+                ?? data_get($entry, 'userPtr.email')
+                ?? data_get($entry, 'email')
+                ?? data_get($entry, 'Email')
+            ));
+
+            if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return;
+            }
+
+            $activity = (string) (
+                data_get($entry, 'Activity')
+                ?? data_get($entry, 'activity')
+                ?? ''
+            );
+            $signedOn = data_get($entry, 'SignedOn')
+                ?? data_get($entry, 'signedOn')
+                ?? data_get($entry, 'signed_on');
+
+            if (! $signedOn && $this->normalizeProviderStatus($activity) !== 'completed') {
+                return;
+            }
+
+            $signer = $request->signers
+                ->first(fn (RdoSignatureSigner $signer): bool => Str::lower($signer->email) === $email);
+
+            if (! $signer) {
+                return;
+            }
+
+            $signer->update([
+                'provider_signer_id' => $signer->provider_signer_id
+                    ?: (data_get($entry, 'UserPtr.objectId') ?? data_get($entry, 'userPtr.objectId')),
+                'status' => 'completed',
+                'provider_payload' => $entry,
+                'signed_at' => $signer->signed_at ?: now(),
+            ]);
+        });
     }
 
     private function allSignersConfirmedCompleted(RdoSignatureRequest $request): bool
