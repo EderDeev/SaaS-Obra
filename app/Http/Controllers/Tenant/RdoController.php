@@ -1275,13 +1275,32 @@ class RdoController extends Controller
 
         $signedAt = data_get($payload, 'signedAt')
             ?? data_get($payload, 'SignedAt')
+            ?? data_get($payload, 'signed_on')
+            ?? data_get($payload, 'signedOn')
+            ?? data_get($payload, 'SignedOn')
             ?? data_get($payload, 'completedAt')
             ?? data_get($payload, 'CompletedAt')
             ?? data_get($payload, 'raw.signedAt')
+            ?? data_get($payload, 'raw.signed_on')
+            ?? data_get($payload, 'raw.signedOn')
+            ?? data_get($payload, 'raw.SignedOn')
             ?? data_get($payload, 'raw.completedAt');
 
         if ($signedAt) {
             return 'completed';
+        }
+
+        $activity = data_get($payload, 'activity')
+            ?? data_get($payload, 'Activity')
+            ?? data_get($payload, 'raw.activity')
+            ?? data_get($payload, 'raw.Activity');
+
+        if ($activity) {
+            $normalized = str($activity)->lower()->replace([' ', '-'], '_')->toString();
+
+            if (in_array($normalized, ['completed', 'complete', 'signed', 'document_signed', 'finished'], true)) {
+                return 'completed';
+            }
         }
 
         $signed = data_get($payload, 'signed')
