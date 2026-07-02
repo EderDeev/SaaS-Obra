@@ -160,10 +160,7 @@ class RdoSignatureService
 
         $this->syncProviderSigners(
             $request->fresh('signers'),
-            data_get($payload, 'signers')
-                ?? data_get($payload, 'data.signers')
-                ?? data_get($payload, 'document.signers')
-                ?? [],
+            $this->providerSignersFromPayload($payload),
         );
 
         $request = $request->fresh(['tenant', 'rdo', 'signers']);
@@ -222,11 +219,7 @@ class RdoSignatureService
 
         $this->syncProviderSigners(
             $request->fresh('signers'),
-            data_get($document, 'signers')
-                ?? data_get($document, 'Signers')
-                ?? data_get($document, 'data.signers')
-                ?? data_get($document, 'document.signers')
-                ?? [],
+            $this->providerSignersFromPayload($document),
         );
 
         $request = $request->fresh(['tenant', 'rdo', 'signers']);
@@ -558,6 +551,93 @@ class RdoSignatureService
         });
     }
 
+    private function providerSignersFromPayload(array $payload): array
+    {
+        $found = [];
+        $push = function (array $node) use (&$found): void {
+            $email = Str::lower((string) (
+                data_get($node, 'email')
+                ?? data_get($node, 'Email')
+                ?? data_get($node, 'signer_email')
+                ?? data_get($node, 'signerEmail')
+                ?? data_get($node, 'SignerEmail')
+                ?? data_get($node, 'user.email')
+                ?? data_get($node, 'User.email')
+            ));
+
+            if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return;
+            }
+
+            $found[] = array_merge($node, [
+                'email' => $email,
+                'provider_signer_id' => data_get($node, 'provider_signer_id')
+                    ?? data_get($node, 'id')
+                    ?? data_get($node, 'objectId')
+                    ?? data_get($node, 'signer_id')
+                    ?? data_get($node, 'signerId'),
+                'signing_url' => data_get($node, 'signing_url')
+                    ?? data_get($node, 'signingUrl')
+                    ?? data_get($node, 'signing_link')
+                    ?? data_get($node, 'signingLink')
+                    ?? data_get($node, 'url')
+                    ?? data_get($node, 'URL'),
+                'raw' => $node,
+            ]);
+        };
+
+        foreach ([
+            data_get($payload, 'signers'),
+            data_get($payload, 'Signers'),
+            data_get($payload, 'data.signers'),
+            data_get($payload, 'data.Signers'),
+            data_get($payload, 'document.signers'),
+            data_get($payload, 'document.Signers'),
+            data_get($payload, 'recipients'),
+            data_get($payload, 'Recipients'),
+            data_get($payload, 'data.recipients'),
+            data_get($payload, 'document.recipients'),
+        ] as $nodes) {
+            if (is_array($nodes)) {
+                collect($nodes)->filter(fn ($node): bool => is_array($node))->each($push);
+            }
+        }
+
+        $walk = function (mixed $node) use (&$walk, $push, &$found): void {
+            if (! is_array($node)) {
+                return;
+            }
+
+            $push($node);
+
+            foreach ($node as $key => $value) {
+                if (is_string($key) && filter_var($key, FILTER_VALIDATE_EMAIL)) {
+                    $found[] = [
+                        'email' => Str::lower($key),
+                        'signing_url' => is_string($value) ? $value : null,
+                        'raw' => [$key => $value],
+                    ];
+                }
+
+                if (is_array($value)) {
+                    $walk($value);
+                }
+            }
+        };
+
+        $walk($payload);
+
+        return collect($found)
+            ->groupBy('email')
+            ->map(function ($items): array {
+                return $items
+                    ->sortByDesc(fn (array $item): int => $this->statusFromProviderSigner($item) === 'completed' ? 1 : 0)
+                    ->first();
+            })
+            ->values()
+            ->all();
+    }
+
     private function allSignersConfirmedCompleted(RdoSignatureRequest $request): bool
     {
         return $request->signers->isNotEmpty()
@@ -596,7 +676,24 @@ class RdoSignatureService
             ?? data_get($providerSigner, 'raw.completed_at')
             ?? data_get($providerSigner, 'raw.completedAt');
 
-        return $signedAt ? 'completed' : 'sent';
+        if ($signedAt) {
+            return 'completed';
+        }
+
+        $signed = data_get($providerSigner, 'signed')
+            ?? data_get($providerSigner, 'Signed')
+            ?? data_get($providerSigner, 'isSigned')
+            ?? data_get($providerSigner, 'IsSigned')
+            ?? data_get($providerSigner, 'completed')
+            ?? data_get($providerSigner, 'Completed')
+            ?? data_get($providerSigner, 'isCompleted')
+            ?? data_get($providerSigner, 'IsCompleted')
+            ?? data_get($providerSigner, 'raw.signed')
+            ?? data_get($providerSigner, 'raw.isSigned')
+            ?? data_get($providerSigner, 'raw.completed')
+            ?? data_get($providerSigner, 'raw.isCompleted');
+
+        return in_array($signed, [true, 1, '1', 'true', 'yes', 'sim'], true) ? 'completed' : 'sent';
     }
 
     private function markAllSignersCompleted(RdoSignatureRequest $request, array $payload = []): void

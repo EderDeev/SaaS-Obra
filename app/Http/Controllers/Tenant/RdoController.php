@@ -1265,15 +1265,39 @@ class RdoController extends Controller
             ?? data_get($payload, 'raw.signerStatus')
             ?? data_get($payload, 'raw.signer_status');
 
-        if (! $status) {
-            return 'sent';
+        if ($status) {
+            $normalized = str($status)->lower()->replace([' ', '-'], '_')->toString();
+
+            return in_array($normalized, ['completed', 'complete', 'signed', 'document_signed', 'finished'], true)
+                ? 'completed'
+                : 'sent';
         }
 
-        $normalized = str($status)->lower()->replace([' ', '-'], '_')->toString();
+        $signedAt = data_get($payload, 'signedAt')
+            ?? data_get($payload, 'SignedAt')
+            ?? data_get($payload, 'completedAt')
+            ?? data_get($payload, 'CompletedAt')
+            ?? data_get($payload, 'raw.signedAt')
+            ?? data_get($payload, 'raw.completedAt');
 
-        return in_array($normalized, ['completed', 'complete', 'signed', 'document_signed', 'finished'], true)
-            ? 'completed'
-            : 'sent';
+        if ($signedAt) {
+            return 'completed';
+        }
+
+        $signed = data_get($payload, 'signed')
+            ?? data_get($payload, 'Signed')
+            ?? data_get($payload, 'isSigned')
+            ?? data_get($payload, 'IsSigned')
+            ?? data_get($payload, 'completed')
+            ?? data_get($payload, 'Completed')
+            ?? data_get($payload, 'isCompleted')
+            ?? data_get($payload, 'IsCompleted')
+            ?? data_get($payload, 'raw.signed')
+            ?? data_get($payload, 'raw.isSigned')
+            ?? data_get($payload, 'raw.completed')
+            ?? data_get($payload, 'raw.isCompleted');
+
+        return in_array($signed, [true, 1, '1', 'true', 'yes', 'sim'], true) ? 'completed' : 'sent';
     }
 
     private function calendarSignatureStatus(RdoDiario $rdo): ?string
