@@ -272,6 +272,39 @@ HTML;
             ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
             ->get($baseUrl.'/document/'.rawurlencode($documentId));
 
+        $document = $response->successful() ? ($response->json() ?? []) : [];
+        $cloudDocument = $this->getDocumentFromCloudFunction($baseUrl, $documentId);
+
+        if ($document === []) {
+            return $cloudDocument;
+        }
+
+        if ($cloudDocument === []) {
+            return $document;
+        }
+
+        return array_replace_recursive($document, $cloudDocument);
+    }
+
+    private function getDocumentFromCloudFunction(string $baseUrl, string $documentId): array
+    {
+        $parts = parse_url($baseUrl);
+
+        if (empty($parts['scheme']) || empty($parts['host'])) {
+            return [];
+        }
+
+        $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
+
+        $response = Http::acceptJson()
+            ->asJson()
+            ->withHeaders(['X-Parse-Application-Id' => 'opensign'])
+            ->timeout(30)
+            ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
+            ->post($origin.'/api/app/functions/getDocument', [
+                'docId' => $documentId,
+            ]);
+
         return $response->successful() ? ($response->json() ?? []) : [];
     }
 
