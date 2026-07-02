@@ -565,6 +565,8 @@ class RdoSignatureService
                 ?? data_get($node, 'SignerEmail')
                 ?? data_get($node, 'user.email')
                 ?? data_get($node, 'User.email')
+                ?? data_get($node, 'UserPtr.Email')
+                ?? data_get($node, 'userPtr.email')
             ));
 
             if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -577,7 +579,9 @@ class RdoSignatureService
                     ?? data_get($node, 'id')
                     ?? data_get($node, 'objectId')
                     ?? data_get($node, 'signer_id')
-                    ?? data_get($node, 'signerId'),
+                    ?? data_get($node, 'signerId')
+                    ?? data_get($node, 'UserPtr.objectId')
+                    ?? data_get($node, 'userPtr.objectId'),
                 'signing_url' => data_get($node, 'signing_url')
                     ?? data_get($node, 'signingUrl')
                     ?? data_get($node, 'signing_link')
@@ -692,14 +696,29 @@ class RdoSignatureService
         $signedAt = data_get($providerSigner, 'signed_at')
             ?? data_get($providerSigner, 'signedAt')
             ?? data_get($providerSigner, 'SignedAt')
+            ?? data_get($providerSigner, 'signed_on')
+            ?? data_get($providerSigner, 'signedOn')
+            ?? data_get($providerSigner, 'SignedOn')
             ?? data_get($providerSigner, 'completed_at')
             ?? data_get($providerSigner, 'completedAt')
             ?? data_get($providerSigner, 'raw.signed_at')
             ?? data_get($providerSigner, 'raw.signedAt')
+            ?? data_get($providerSigner, 'raw.signed_on')
+            ?? data_get($providerSigner, 'raw.signedOn')
+            ?? data_get($providerSigner, 'raw.SignedOn')
             ?? data_get($providerSigner, 'raw.completed_at')
             ?? data_get($providerSigner, 'raw.completedAt');
 
         if ($signedAt) {
+            return 'completed';
+        }
+
+        $activity = data_get($providerSigner, 'activity')
+            ?? data_get($providerSigner, 'Activity')
+            ?? data_get($providerSigner, 'raw.activity')
+            ?? data_get($providerSigner, 'raw.Activity');
+
+        if ($activity && $this->normalizeProviderStatus((string) $activity) === 'completed') {
             return 'completed';
         }
 
