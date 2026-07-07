@@ -29,6 +29,8 @@ export default function ProfileEdit() {
     const avatarPreviewRef = useRef(null);
     const form = useForm({
         _method: 'patch',
+        name: user.name || '',
+        email: user.email || '',
         avatar: null,
     });
 
@@ -218,7 +220,7 @@ export default function ProfileEdit() {
                         )}
                         <div className="min-w-[220px] flex-1">
                             <div className="text-[14px] font-semibold text-[var(--ink-900)]">Foto de perfil</div>
-                            <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">Use uma imagem JPG, PNG ou WebP com até 2 MB.</p>
+                            <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">Use uma imagem JPG, PNG ou WebP.</p>
                             <label className="sig-btn sig-btn-secondary mt-3 inline-flex">
                                 <Camera size={15} />
                                 Escolher foto

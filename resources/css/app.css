@@ -633,6 +633,59 @@ body.sig-viewer-body .sig-main > main {
     width: auto;
 }
 
+.ged-field {
+    display: block;
+}
+
+.ged-label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--ink-500);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.ged-control {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--ink-800);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-weight: 500;
+    outline: 0;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.ged-control:hover {
+    border-color: var(--border-strong);
+}
+
+.ged-control:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-50);
+}
+
+.ged-control::placeholder {
+    color: var(--ink-400);
+}
+
+.ged-control[type="file"] {
+    padding: 8px 10px;
+}
+
+.ged-control[type="color"] {
+    padding: 5px;
+}
+
+.ged-control-with-icon {
+    padding-left: 38px;
+}
+
 .sig-pill {
     display: inline-flex;
     align-items: center;

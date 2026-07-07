@@ -305,6 +305,24 @@ class RdoController extends Controller
         return response()->download($zipPath, $downloadName)->deleteFileAfterSend(true);
     }
 
+    public function reopen(Request $request, Tenant $tenant, RdoDiario $rdo): RedirectResponse
+    {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
+        $rdo->loadMissing('configuracao');
+        abort_unless($this->isRdoReopenable($rdo), 422, 'Este RDO não está apto para reabertura.');
+
+        $timezone = $rdo->configuracao?->timezone ?: config('app.timezone');
+        $reopenedUntil = CarbonImmutable::now($timezone)->addDay()->endOfDay();
+
+        $rdo->update([
+            'reopened_at' => now(),
+            'reopened_until' => $reopenedUntil,
+            'reopened_by_id' => $request->user()?->id,
+        ]);
+
+        return back()->with('success', 'RDO reaberto para preenchimento até '.$reopenedUntil->format('d/m/Y H:i').'.');
+    }
+
     public function settings(Request $request, Tenant $tenant): Response
     {
         $contracts = $this->contracts($tenant);
@@ -760,6 +778,7 @@ class RdoController extends Controller
         ], true), 404);
         $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
         abort_unless($capabilities['can_edit'] && in_array((int) $request->input('obra_id'), $capabilities['editable_obra_ids'], true), 403);
+        $this->ensureFillWindowOpen($rdo, $request->headers->has('X-Inertia'));
 
         $validated = $request->validate([
             'obra_id' => ['required', 'integer'],
@@ -801,6 +820,7 @@ class RdoController extends Controller
         abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
         $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
         abort_unless($capabilities['can_edit'] && in_array((int) $request->input('obra_id'), $capabilities['editable_obra_ids'], true), 403);
+        $this->ensureFillWindowOpen($rdo, $request->headers->has('X-Inertia'));
 
         $validated = $request->validate([
             'obra_id' => ['required', 'integer'],
@@ -901,7 +921,8 @@ class RdoController extends Controller
         if ($action === 'submit') {
             $this->ensureReadyForSubmission($rdo, $obraIds, $request->headers->has('X-Inertia'));
         }
-        $requiresComment = in_array($action, ['approve_with_reservations', 'return'], true) || $rdo->status === 'devolvido_construtora';
+        $requiresComment = $rdo->status === 'em_aprovacao'
+            || in_array($action, ['approve_with_reservations', 'return'], true);
         if ($requiresComment) {
             $missingCommentObraIds = $rdo->status === 'em_aprovacao'
                 ? array_values(array_filter($obraIds, fn (int $obraId) => ($commentsByObra[$obraId] ?? '') === ''))
@@ -1159,6 +1180,7 @@ class RdoController extends Controller
         $missingSubmissionObraIds = $this->missingSubmissionObraIds($rdo);
         $submissionReady = empty($missingSubmissionObraIds);
         $signatureStatus = $this->calendarSignatureStatus($rdo);
+        $deadlinePayload = $this->deadlinePayload($rdo);
 
         return [
             'id' => $rdo->id,
@@ -1180,6 +1202,15 @@ class RdoController extends Controller
             'signature_status' => $signatureStatus,
             'calendar_status_label' => $this->calendarStatusLabel($rdo, $signatureStatus),
             'calendar_action_label' => $this->calendarActionLabel($rdo, $submissionReady),
+            'is_reopened' => $this->isRdoReopened($rdo),
+            'can_reopen' => $this->isRdoReopenable($rdo),
+            'can_fill' => in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)
+                && ! $this->isRdoReopenable($rdo),
+            'submission_deadline_formatted' => $this->submissionDeadline($rdo)->format('d/m/Y'),
+            'deadline_counter' => $deadlinePayload['label'],
+            'deadline_counter_tone' => $deadlinePayload['tone'],
+            'reopened_until' => $rdo->reopened_until?->format('d/m/Y H:i'),
+            'reopen_url' => route('tenant.diario-obra.rdo.reopen', [$tenant->slug, $rdo->id]),
             'show_url' => route('tenant.diario-obra.rdo.show', [$tenant->slug, $rdo->id]),
         ];
     }
@@ -1410,7 +1441,7 @@ class RdoController extends Controller
             $actions['submit'] = [
                 'label' => $rdo->status === 'pendente_comprovacao' ? 'Enviar comprovação das frentes' : 'Enviar frentes para análise',
                 'tone' => 'primary',
-                'comment_required' => $rdo->status !== 'rascunho',
+                'comment_required' => false,
             ];
         }
         if (in_array($stage, ['gerenciadora', 'cliente'], true) && $pendingObraIds) {
@@ -1429,7 +1460,7 @@ class RdoController extends Controller
     private function reviewActions(): array
     {
         return [
-            'approve' => ['label' => 'Aprovar', 'tone' => 'success', 'comment_required' => false],
+            'approve' => ['label' => 'Aprovar', 'tone' => 'success', 'comment_required' => true],
             'approve_with_reservations' => ['label' => 'Aprovar com ressalvas', 'tone' => 'warning', 'comment_required' => true],
             'return' => ['label' => 'Devolver à construtora', 'tone' => 'danger', 'comment_required' => true],
         ];
@@ -1613,7 +1644,7 @@ class RdoController extends Controller
                     return empty($photos?->dados['arquivos']);
                 }
 
-                return false;
+                return ! $this->constructorGeneralCommentFilled($rdo, $obraId);
             })
             ->values()
             ->all() ?? [];
@@ -1621,6 +1652,8 @@ class RdoController extends Controller
 
     private function ensureReadyForSubmission(RdoDiario $rdo, array $obraIds, bool $asValidation = false): void
     {
+        $this->ensureSubmissionDeadline($rdo, $asValidation);
+
         $requiredSections = $this->requiredSubmissionSections();
 
         foreach ($obraIds as $obraId) {
@@ -1649,7 +1682,143 @@ class RdoController extends Controller
                 }
                 abort_if(empty($photos?->dados['arquivos']), 422, 'Inclua ao menos uma foto em cada obra antes de enviar.');
             }
+
+            if (! $this->constructorGeneralCommentFilled($rdo, $obraId)) {
+                if (! $asValidation) {
+                    abort(422, 'Preencha o comentário geral da construtora nas frentes selecionadas antes de enviar.');
+                }
+
+                throw ValidationException::withMessages([
+                    'action' => 'Preencha o comentário geral da construtora nas frentes selecionadas antes de enviar.',
+                ]);
+            }
         }
+    }
+
+    private function constructorGeneralCommentFilled(RdoDiario $rdo, int $obraId): bool
+    {
+        $comments = $rdo->secoes->first(fn ($section) => (int) $section->obra_id === $obraId && $section->secao === 'comentarios');
+
+        return trim((string) data_get($comments?->dados, 'construtora', '')) !== '';
+    }
+
+    private function ensureSubmissionDeadline(RdoDiario $rdo, bool $asValidation = false): void
+    {
+        $rdo->loadMissing('configuracao');
+
+        if ($this->isRdoReopened($rdo)) {
+            return;
+        }
+
+        $deadline = $this->submissionDeadline($rdo);
+
+        if (CarbonImmutable::now($rdo->configuracao?->timezone ?: config('app.timezone'))->lte($deadline)) {
+            return;
+        }
+
+        $message = sprintf(
+            'O prazo para envio deste RDO expirou em %s.',
+            $deadline->format('d/m/Y')
+        );
+
+        if (! $asValidation) {
+            abort(422, $message);
+        }
+
+        throw ValidationException::withMessages([
+            'action' => $message,
+        ]);
+    }
+
+    private function deadlinePayload(RdoDiario $rdo): array
+    {
+        $rdo->loadMissing('configuracao');
+        $timezone = $rdo->configuracao?->timezone ?: config('app.timezone');
+        $now = CarbonImmutable::now($timezone)->startOfDay();
+
+        if ($this->isRdoReopened($rdo)) {
+            $reopenedUntil = CarbonImmutable::parse($rdo->reopened_until)->timezone($timezone);
+            $days = max(0, $now->diffInDays($reopenedUntil->startOfDay(), false));
+
+            return [
+                'label' => $days === 0 ? 'Reaberto até hoje' : 'Reaberto por '.$days.' dia'.($days === 1 ? '' : 's'),
+                'tone' => 'info',
+            ];
+        }
+
+        $deadline = $this->submissionDeadline($rdo)->timezone($timezone);
+        $days = $now->diffInDays($deadline->startOfDay(), false);
+
+        if ($days < 0) {
+            return ['label' => 'Prazo encerrado', 'tone' => 'danger'];
+        }
+
+        if ($days === 0) {
+            return ['label' => 'Vence hoje', 'tone' => 'warning'];
+        }
+
+        return [
+            'label' => $days.' dia'.($days === 1 ? '' : 's').' restante'.($days === 1 ? '' : 's'),
+            'tone' => $days <= 2 ? 'warning' : 'success',
+        ];
+    }
+
+    private function ensureFillWindowOpen(RdoDiario $rdo, bool $asValidation = false): void
+    {
+        $rdo->loadMissing('configuracao');
+
+        if ($this->isRdoReopened($rdo)) {
+            return;
+        }
+
+        if (CarbonImmutable::now($rdo->configuracao?->timezone ?: config('app.timezone'))->lte($this->submissionDeadline($rdo))) {
+            return;
+        }
+
+        $message = 'O prazo para preenchimento deste RDO expirou. Use o botão Reabrir RDO no calendário para liberar o RDO e o RDA.';
+
+        if (! $asValidation) {
+            abort(422, $message);
+        }
+
+        throw ValidationException::withMessages([
+            'action' => $message,
+        ]);
+    }
+
+    private function submissionDeadline(RdoDiario $rdo): CarbonImmutable
+    {
+        $rdo->loadMissing('configuracao');
+
+        $deadlineDays = max(1, (int) ($rdo->configuracao?->submission_deadline_days ?? 7));
+        $referenceDate = $rdo->reference_date instanceof CarbonImmutable
+            ? $rdo->reference_date
+            : CarbonImmutable::parse($rdo->reference_date);
+
+        return $referenceDate->addDays($deadlineDays)->endOfDay();
+    }
+
+    private function isRdoReopened(RdoDiario $rdo): bool
+    {
+        $rdo->loadMissing('configuracao');
+
+        return $rdo->reopened_until
+            && CarbonImmutable::now($rdo->configuracao?->timezone ?: config('app.timezone'))->lte(CarbonImmutable::parse($rdo->reopened_until));
+    }
+
+    private function isRdoReopenable(RdoDiario $rdo): bool
+    {
+        $rdo->loadMissing('configuracao');
+
+        if (! in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)) {
+            return false;
+        }
+
+        if ($this->isRdoReopened($rdo)) {
+            return false;
+        }
+
+        return CarbonImmutable::now($rdo->configuracao?->timezone ?: config('app.timezone'))->gt($this->submissionDeadline($rdo));
     }
 
     private function resolveStatusAfterDecisions(RdoDiario $rdo, string $stage, string $action): array

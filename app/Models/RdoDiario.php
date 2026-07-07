@@ -24,6 +24,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'mobile_local_uuid',
     'submitted_at',
     'approved_at',
+    'reopened_at',
+    'reopened_until',
+    'reopened_by_id',
 ])]
 class RdoDiario extends Model
 {
@@ -38,6 +41,8 @@ class RdoDiario extends Model
             'generated_automatically' => 'boolean',
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
+            'reopened_at' => 'datetime',
+            'reopened_until' => 'datetime',
         ];
     }
 

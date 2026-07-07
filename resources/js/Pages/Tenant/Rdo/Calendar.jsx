@@ -3,7 +3,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ClipboardPenLine, Copy, Download, Eye, Plus, Settings, X } from 'lucide-react';
+import { ClipboardPenLine, Copy, Download, Eye, Plus, RotateCcw, Settings, X } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 
 const statusTone = {
@@ -25,6 +25,15 @@ function calendarStatusTone(rdo) {
     }
 
     return statusTone[rdo.status] || statusTone.rascunho;
+}
+
+function deadlineCounterTone(tone) {
+    return {
+        success: 'bg-emerald-50 text-emerald-700',
+        warning: 'bg-amber-50 text-amber-700',
+        danger: 'bg-red-50 text-red-700',
+        info: 'bg-blue-50 text-blue-700',
+    }[tone] || 'bg-slate-100 text-slate-600';
 }
 
 function formatLocalDate(date) {
@@ -100,6 +109,16 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
             preserveScroll: true,
             onSuccess: () => setCreateDate(null),
             onFinish: () => setCreating(false),
+        });
+    };
+
+    const reopenRdo = (event, rdo) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!rdo?.reopen_url) return;
+
+        router.post(rdo.reopen_url, {}, {
+            preserveScroll: true,
         });
     };
 
@@ -219,21 +238,44 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                         }}
                         eventContent={(arg) => {
                             const rdo = arg.event.extendedProps;
+                            const isFillableStatus = ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'].includes(rdo.status);
+                            const canFill = Boolean(rdo.can_fill);
                             return (
-                                <div className="w-full rounded-lg border border-[var(--border)] bg-white p-2 shadow-sm">
+                                <div className="flex min-h-[116px] w-full flex-col rounded-lg border border-[var(--border)] bg-white p-2 shadow-sm">
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="mono truncate text-[11px] font-bold">{rdo.code}</span>
                                         <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${calendarStatusTone(rdo)}`}>
                                             {rdo.calendar_status_label || rdo.status_label}
                                         </span>
                                     </div>
-                                    <div className="mt-2 grid gap-1">
-                                        <Link href={rdo.show_url} className="inline-flex items-center justify-center gap-1 rounded-md bg-[var(--primary)] px-2 py-1.5 text-[10px] font-bold text-white">
-                                            {rdo.status === 'rascunho' || rdo.status === 'devolvido_construtora' || rdo.status === 'pendente_comprovacao'
+                                    {rdo.deadline_counter && (
+                                        <div className={`mt-2 flex min-h-[36px] items-center justify-center rounded-md px-2 py-1 text-center text-[9px] font-black uppercase leading-tight tracking-wide ${deadlineCounterTone(rdo.deadline_counter_tone)}`}>
+                                            {rdo.deadline_counter}
+                                        </div>
+                                    )}
+                                    <div className="mt-auto grid gap-1 pt-2">
+                                        <Link href={rdo.show_url} className="inline-flex min-h-[32px] items-center justify-center gap-1 rounded-md bg-[var(--primary)] px-2 py-1.5 text-[10px] font-bold text-white">
+                                            {isFillableStatus && canFill
                                                 ? <ClipboardPenLine size={12} />
                                                 : <Eye size={12} />}
-                                            {rdo.calendar_action_label || (rdo.status === 'rascunho' ? 'Preencher' : 'Visualizar')}
+                                            {isFillableStatus && canFill
+                                                ? (rdo.calendar_action_label || 'Preencher')
+                                                : 'Visualizar'}
                                         </Link>
+                                        {rdo.can_reopen && (
+                                            <button
+                                                type="button"
+                                                onClick={(event) => reopenRdo(event, rdo)}
+                                                className="inline-flex min-h-[32px] items-center justify-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-bold text-amber-800 hover:bg-amber-100"
+                                            >
+                                                <RotateCcw size={12} /> Reabrir RDO
+                                            </button>
+                                        )}
+                                        {rdo.is_reopened && rdo.reopened_until && (
+                                            <span className="rounded-md bg-emerald-50 px-2 py-1 text-center text-[9px] font-bold text-emerald-700">
+                                                Reaberto até {rdo.reopened_until}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             );

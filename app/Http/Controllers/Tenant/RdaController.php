@@ -67,6 +67,7 @@ class RdaController extends Controller
 
         $rdo = $this->rdoFor($tenant, $configuration, $validated['reference_date']);
         abort_unless($rdo, 422, 'Crie o RDO desta data antes de preencher o RDA.');
+        abort_unless($this->rdoFillWindowOpen($rdo), 422, 'O prazo deste RDO venceu. Reabra o RDO no calendário para preencher o RDA.');
 
         $apontamento = RdaApontamento::query()->firstOrCreate(
             [
@@ -108,6 +109,8 @@ class RdaController extends Controller
     {
         abort_unless((int) $rda->tenant_id === (int) $tenant->id, 404);
         abort_if($rda->status === 'publicado', 422, 'RDA publicado não pode ser alterado.');
+        $rda->loadMissing('rdo.configuracao');
+        abort_unless($rda->rdo && $this->rdoFillWindowOpen($rda->rdo), 422, 'O prazo deste RDO venceu. Reabra o RDO no calendário para preencher o RDA.');
 
         $this->saveCurrentData($request, $tenant, $rda);
 
@@ -118,6 +121,8 @@ class RdaController extends Controller
     {
         abort_unless((int) $rda->tenant_id === (int) $tenant->id, 404);
         abort_if($rda->status === 'publicado', 422, 'RDA já publicado.');
+        $rda->loadMissing('rdo.configuracao');
+        abort_unless($rda->rdo && $this->rdoFillWindowOpen($rda->rdo), 422, 'O prazo deste RDO venceu. Reabra o RDO no calendário para publicar o RDA.');
 
         $this->saveCurrentData($request, $tenant, $rda);
 
@@ -245,17 +250,19 @@ class RdaController extends Controller
             ->where('rdo_configuracao_id', $configuration->id)
             ->whereBetween('reference_date', [$month->startOfMonth(), $month->endOfMonth()])
             ->orderBy('reference_date')
-            ->get(['id', 'code', 'reference_date', 'status'])
+            ->get(['id', 'rdo_configuracao_id', 'code', 'reference_date', 'status', 'reopened_until'])
             ->map(fn (RdoDiario $rdo) => [
                 'id' => $rdo->id,
                 'code' => $rdo->code,
                 'reference_date' => $rdo->reference_date?->format('Y-m-d'),
                 'status' => $rdo->status,
+                'can_fill' => in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)
+                    && $this->rdoFillWindowOpen($rdo),
                 'url' => route('tenant.diario-obra.rdo.show', [$tenant->slug, $rdo->id]),
             ]);
 
         $apontamentos = RdaApontamento::query()
-            ->with('obra:id,codigo,nome')
+            ->with(['obra:id,codigo,nome', 'rdo:id,rdo_configuracao_id,reference_date,status,reopened_until'])
             ->where('tenant_id', $tenant->id)
             ->where('contract_id', $contractId)
             ->where('rdo_configuracao_id', $configuration->id)
@@ -270,6 +277,9 @@ class RdaController extends Controller
                 'reference_date' => $rda->reference_date?->format('Y-m-d'),
                 'status' => $rda->status,
                 'status_label' => $rda->status === 'publicado' ? 'Publicado' : 'Rascunho',
+                'can_fill' => $rda->status !== 'publicado'
+                    && $rda->rdo
+                    && $this->rdoFillWindowOpen($rda->rdo),
                 'url' => route('tenant.diario-obra.rda.show', [$tenant->slug, $rda->id]),
             ]);
 
@@ -320,6 +330,21 @@ class RdaController extends Controller
             ->where('rdo_configuracao_id', $configuration->id)
             ->whereDate('reference_date', $date)
             ->first();
+    }
+
+    private function rdoFillWindowOpen(RdoDiario $rdo): bool
+    {
+        $rdo->loadMissing('configuracao');
+        $timezone = $rdo->configuracao?->timezone ?: config('app.timezone');
+
+        if ($rdo->reopened_until && CarbonImmutable::now($timezone)->lte(CarbonImmutable::parse($rdo->reopened_until))) {
+            return true;
+        }
+
+        $deadlineDays = max(1, (int) ($rdo->configuracao?->submission_deadline_days ?? 7));
+        $deadline = CarbonImmutable::parse($rdo->reference_date)->addDays($deadlineDays)->endOfDay();
+
+        return CarbonImmutable::now($timezone)->lte($deadline);
     }
 
     private function configurationPayload(?RdoConfiguracao $configuration): ?array

@@ -52,7 +52,7 @@ npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
 Terminal 3, fila de jobs:
 
 ```bash
-php artisan queue:work --sleep=3 --tries=1 --timeout=600
+php artisan queue:work database --queue=imports,ged,default,maintenance --sleep=3 --tries=1 --timeout=3600
 ```
 
 O worker é necessário quando `QUEUE_CONNECTION=database`. Ele processa tarefas em segundo plano, incluindo envio automático de projetos para o Autodesk APS depois da submissão.
@@ -244,6 +244,55 @@ AUTODESK_APS_STORAGE_LIMIT_BYTES=5368709120
 AUTODESK_APS_SCOPES="data:read data:write data:create bucket:create bucket:read viewables:read"
 AUTODESK_APS_VERIFY_SSL=true
 AUTODESK_APS_AUTO_PROCESS=true
+```
+
+## GED: OCR de documentos
+
+### Worker local do GED/OCR
+
+Para testar o OCR localmente, mantenha o Laravel e o Vite rodando conforme a seção "Rodando Localmente" e abra um terminal separado para o worker:
+
+```bash
+php artisan queue:work database --queue=imports,ged,default,maintenance --sleep=3 --tries=1 --timeout=3600
+```
+
+Se esse worker não estiver ativo, documentos enviados ao GED podem ficar como "Na fila" ou "Processando OCR" sem extrair o texto.
+
+O módulo de Documentação usa uma arquitetura inspirada no Paperless-ngx: ao enviar um documento, ele entra na fila `ged` e o OCR roda em segundo plano com `OCRmyPDF`/`Tesseract`.
+
+Variáveis principais:
+
+```text
+GED_OCR_ENABLED=true
+GED_OCR_QUEUE=ged
+GED_OCR_LANGUAGE=por+eng
+GED_OCR_MODE=skip
+GED_OCR_OUTPUT_TYPE=pdfa
+GED_OCR_DESKEW=true
+GED_OCR_ROTATE_PAGES=true
+GED_OCR_MAX_PAGES=25
+GED_OCR_TIMEOUT=900
+GED_OCR_OCRMYPDF_BIN=ocrmypdf
+GED_OCR_PDFTOTEXT_BIN=pdftotext
+GED_OCR_PDFINFO_BIN=pdfinfo
+```
+
+Dependências esperadas no servidor:
+
+```bash
+ocrmypdf
+tesseract
+tesseract-ocr-por
+poppler-utils
+ghostscript
+```
+
+No Railway/Railpack, essas dependências foram declaradas em `railpack.json` via `deploy.aptPackages`.
+
+O worker precisa consumir a fila `ged`. Os scripts `railway/start-app.sh` e `railway/start-worker.sh` já incluem:
+
+```bash
+--queue=imports,ged,default,maintenance
 ```
 
 Checklist quando um projeto demora:

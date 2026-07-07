@@ -233,15 +233,29 @@ export default function RdaIndex({
                                 const rdo = rdosByDate.get(date);
                                 const rdasInDate = rdasByDate.get(date) || [];
                                 const rda = filters.obra_id ? rdaFor(date, filters.obra_id) : rdasInDate[0];
-                                const canOpenRda = Boolean(rdo || rda?.rdo_diario_id);
+                                const rdaCanFill = Boolean(rda?.can_fill);
+                                const rdoCanFill = Boolean(rdo?.can_fill);
+                                const canOpenRda = Boolean(
+                                    rda?.status === 'publicado'
+                                    || rdaCanFill
+                                    || (!rda && rdoCanFill)
+                                );
+                                const rdaStatusLabel = rda
+                                    ? (rda.status === 'publicado'
+                                        ? 'Publicado'
+                                        : (rdaCanFill ? (rda.rdo_diario_id ? (rdasInDate.length > 1 ? `${rdasInDate.length} RDA(s)` : rda.status_label) : 'Preencher RDA') : 'Prazo vencido'))
+                                    : (rdo ? (rdoCanFill ? 'Com RDO' : 'Prazo vencido') : valid ? 'Aguardando RDO' : 'Fora regra');
+                                const rdaActionLabel = rda
+                                    ? (rda.status === 'publicado' ? 'Ver RDA' : 'Editar RDA')
+                                    : 'Preencher RDA';
 
                                 return (
                                     <div className="flex min-h-[58px] w-full flex-col gap-2">
                                         <div className="flex items-start justify-between gap-2">
                                             <span className={arg.isOther ? 'text-[var(--ink-300)]' : ''}>{arg.dayNumberText}</span>
                                             {!arg.isOther && configuration && (
-                                                <span className={`rounded-md px-2 py-1 text-[10px] font-bold ${rda?.status === 'publicado' ? 'bg-emerald-50 text-emerald-700' : rda ? 'bg-amber-50 text-amber-700' : rdo ? 'bg-blue-50 text-blue-700' : valid ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-[var(--ink-400)]'}`}>
-                                                    {rda ? (rda.rdo_diario_id ? (rdasInDate.length > 1 ? `${rdasInDate.length} RDA(s)` : rda.status_label) : (rdo ? 'Preencher RDA' : 'Sem RDO')) : (rdo ? 'Com RDO' : valid ? 'Aguardando RDO' : 'Fora regra')}
+                                                <span className={`rounded-md px-2 py-1 text-[10px] font-bold ${rda?.status === 'publicado' ? 'bg-emerald-50 text-emerald-700' : (rda || rdo) && !canOpenRda ? 'bg-red-50 text-red-700' : rda ? 'bg-amber-50 text-amber-700' : rdo ? 'bg-blue-50 text-blue-700' : valid ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-[var(--ink-400)]'}`}>
+                                                    {rdaStatusLabel}
                                                 </span>
                                             )}
                                         </div>
@@ -255,7 +269,7 @@ export default function RdaIndex({
                                                     fillRda(date);
                                                 }}
                                             >
-                                                {creatingDate === date ? 'Abrindo...' : rda ? (rda.rdo_diario_id ? (rda.status === 'publicado' ? 'Ver RDA' : 'Editar RDA') : 'Preencher RDA') : 'Preencher RDA'}
+                                                {creatingDate === date ? 'Abrindo...' : rdaActionLabel}
                                             </button>
                                         )}
                                     </div>

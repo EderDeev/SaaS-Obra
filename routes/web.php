@@ -10,6 +10,7 @@ use App\Http\Controllers\Tenant\ContractController;
 use App\Http\Controllers\Tenant\ContractParticipantController;
 use App\Http\Controllers\Tenant\DashboardController as TenantDashboardController;
 use App\Http\Controllers\Tenant\FolhaRostoController;
+use App\Http\Controllers\Tenant\GedController;
 use App\Http\Controllers\Tenant\MedicaoBiController;
 use App\Http\Controllers\Tenant\MedicaoController;
 use App\Http\Controllers\Tenant\MedicaoRelatorioController;
@@ -103,6 +104,26 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
     ->name('tenant.')
     ->group(function () {
         Route::get('/', TenantDashboardController::class)->name('dashboard');
+        Route::get('/documentacao', [GedController::class, 'index'])->name('ged.index');
+        Route::post('/documentacao', [GedController::class, 'store'])->name('ged.store');
+        Route::get('/documentacao/parametrizacao', [GedController::class, 'settings'])->name('ged.settings');
+        Route::post('/documentacao/correspondentes', [GedController::class, 'storeCorrespondent'])->name('ged.correspondents.store');
+        Route::post('/documentacao/tipos', [GedController::class, 'storeType'])->name('ged.types.store');
+        Route::post('/documentacao/tags', [GedController::class, 'storeTag'])->name('ged.tags.store');
+        Route::post('/documentacao/selecionados/acoes', [GedController::class, 'bulkAction'])->name('ged.bulk-action');
+        Route::get('/documentacao/selecionados/download', [GedController::class, 'bulkDownload'])->name('ged.bulk-download');
+        Route::get('/documentacao/{document}/details', [GedController::class, 'details'])->name('ged.details');
+        Route::put('/documentacao/{document}', [GedController::class, 'update'])->name('ged.update');
+        Route::get('/documentacao/{document}/content', [GedController::class, 'content'])->name('ged.content');
+        Route::get('/documentacao/{document}/metadata', [GedController::class, 'metadata'])->name('ged.metadata');
+        Route::get('/documentacao/{document}/notes', [GedController::class, 'notes'])->name('ged.notes');
+        Route::post('/documentacao/{document}/notes', [GedController::class, 'storeNote'])->name('ged.notes.store');
+        Route::get('/documentacao/{document}/history', [GedController::class, 'history'])->name('ged.history');
+        Route::get('/documentacao/{document}/permissions', [GedController::class, 'permissions'])->name('ged.permissions');
+        Route::patch('/documentacao/{document}/permissions', [GedController::class, 'updatePermissions'])->name('ged.permissions.update');
+        Route::post('/documentacao/{document}/ocr', [GedController::class, 'queueOcr'])->name('ged.ocr');
+        Route::get('/documentacao/{document}/preview', [GedController::class, 'preview'])->name('ged.preview');
+        Route::get('/documentacao/{document}/download', [GedController::class, 'download'])->name('ged.download');
         Route::get('/tutoriais', TutorialController::class)->name('tutorials.index');
         Route::get('/users', [TenantUserController::class, 'index'])->name('users.index');
         Route::post('/users', [TenantUserController::class, 'store'])->name('users.store');
@@ -151,6 +172,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::post('/diario-obra/rdo/{rdo}/secoes', [RdoController::class, 'saveAllSections'])->name('diario-obra.rdo.sections.store-all');
         Route::post('/diario-obra/rdo/{rdo}/secoes/{secao}', [RdoController::class, 'saveSection'])->name('diario-obra.rdo.sections.store');
         Route::post('/diario-obra/rdo/{rdo}/importar-rda/{rda}', [RdoController::class, 'importRda'])->name('diario-obra.rdo.import-rda');
+        Route::post('/diario-obra/rdo/{rdo}/reabrir', [RdoController::class, 'reopen'])->name('diario-obra.rdo.reopen');
         Route::post('/diario-obra/rdo/{rdo}/fluxo', [RdoController::class, 'changeFlow'])->name('diario-obra.rdo.flow');
         Route::post('/diario-obra/rdo/{rdo}/assinaturas', [RdoSignatureController::class, 'store'])->name('diario-obra.rdo.signatures.store');
         Route::post('/diario-obra/rdo/{rdo}/assinaturas/manual', [RdoSignatureController::class, 'uploadManual'])->name('diario-obra.rdo.signatures.manual');

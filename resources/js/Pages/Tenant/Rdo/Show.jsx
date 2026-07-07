@@ -44,11 +44,13 @@ export default function Show({ rdo, catalogs = {} }) {
     const [historyError, setHistoryError] = useState('');
     const [importingRdaId, setImportingRdaId] = useState(null);
     const [previewRda, setPreviewRda] = useState(null);
+    const [deadlineModalOpen, setDeadlineModalOpen] = useState(false);
     const sectionForm = useForm({ obra_id: '', dados: {}, fotos: [] });
     const completeForm = useForm({ obra_id: '', secoes: {}, fotos: [] });
     const flowForm = useForm({ comment: '', comments_by_obra: {}, obra_ids: rdo.flow_obra_ids || [] });
     const manualSignatureForm = useForm({ signed_pdf: null });
     const allObras = rdo.obras || [rdo.obra];
+    const fillLocked = rdo.can_edit && !rdo.can_fill;
     const editableObras = rdo.can_edit
         ? allObras.filter((obra) => rdo.editable_obra_ids?.includes(Number(obra.id)))
         : allObras;
@@ -64,6 +66,11 @@ export default function Show({ rdo, catalogs = {} }) {
     };
 
     const openSection = (key) => {
+        if (fillLocked) {
+            setDeadlineModalOpen(true);
+            return;
+        }
+
         const firstObraId = editableObras[0]?.id;
         loadSectionForObra(key, firstObraId);
         setActiveSection(key);
@@ -83,6 +90,11 @@ export default function Show({ rdo, catalogs = {} }) {
     };
 
     const openComplete = () => {
+        if (fillLocked) {
+            setDeadlineModalOpen(true);
+            return;
+        }
+
         const firstObraId = editableObras[0]?.id;
         loadCompleteForObra(firstObraId);
         setCompleteOpen(true);
@@ -250,13 +262,17 @@ export default function Show({ rdo, catalogs = {} }) {
 
                 <RdaReferencePanel
                     rdas={rdo.published_rdas || []}
-                    canImport={rdo.can_edit}
+                    canImport={rdo.can_edit && rdo.can_fill}
                     onPreview={setPreviewRda}
                 />
 
                 {rdo.can_edit && (
                     <div className="mb-4 flex justify-end">
-                        <button type="button" onClick={openComplete} className="sig-btn sig-btn-primary">
+                        <button
+                            type="button"
+                            onClick={openComplete}
+                            className={`sig-btn ${fillLocked ? 'border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100' : 'sig-btn-primary'}`}
+                        >
                             <ClipboardList size={17} /> Preencher RDO completo
                         </button>
                     </div>
@@ -269,18 +285,27 @@ export default function Show({ rdo, catalogs = {} }) {
                         const filled = filledCount === totalObras;
                         return (
                             <button key={key} type="button" onClick={() => openSection(key)}
-                                className="rounded-xl border border-[var(--border)] bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--primary)]">
+                                className={`rounded-xl border p-5 text-left shadow-sm transition ${
+                                    fillLocked
+                                        ? 'border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100'
+                                        : 'border-[var(--border)] bg-white hover:-translate-y-0.5 hover:border-[var(--primary)]'
+                                }`}>
                                 <div className="flex items-start justify-between gap-3">
-                                    <Icon size={24} className="text-[var(--primary)]" />
-                                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${filled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                    <Icon size={24} className={fillLocked ? 'text-slate-400' : 'text-[var(--primary)]'} />
+                                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${fillLocked ? 'bg-slate-200 text-slate-500' : filled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                                         {filledCount}/{totalObras} preenchida(s)
                                     </span>
                                 </div>
                                 <h2 className="mt-4 text-lg font-bold">{label}</h2>
                                 <p className="mt-1 text-sm text-[var(--ink-500)]">{description}</p>
-                                <span className="mt-4 inline-block text-xs font-bold text-[var(--primary)]">
+                                <span className={`mt-4 inline-block text-xs font-bold ${fillLocked ? 'text-slate-500' : 'text-[var(--primary)]'}`}>
                                     {rdo.can_edit ? (filled ? 'Editar seção →' : 'Abrir seção →') : 'Visualizar seção →'}
                                 </span>
+                                {fillLocked && (
+                                    <span className="mt-2 block rounded-md bg-slate-200 px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide text-slate-600">
+                                        Prazo encerrado
+                                    </span>
+                                )}
                             </button>
                         );
                     })}
@@ -311,7 +336,7 @@ export default function Show({ rdo, catalogs = {} }) {
                     onChangeObra={(obraId) => loadSectionForObra(activeSection, obraId)}
                     onClose={closeSection}
                     onSubmit={saveSection}
-                    readOnly={!rdo.can_edit}
+                    readOnly={!rdo.can_edit || fillLocked}
                 />
             )}
             {completeOpen && (
@@ -336,13 +361,63 @@ export default function Show({ rdo, catalogs = {} }) {
             {previewRda && (
                 <RdaPreviewModal
                     rda={previewRda}
-                    canImport={rdo.can_edit}
+                    canImport={rdo.can_edit && rdo.can_fill}
                     importing={importingRdaId === previewRda.id}
                     onImport={() => importRda(previewRda)}
                     onClose={() => setPreviewRda(null)}
                 />
             )}
+            {deadlineModalOpen && (
+                <DeadlineExpiredModal
+                    rdo={rdo}
+                    onClose={() => setDeadlineModalOpen(false)}
+                />
+            )}
         </AuthenticatedLayout>
+    );
+}
+
+function DeadlineExpiredModal({ rdo, onClose }) {
+    const { currentTenant } = usePage().props;
+
+    return (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+            <section className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label="Prazo encerrado">
+                <header className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+                    <div>
+                        <span className="eyebrow">RDO bloqueado</span>
+                        <h2 className="mt-1 text-xl font-black text-[var(--ink-900)]">Prazo de preenchimento encerrado</h2>
+                    </div>
+                    <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar"><X size={20} /></button>
+                </header>
+                <div className="space-y-4 p-5">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                        O prazo para preencher este RDO encerrou.
+                    </div>
+                    <p className="text-sm text-[var(--ink-500)]">
+                        RDO: <strong className="text-[var(--ink-800)]">{rdo.code}</strong> · Data: <strong className="text-[var(--ink-800)]">{rdo.reference_date_formatted}</strong>
+                    </p>
+                    {rdo.submission_deadline_formatted && (
+                        <p className="text-sm text-[var(--ink-500)]">
+                            Prazo encerrado em: <strong className="text-[var(--ink-800)]">{rdo.submission_deadline_formatted}</strong>
+                        </p>
+                    )}
+                </div>
+                <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
+                    <button type="button" onClick={onClose} className="sig-btn">Fechar</button>
+                    <Link
+                        href={route('tenant.diario-obra.rdo.calendar', {
+                            tenant: currentTenant.slug,
+                            month: rdo.reference_date?.slice(0, 7),
+                            contract_id: rdo.contract?.id,
+                        })}
+                        className="sig-btn sig-btn-primary"
+                    >
+                        Ir para o calendário
+                    </Link>
+                </footer>
+            </section>
+        </div>
     );
 }
 
@@ -744,8 +819,7 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
     const actions = Object.entries(rdo.flow_actions || {});
     const needsComment = actions.some(([, action]) => action.comment_required);
     const isSubmitOnly = actions.length > 0 && actions.every(([key]) => key === 'submit');
-    const isInitialSubmitOnly = actions.length > 0 && actions.every(([key]) => key === 'submit') && rdo.status === 'rascunho';
-    const showCommentField = !isInitialSubmitOnly;
+    const showCommentField = actions.some(([key]) => key !== 'submit');
     const actionObras = (rdo.obras || []).filter((obra) => rdo.flow_obra_ids?.includes(Number(obra.id)));
     const selectedFlowObraIds = form.data.obra_ids?.length ? form.data.obra_ids : (rdo.flow_obra_ids || []);
 
@@ -813,7 +887,7 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                     )}
                     {showCommentField && rdo.status !== 'em_aprovacao' && (
                         <>
-                    <Field label={rdo.status === 'rascunho' ? 'Comentário de envio (opcional)' : needsComment ? 'Parecer / resposta' : 'Comentário (opcional)'}>
+                    <Field label={needsComment ? 'Parecer / resposta' : 'Comentário'}>
                         <textarea
                             className="sig-input min-h-24"
                             value={form.data.comment}

@@ -11,6 +11,7 @@ import {
     ChevronDown,
     ChevronRight,
     ClipboardList,
+    FileText,
     FolderOpen,
     Gauge,
     HardDrive,
@@ -82,6 +83,7 @@ export default function AuthenticatedLayout({ children }) {
     const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
     const [ordemServicoOpen, setOrdemServicoOpen] = useState(() => route().current('tenant.ordem-servico.*'));
     const [diarioObraOpen, setDiarioObraOpen] = useState(() => route().current('tenant.diario-obra.*'));
+    const [gedOpen, setGedOpen] = useState(() => route().current('tenant.ged.*'));
     const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*'));
     const [rdaOpen, setRdaOpen] = useState(() => route().current('tenant.diario-obra.rda.*'));
     const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -387,6 +389,20 @@ export default function AuthenticatedLayout({ children }) {
             }] : []),
         ]
         : [];
+    const gedItems = tenant
+        ? [
+            {
+                label: 'Documentos',
+                href: route('tenant.ged.index', tenant.slug),
+                active: route().current('tenant.ged.index'),
+            },
+            {
+                label: 'Parametrização',
+                href: route('tenant.ged.settings', tenant.slug),
+                active: route().current('tenant.ged.settings'),
+            },
+        ]
+        : [];
 
     const navItems = [];
 
@@ -409,6 +425,7 @@ export default function AuthenticatedLayout({ children }) {
             { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
             { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
             { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
+            { label: 'Documentação', icon: FileText, active: route().current('tenant.ged.*'), children: gedItems },
             ...(projectItems.length > 0 ? [
                 { label: 'Projetos', icon: FolderOpen, active: route().current('tenant.projects.*'), children: projectItems },
             ] : []),
@@ -508,7 +525,9 @@ export default function AuthenticatedLayout({ children }) {
                                     ? medicaoOpen
                                     : item.label === 'Ordem de Serviço'
                                         ? ordemServicoOpen
-                                        : projectOpen;
+                                        : item.label === 'Documentação'
+                                            ? gedOpen
+                                            : projectOpen;
                         const toggleChildren = item.label === 'Qualidade'
                             ? () => setQualidadeOpen((open) => !open)
                             : item.label === 'Diário de Obra'
@@ -519,7 +538,9 @@ export default function AuthenticatedLayout({ children }) {
                                     ? () => setMedicaoOpen((open) => !open)
                                     : item.label === 'Ordem de Serviço'
                                         ? () => setOrdemServicoOpen((open) => !open)
-                                        : () => setProjectOpen((open) => !open);
+                                        : item.label === 'Documentação'
+                                            ? () => setGedOpen((open) => !open)
+                                            : () => setProjectOpen((open) => !open);
 
                         if (item.children) {
                             return (
@@ -629,24 +650,7 @@ export default function AuthenticatedLayout({ children }) {
                         </div>
                     )}
 
-                    <div className="mx-4 my-4 h-px bg-[var(--side-border)]" />
-                    <div className="eyebrow px-5 pb-2 text-[var(--side-fg-dim)]">Sistema</div>
-                    <Link href={route('profile.edit')} className={`sig-nav-item ${route().current('profile.*') ? 'active' : ''}`}>
-                        <Settings size={17} strokeWidth={1.8} />
-                        <span>Perfil</span>
-                    </Link>
                 </nav>
-
-                <div className="sig-user-block flex items-center gap-3 border-t border-[var(--side-border)] p-3">
-                    <UserAvatar user={user} />
-                    <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13px] font-semibold text-[var(--side-fg)]">{user.name}</div>
-                        <div className="truncate text-[11.5px] text-[var(--side-fg-dim)]">{tenantRoleLabel || 'participante'}</div>
-                    </div>
-                    <Link href={route('logout')} method="post" as="button" className="rounded-md p-1.5 text-[var(--side-fg-dim)] hover:bg-[var(--side-hover)]" title="Sair">
-                        <LogOut size={16} />
-                    </Link>
-                </div>
             </aside>
 
             <section className="sig-main">
