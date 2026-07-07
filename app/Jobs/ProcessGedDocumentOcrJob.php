@@ -91,10 +91,11 @@ class ProcessGedDocumentOcrJob implements ShouldQueue
         }
 
         $friendlyMessage = $this->friendlyError($exception);
-        $missingEngine = str_contains($friendlyMessage, 'Binário OCR não encontrado');
+        $missingEngine = str_contains($friendlyMessage, 'Binário OCR não encontrado')
+            || (str_contains($friendlyMessage, 'Bin') && str_contains($friendlyMessage, 'OCR') && str_contains($friendlyMessage, 'PATH'));
 
         $document->forceFill([
-            'status' => $missingEngine ? 'processing' : 'failed',
+            'status' => 'failed',
             'processed_at' => now(),
             'metadata' => $this->mergeOcrMetadata($document, [
                 'status' => $missingEngine ? 'missing_engine' : 'failed',

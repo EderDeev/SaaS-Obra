@@ -424,8 +424,14 @@ function ContentSection({ document }) {
         missing_engine: 'border-orange-100 bg-orange-50 text-orange-900',
         disabled: 'border-slate-200 bg-slate-50 text-slate-700',
     };
-    const currentTone = statusTone[ocr.status] || (hasText ? statusTone.done : statusTone.queued);
-    const canReprocess = document.ocr_url && ocr.status !== 'processing';
+    const startedAt = ocr.started_at ? new Date(ocr.started_at) : null;
+    const isStaleProcessing = ocr.status === 'processing'
+        && startedAt instanceof Date
+        && !Number.isNaN(startedAt.getTime())
+        && Date.now() - startedAt.getTime() > 35 * 60 * 1000;
+    const displayStatus = isStaleProcessing ? 'failed' : ocr.status;
+    const currentTone = statusTone[displayStatus] || (hasText ? statusTone.done : statusTone.queued);
+    const canReprocess = document.ocr_url && displayStatus !== 'processing';
 
     function reprocessOcr() {
         if (!document.ocr_url) return;
@@ -441,14 +447,24 @@ function ContentSection({ document }) {
                 <div className="font-bold">
                     {hasText
                         ? 'OCR processado'
-                        : ocr.status === 'failed'
-                            ? 'Falha no OCR'
-                            : ocr.status === 'missing_engine'
+                        : displayStatus === 'failed'
+                            ? (isStaleProcessing ? 'OCR travado' : 'Falha no OCR')
+                            : displayStatus === 'missing_engine'
                                 ? 'Motor OCR não instalado'
-                                : ocr.status === 'processing'
+                                : displayStatus === 'processing'
                                     ? 'OCR em processamento'
                                     : 'OCR aguardando processamento'}
                 </div>
+                {isStaleProcessing && (
+                    <div className="mt-1 text-xs">
+                        O processamento passou do tempo esperado. Reenvie o documento para a fila de OCR.
+                    </div>
+                )}
+                {ocr.message && (
+                    <div className="mt-1 text-xs">
+                        {ocr.message}
+                    </div>
+                )}
                 {canReprocess && (
                     <button type="button" onClick={reprocessOcr} className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-bold text-[var(--ink-800)] shadow-sm ring-1 ring-inset ring-slate-200 hover:bg-slate-50">
                         Reprocessar OCR
@@ -462,7 +478,7 @@ function ContentSection({ document }) {
                     value={document.extracted_text || ''}
                     readOnly
                     placeholder={
-                        ocr.status === 'failed'
+                        displayStatus === 'failed' || displayStatus === 'missing_engine'
                             ? 'O OCR falhou. Verifique os detalhes acima e reprocesse o documento depois que o motor OCR estiver disponível.'
                             : 'OCR ainda não processado para este documento.'
                     }
