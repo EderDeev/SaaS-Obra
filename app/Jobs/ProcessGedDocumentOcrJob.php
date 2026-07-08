@@ -21,7 +21,10 @@ class ProcessGedDocumentOcrJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 1200;
+    public function timeout(): int
+    {
+        return max(120, (int) config('ged.ocr.timeout', 300) + 60);
+    }
 
     public function __construct(private readonly int $documentId)
     {
@@ -49,7 +52,7 @@ class ProcessGedDocumentOcrJob implements ShouldQueue
                 'finished_at' => null,
                 'engine' => 'ocrmypdf',
                 'message' => 'Documento em processamento OCR.',
-                'timeout_seconds' => (int) config('ged.ocr.timeout', 900),
+                'timeout_seconds' => (int) config('ged.ocr.timeout', 300),
             ]),
         ])->save();
 

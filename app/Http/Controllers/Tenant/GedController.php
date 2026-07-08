@@ -360,7 +360,7 @@ class GedController extends Controller
             'finished_at' => null,
             'engine' => 'ocrmypdf',
             'queue' => (string) config('ged.ocr.queue', 'ged'),
-            'timeout_seconds' => (int) config('ged.ocr.timeout', 900),
+            'timeout_seconds' => (int) config('ged.ocr.timeout', 300),
             'message' => 'Documento reenviado para fila de OCR.',
         ]);
 
@@ -579,7 +579,7 @@ class GedController extends Controller
                         'queued_at' => config('ged.ocr.enabled', true) ? now()->toDateTimeString() : null,
                         'engine' => 'ocrmypdf',
                         'queue' => (string) config('ged.ocr.queue', 'ged'),
-                        'timeout_seconds' => (int) config('ged.ocr.timeout', 900),
+                        'timeout_seconds' => (int) config('ged.ocr.timeout', 300),
                         'message' => config('ged.ocr.enabled', true)
                             ? 'Documento enviado para fila de OCR.'
                             : 'OCR automÃ¡tico desativado.',
@@ -1070,7 +1070,7 @@ class GedController extends Controller
                     'finished_at' => null,
                     'engine' => 'ocrmypdf',
                     'queue' => (string) config('ged.ocr.queue', 'ged'),
-                    'timeout_seconds' => (int) config('ged.ocr.timeout', 900),
+                    'timeout_seconds' => (int) config('ged.ocr.timeout', 300),
                     'message' => 'Documento reenviado para fila de OCR em lote.',
                 ]);
 

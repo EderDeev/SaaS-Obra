@@ -12,7 +12,7 @@ return [
         'deskew' => (bool) env('GED_OCR_DESKEW', true),
         'rotate_pages' => (bool) env('GED_OCR_ROTATE_PAGES', true),
         'max_pages' => (int) env('GED_OCR_MAX_PAGES', 25),
-        'timeout' => (int) env('GED_OCR_TIMEOUT', 900),
+        'timeout' => (int) env('GED_OCR_TIMEOUT', 300),
         'binaries' => [
             'ocrmypdf' => env('GED_OCR_OCRMYPDF_BIN', 'ocrmypdf'),
             'pdftotext' => env('GED_OCR_PDFTOTEXT_BIN', 'pdftotext'),

@@ -41,7 +41,7 @@ class GedOcrService
         File::ensureDirectoryExists($workDir);
         $inputPath = $workDir.'/input'.($extension ? ".{$extension}" : '');
         File::put($inputPath, $disk->get($document->original_path));
-        $this->deadlineAt = microtime(true) + max(60, (int) config('ged.ocr.timeout', 900));
+        $this->deadlineAt = microtime(true) + max(60, (int) config('ged.ocr.timeout', 300));
 
         try {
             return $this->processWithOcrmypdf($document, $inputPath, $workDir, $isPdf);
@@ -294,7 +294,7 @@ class GedOcrService
     private function remainingTimeoutSeconds(): int
     {
         if ($this->deadlineAt === null) {
-            return max(60, (int) config('ged.ocr.timeout', 900));
+            return max(60, (int) config('ged.ocr.timeout', 300));
         }
 
         return max(1, (int) ceil($this->deadlineAt - microtime(true)));
