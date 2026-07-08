@@ -61,7 +61,9 @@ Terminal 4, fila do GED/OCR:
 php artisan queue:work database --queue=ged --sleep=3 --tries=1 --timeout=3600
 ```
 
-O worker é necessário quando `QUEUE_CONNECTION=database`. Ele processa tarefas em segundo plano, incluindo envio automático de projetos para o Autodesk APS depois da submissão.
+O worker geral é necessário quando `QUEUE_CONNECTION=database`. Ele processa tarefas em segundo plano, incluindo envio automático de projetos para o Autodesk APS depois da submissão.
+
+O worker do Terminal 4 é obrigatório para testar OCR do GED localmente. O OCR sempre é enviado para a conexão `database` e fila `ged`; se esse worker não estiver ativo, o documento pode ficar parado como `OCR em processamento` até o timeout.
 
 Acesse:
 
