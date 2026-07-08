@@ -37,6 +37,17 @@ function formatDateTime(value) {
     return new Date(value).toLocaleString('pt-BR');
 }
 
+function formatDuration(milliseconds) {
+    const totalMinutes = Math.max(0, Math.floor(Number(milliseconds || 0) / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours <= 0) return `${minutes} min`;
+    if (minutes <= 0) return `${hours} h`;
+
+    return `${hours} h ${minutes} min`;
+}
+
 function formatBytes(bytes = 0) {
     const value = Number(bytes || 0);
 
@@ -428,6 +439,10 @@ function ContentSection({ document }) {
     const startedAt = processingReferenceAt ? new Date(processingReferenceAt) : null;
     const configuredTimeoutSeconds = Number(ocr.timeout_seconds || 0);
     const staleAfterMs = Math.max(configuredTimeoutSeconds + 900, 45 * 60) * 1000;
+    const elapsedMs = startedAt instanceof Date && !Number.isNaN(startedAt.getTime())
+        ? Date.now() - startedAt.getTime()
+        : null;
+    const timeoutLabel = configuredTimeoutSeconds > 0 ? formatDuration(configuredTimeoutSeconds * 1000) : 'não informado';
     const isStaleProcessing = ocr.status === 'processing'
         && !hasText
         && startedAt instanceof Date
@@ -437,8 +452,10 @@ function ContentSection({ document }) {
     const currentTone = statusTone[displayStatus] || (hasText ? statusTone.done : statusTone.queued);
     const canReprocess = document.ocr_url && displayStatus !== 'processing';
     const isGenericProcessingMessage = ocr.message === 'Documento em processamento OCR.';
+    const shouldShowProcessingDiagnostic = !hasText && ['queued', 'processing'].includes(ocr.status);
     const shouldShowOcrMessage = ocr.message
         && displayStatus !== 'done'
+        && !(shouldShowProcessingDiagnostic && isGenericProcessingMessage)
         && !(isStaleProcessing && isGenericProcessingMessage)
         && !(displayStatus === 'done' && isGenericProcessingMessage);
 
@@ -467,6 +484,27 @@ function ContentSection({ document }) {
                 {isStaleProcessing && (
                     <div className="mt-1 text-xs">
                         O processamento passou do tempo esperado. Reenvie o documento para a fila de OCR.
+                    </div>
+                )}
+                {shouldShowProcessingDiagnostic && !isStaleProcessing && (
+                    <div className="mt-2 rounded-lg bg-white/60 p-3 text-xs leading-5 ring-1 ring-inset ring-current/10">
+                        {ocr.status === 'queued' ? (
+                            <>
+                                O documento está na fila <strong>{ocr.queue || 'ged'}</strong> aguardando o worker OCR iniciar.
+                                {ocr.queued_at && <> Entrou na fila em <strong>{formatDateTime(ocr.queued_at)}</strong>.</>}
+                            </>
+                        ) : (
+                            <>
+                                O worker OCR já iniciou o processamento.
+                                {ocr.started_at && <> Início: <strong>{formatDateTime(ocr.started_at)}</strong>.</>}
+                                {elapsedMs !== null && <> Tempo decorrido: <strong>{formatDuration(elapsedMs)}</strong>.</>}
+                                {' '}Timeout configurado: <strong>{timeoutLabel}</strong>.
+                                {' '}Motor: <strong>{ocr.engine || 'ocrmypdf/tesseract'}</strong>.
+                            </>
+                        )}
+                        <div className="mt-1 text-[11px] opacity-80">
+                            Se essa mensagem permanecer por muito tempo sem mudar, verifique os logs do worker <strong>queue=ged</strong> no Railway.
+                        </div>
                     </div>
                 )}
                 {shouldShowOcrMessage && (
