@@ -424,15 +424,21 @@ function ContentSection({ document }) {
         missing_engine: 'border-orange-100 bg-orange-50 text-orange-900',
         disabled: 'border-slate-200 bg-slate-50 text-slate-700',
     };
-    const startedAt = ocr.started_at ? new Date(ocr.started_at) : (ocr.queued_at ? new Date(ocr.queued_at) : null);
+    const processingReferenceAt = ocr.started_at || ocr.queued_at || document.updated_at || document.created_at;
+    const startedAt = processingReferenceAt ? new Date(processingReferenceAt) : null;
     const isStaleProcessing = ocr.status === 'processing'
+        && !hasText
         && startedAt instanceof Date
         && !Number.isNaN(startedAt.getTime())
         && Date.now() - startedAt.getTime() > 12 * 60 * 1000;
-    const displayStatus = isStaleProcessing ? 'failed' : ocr.status;
+    const displayStatus = hasText ? 'done' : (isStaleProcessing ? 'failed' : ocr.status);
     const currentTone = statusTone[displayStatus] || (hasText ? statusTone.done : statusTone.queued);
     const canReprocess = document.ocr_url && displayStatus !== 'processing';
-    const shouldShowOcrMessage = ocr.message && !(isStaleProcessing && ocr.message === 'Documento em processamento OCR.');
+    const isGenericProcessingMessage = ocr.message === 'Documento em processamento OCR.';
+    const shouldShowOcrMessage = ocr.message
+        && displayStatus !== 'done'
+        && !(isStaleProcessing && isGenericProcessingMessage)
+        && !(displayStatus === 'done' && isGenericProcessingMessage);
 
     function reprocessOcr() {
         if (!document.ocr_url) return;
