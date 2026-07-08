@@ -1,0 +1,46 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh ./railway/start-app.sh
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8080"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://127.0.0.1:8000
+      PORT: 8080
+
+      DB_CONNECTION: pgsql
+      DB_HOST: ${DOCKER_DB_HOST:-host.docker.internal}
+      DB_PORT: ${DOCKER_DB_PORT:-${DB_PORT:-5432}}
+      DB_DATABASE: ${DOCKER_DB_DATABASE:-${DB_DATABASE:-deming}}
+      DB_USERNAME: ${DOCKER_DB_USERNAME:-${DB_USERNAME:-deming}}
+      DB_PASSWORD: ${DOCKER_DB_PASSWORD:-${DB_PASSWORD:-}}
+
+      QUEUE_CONNECTION: database
+
+      GED_DOCUMENT_DISK: public
+      GED_OCR_ENABLED: "true"
+      GED_OCR_QUEUE_CONNECTION: database
+      GED_OCR_QUEUE: ged
+      GED_OCR_LANGUAGE: por+eng
+      GED_OCR_MODE: skip
+      GED_OCR_OUTPUT_TYPE: pdfa
+      GED_OCR_DESKEW: "true"
+      GED_OCR_ROTATE_PAGES: "true"
+      GED_OCR_MAX_PAGES: ${DOCKER_GED_OCR_MAX_PAGES:-25}
+      GED_OCR_TIMEOUT: ${DOCKER_GED_OCR_TIMEOUT:-300}
+      GED_OCR_OCRMYPDF_BIN: ocrmypdf
+      GED_OCR_PDFTOTEXT_BIN: pdftotext
+      GED_OCR_PDFINFO_BIN: pdfinfo
+      GED_OCR_PDFTOPPM_BIN: pdftoppm
+      GED_OCR_TESSERACT_BIN: tesseract
+
+      RAILWAY_VOLUME_MOUNT_PATH: /app/storage/app/public
+    volumes:
+      - ./storage/app/public:/app/storage/app/public
+      - ./storage/logs:/app/storage/logs

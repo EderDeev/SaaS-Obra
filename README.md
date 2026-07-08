@@ -73,6 +73,57 @@ http://127.0.0.1:8000
 
 Se o Vite ficar preso em outra porta, apague `public/hot` e suba o Terminal 2 novamente.
 
+## Rodando Localmente com Docker
+
+Use essa opção quando quiser testar a aplicação em um ambiente Linux praticamente igual ao Railway, principalmente para GED/OCR, filas, PDF e uploads.
+
+O compose local **não cria um Postgres novo**. Ele usa o Postgres que você já roda em Docker, acessando pela máquina host. Por padrão:
+
+```text
+DB_HOST=host.docker.internal
+DB_PORT=5432
+DB_DATABASE=deming
+DB_USERNAME=deming
+```
+
+Se o seu Postgres estiver em outra porta, database ou usuário, informe as variáveis antes de subir:
+
+```bash
+DOCKER_DB_PORT=5432 DOCKER_DB_DATABASE=deming DOCKER_DB_USERNAME=deming DOCKER_DB_PASSWORD=sua_senha docker compose -f docker-compose.local.yml up --build
+```
+
+No PowerShell:
+
+```powershell
+$env:DOCKER_DB_PORT="5432"
+$env:DOCKER_DB_DATABASE="deming"
+$env:DOCKER_DB_USERNAME="deming"
+$env:DOCKER_DB_PASSWORD="sua_senha"
+docker compose -f docker-compose.local.yml up --build
+```
+
+Serviços iniciados:
+
+- `app`: equivalente ao serviço `SaaS-Obra` do Railway.
+
+Dentro do container `app`, o script `railway/start-app.sh` inicia os mesmos processos da produção:
+
+- servidor Laravel;
+- agendador `schedule:work`;
+- worker geral `imports,default,maintenance`;
+- worker OCR/GED `ged`.
+
+Comandos úteis:
+
+```bash
+docker compose -f docker-compose.local.yml exec app php artisan migrate
+docker compose -f docker-compose.local.yml exec app php artisan db:seed
+docker compose -f docker-compose.local.yml exec app php artisan tinker
+docker compose -f docker-compose.local.yml logs -f app
+```
+
+O container já instala `OCRmyPDF`, `Tesseract`, `Poppler`, `Ghostscript`, `qpdf` e idiomas `por+eng`, usando os mesmos nomes de binário esperados em produção. O build também executa `npm run build`, como no deploy.
+
 ## Autodesk APS Local
 
 Variáveis necessárias no `.env`:
