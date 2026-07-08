@@ -12,6 +12,8 @@ use Symfony\Component\Process\Process;
 
 class GedOcrService
 {
+    private ?float $deadlineAt = null;
+
     public function process(GedDocument $document): array
     {
         $disk = Storage::disk($document->storage_disk ?: 'public');
@@ -39,6 +41,7 @@ class GedOcrService
         File::ensureDirectoryExists($workDir);
         $inputPath = $workDir.'/input'.($extension ? ".{$extension}" : '');
         File::put($inputPath, $disk->get($document->original_path));
+        $this->deadlineAt = microtime(true) + max(60, (int) config('ged.ocr.timeout', 900));
 
         try {
             return $this->processWithOcrmypdf($document, $inputPath, $workDir, $isPdf);
@@ -85,6 +88,7 @@ class GedOcrService
 
             throw $exception;
         } finally {
+            $this->deadlineAt = null;
             File::deleteDirectory($workDir);
         }
     }
@@ -199,6 +203,8 @@ class GedOcrService
         $texts = [];
 
         foreach (collect(File::files($workDir))->filter(fn ($file) => str_starts_with($file->getFilename(), 'page-') && $file->getExtension() === 'png')->sortBy(fn ($file) => $file->getFilename()) as $image) {
+            $this->assertWithinDeadline();
+
             $text = $this->extractImageTextWithTesseract($image->getPathname(), $workDir);
 
             if (trim($text) !== '') {
@@ -264,10 +270,11 @@ class GedOcrService
 
     private function run(array $command): Process
     {
+        $this->assertWithinDeadline();
         $this->ensureBinaryIsAvailable((string) $command[0]);
 
         $process = new Process($command);
-        $process->setTimeout((int) config('ged.ocr.timeout', 900));
+        $process->setTimeout($this->remainingTimeoutSeconds());
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -275,6 +282,22 @@ class GedOcrService
         }
 
         return $process;
+    }
+
+    private function assertWithinDeadline(): void
+    {
+        if ($this->deadlineAt !== null && microtime(true) >= $this->deadlineAt) {
+            throw new RuntimeException('O OCR excedeu o tempo limite global de processamento do documento.');
+        }
+    }
+
+    private function remainingTimeoutSeconds(): int
+    {
+        if ($this->deadlineAt === null) {
+            return max(60, (int) config('ged.ocr.timeout', 900));
+        }
+
+        return max(1, (int) ceil($this->deadlineAt - microtime(true)));
     }
 
     private function ensureBinaryIsAvailable(string $binary): void
