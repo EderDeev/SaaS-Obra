@@ -144,6 +144,10 @@ class ProcessGedDocumentOcrJob implements ShouldQueue
     {
         $message = $exception?->getMessage() ?: 'Falha desconhecida no OCR.';
 
+
+        if (str_contains(strtolower($message), 'timed out') || str_contains(strtolower($message), 'timeout') || str_contains(strtolower($message), 'tempo')) {
+            return 'O OCR excedeu o tempo limite de processamento. O documento pode ser grande ou escaneado demais para o ambiente atual. Tente reprocessar ou reduza a quantidade de paginas OCR.';
+        }
         if (str_contains($message, 'Binário OCR não encontrado')) {
             return $message.'. Instale OCRmyPDF/Tesseract/Poppler no servidor ou ajuste as variáveis GED_OCR_*_BIN.';
         }

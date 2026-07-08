@@ -424,14 +424,15 @@ function ContentSection({ document }) {
         missing_engine: 'border-orange-100 bg-orange-50 text-orange-900',
         disabled: 'border-slate-200 bg-slate-50 text-slate-700',
     };
-    const startedAt = ocr.started_at ? new Date(ocr.started_at) : null;
+    const startedAt = ocr.started_at ? new Date(ocr.started_at) : (ocr.queued_at ? new Date(ocr.queued_at) : null);
     const isStaleProcessing = ocr.status === 'processing'
         && startedAt instanceof Date
         && !Number.isNaN(startedAt.getTime())
-        && Date.now() - startedAt.getTime() > 35 * 60 * 1000;
+        && Date.now() - startedAt.getTime() > 12 * 60 * 1000;
     const displayStatus = isStaleProcessing ? 'failed' : ocr.status;
     const currentTone = statusTone[displayStatus] || (hasText ? statusTone.done : statusTone.queued);
     const canReprocess = document.ocr_url && displayStatus !== 'processing';
+    const shouldShowOcrMessage = ocr.message && !(isStaleProcessing && ocr.message === 'Documento em processamento OCR.');
 
     function reprocessOcr() {
         if (!document.ocr_url) return;
@@ -460,7 +461,7 @@ function ContentSection({ document }) {
                         O processamento passou do tempo esperado. Reenvie o documento para a fila de OCR.
                     </div>
                 )}
-                {ocr.message && (
+                {shouldShowOcrMessage && (
                     <div className="mt-1 text-xs">
                         {ocr.message}
                     </div>
@@ -839,7 +840,7 @@ function DocumentViewer({ document }) {
 
     const viewerUrl = useMemo(() => {
         const safePage = Math.min(Math.max(Number(page) || 1, 1), pageCount);
-        return `${document.preview_url}#page=${safePage}&zoom=${zoom}&toolbar=0&navpanes=0&view=FitH`;
+        return `${document.preview_url}#page=${safePage}&zoom=${zoom}&toolbar=0&navpanes=0`;
     }, [document.preview_url, page, pageCount, zoom]);
 
     return (

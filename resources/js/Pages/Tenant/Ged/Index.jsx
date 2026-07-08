@@ -273,23 +273,23 @@ function FilterDropdown({ icon: Icon, label, activeLabel, children }) {
     const [open, setOpen] = useState(false);
 
     return (
-        <div className="relative">
+        <div className="relative min-w-0">
             <button
                 type="button"
                 onClick={() => setOpen((value) => !value)}
-                className={`inline-flex min-h-10 items-center gap-2 rounded border px-3 text-sm font-medium transition ${
+                className={`inline-flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded border px-3 text-sm font-medium transition sm:w-auto sm:max-w-[260px] ${
                     activeLabel
                         ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
                         : 'border-emerald-700 bg-white text-emerald-800 hover:bg-emerald-50'
                 }`}
             >
                 <Icon size={16} />
-                <span>{activeLabel || label}</span>
+                <span className="truncate">{activeLabel || label}</span>
                 <ChevronDown size={14} className={`transition ${open ? 'rotate-180' : ''}`} />
             </button>
 
             {open && (
-                <div className="absolute left-0 z-[120] mt-1 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+                <div className="absolute left-0 z-[120] mt-1 w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
                     {children}
                 </div>
             )}
@@ -852,8 +852,8 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
 
 
                 <div className="rounded-2xl border border-[var(--border)] bg-white shadow-sm">
-                    <form onSubmit={applyFilters} className="space-y-4 border-b border-[var(--border)] p-5">
-                        <div className="grid gap-3 lg:grid-cols-[minmax(260px,420px)_1fr] lg:items-end lg:gap-x-8">
+                    <form onSubmit={applyFilters} className="space-y-4 border-b border-[var(--border)] p-4 sm:p-5">
+                        <div className="grid gap-4 xl:grid-cols-[minmax(260px,420px)_1fr] xl:items-start xl:gap-x-8">
                             <div>
                                 <label className="ged-label">Buscar</label>
                                 <div className="relative">
@@ -862,7 +862,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                 </div>
                             </div>
 
-                            <div className="flex flex-wrap items-end gap-2 lg:pl-12">
+                            <div className="grid grid-cols-2 items-end gap-2 sm:flex sm:flex-wrap xl:pl-10">
                                 <FilterDropdown icon={FileCheck2} label="Contrato" activeLabel={selectedContract ? `${selectedContract.code} - ${selectedContract.name}` : null}>
                                     <label className="ged-label">Contrato</label>
                                     <DropdownSelect
@@ -908,19 +908,19 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                     </div>
                                 </FilterDropdown>
 
-                                <button className="sig-btn sig-btn-primary">
+                                <button className="sig-btn sig-btn-primary w-full sm:w-auto">
                                     <Filter size={16} />
                                     Filtrar
                                 </button>
-                                <button type="button" className="sig-btn sig-btn-ghost" onClick={resetFilters}>Limpar</button>
+                                <button type="button" className="sig-btn sig-btn-ghost w-full sm:w-auto" onClick={resetFilters}>Limpar</button>
 
-                                <div className="btn-group flex-fill flex w-full max-w-[170px]">
+                                <div className="btn-group flex-fill col-span-2 flex w-full sm:w-[170px]">
                                     <ViewButton active={viewMode === 'table'} icon={List} label="Tabela" onClick={() => changeViewMode('table')} />
                                     <ViewButton active={viewMode === 'grid'} icon={Grid2X2} label="Grade" onClick={() => changeViewMode('grid')} />
                                     <ViewButton active={viewMode === 'detail'} icon={Rows3} label="Detalhado" onClick={() => changeViewMode('detail')} />
                                 </div>
 
-                                <div>
+                                <div className="col-span-2 w-full sm:w-auto">
                                     <FilterDropdown icon={ArrowUpDown} label="Ordenar" activeLabel={`Ordenar: ${selectedSortLabel}`}>
                                         <div className="space-y-3">
                                             <div className="grid grid-cols-2 gap-2">
