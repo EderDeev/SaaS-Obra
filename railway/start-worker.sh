@@ -5,4 +5,4 @@ mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessi
 
 php artisan storage:link || true
 
-exec php artisan queue:work database --queue=imports,ged,default,maintenance --sleep=3 --tries=1 --timeout=3600
+exec php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600

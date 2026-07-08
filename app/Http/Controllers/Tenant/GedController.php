@@ -491,9 +491,10 @@ class GedController extends Controller
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
         $directory = 'ged/'.$tenant->id.'/'.now()->format('Y/m');
         $filename = Str::uuid().($extension ? ".{$extension}" : '');
-        $path = $file->storeAs($directory, $filename, 'public');
+        $storageDisk = (string) config('ged.document_disk', 'public');
+        $path = $file->storeAs($directory, $filename, $storageDisk);
 
-        $document = DB::transaction(function () use ($tenant, $data, $file, $path, $checksum, $originalMd5, $extension) {
+        $document = DB::transaction(function () use ($tenant, $data, $file, $path, $checksum, $originalMd5, $extension, $storageDisk) {
             $duplicate = GedDocument::query()
                 ->where('tenant_id', $tenant->id)
                 ->where('checksum', $checksum)
@@ -564,7 +565,7 @@ class GedController extends Controller
                 'extension' => $extension,
                 'size_bytes' => $file->getSize() ?: 0,
                 'checksum' => $checksum,
-                'storage_disk' => 'public',
+                'storage_disk' => $storageDisk,
                 'original_path' => $path,
                 'metadata' => [
                     'source' => 'web_upload',
@@ -593,7 +594,7 @@ class GedController extends Controller
                 'mime_type' => $file->getMimeType(),
                 'size_bytes' => $file->getSize() ?: 0,
                 'checksum' => $checksum,
-                'storage_disk' => 'public',
+                'storage_disk' => $storageDisk,
                 'path' => $path,
                 'notes' => 'VersÃ£o inicial enviada pelo GED.',
             ]);

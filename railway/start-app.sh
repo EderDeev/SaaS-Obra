@@ -13,7 +13,11 @@ php artisan storage:link || true
 # Mantém o agendador do RDO ativo no mesmo serviço web.
 php artisan schedule:work &
 
-php artisan queue:work database --queue=imports,ged,default,maintenance --sleep=3 --tries=1 --timeout=3600 &
+php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600 &
+
+# OCR/GED roda em processo separado para isolar a fila pesada, mas no mesmo servico
+# para continuar acessando o volume local do Railway.
+php artisan queue:work database --queue=ged --sleep=3 --tries=1 --timeout="${GED_OCR_WORKER_TIMEOUT:-3600}" &
 
 exec php -d upload_max_filesize=100M \
     -d post_max_size=128M \

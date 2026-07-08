@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'document_disk' => env('GED_DOCUMENT_DISK', 'public'),
+
     'ocr' => [
         'enabled' => (bool) env('GED_OCR_ENABLED', true),
         'queue' => env('GED_OCR_QUEUE', 'ged'),

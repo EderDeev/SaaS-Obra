@@ -52,7 +52,13 @@ npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
 Terminal 3, fila de jobs:
 
 ```bash
-php artisan queue:work database --queue=imports,ged,default,maintenance --sleep=3 --tries=1 --timeout=3600
+php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600
+```
+
+Terminal 4, fila do GED/OCR:
+
+```bash
+php artisan queue:work database --queue=ged --sleep=3 --tries=1 --timeout=3600
 ```
 
 O worker é necessário quando `QUEUE_CONNECTION=database`. Ele processa tarefas em segundo plano, incluindo envio automático de projetos para o Autodesk APS depois da submissão.
@@ -253,7 +259,7 @@ AUTODESK_APS_AUTO_PROCESS=true
 Para testar o OCR localmente, mantenha o Laravel e o Vite rodando conforme a seção "Rodando Localmente" e abra um terminal separado para o worker:
 
 ```bash
-php artisan queue:work database --queue=imports,ged,default,maintenance --sleep=3 --tries=1 --timeout=3600
+php artisan queue:work database --queue=ged --sleep=3 --tries=1 --timeout=3600
 ```
 
 Se esse worker não estiver ativo, documentos enviados ao GED podem ficar como "Na fila" ou "Processando OCR" sem extrair o texto.
@@ -265,6 +271,7 @@ Variáveis principais:
 ```text
 GED_OCR_ENABLED=true
 GED_OCR_QUEUE=ged
+GED_DOCUMENT_DISK=public
 GED_OCR_LANGUAGE=por+eng
 GED_OCR_MODE=skip
 GED_OCR_OUTPUT_TYPE=pdfa
@@ -287,12 +294,12 @@ poppler-utils
 ghostscript
 ```
 
-No Railway/Railpack, essas dependências foram declaradas em `railpack.json` via `deploy.aptPackages`.
+No Railway, essas dependências ficam no mesmo serviço da aplicação enquanto usamos volume local. O `railpack.json` instala os pacotes de OCR no container principal.
 
-O worker precisa consumir a fila `ged`. Os scripts `railway/start-app.sh` e `railway/start-worker.sh` já incluem:
+O worker OCR roda como processo separado dentro do mesmo serviço e consome apenas a fila `ged`:
 
 ```bash
---queue=imports,ged,default,maintenance
+--queue=ged
 ```
 
 Checklist quando um projeto demora:
@@ -362,3 +369,13 @@ altere apenas o driver/configuração, mantendo o fluxo do RDO intacto.
 VITE_MAPBOX_ACCESS_TOKEN=...
 RAILWAY_RUN_SEEDER=false
 ```
+
+## Railway: OCR no mesmo serviço com processo dedicado
+
+Enquanto o GED usa volume local (`GED_DOCUMENT_DISK=public`), o OCR deve rodar no mesmo serviço Railway da aplicação para enxergar os arquivos enviados. O `railway/start-app.sh` inicia o servidor Laravel, o agendador, o worker geral (`imports,default,maintenance`) e o worker OCR dedicado (`ged`).
+
+O `railpack.json` continua instalando os pacotes de OCR no container principal enquanto usarmos volume local.
+
+Esse desenho separa a fila pesada do OCR sem exigir S3/R2 agora.
+
+Quando migrarmos os documentos para storage compartilhado, como S3/R2, o worker OCR poderá virar um serviço Railway independente e o build do web app poderá voltar a ser mais leve.

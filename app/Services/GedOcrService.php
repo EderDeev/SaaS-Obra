@@ -20,7 +20,6 @@ class GedOcrService
             throw new RuntimeException('Arquivo original não encontrado para processamento OCR.');
         }
 
-        $inputPath = $disk->path($document->original_path);
         $mimeType = (string) $document->mime_type;
         $extension = strtolower((string) $document->extension);
         $isPdf = $mimeType === 'application/pdf' || $extension === 'pdf';
@@ -38,6 +37,8 @@ class GedOcrService
 
         $workDir = storage_path('app/private/ged-ocr/'.$document->id.'-'.Str::uuid());
         File::ensureDirectoryExists($workDir);
+        $inputPath = $workDir.'/input'.($extension ? ".{$extension}" : '');
+        File::put($inputPath, $disk->get($document->original_path));
 
         try {
             return $this->processWithOcrmypdf($document, $inputPath, $workDir, $isPdf);
