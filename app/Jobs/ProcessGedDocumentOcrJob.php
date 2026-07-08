@@ -49,6 +49,7 @@ class ProcessGedDocumentOcrJob implements ShouldQueue
                 'finished_at' => null,
                 'engine' => 'ocrmypdf',
                 'message' => 'Documento em processamento OCR.',
+                'timeout_seconds' => (int) config('ged.ocr.timeout', 900),
             ]),
         ])->save();
 

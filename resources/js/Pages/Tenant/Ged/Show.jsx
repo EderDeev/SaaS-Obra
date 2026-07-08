@@ -426,11 +426,13 @@ function ContentSection({ document }) {
     };
     const processingReferenceAt = ocr.started_at || ocr.queued_at || document.updated_at || document.created_at;
     const startedAt = processingReferenceAt ? new Date(processingReferenceAt) : null;
+    const configuredTimeoutSeconds = Number(ocr.timeout_seconds || 0);
+    const staleAfterMs = Math.max(configuredTimeoutSeconds + 900, 45 * 60) * 1000;
     const isStaleProcessing = ocr.status === 'processing'
         && !hasText
         && startedAt instanceof Date
         && !Number.isNaN(startedAt.getTime())
-        && Date.now() - startedAt.getTime() > 12 * 60 * 1000;
+        && Date.now() - startedAt.getTime() > staleAfterMs;
     const displayStatus = hasText ? 'done' : (isStaleProcessing ? 'failed' : ocr.status);
     const currentTone = statusTone[displayStatus] || (hasText ? statusTone.done : statusTone.queued);
     const canReprocess = document.ocr_url && displayStatus !== 'processing';
