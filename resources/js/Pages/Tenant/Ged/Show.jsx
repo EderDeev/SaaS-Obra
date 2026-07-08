@@ -20,7 +20,7 @@ import {
     UserRound,
     X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const sectionIcons = {
     details: FileText,
@@ -427,6 +427,7 @@ function DetailSection({ document, lookups = {}, quickStoreUrls = {} }) {
 function ContentSection({ document }) {
     const ocr = document.metadata?.ocr || {};
     const hasText = Boolean(document.extracted_text);
+    const shouldPollOcrStatus = !hasText && ['queued', 'processing'].includes(ocr.status);
     const statusTone = {
         done: 'border-emerald-100 bg-emerald-50 text-emerald-900',
         processing: 'border-amber-100 bg-amber-50 text-amber-900',
@@ -452,7 +453,7 @@ function ContentSection({ document }) {
     const currentTone = statusTone[displayStatus] || (hasText ? statusTone.done : statusTone.queued);
     const canReprocess = document.ocr_url && displayStatus !== 'processing';
     const isGenericProcessingMessage = ocr.message === 'Documento em processamento OCR.';
-    const shouldShowProcessingDiagnostic = !hasText && ['queued', 'processing'].includes(ocr.status);
+    const shouldShowProcessingDiagnostic = shouldPollOcrStatus;
     const shouldShowOcrMessage = ocr.message
         && displayStatus !== 'done'
         && !(shouldShowProcessingDiagnostic && isGenericProcessingMessage)
@@ -466,6 +467,20 @@ function ContentSection({ document }) {
             preserveScroll: true,
         });
     }
+
+    useEffect(() => {
+        if (!shouldPollOcrStatus) return undefined;
+
+        const interval = window.setInterval(() => {
+            router.reload({
+                only: ['document'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        }, 15000);
+
+        return () => window.clearInterval(interval);
+    }, [document.id, shouldPollOcrStatus]);
 
     return (
         <div className="space-y-4">
@@ -503,7 +518,7 @@ function ContentSection({ document }) {
                             </>
                         )}
                         <div className="mt-1 text-[11px] opacity-80">
-                            Se essa mensagem permanecer por muito tempo sem mudar, verifique os logs do worker <strong>queue=ged</strong> no Railway.
+                            Esta tela atualiza o status automaticamente a cada 15 segundos. Se permanecer assim após o timeout, verifique os logs do worker <strong>queue=ged</strong> no Railway.
                         </div>
                     </div>
                 )}
