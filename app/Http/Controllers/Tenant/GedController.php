@@ -813,10 +813,62 @@ class GedController extends Controller
         ]);
     }
 
+    private function markStalledOcrIfNeeded(GedDocument $document): void
+    {
+        $metadata = $document->metadata ?: [];
+        $ocr = $metadata['ocr'] ?? [];
+
+        if (($ocr['status'] ?? null) !== 'processing' || filled($document->extracted_text)) {
+            return;
+        }
+
+        $reference = $ocr['started_at'] ?? $ocr['queued_at'] ?? null;
+
+        if (! $reference) {
+            return;
+        }
+
+        $timeout = max(60, (int) ($ocr['timeout_seconds'] ?? config('ged.ocr.timeout', 300)));
+        $referenceAt = CarbonImmutable::parse($reference);
+
+        if ($referenceAt->addSeconds($timeout)->isFuture()) {
+            return;
+        }
+
+        $metadata['ocr'] = array_merge($ocr, [
+            'status' => 'failed',
+            'finished_at' => now()->toDateTimeString(),
+            'message' => 'O OCR excedeu o tempo limite de processamento. Reenvie o documento para a fila de OCR.',
+            'stalled_detected_at' => now()->toDateTimeString(),
+            'elapsed_seconds' => $referenceAt->diffInSeconds(now()),
+        ]);
+
+        $document->forceFill([
+            'status' => 'failed',
+            'processed_at' => now(),
+            'metadata' => $metadata,
+        ])->save();
+
+        $this->logGedEvent(
+            $document,
+            'ocr.timeout',
+            'OCR excedeu o tempo limite',
+            'O processamento OCR ficou em aberto além do timeout configurado e foi marcado como falho automaticamente.',
+            [
+                'engine' => $ocr['engine'] ?? 'ocrmypdf',
+                'timeout_seconds' => $timeout,
+            ],
+        );
+
+        $document->refresh();
+    }
+
     private function renderDocumentWorkspace(Tenant $tenant, GedDocument $document, string $section): Response
     {
         abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
         abort_unless(array_key_exists($section, self::SECTIONS), 404);
+
+        $this->markStalledOcrIfNeeded($document);
 
         $document->load([
             'contract:id,code,name,cliente_empresa_id,construtora_empresa_id,fiscalizadora_empresa_id',
