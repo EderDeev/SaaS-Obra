@@ -40,20 +40,6 @@ class GedOcrService
         File::ensureDirectoryExists($workDir);
 
         try {
-            if ($isPdf) {
-                $searchableText = $this->extractSearchablePdfText($inputPath, $workDir);
-
-                if (trim($searchableText) !== '') {
-                    return [
-                        'text' => $searchableText,
-                        'archive_path' => null,
-                        'page_count' => $this->countPdfPages($inputPath, $workDir),
-                        'engine' => 'pdftotext',
-                        'message' => 'Texto extraído de PDF pesquisável. OCR pesado não foi necessário.',
-                    ];
-                }
-            }
-
             return $this->processWithOcrmypdf($document, $inputPath, $workDir, $isPdf);
         } catch (RuntimeException|ProcessFailedException $exception) {
             if ($isPdf) {
