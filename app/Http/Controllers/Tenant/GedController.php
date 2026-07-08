@@ -377,7 +377,7 @@ class GedController extends Controller
             ['engine' => 'ocrmypdf'],
         );
 
-        ProcessGedDocumentOcrJob::dispatch($document->id)->afterResponse();
+        $this->dispatchOcrJob($document);
 
         return back()->with('success', 'Documento reenviado para a fila de OCR.');
     }
@@ -637,7 +637,7 @@ class GedController extends Controller
         });
 
         if (config('ged.ocr.enabled', true)) {
-            ProcessGedDocumentOcrJob::dispatch($document->id)->afterResponse();
+            $this->dispatchOcrJob($document);
         }
 
         return redirect()
@@ -861,6 +861,13 @@ class GedController extends Controller
         );
 
         $document->refresh();
+    }
+
+    private function dispatchOcrJob(GedDocument $document): void
+    {
+        ProcessGedDocumentOcrJob::dispatch($document->id)
+            ->onConnection((string) config('ged.ocr.connection', 'database'))
+            ->onQueue((string) config('ged.ocr.queue', 'ged'));
     }
 
     private function renderDocumentWorkspace(Tenant $tenant, GedDocument $document, string $section): Response
@@ -1139,7 +1146,7 @@ class GedController extends Controller
                     ['engine' => 'ocrmypdf', 'bulk' => true],
                 );
 
-                ProcessGedDocumentOcrJob::dispatch($document->id)->afterResponse();
+                $this->dispatchOcrJob($document);
             }
 
             return back()->with('success', $documents->count().' documento(s) reenviado(s) para OCR.');

@@ -5,6 +5,7 @@ return [
 
     'ocr' => [
         'enabled' => (bool) env('GED_OCR_ENABLED', true),
+        'connection' => env('GED_OCR_QUEUE_CONNECTION', 'database'),
         'queue' => env('GED_OCR_QUEUE', 'ged'),
         'language' => env('GED_OCR_LANGUAGE', 'por+eng'),
         'mode' => env('GED_OCR_MODE', 'skip'),
