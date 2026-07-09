@@ -280,7 +280,7 @@ function AccountModal({ tenant, contracts, account = null, onClose }) {
     );
 }
 
-function RuleModal({ tenant, contracts, accounts, types, tags, correspondents, rule = null, onClose }) {
+function RuleModal({ tenant, contracts, accounts, types, tags, correspondents, rule = null, onClose, onCreateAccount }) {
     const form = useForm({
         account_id: rule?.account_id ? String(rule.account_id) : (accounts[0]?.id ? String(accounts[0].id) : ''),
         contract_id: rule?.contract_id ? String(rule.contract_id) : (accounts[0]?.contract_id ? String(accounts[0].contract_id) : (contracts[0]?.id ? String(contracts[0].id) : '')),
@@ -347,6 +347,29 @@ function RuleModal({ tenant, contracts, accounts, types, tags, correspondents, r
         }
 
         form.post(route('tenant.ged.email.rules.store', tenant.slug), options);
+    }
+
+    if (accounts.length === 0) {
+        return (
+            <Modal title="Criar nova regra de e-mail" onClose={onClose} maxWidth="max-w-2xl">
+                <div className="space-y-5 text-[var(--ink-700)]">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                        <h3 className="text-lg font-bold text-amber-900">Cadastre uma conta de e-mail primeiro</h3>
+                        <p className="mt-2 text-sm leading-relaxed text-amber-900">
+                            A regra precisa estar vinculada a uma conta IMAP. Depois que a conta for cadastrada, você poderá definir os filtros e ações da regra.
+                        </p>
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose}>Cancelar</button>
+                        <button type="button" className="sig-btn bg-emerald-800 text-white hover:bg-emerald-900" onClick={onCreateAccount}>
+                            <PlusCircle size={18} />
+                            Adicionar Conta
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+        );
     }
 
     return (
@@ -798,7 +821,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                 <section>
                     <div className="mb-3 flex flex-wrap items-center gap-4">
                         <h2 className="text-3xl font-bold text-[var(--ink-900)]">Regras de e-mail</h2>
-                        <button type="button" className="sig-btn sig-btn-secondary border-emerald-800 text-emerald-800" onClick={() => setModal('rule')} disabled={accounts.length === 0}>
+                        <button type="button" className="sig-btn sig-btn-secondary border-emerald-800 text-emerald-800" onClick={() => setModal('rule')}>
                             <PlusCircle size={18} />
                             Adicionar Regra
                         </button>
@@ -873,6 +896,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                     correspondents={correspondents}
                     rule={modal?.rule}
                     onClose={closeModal}
+                    onCreateAccount={() => setModal('account')}
                 />
             )}
             {modal?.type === 'permissions' && <PermissionsModal item={modal.item} onClose={closeModal} />}
