@@ -8,9 +8,18 @@ if [ -n "${RAILWAY_VOLUME_MOUNT_PATH:-}" ]; then
     echo "Railway volume mounted at ${RAILWAY_VOLUME_MOUNT_PATH}"
 fi
 
+if [ -z "${DB_URL:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
+    export DB_URL="${DATABASE_URL}"
+fi
+
+if [ -n "${DB_URL:-}" ] || [ -n "${DATABASE_URL:-}" ]; then
+    export DB_CONNECTION="${DB_CONNECTION:-pgsql}"
+fi
+
+php artisan config:clear
 php artisan storage:link || true
 
-# Mantém o agendador do RDO ativo no mesmo serviço web.
+# Mantem o agendador do RDO ativo no mesmo servico web.
 php artisan schedule:work &
 
 php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600 &
