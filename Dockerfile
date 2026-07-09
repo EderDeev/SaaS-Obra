@@ -13,6 +13,7 @@ RUN apt-get update \
         ghostscript \
         libfreetype6-dev \
         libjpeg62-turbo-dev \
+        libicu-dev \
         libpng-dev \
         libpq-dev \
         libzip-dev \
@@ -27,7 +28,7 @@ RUN apt-get update \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" gd pdo_pgsql zip \
+    && docker-php-ext-install -j"$(nproc)" gd intl pdo_pgsql zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

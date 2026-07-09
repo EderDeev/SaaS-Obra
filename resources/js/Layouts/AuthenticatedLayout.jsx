@@ -397,6 +397,11 @@ export default function AuthenticatedLayout({ children }) {
                 active: route().current('tenant.ged.index'),
             },
             {
+                label: 'E-mail',
+                href: route('tenant.ged.email', tenant.slug),
+                active: route().current('tenant.ged.email'),
+            },
+            {
                 label: 'Parametrização',
                 href: route('tenant.ged.settings', tenant.slug),
                 active: route().current('tenant.ged.settings'),

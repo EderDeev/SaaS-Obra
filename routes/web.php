@@ -107,6 +107,15 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/documentacao', [GedController::class, 'index'])->name('ged.index');
         Route::post('/documentacao', [GedController::class, 'store'])->name('ged.store');
         Route::get('/documentacao/parametrizacao', [GedController::class, 'settings'])->name('ged.settings');
+        Route::get('/documentacao/email', [GedController::class, 'email'])->name('ged.email');
+        Route::post('/documentacao/email/contas/testar', [GedController::class, 'testEmailAccount'])->name('ged.email.accounts.test');
+        Route::post('/documentacao/email/contas', [GedController::class, 'storeEmailAccount'])->name('ged.email.accounts.store');
+        Route::patch('/documentacao/email/contas/{account}', [GedController::class, 'updateEmailAccount'])->name('ged.email.accounts.update');
+        Route::delete('/documentacao/email/contas/{account}', [GedController::class, 'destroyEmailAccount'])->name('ged.email.accounts.destroy');
+        Route::post('/documentacao/email/contas/{account}/processar', [GedController::class, 'processEmailAccount'])->name('ged.email.accounts.process');
+        Route::post('/documentacao/email/regras', [GedController::class, 'storeEmailRule'])->name('ged.email.rules.store');
+        Route::patch('/documentacao/email/regras/{rule}', [GedController::class, 'updateEmailRule'])->name('ged.email.rules.update');
+        Route::delete('/documentacao/email/regras/{rule}', [GedController::class, 'destroyEmailRule'])->name('ged.email.rules.destroy');
         Route::post('/documentacao/correspondentes', [GedController::class, 'storeCorrespondent'])->name('ged.correspondents.store');
         Route::post('/documentacao/tipos', [GedController::class, 'storeType'])->name('ged.types.store');
         Route::post('/documentacao/tags', [GedController::class, 'storeTag'])->name('ged.tags.store');

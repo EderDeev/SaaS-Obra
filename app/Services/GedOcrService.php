@@ -142,19 +142,36 @@ class GedOcrService
 
         $text = File::exists($sidecar) ? trim((string) File::get($sidecar)) : '';
 
+        if ($this->isOnlyOcrSkippedNotice($text)) {
+            $text = '';
+        }
+
         if ($text === '') {
             $text = trim($this->extractSearchablePdfText($outputPdf, $workDir));
+        }
+
+        if ($this->isOnlyOcrSkippedNotice($text)) {
+            $text = '';
+        }
+
+        if ($text === '' && $isPdf) {
+            $text = trim($this->extractPdfTextWithTesseract($inputPath, $workDir));
         }
 
         $archivePath = 'ged/'.$document->tenant_id.'/archive/'.now()->format('Y/m').'/'.$document->id.'-'.Str::uuid().'.pdf';
         Storage::disk($document->storage_disk ?: 'public')->put($archivePath, File::get($outputPdf));
 
+        $engine = $text !== '' ? 'ocrmypdf+tesseract-fallback' : 'ocrmypdf';
+        $message = $text !== ''
+            ? 'OCR processado com OCRmyPDF e texto extraído com Tesseract.'
+            : 'OCR processado com OCRmyPDF, mas nenhum texto foi extraído.';
+
         return [
             'text' => $text,
             'archive_path' => $archivePath,
             'page_count' => $this->countPdfPages($outputPdf, $workDir) ?: ($isPdf ? $this->countPdfPages($inputPath, $workDir) : 1),
-            'engine' => 'ocrmypdf',
-            'message' => 'OCR processado com OCRmyPDF/Tesseract.',
+            'engine' => $engine,
+            'message' => $message,
         ];
     }
 
@@ -176,6 +193,14 @@ class GedOcrService
         }
 
         return File::exists($output) ? trim((string) File::get($output)) : '';
+    }
+
+    private function isOnlyOcrSkippedNotice(string $text): bool
+    {
+        $normalized = trim($text);
+
+        return $normalized !== ''
+            && (bool) preg_match('/^\[OCR skipped on page\(s\)\s+[\d,\-\s]+\]$/i', $normalized);
     }
 
     private function extractPdfTextWithTesseract(string $pdfPath, string $workDir): string

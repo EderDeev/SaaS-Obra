@@ -12,9 +12,13 @@ use App\Models\GedDocumentEvent;
 use App\Models\GedDocumentNote;
 use App\Models\GedDocumentType;
 use App\Models\GedDocumentVersion;
+use App\Models\GedEmailAccount;
+use App\Models\GedEmailProcessedMessage;
+use App\Models\GedEmailRule;
 use App\Models\GedTag;
 use App\Models\Tenant;
 use App\Models\TenantUser;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Carbon\CarbonImmutable;
@@ -218,6 +222,494 @@ class GedController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'contract_id', 'name', 'color', 'is_inbox', 'created_at']),
         ]);
+    }
+
+    public function email(Request $request, Tenant $tenant): Response
+    {
+        $accessibleContracts = $this->accessibleGedContracts($request, $tenant);
+        $accessibleContractIds = $accessibleContracts->pluck('id');
+
+        $accounts = GedEmailAccount::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $accessibleContractIds)
+            ->with(['contract:id,code,name'])
+            ->withCount('rules')
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (GedEmailAccount $account) => [
+                'id' => $account->id,
+                'contract_id' => $account->contract_id,
+                'name' => $account->name,
+                'email' => $account->email,
+                'host' => $account->host,
+                'port' => $account->port,
+                'encryption' => $account->encryption,
+                'username' => $account->username,
+                'mailbox' => $account->mailbox,
+                'post_action' => $account->post_action,
+                'move_to' => $account->move_to,
+                'settings' => $account->settings ?? [],
+                'is_active' => $account->is_active,
+                'last_checked_at' => $account->last_checked_at?->format('Y-m-d H:i:s'),
+                'last_error' => $account->last_error,
+                'rules_count' => $account->rules_count,
+                'contract' => $account->contract ? [
+                    'id' => $account->contract->id,
+                    'code' => $account->contract->code,
+                    'name' => $account->contract->name,
+                ] : null,
+            ]);
+
+        $rules = GedEmailRule::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $accessibleContractIds)
+            ->with(['account:id,name,email', 'contract:id,code,name', 'type:id,name', 'correspondent:id,name'])
+            ->withCount('processedMessages')
+            ->orderBy('priority')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (GedEmailRule $rule) => [
+                'id' => $rule->id,
+                'account_id' => $rule->account_id,
+                'contract_id' => $rule->contract_id,
+                'document_type_id' => $rule->document_type_id,
+                'correspondent_id' => $rule->correspondent_id,
+                'name' => $rule->name,
+                'mailbox' => $rule->mailbox ?: 'INBOX',
+                'max_age_days' => $rule->max_age_days,
+                'from_contains' => $rule->from_contains,
+                'to_contains' => $rule->to_contains,
+                'subject_contains' => $rule->subject_contains,
+                'body_contains' => $rule->body_contains,
+                'attachment_name_contains' => $rule->attachment_name_contains,
+                'include_attachment_patterns' => $rule->include_attachment_patterns,
+                'exclude_attachment_patterns' => $rule->exclude_attachment_patterns,
+                'consume_scope' => $rule->consume_scope ?: 'attachments',
+                'attachment_type' => $rule->attachment_type ?: 'attachments',
+                'pdf_layout' => $rule->pdf_layout ?: 'system',
+                'post_action' => $rule->post_action ?: 'mark_read',
+                'title_source' => $rule->title_source ?: 'subject',
+                'assign_owner_from_rule' => $rule->assign_owner_from_rule,
+                'tag_ids' => collect($rule->tag_ids ?? [])->map(fn ($id) => (int) $id)->values(),
+                'consume_attachments' => $rule->consume_attachments,
+                'priority' => $rule->priority,
+                'is_active' => $rule->is_active,
+                'processed_messages_count' => $rule->processed_messages_count,
+                'processed_messages' => $rule->processedMessages()
+                    ->latest('processed_at')
+                    ->limit(30)
+                    ->get()
+                    ->map(fn (GedEmailProcessedMessage $message) => [
+                        'id' => $message->id,
+                        'subject' => $message->subject,
+                        'from' => $message->from,
+                        'received_at' => $message->received_at?->format('Y-m-d H:i:s'),
+                        'processed_at' => $message->processed_at?->format('Y-m-d H:i:s'),
+                        'status' => $message->status,
+                        'error' => $message->error,
+                        'attachments_count' => $message->attachments_count,
+                        'imported_count' => $message->imported_count,
+                        'duplicate_count' => $message->duplicate_count,
+                    ]),
+                'account' => $rule->account ? [
+                    'id' => $rule->account->id,
+                    'name' => $rule->account->name,
+                    'email' => $rule->account->email,
+                ] : null,
+                'contract' => $rule->contract ? [
+                    'id' => $rule->contract->id,
+                    'code' => $rule->contract->code,
+                    'name' => $rule->contract->name,
+                ] : null,
+                'type' => $rule->type ? [
+                    'id' => $rule->type->id,
+                    'name' => $rule->type->name,
+                ] : null,
+                'correspondent' => $rule->correspondent ? [
+                    'id' => $rule->correspondent->id,
+                    'name' => $rule->correspondent->name,
+                ] : null,
+            ]);
+
+        return Inertia::render('Tenant/Ged/Email', [
+            'tenant' => [
+                'id' => $tenant->id,
+                'name' => $tenant->name,
+                'slug' => $tenant->slug,
+            ],
+            'contracts' => $accessibleContracts,
+            'accounts' => $accounts,
+            'rules' => $rules,
+            'types' => GedDocumentType::query()
+                ->where('tenant_id', $tenant->id)
+                ->whereIn('contract_id', $accessibleContractIds)
+                ->orderBy('name')
+                ->get(['id', 'contract_id', 'name']),
+            'tags' => GedTag::query()
+                ->where('tenant_id', $tenant->id)
+                ->whereIn('contract_id', $accessibleContractIds)
+                ->orderBy('name')
+                ->get(['id', 'contract_id', 'name', 'color']),
+            'correspondents' => GedCorrespondent::query()
+                ->where('tenant_id', $tenant->id)
+                ->whereIn('contract_id', $accessibleContractIds)
+                ->orderBy('name')
+                ->get(['id', 'contract_id', 'name']),
+        ]);
+    }
+
+    public function storeEmailAccount(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+
+        $data = $request->validate([
+            'contract_id' => ['required', 'integer'],
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['nullable', 'string', 'max:180'],
+            'host' => ['required', 'string', 'max:180'],
+            'port' => ['required', 'integer', 'min:1', 'max:65535'],
+            'encryption' => ['required', 'in:none,ssl,tls,starttls'],
+            'username' => ['required', 'string', 'max:180'],
+            'password' => ['nullable', 'string', 'max:500'],
+            'mailbox' => ['required', 'string', 'max:120'],
+            'post_action' => ['required', 'in:none,mark_read,move,delete'],
+            'move_to' => ['nullable', 'string', 'max:120'],
+            'charset' => ['nullable', 'string', 'max:40'],
+            'password_is_token' => ['boolean'],
+            'is_active' => ['boolean'],
+        ]);
+
+        abort_unless($accessibleContractIds->contains((int) $data['contract_id']), 403);
+
+        $data['email'] = $data['email'] ?: $data['username'];
+
+        $settings = [
+            'charset' => $data['charset'] ?? 'UTF-8',
+            'password_is_token' => (bool) ($data['password_is_token'] ?? false),
+        ];
+
+        unset($data['charset'], $data['password_is_token']);
+
+        GedEmailAccount::create([
+            ...$data,
+            'tenant_id' => $tenant->id,
+            'settings' => $settings,
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ]);
+
+        return back()->with('success', 'Conta de e-mail cadastrada.');
+    }
+
+    public function updateEmailAccount(Request $request, Tenant $tenant, GedEmailAccount $account): RedirectResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $this->authorizeGedEmailAccount($account, $tenant, $accessibleContractIds);
+
+        $data = $request->validate([
+            'contract_id' => ['required', 'integer'],
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['nullable', 'string', 'max:180'],
+            'host' => ['required', 'string', 'max:180'],
+            'port' => ['required', 'integer', 'min:1', 'max:65535'],
+            'encryption' => ['required', 'in:none,ssl,tls,starttls'],
+            'username' => ['required', 'string', 'max:180'],
+            'password' => ['nullable', 'string', 'max:500'],
+            'mailbox' => ['required', 'string', 'max:120'],
+            'post_action' => ['required', 'in:none,mark_read,move,delete'],
+            'move_to' => ['nullable', 'string', 'max:120'],
+            'charset' => ['nullable', 'string', 'max:40'],
+            'password_is_token' => ['boolean'],
+            'is_active' => ['boolean'],
+        ]);
+
+        abort_unless($accessibleContractIds->contains((int) $data['contract_id']), 403);
+
+        $settings = [
+            'charset' => $data['charset'] ?? 'UTF-8',
+            'password_is_token' => (bool) ($data['password_is_token'] ?? false),
+        ];
+
+        $data['email'] = $data['email'] ?: $data['username'];
+
+        if (($data['password'] ?? '') === '') {
+            unset($data['password']);
+        }
+
+        unset($data['charset'], $data['password_is_token']);
+
+        $account->update([
+            ...$data,
+            'settings' => $settings,
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ]);
+
+        return back()->with('success', 'Conta de e-mail atualizada.');
+    }
+
+    public function destroyEmailAccount(Request $request, Tenant $tenant, GedEmailAccount $account): RedirectResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $this->authorizeGedEmailAccount($account, $tenant, $accessibleContractIds);
+
+        $account->delete();
+
+        return back()->with('success', 'Conta de e-mail removida.');
+    }
+
+    public function processEmailAccount(Request $request, Tenant $tenant, GedEmailAccount $account): RedirectResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $this->authorizeGedEmailAccount($account, $tenant, $accessibleContractIds);
+
+        $result = $this->processImapMessages($tenant, $account);
+
+        $account->forceFill([
+            'last_checked_at' => now(),
+            'last_error' => $result['ok'] ? null : trim(($result['message'] ?? '').' '.($result['detail'] ?? '')),
+        ])->save();
+
+        if (! $result['ok']) {
+            return back()->with('error', $result['message'] ?? 'Não foi possível processar a conta de e-mail.');
+        }
+
+        if (! empty($result['message'])) {
+            return back()->with('success', $result['message']);
+        }
+
+        if (array_key_exists('matched', $result)) {
+            return back()->with('success', sprintf(
+                'Processamento concluído: %d e-mail(s) lido(s), %d compatível(is) com as regras, %d anexo(s) encontrado(s), %d anexo(s) importado(s), %d duplicado(s) ignorado(s).',
+                $result['messages'] ?? 0,
+                $result['matched'] ?? 0,
+                $result['attachments'] ?? 0,
+                $result['imported'] ?? 0,
+                $result['duplicates'] ?? 0,
+            ));
+        }
+
+        return back()->with('success', sprintf(
+            'Processamento concluído: %d e-mail(s) lido(s), %d anexo(s) encontrado(s), %d anexo(s) importado(s), %d duplicado(s) ignorado(s).',
+            $result['messages'] ?? 0,
+            $result['attachments'] ?? 0,
+            $result['imported'] ?? 0,
+            $result['duplicates'] ?? 0,
+        ));
+    }
+
+    public function testEmailAccount(Request $request, Tenant $tenant): JsonResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+
+        $data = $request->validate([
+            'contract_id' => ['required', 'integer'],
+            'host' => ['required', 'string', 'max:180'],
+            'port' => ['required', 'integer', 'min:1', 'max:65535'],
+            'encryption' => ['required', 'in:none,ssl,tls,starttls'],
+            'username' => ['required', 'string', 'max:180'],
+            'password' => ['required', 'string', 'max:500'],
+        ]);
+
+        abort_unless($accessibleContractIds->contains((int) $data['contract_id']), 403);
+
+        $result = $this->testImapConnection(
+            host: $data['host'],
+            port: (int) $data['port'],
+            encryption: $data['encryption'],
+            username: $data['username'],
+            password: $data['password'],
+        );
+
+        return response()->json($result, $result['ok'] ? 200 : 422);
+    }
+
+    public function storeEmailRule(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+
+        $data = $request->validate([
+            'account_id' => ['required', 'integer', 'exists:ged_email_accounts,id'],
+            'contract_id' => ['required', 'integer'],
+            'name' => ['required', 'string', 'max:120'],
+            'mailbox' => ['nullable', 'string', 'max:120'],
+            'max_age_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
+            'from_contains' => ['nullable', 'string', 'max:180'],
+            'to_contains' => ['nullable', 'string', 'max:180'],
+            'subject_contains' => ['nullable', 'string', 'max:180'],
+            'body_contains' => ['nullable', 'string', 'max:180'],
+            'attachment_name_contains' => ['nullable', 'string', 'max:180'],
+            'include_attachment_patterns' => ['nullable', 'string', 'max:500'],
+            'exclude_attachment_patterns' => ['nullable', 'string', 'max:500'],
+            'consume_scope' => ['nullable', 'in:attachments,everything'],
+            'attachment_type' => ['nullable', 'in:attachments,originals'],
+            'pdf_layout' => ['nullable', 'in:system,none'],
+            'post_action' => ['nullable', 'in:none,mark_read,move,delete'],
+            'title_source' => ['nullable', 'in:subject,filename'],
+            'assign_owner_from_rule' => ['boolean'],
+            'document_type_id' => ['nullable', 'integer', 'exists:ged_document_types,id'],
+            'correspondent_id' => ['nullable', 'integer', 'exists:ged_correspondents,id'],
+            'tag_ids' => ['array'],
+            'tag_ids.*' => ['integer', 'exists:ged_tags,id'],
+            'consume_attachments' => ['boolean'],
+            'priority' => ['nullable', 'integer', 'min:1', 'max:999'],
+            'is_active' => ['boolean'],
+        ]);
+
+        abort_unless($accessibleContractIds->contains((int) $data['contract_id']), 403);
+
+        $account = GedEmailAccount::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $accessibleContractIds)
+            ->findOrFail($data['account_id']);
+
+        abort_unless((int) $account->contract_id === (int) $data['contract_id'], 422);
+
+        $this->assertGedReferenceBelongsToContract(GedDocumentType::class, $data['document_type_id'] ?? null, $tenant, (int) $data['contract_id']);
+        $this->assertGedReferenceBelongsToContract(GedCorrespondent::class, $data['correspondent_id'] ?? null, $tenant, (int) $data['contract_id']);
+
+        $tagIds = collect($data['tag_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($tagIds->isNotEmpty()) {
+            $validTagCount = GedTag::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('contract_id', $data['contract_id'])
+                ->whereIn('id', $tagIds)
+                ->count();
+
+            abort_unless($validTagCount === $tagIds->count(), 422);
+        }
+
+        GedEmailRule::create([
+            ...$data,
+            'tenant_id' => $tenant->id,
+            'account_id' => $account->id,
+            'mailbox' => $data['mailbox'] ?: 'INBOX',
+            'tag_ids' => $tagIds->all(),
+            'consume_attachments' => (bool) ($data['consume_attachments'] ?? true),
+            'consume_scope' => $data['consume_scope'] ?? 'attachments',
+            'attachment_type' => $data['attachment_type'] ?? 'attachments',
+            'pdf_layout' => $data['pdf_layout'] ?? 'system',
+            'post_action' => $data['post_action'] ?? 'mark_read',
+            'title_source' => $data['title_source'] ?? 'subject',
+            'assign_owner_from_rule' => (bool) ($data['assign_owner_from_rule'] ?? false),
+            'priority' => (int) ($data['priority'] ?? 10),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ]);
+
+        return back()->with('success', 'Regra de e-mail cadastrada.');
+    }
+
+    public function updateEmailRule(Request $request, Tenant $tenant, GedEmailRule $rule): RedirectResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $this->authorizeGedEmailRule($rule, $tenant, $accessibleContractIds);
+
+        $data = $this->validateEmailRulePayload($request, $tenant, $accessibleContractIds);
+
+        $rule->update($data);
+
+        return back()->with('success', 'Regra de e-mail atualizada.');
+    }
+
+    public function destroyEmailRule(Request $request, Tenant $tenant, GedEmailRule $rule): RedirectResponse
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $this->authorizeGedEmailRule($rule, $tenant, $accessibleContractIds);
+
+        $rule->delete();
+
+        return back()->with('success', 'Regra de e-mail removida.');
+    }
+
+    private function authorizeGedEmailAccount(GedEmailAccount $account, Tenant $tenant, $accessibleContractIds): void
+    {
+        abort_unless((int) $account->tenant_id === (int) $tenant->id, 404);
+        abort_unless($accessibleContractIds->contains((int) $account->contract_id), 403);
+    }
+
+    private function authorizeGedEmailRule(GedEmailRule $rule, Tenant $tenant, $accessibleContractIds): void
+    {
+        abort_unless((int) $rule->tenant_id === (int) $tenant->id, 404);
+        abort_unless($accessibleContractIds->contains((int) $rule->contract_id), 403);
+    }
+
+    private function validateEmailRulePayload(Request $request, Tenant $tenant, $accessibleContractIds): array
+    {
+        $data = $request->validate([
+            'account_id' => ['required', 'integer', 'exists:ged_email_accounts,id'],
+            'contract_id' => ['required', 'integer'],
+            'name' => ['required', 'string', 'max:120'],
+            'mailbox' => ['nullable', 'string', 'max:120'],
+            'max_age_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
+            'from_contains' => ['nullable', 'string', 'max:180'],
+            'to_contains' => ['nullable', 'string', 'max:180'],
+            'subject_contains' => ['nullable', 'string', 'max:180'],
+            'body_contains' => ['nullable', 'string', 'max:180'],
+            'attachment_name_contains' => ['nullable', 'string', 'max:180'],
+            'include_attachment_patterns' => ['nullable', 'string', 'max:500'],
+            'exclude_attachment_patterns' => ['nullable', 'string', 'max:500'],
+            'consume_scope' => ['nullable', 'in:attachments,everything'],
+            'attachment_type' => ['nullable', 'in:attachments,originals'],
+            'pdf_layout' => ['nullable', 'in:system,none'],
+            'post_action' => ['nullable', 'in:none,mark_read,move,delete'],
+            'title_source' => ['nullable', 'in:subject,filename'],
+            'assign_owner_from_rule' => ['boolean'],
+            'document_type_id' => ['nullable', 'integer', 'exists:ged_document_types,id'],
+            'correspondent_id' => ['nullable', 'integer', 'exists:ged_correspondents,id'],
+            'tag_ids' => ['array'],
+            'tag_ids.*' => ['integer', 'exists:ged_tags,id'],
+            'consume_attachments' => ['boolean'],
+            'priority' => ['nullable', 'integer', 'min:1', 'max:999'],
+            'is_active' => ['boolean'],
+        ]);
+
+        abort_unless($accessibleContractIds->contains((int) $data['contract_id']), 403);
+
+        $account = GedEmailAccount::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $accessibleContractIds)
+            ->findOrFail($data['account_id']);
+
+        abort_unless((int) $account->contract_id === (int) $data['contract_id'], 422);
+
+        $this->assertGedReferenceBelongsToContract(GedDocumentType::class, $data['document_type_id'] ?? null, $tenant, (int) $data['contract_id']);
+        $this->assertGedReferenceBelongsToContract(GedCorrespondent::class, $data['correspondent_id'] ?? null, $tenant, (int) $data['contract_id']);
+
+        $tagIds = collect($data['tag_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($tagIds->isNotEmpty()) {
+            $validTagCount = GedTag::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('contract_id', $data['contract_id'])
+                ->whereIn('id', $tagIds)
+                ->count();
+
+            abort_unless($validTagCount === $tagIds->count(), 422);
+        }
+
+        return [
+            ...$data,
+            'account_id' => $account->id,
+            'mailbox' => $data['mailbox'] ?: 'INBOX',
+            'tag_ids' => $tagIds->all(),
+            'consume_attachments' => (bool) ($data['consume_attachments'] ?? true),
+            'consume_scope' => $data['consume_scope'] ?? 'attachments',
+            'attachment_type' => $data['attachment_type'] ?? 'attachments',
+            'pdf_layout' => $data['pdf_layout'] ?? 'system',
+            'post_action' => $data['post_action'] ?? 'mark_read',
+            'title_source' => $data['title_source'] ?? 'subject',
+            'assign_owner_from_rule' => (bool) ($data['assign_owner_from_rule'] ?? false),
+            'priority' => (int) ($data['priority'] ?? 10),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
     }
 
     public function details(Tenant $tenant, GedDocument $document): Response
@@ -582,7 +1074,7 @@ class GedController extends Controller
                         'timeout_seconds' => (int) config('ged.ocr.timeout', 300),
                         'message' => config('ged.ocr.enabled', true)
                             ? 'Documento enviado para fila de OCR.'
-                            : 'OCR automÃ¡tico desativado.',
+                            : 'OCR automático desativado.',
                     ],
                     'paperless_reference' => [
                         'concepts' => ['document', 'checksum', 'tags', 'correspondent', 'document_type'],
@@ -600,7 +1092,7 @@ class GedController extends Controller
                 'checksum' => $checksum,
                 'storage_disk' => $storageDisk,
                 'path' => $path,
-                'notes' => 'VersÃ£o inicial enviada pelo GED.',
+                'notes' => 'Versão inicial enviada pelo GED.',
             ]);
 
             if ($tagIds->isNotEmpty()) {
@@ -1329,6 +1821,943 @@ class GedController extends Controller
             ->replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '-')
             ->squish()
             ->toString();
+    }
+
+    private function accessibleGedContracts(Request $request, Tenant $tenant)
+    {
+        $user = $request->user();
+        $tenantRole = $user?->tenantRole($tenant);
+        $canSeeAllContracts = $user?->is_platform_admin || in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true);
+
+        return Contract::query()
+            ->where('tenant_id', $tenant->id)
+            ->when(! $canSeeAllContracts, function ($query) use ($user): void {
+                $query->whereHas('participants', function ($query) use ($user): void {
+                    $query->where('user_id', $user->id)->where('status', 'active');
+                });
+            })
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
+    }
+
+    private function assertGedReferenceBelongsToContract(string $modelClass, mixed $id, Tenant $tenant, int $contractId): void
+    {
+        if (! $id) {
+            return;
+        }
+
+        abort_unless(
+            $modelClass::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('contract_id', $contractId)
+                ->whereKey($id)
+                ->exists(),
+            422
+        );
+    }
+
+    private function processImapMessages(Tenant $tenant, GedEmailAccount $account): array
+    {
+        $rules = GedEmailRule::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('account_id', $account->id)
+            ->where('contract_id', $account->contract_id)
+            ->where('is_active', true)
+            ->orderBy('priority')
+            ->orderBy('name')
+            ->get();
+
+        if ($rules->isEmpty()) {
+            return [
+                'ok' => true,
+                'messages' => 0,
+                'imported' => 0,
+                'duplicates' => 0,
+                'message' => 'Nenhuma regra ativa para esta conta.',
+            ];
+        }
+
+        $connection = $this->openImapConnection($account);
+        if (! ($connection['ok'] ?? false)) {
+            return $connection;
+        }
+
+        $stream = $connection['stream'];
+        $stats = [
+            'ok' => true,
+            'messages' => 0,
+            'matched' => 0,
+            'attachments' => 0,
+            'imported' => 0,
+            'duplicates' => 0,
+            'errors' => 0,
+        ];
+
+        try {
+            $select = $this->imapCommand($stream, 'SELECT '.$this->imapQuoted($account->mailbox ?: 'INBOX'));
+            if (! $select['ok']) {
+                throw new \RuntimeException('Não foi possível abrir a pasta IMAP. '.$select['response']);
+            }
+
+            $ids = $rules
+                ->flatMap(fn (GedEmailRule $rule) => $this->imapSearchIds($stream, $this->imapSearchCriteriaForRule($rule)))
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+
+            if ($ids === []) {
+                $ids = array_slice($this->imapSearchIds($stream, 'UNSEEN'), -100);
+            }
+
+            $ids = array_slice(array_reverse($ids), 0, 100);
+
+            foreach ($ids as $messageId) {
+                $raw = $this->imapFetchRawMessage($stream, $messageId);
+                if (! $raw) {
+                    $stats['errors']++;
+                    continue;
+                }
+
+                $stats['messages']++;
+                $parsed = $this->parseRawEmailMessage($raw);
+                $attachmentNames = collect($parsed['attachments'])->pluck('filename')->filter()->values()->all();
+                $stats['attachments'] += count($parsed['attachments']);
+                $matchedRules = $rules->filter(fn (GedEmailRule $rule) => $this->emailRuleMatches($rule, $parsed, $attachmentNames));
+
+                if ($matchedRules->isEmpty()) {
+                    continue;
+                }
+
+                $stats['matched']++;
+
+                foreach ($matchedRules as $rule) {
+                    $ruleImported = 0;
+                    $ruleDuplicates = 0;
+                    $ruleErrors = 0;
+                    $lastDocumentId = null;
+
+                    if (! $rule->consume_attachments) {
+                        $this->recordProcessedEmail($tenant, $account, $rule, $messageId, $parsed, [
+                            'status' => 'success',
+                            'attachments_count' => count($parsed['attachments']),
+                            'imported_count' => 0,
+                            'duplicate_count' => 0,
+                            'error' => 'Regra processada sem importar anexos.',
+                        ]);
+
+                        continue;
+                    }
+
+                    foreach ($parsed['attachments'] as $attachment) {
+                        if (! $this->emailAttachmentMatchesRule($rule, $attachment['filename'] ?? '')) {
+                            continue;
+                        }
+
+                        $created = $this->createGedDocumentFromEmailAttachment($tenant, $account, $rule, $parsed, $attachment);
+
+                        if ($created === 'duplicate') {
+                            $stats['duplicates']++;
+                            $ruleDuplicates++;
+                        } elseif ($created instanceof GedDocument) {
+                            $stats['imported']++;
+                            $ruleImported++;
+                            $lastDocumentId = $created->id;
+                        } else {
+                            $stats['errors']++;
+                            $ruleErrors++;
+                        }
+                    }
+
+                    $this->recordProcessedEmail($tenant, $account, $rule, $messageId, $parsed, [
+                        'document_id' => $lastDocumentId,
+                        'status' => $ruleErrors > 0 ? 'error' : 'success',
+                        'attachments_count' => count($parsed['attachments']),
+                        'imported_count' => $ruleImported,
+                        'duplicate_count' => $ruleDuplicates,
+                        'error' => $ruleErrors > 0
+                            ? 'Alguns anexos não puderam ser importados.'
+                            : ($ruleImported === 0 && $ruleDuplicates === 0 ? 'E-mail processado, mas nenhum anexo foi importado.' : null),
+                    ]);
+                }
+
+                $this->applyEmailPostAction($stream, $messageId, $account, $matchedRules->first());
+            }
+
+            $this->imapCommand($stream, 'LOGOUT');
+        } catch (\Throwable $exception) {
+            if (is_resource($stream)) {
+                @fwrite($stream, $this->imapTag()." LOGOUT\r\n");
+                @fclose($stream);
+            }
+
+            return [
+                'ok' => false,
+                'message' => 'Falha ao processar e-mails: '.$exception->getMessage(),
+            ];
+        }
+
+        if (is_resource($stream)) {
+            @fclose($stream);
+        }
+
+        return $stats;
+    }
+
+    private function imapSearchCriteriaForRule(GedEmailRule $rule): string
+    {
+        if ($rule->max_age_days) {
+            return 'SINCE '.CarbonImmutable::now()->subDays((int) $rule->max_age_days)->format('d-M-Y');
+        }
+
+        return 'UNSEEN';
+    }
+
+    private function openImapConnection(GedEmailAccount $account): array
+    {
+        $timeout = 15;
+        $scheme = match ($account->encryption) {
+            'ssl' => 'ssl',
+            'tls' => 'tls',
+            default => 'tcp',
+        };
+
+        $target = "{$scheme}://{$account->host}:{$account->port}";
+        $context = stream_context_create([
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true,
+                'allow_self_signed' => false,
+                'SNI_enabled' => true,
+                'peer_name' => $account->host,
+            ],
+        ]);
+
+        $errno = 0;
+        $errstr = '';
+        $stream = @stream_socket_client($target, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
+
+        if (! is_resource($stream)) {
+            return [
+                'ok' => false,
+                'message' => "Não foi possível conectar em {$account->host}:{$account->port}. {$errstr}",
+            ];
+        }
+
+        stream_set_timeout($stream, $timeout);
+
+        $greeting = $this->readImapResponse($stream, null);
+        if ($greeting === '' || ! str_contains($greeting, '* OK')) {
+            fclose($stream);
+
+            return [
+                'ok' => false,
+                'message' => 'O servidor respondeu, mas não retornou saudação IMAP válida.',
+                'detail' => trim($greeting),
+            ];
+        }
+
+        if ($account->encryption === 'starttls') {
+            $startTls = $this->imapCommand($stream, 'STARTTLS');
+            if (! $startTls['ok']) {
+                fclose($stream);
+
+                return [
+                    'ok' => false,
+                    'message' => 'O servidor não aceitou STARTTLS.',
+                    'detail' => trim($startTls['response']),
+                ];
+            }
+
+            if (@stream_socket_enable_crypto($stream, true, STREAM_CRYPTO_METHOD_TLS_CLIENT) !== true) {
+                fclose($stream);
+
+                return [
+                    'ok' => false,
+                    'message' => 'Não foi possível iniciar criptografia STARTTLS.',
+                ];
+            }
+        }
+
+        $login = $this->imapCommand($stream, 'LOGIN '.$this->imapQuoted($account->username).' '.$this->imapQuoted($account->password ?? ''));
+        if (! $login['ok']) {
+            fclose($stream);
+
+            return [
+                'ok' => false,
+                'message' => 'Conectou no servidor, mas o login IMAP não foi aceito.',
+                'detail' => trim($login['response']),
+            ];
+        }
+
+        return ['ok' => true, 'stream' => $stream];
+    }
+
+    private function imapCommand($stream, string $command): array
+    {
+        $tag = $this->imapTag();
+        fwrite($stream, "{$tag} {$command}\r\n");
+        $response = $this->readImapResponse($stream, $tag);
+
+        return [
+            'ok' => str_contains($response, "{$tag} OK"),
+            'response' => $response,
+            'tag' => $tag,
+        ];
+    }
+
+    private function imapSearchIds($stream, string $criteria): array
+    {
+        $result = $this->imapCommand($stream, 'SEARCH '.$criteria);
+        if (! $result['ok']) {
+            return [];
+        }
+
+        if (! preg_match('/^\* SEARCH\s*(.*)$/m', $result['response'], $matches)) {
+            return [];
+        }
+
+        return collect(preg_split('/\s+/', trim($matches[1])) ?: [])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function imapFetchRawMessage($stream, int $messageId): ?string
+    {
+        $tag = $this->imapTag();
+        fwrite($stream, "{$tag} FETCH {$messageId} RFC822\r\n");
+
+        $payload = '';
+        $startedAt = microtime(true);
+
+        while (! feof($stream) && microtime(true) - $startedAt < 30) {
+            $line = fgets($stream, 4096);
+            if ($line === false) {
+                break;
+            }
+
+            if (preg_match('/\{(\d+)\}\r?\n$/', $line, $matches)) {
+                $remaining = (int) $matches[1];
+                while ($remaining > 0 && ! feof($stream)) {
+                    $chunk = fread($stream, min(8192, $remaining));
+                    if ($chunk === false || $chunk === '') {
+                        break;
+                    }
+                    $payload .= $chunk;
+                    $remaining -= strlen($chunk);
+                }
+                continue;
+            }
+
+            if (str_starts_with($line, $tag.' ')) {
+                break;
+            }
+        }
+
+        return $payload !== '' ? $payload : null;
+    }
+
+    private function imapQuoted(string $value): string
+    {
+        return '"'.$this->quoteImapString($value).'"';
+    }
+
+    private function applyEmailPostAction($stream, int $messageId, GedEmailAccount $account, ?GedEmailRule $rule = null): void
+    {
+        $action = $rule?->post_action ?: $account->post_action;
+
+        match ($action) {
+            'mark_read' => $this->imapCommand($stream, "STORE {$messageId} +FLAGS (\\Seen)"),
+            'delete' => $this->imapCommand($stream, "STORE {$messageId} +FLAGS (\\Deleted)"),
+            'move' => $account->move_to
+                ? $this->imapCommand($stream, "COPY {$messageId} ".$this->imapQuoted($account->move_to))
+                : null,
+            default => null,
+        };
+    }
+
+    private function parseRawEmailMessage(string $raw): array
+    {
+        [$headerText, $body] = preg_split("/\r\n\r\n|\n\n/", $raw, 2) + ['', ''];
+        $headers = $this->parseMimeHeaders($headerText);
+        $parsed = $this->parseMimePart($headers, $body);
+
+        return [
+            'subject' => $this->decodeMimeHeader($headers['subject'][0] ?? ''),
+            'from' => $this->decodeMimeHeader($headers['from'][0] ?? ''),
+            'to' => $this->decodeMimeHeader($headers['to'][0] ?? ''),
+            'message_id' => trim($headers['message-id'][0] ?? ''),
+            'date' => $headers['date'][0] ?? null,
+            'text' => trim($parsed['text'] ?? ''),
+            'html' => trim($parsed['html'] ?? ''),
+            'attachments' => $parsed['attachments'] ?? [],
+        ];
+    }
+
+    private function parseMimePart(array $headers, string $body): array
+    {
+        [$contentType, $typeParams] = $this->parseHeaderValueWithParams($headers['content-type'][0] ?? 'text/plain');
+        [$disposition, $dispositionParams] = $this->parseHeaderValueWithParams($headers['content-disposition'][0] ?? '');
+        $encoding = strtolower(trim($headers['content-transfer-encoding'][0] ?? ''));
+        $result = ['text' => '', 'html' => '', 'attachments' => []];
+
+        if (str_starts_with($contentType, 'multipart/') && ! empty($typeParams['boundary'])) {
+            foreach ($this->splitMimeMultipartBody($body, $typeParams['boundary']) as $part) {
+                [$partHeadersText, $partBody] = preg_split("/\r\n\r\n|\n\n/", $part, 2) + ['', ''];
+                $child = $this->parseMimePart($this->parseMimeHeaders($partHeadersText), $partBody);
+                $result['text'] .= ($child['text'] ?? '');
+                $result['html'] .= ($child['html'] ?? '');
+                $result['attachments'] = array_merge($result['attachments'], $child['attachments'] ?? []);
+            }
+
+            return $result;
+        }
+
+        $decodedBody = $this->decodeMimeBody($body, $encoding);
+        $filename = $this->decodeMimeHeader($dispositionParams['filename'] ?? $typeParams['name'] ?? $dispositionParams['filename*'] ?? $typeParams['name*'] ?? '');
+        $isAttachment = $disposition === 'attachment' || $filename !== '';
+
+        if ($isAttachment) {
+            $result['attachments'][] = [
+                'filename' => $filename ?: 'anexo-'.Str::random(8),
+                'content_type' => $contentType ?: 'application/octet-stream',
+                'content' => $decodedBody,
+            ];
+
+            return $result;
+        }
+
+        if ($contentType === 'text/html') {
+            $result['html'] = $decodedBody;
+        } else {
+            $result['text'] = $decodedBody;
+        }
+
+        return $result;
+    }
+
+    private function parseMimeHeaders(string $headerText): array
+    {
+        $headers = [];
+        $current = null;
+
+        foreach (preg_split('/\r\n|\n|\r/', $headerText) ?: [] as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^\s+/', $line) && $current) {
+                $headers[$current][array_key_last($headers[$current])] .= ' '.trim($line);
+                continue;
+            }
+
+            if (! str_contains($line, ':')) {
+                continue;
+            }
+
+            [$name, $value] = explode(':', $line, 2);
+            $current = strtolower(trim($name));
+            $headers[$current] ??= [];
+            $headers[$current][] = trim($value);
+        }
+
+        return $headers;
+    }
+
+    private function parseHeaderValueWithParams(string $value): array
+    {
+        $parts = str_getcsv($value, ';', '"', '\\');
+        $main = strtolower(trim(array_shift($parts) ?: ''));
+        $params = [];
+        $continuations = [];
+
+        foreach ($parts as $part) {
+            if (! str_contains($part, '=')) {
+                continue;
+            }
+
+            [$key, $paramValue] = explode('=', $part, 2);
+            $key = strtolower(trim($key));
+            $paramValue = trim($paramValue, " \t\n\r\0\x0B\"");
+
+            if (preg_match('/^(.+)\*(\d+)(\*)?$/', $key, $matches)) {
+                $continuations[$matches[1]][(int) $matches[2]] = [
+                    'value' => $paramValue,
+                    'encoded' => ($matches[3] ?? '') === '*',
+                ];
+                continue;
+            }
+
+            $params[$key] = $this->decodeMimeParameterValue($paramValue, str_ends_with($key, '*'));
+        }
+
+        foreach ($continuations as $key => $chunks) {
+            ksort($chunks);
+            $combined = '';
+            $encoded = false;
+
+            foreach ($chunks as $chunk) {
+                $combined .= $chunk['value'];
+                $encoded = $encoded || $chunk['encoded'];
+            }
+
+            $params[$key] = $this->decodeMimeParameterValue($combined, $encoded);
+        }
+
+        return [$main, $params];
+    }
+
+    private function decodeMimeParameterValue(string $value, bool $encoded): string
+    {
+        if ($encoded && str_contains($value, "''")) {
+            [, $value] = explode("''", $value, 2);
+        }
+
+        return $encoded ? rawurldecode($value) : $value;
+    }
+
+    private function splitMimeMultipartBody(string $body, string $boundary): array
+    {
+        $delimiter = '--'.$boundary;
+        $parts = [];
+
+        foreach (explode($delimiter, $body) as $part) {
+            $part = trim($part, "\r\n");
+            if ($part === '' || $part === '--') {
+                continue;
+            }
+
+            $part = preg_replace('/\r?\n--$/', '', $part) ?? $part;
+            $parts[] = $part;
+        }
+
+        return $parts;
+    }
+
+    private function decodeMimeBody(string $body, string $encoding): string
+    {
+        return match ($encoding) {
+            'base64' => base64_decode(preg_replace('/\s+/', '', $body) ?? '', true) ?: '',
+            'quoted-printable' => quoted_printable_decode($body),
+            default => $body,
+        };
+    }
+
+    private function decodeMimeHeader(string $value): string
+    {
+        if ($value === '') {
+            return '';
+        }
+
+        $decoded = @iconv_mime_decode($value, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, 'UTF-8');
+
+        return trim($decoded ?: $value);
+    }
+
+    private function emailRuleMatches(GedEmailRule $rule, array $email, array $attachmentNames): bool
+    {
+        $checks = [
+            [$rule->from_contains, $email['from'] ?? ''],
+            [$rule->to_contains, $email['to'] ?? ''],
+            [$rule->subject_contains, $email['subject'] ?? ''],
+            [$rule->body_contains, trim(($email['text'] ?? '').' '.strip_tags($email['html'] ?? ''))],
+        ];
+
+        foreach ($checks as [$needle, $haystack]) {
+            if ($needle && ! Str::contains(Str::lower($haystack), Str::lower($needle))) {
+                return false;
+            }
+        }
+
+        if ($rule->max_age_days && ! empty($email['date'])) {
+            try {
+                if (CarbonImmutable::parse($email['date'])->lt(now()->subDays((int) $rule->max_age_days))) {
+                    return false;
+                }
+            } catch (\Throwable) {
+                //
+            }
+        }
+
+        if ($rule->attachment_name_contains) {
+            return collect($attachmentNames)->contains(fn (string $filename) => Str::contains(Str::lower($filename), Str::lower($rule->attachment_name_contains)));
+        }
+
+        return true;
+    }
+
+    private function emailAttachmentMatchesRule(GedEmailRule $rule, string $filename): bool
+    {
+        if ($rule->attachment_name_contains && ! Str::contains(Str::lower($filename), Str::lower($rule->attachment_name_contains))) {
+            return false;
+        }
+
+        if ($rule->include_attachment_patterns && ! $this->emailFilenameMatchesAnyPattern($filename, $rule->include_attachment_patterns)) {
+            return false;
+        }
+
+        if ($rule->exclude_attachment_patterns && $this->emailFilenameMatchesAnyPattern($filename, $rule->exclude_attachment_patterns)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function emailFilenameMatchesAnyPattern(string $filename, string $patterns): bool
+    {
+        $filename = Str::lower($filename);
+
+        return collect(explode(',', $patterns))
+            ->map(fn (string $pattern) => trim($pattern))
+            ->filter()
+            ->contains(function (string $pattern) use ($filename): bool {
+                $pattern = Str::lower($pattern);
+
+                if (str_contains($pattern, '*')) {
+                    $regex = '/^'.str_replace('\*', '.*', preg_quote($pattern, '/')).'$/i';
+
+                    return (bool) preg_match($regex, $filename);
+                }
+
+                return Str::contains($filename, $pattern);
+            });
+    }
+
+    private function recordProcessedEmail(Tenant $tenant, GedEmailAccount $account, GedEmailRule $rule, int $messageUid, array $email, array $data = []): void
+    {
+        $receivedAt = null;
+
+        if (! empty($email['date'])) {
+            try {
+                $receivedAt = CarbonImmutable::parse($email['date']);
+            } catch (\Throwable) {
+                $receivedAt = null;
+            }
+        }
+
+        GedEmailProcessedMessage::create([
+            'tenant_id' => $tenant->id,
+            'account_id' => $account->id,
+            'rule_id' => $rule->id,
+            'document_id' => $data['document_id'] ?? null,
+            'message_uid' => (string) $messageUid,
+            'message_id' => $email['message_id'] ?? null,
+            'subject' => Str::limit((string) ($email['subject'] ?? 'Sem assunto'), 250, ''),
+            'from' => Str::limit((string) ($email['from'] ?? ''), 250, ''),
+            'received_at' => $receivedAt,
+            'processed_at' => now(),
+            'status' => $data['status'] ?? 'success',
+            'error' => $data['error'] ?? null,
+            'attachments_count' => (int) ($data['attachments_count'] ?? 0),
+            'imported_count' => (int) ($data['imported_count'] ?? 0),
+            'duplicate_count' => (int) ($data['duplicate_count'] ?? 0),
+            'metadata' => [
+                'to' => $email['to'] ?? null,
+                'attachment_names' => collect($email['attachments'] ?? [])->pluck('filename')->filter()->values()->all(),
+            ],
+        ]);
+    }
+
+    private function createGedDocumentFromEmailAttachment(Tenant $tenant, GedEmailAccount $account, GedEmailRule $rule, array $email, array $attachment): GedDocument|string|null
+    {
+        $content = $attachment['content'] ?? '';
+        if ($content === '' || strlen($content) > 50 * 1024 * 1024) {
+            return null;
+        }
+
+        $checksum = hash('sha256', $content);
+        $duplicate = GedDocument::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('checksum', $checksum)
+            ->first();
+
+        $originalFilename = $this->safeGedFilename($attachment['filename'] ?? 'anexo');
+        $extension = strtolower(pathinfo($originalFilename, PATHINFO_EXTENSION));
+        $mimeType = $attachment['content_type'] ?? null;
+
+        if (! $mimeType && function_exists('finfo_buffer')) {
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($content) ?: null;
+        }
+
+        $directory = 'ged/'.$tenant->id.'/'.now()->format('Y/m');
+        $filename = Str::uuid().($extension ? ".{$extension}" : '');
+        $storageDisk = (string) config('ged.document_disk', 'public');
+        $path = $directory.'/'.$filename;
+        Storage::disk($storageDisk)->put($path, $content);
+
+        $tempPath = tempnam(sys_get_temp_dir(), 'ged-email-');
+        if ($tempPath) {
+            file_put_contents($tempPath, $content);
+        }
+
+        try {
+            $sequence = $this->nextGedDocumentSequence($tenant, now()->toDateString());
+            $tagIds = collect($rule->tag_ids ?? [])->map(fn ($id) => (int) $id)->filter()->unique()->values();
+            $documentTitle = $rule->title_source === 'filename'
+                ? (pathinfo($originalFilename, PATHINFO_FILENAME) ?: ($email['subject'] ?: 'Documento recebido por e-mail'))
+                : (($email['subject'] ?? '') ?: pathinfo($originalFilename, PATHINFO_FILENAME) ?: 'Documento recebido por e-mail');
+
+            $document = DB::transaction(function () use ($tenant, $account, $rule, $email, $content, $checksum, $duplicate, $originalFilename, $extension, $mimeType, $storageDisk, $path, $sequence, $tagIds, $tempPath, $documentTitle) {
+                $document = GedDocument::create([
+                    'tenant_id' => $tenant->id,
+                    'contract_id' => $account->contract_id,
+                    'obra_id' => null,
+                    'document_type_id' => $rule->document_type_id,
+                    'correspondent_id' => $rule->correspondent_id,
+                    'uploaded_by_id' => auth()->id(),
+                    'title' => Str::limit($documentTitle, 180, ''),
+                    'document_number' => $sequence['document_number'],
+                    'sequence_year' => $sequence['sequence_year'],
+                    'sequence_number' => $sequence['sequence_number'],
+                    'document_date' => now()->toDateString(),
+                    'status' => config('ged.ocr.enabled', true) ? 'processing' : 'uploaded',
+                    'description' => trim('Importado do e-mail '.$account->email.'. Assunto: '.($email['subject'] ?? '')),
+                    'original_filename' => $originalFilename,
+                    'mime_type' => $mimeType,
+                    'extension' => $extension,
+                    'size_bytes' => strlen($content),
+                    'checksum' => $checksum,
+                    'storage_disk' => $storageDisk,
+                    'original_path' => $path,
+                    'metadata' => [
+                        'source' => 'email_import',
+                        'original_md5' => md5($content),
+                        'original_file_metadata' => $tempPath ? $this->extractOriginalDocumentMetadata($tempPath, $mimeType, $extension) : [],
+                        'duplicate_of_id' => $duplicate?->id,
+                        'email' => [
+                            'account_id' => $account->id,
+                            'rule_id' => $rule->id,
+                            'from' => $email['from'] ?? null,
+                            'subject' => $email['subject'] ?? null,
+                            'message_id' => $email['message_id'] ?? null,
+                        ],
+                        'ocr' => [
+                            'status' => config('ged.ocr.enabled', true) ? 'queued' : 'disabled',
+                            'queued_at' => config('ged.ocr.enabled', true) ? now()->toDateTimeString() : null,
+                            'engine' => 'ocrmypdf',
+                            'queue' => (string) config('ged.ocr.queue', 'ged'),
+                            'timeout_seconds' => (int) config('ged.ocr.timeout', 300),
+                            'message' => config('ged.ocr.enabled', true)
+                                ? 'Documento importado por e-mail e enviado para fila de OCR.'
+                                : 'OCR automático desativado.',
+                        ],
+                    ],
+                ]);
+
+                GedDocumentVersion::create([
+                    'document_id' => $document->id,
+                    'uploaded_by_id' => auth()->id(),
+                    'version_number' => 1,
+                    'original_filename' => $originalFilename,
+                    'mime_type' => $mimeType,
+                    'size_bytes' => strlen($content),
+                    'checksum' => $checksum,
+                    'storage_disk' => $storageDisk,
+                    'path' => $path,
+                    'notes' => 'Versão inicial importada por e-mail.',
+                ]);
+
+                if ($tagIds->isNotEmpty()) {
+                    $document->tags()->sync($tagIds);
+                }
+
+                $this->logGedEvent(
+                    $document,
+                    'document.created',
+                    'Documento importado por e-mail',
+                    'Anexo recebido por e-mail e importado para o GED.',
+                    [
+                        'account_id' => $account->id,
+                        'rule_id' => $rule->id,
+                        'original_filename' => $originalFilename,
+                        'size_bytes' => strlen($content),
+                        'checksum' => $checksum,
+                        'duplicate_of_id' => $duplicate?->id,
+                        'tag_ids' => $tagIds->all(),
+                    ],
+                );
+
+                if (config('ged.ocr.enabled', true)) {
+                    $this->logGedEvent(
+                        $document,
+                        'ocr.queued',
+                        'OCR colocado na fila',
+                        'Documento importado por e-mail e enviado automaticamente para processamento OCR.',
+                        ['engine' => 'ocrmypdf'],
+                    );
+                }
+
+                return $document;
+            });
+        } finally {
+            if ($tempPath && file_exists($tempPath)) {
+                @unlink($tempPath);
+            }
+        }
+
+        if (config('ged.ocr.enabled', true)) {
+            $this->dispatchOcrJob($document);
+        }
+
+        return $document;
+    }
+
+    private function safeGedFilename(string $filename): string
+    {
+        $filename = trim($this->decodeMimeHeader($filename));
+        $filename = basename(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $filename));
+        $filename = Str::of($filename ?: 'anexo')
+            ->replace([':', '*', '?', '"', '<', '>', '|'], '-')
+            ->squish()
+            ->toString();
+
+        return $filename ?: 'anexo';
+    }
+
+    private function testImapConnection(string $host, int $port, string $encryption, string $username, string $password): array
+    {
+        $timeout = 12;
+        $scheme = match ($encryption) {
+            'ssl' => 'ssl',
+            'tls' => 'tls',
+            default => 'tcp',
+        };
+
+        $target = "{$scheme}://{$host}:{$port}";
+        $context = stream_context_create([
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true,
+                'allow_self_signed' => false,
+                'SNI_enabled' => true,
+                'peer_name' => $host,
+            ],
+        ]);
+
+        $errno = 0;
+        $errstr = '';
+        $stream = @stream_socket_client($target, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
+
+        if (! is_resource($stream)) {
+            return [
+                'ok' => false,
+                'message' => "Não foi possível conectar em {$host}:{$port}. {$errstr}",
+            ];
+        }
+
+        stream_set_timeout($stream, $timeout);
+
+        $greeting = $this->readImapResponse($stream, null);
+        if ($greeting === '' || ! str_contains($greeting, '* OK')) {
+            fclose($stream);
+
+            return [
+                'ok' => false,
+                'message' => 'O servidor respondeu, mas não retornou saudação IMAP válida.',
+                'detail' => trim($greeting),
+            ];
+        }
+
+        if ($encryption === 'starttls') {
+            $tag = $this->imapTag();
+            fwrite($stream, "{$tag} STARTTLS\r\n");
+            $startTlsResponse = $this->readImapResponse($stream, $tag);
+
+            if (! str_contains($startTlsResponse, "{$tag} OK")) {
+                fclose($stream);
+
+                return [
+                    'ok' => false,
+                    'message' => 'O servidor não aceitou STARTTLS.',
+                    'detail' => trim($startTlsResponse),
+                ];
+            }
+
+            $cryptoEnabled = @stream_socket_enable_crypto($stream, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+            if ($cryptoEnabled !== true) {
+                fclose($stream);
+
+                return [
+                    'ok' => false,
+                    'message' => 'Não foi possível iniciar criptografia STARTTLS.',
+                ];
+            }
+        }
+
+        $tag = $this->imapTag();
+        $login = sprintf(
+            "%s LOGIN \"%s\" \"%s\"\r\n",
+            $tag,
+            $this->quoteImapString($username),
+            $this->quoteImapString($password),
+        );
+
+        fwrite($stream, $login);
+        $loginResponse = $this->readImapResponse($stream, $tag);
+
+        fwrite($stream, $this->imapTag()." LOGOUT\r\n");
+        fclose($stream);
+
+        if (str_contains($loginResponse, "{$tag} OK")) {
+            return [
+                'ok' => true,
+                'message' => 'Conexão IMAP testada com sucesso.',
+            ];
+        }
+
+        $message = str_contains(Str::lower($loginResponse), 'authentication')
+            || str_contains(Str::lower($loginResponse), 'invalid')
+            || str_contains(Str::lower($loginResponse), 'failure')
+            ? 'Conectou no servidor, mas usuário ou senha foram recusados.'
+            : 'Conectou no servidor, mas o login IMAP não foi aceito.';
+
+        return [
+            'ok' => false,
+            'message' => $message,
+            'detail' => trim($loginResponse),
+        ];
+    }
+
+    private function readImapResponse($stream, ?string $tag): string
+    {
+        $buffer = '';
+        $startedAt = microtime(true);
+
+        while (! feof($stream) && microtime(true) - $startedAt < 12) {
+            $line = fgets($stream, 4096);
+
+            if ($line === false) {
+                break;
+            }
+
+            $buffer .= $line;
+
+            if ($tag === null && str_starts_with($line, '* ')) {
+                break;
+            }
+
+            if ($tag !== null && str_starts_with($line, $tag.' ')) {
+                break;
+            }
+        }
+
+        return $buffer;
+    }
+
+    private function quoteImapString(string $value): string
+    {
+        $value = str_replace(["\r", "\n"], '', $value);
+
+        return str_replace(['\\', '"'], ['\\\\', '\\"'], $value);
+    }
+
+    private function imapTag(): string
+    {
+        return 'A'.Str::upper(Str::random(6));
     }
 
     public function download(Tenant $tenant, GedDocument $document): StreamedResponse
