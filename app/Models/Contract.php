@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'tenant_id',
@@ -25,6 +26,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'starts_at',
     'ends_at',
     'status',
+    'base_document_path',
+    'base_document_original_name',
+    'base_document_mime_type',
+    'base_document_size',
 ])]
 class Contract extends Model
 {
@@ -34,6 +39,7 @@ class Contract extends Model
             'total_value' => 'decimal:2',
             'starts_at' => 'date',
             'ends_at' => 'date',
+            'base_document_size' => 'integer',
         ];
     }
 
@@ -125,5 +131,15 @@ class Contract extends Model
     public function rdoConfiguracoes(): HasMany
     {
         return $this->hasMany(RdoConfiguracao::class);
+    }
+
+    public function contractAdditives(): HasMany
+    {
+        return $this->hasMany(ContractAdditive::class);
+    }
+
+    public function latestAdditive(): HasOne
+    {
+        return $this->hasOne(ContractAdditive::class)->latestOfMany('sequence_number');
     }
 }

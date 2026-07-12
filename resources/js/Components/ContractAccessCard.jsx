@@ -1,13 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { AlertTriangle, ArrowRight, Building2, Calendar, FileWarning, FolderOpen, ListTodo, MapPin } from 'lucide-react';
-
-const statusMeta = {
-    planning: { label: 'Planejamento', pill: 'sig-pill-blue' },
-    active: { label: 'Em andamento', pill: 'sig-pill-green' },
-    paused: { label: 'Paralisado', pill: 'sig-pill-amber' },
-    completed: { label: 'Concluído', pill: 'sig-pill-blue' },
-    cancelled: { label: 'Cancelado', pill: 'sig-pill-red' },
-};
+import { AlertTriangle, ArrowRight, Building2, Calendar, FilePlus2, FileWarning, FolderOpen, ListTodo, MapPin, Settings } from 'lucide-react';
 
 const currencyLocaleMap = {
     BRL: 'pt-BR',
@@ -23,20 +15,62 @@ const money = (value, currency = 'BRL') => Number(value || 0).toLocaleString(cur
     maximumFractionDigits: currency === 'JPY' ? 0 : 2,
 });
 
-export default function ContractAccessCard({ tenant, contract, shortDate }) {
+const additiveTypeLabel = {
+    cost: 'Custo',
+    deadline: 'Prazo',
+    cost_deadline: 'Custo e prazo',
+};
+
+function remainingDaysLabel(date) {
+    if (!date) return 'Prazo não informado';
+
+    const rawDate = String(date);
+    const dateOnly = /^\d{4}-\d{2}-\d{2}/.test(rawDate) ? rawDate.slice(0, 10) : new Date(date).toISOString().slice(0, 10);
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    const today = new Date();
+    const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const endUtc = Date.UTC(year, month - 1, day);
+    const diff = Math.round((endUtc - todayUtc) / 86400000);
+
+    if (diff > 1) return `Faltam ${diff} dias`;
+    if (diff === 1) return 'Falta 1 dia';
+    if (diff === 0) return 'Encerra hoje';
+    if (diff === -1) return 'Vencido há 1 dia';
+
+    return `Vencido há ${Math.abs(diff)} dias`;
+}
+
+function remainingDaysPillClass(date) {
+    if (!date) return 'sig-pill-red';
+
+    const rawDate = String(date);
+    const dateOnly = /^\d{4}-\d{2}-\d{2}/.test(rawDate) ? rawDate.slice(0, 10) : new Date(date).toISOString().slice(0, 10);
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    const today = new Date();
+    const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const endUtc = Date.UTC(year, month - 1, day);
+    const diff = Math.round((endUtc - todayUtc) / 86400000);
+
+    if (diff > 180) return 'sig-pill-green';
+    if (diff >= 90) return 'sig-pill-amber';
+
+    return 'sig-pill-red';
+}
+
+export default function ContractAccessCard({ tenant, contract, shortDate, canManageContracts = false, onParametrize, onAdditive, onHistory }) {
     const title = contract.obra?.nome || contract.name;
     const cliente = contract.cliente_empresa?.nome || contract.client_company_name || 'Cliente não informado';
     const construtora = contract.construtora_empresa?.nome || contract.contractor_company_name || 'Construtora não informada';
     const state = contract.state_label || contract.state;
     const location = contract.city && state ? `${contract.city} - ${state}` : contract.city || state || 'Local não informado';
-    const meta = statusMeta[contract.status] || { label: contract.status, pill: '' };
+    const additiveCount = Number(contract.contract_additives_count || 0);
+    const latestAdditive = contract.latest_additive;
     const hasAttention = Number(contract.overdue_activities_count || 0) > 0
         || Number(contract.open_rncs_count || 0) > 0
         || Number(contract.pending_projects_count || 0) > 0;
 
     return (
-        <Link
-            href={route('tenant.contracts.show', [tenant.slug, contract.id])}
+        <article
             className="sig-card group flex min-h-[270px] flex-col overflow-hidden transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)]"
         >
             <header className="flex items-start gap-3 border-b border-[var(--border)] px-[18px] py-4">
@@ -47,7 +81,10 @@ export default function ContractAccessCard({ tenant, contract, shortDate }) {
                     <span className="mono block text-xs text-[var(--ink-500)]">{contract.code}</span>
                     <span className="block truncate text-[14.5px] font-semibold text-[var(--ink-900)]">{title}</span>
                 </span>
-                <span className={`sig-pill ${meta.pill}`}>{meta.label}</span>
+                <span className={`sig-pill ${remainingDaysPillClass(contract.ends_at)} shrink-0 text-[12px] font-semibold`}>
+                    <Calendar size={12} />
+                    {remainingDaysLabel(contract.ends_at)}
+                </span>
             </header>
 
             <div className="grid gap-2 px-[18px] py-4 text-[12.5px] text-[var(--ink-500)]">
@@ -63,19 +100,49 @@ export default function ContractAccessCard({ tenant, contract, shortDate }) {
                 <Count icon={FolderOpen} label="Projetos" value={contract.pending_projects_count} alert={contract.pending_projects_count > 0} />
             </div>
 
-            <footer className="mt-auto flex items-center gap-3 px-[18px] py-3">
-                <span className="min-w-0 flex-1">
-                    <span className="eyebrow block">Valor contratado</span>
-                    <span className="mono block truncate text-xs font-semibold text-[var(--ink-700)]">{money(contract.total_value, contract.currency)}</span>
-                </span>
-                {hasAttention && (
-                    <span title="Contrato com pontos de atenção" className="text-[var(--amber)]">
-                        <AlertTriangle size={15} />
+            <footer className="mt-auto grid gap-3 px-[18px] py-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span className="min-w-0 flex-1">
+                        <span className="eyebrow block">Valor contratado</span>
+                        <span className="mono block truncate text-xs font-semibold text-[var(--ink-700)]">{money(contract.total_value, contract.currency)}</span>
                     </span>
-                )}
-                <ArrowRight size={15} className="text-[var(--ink-400)] transition-transform group-hover:translate-x-0.5" />
+                    {additiveCount > 0 && (
+                        <button className="sig-pill sig-pill-amber cursor-pointer" type="button" onClick={onHistory} title={latestAdditive?.title || 'Aditivo vigente'}>
+                            <FilePlus2 size={12} />
+                            Aditivo {latestAdditive?.sequence_number || additiveCount}
+                            <span className="hidden sm:inline"> · {additiveTypeLabel[latestAdditive?.type] || 'Registrado'}</span>
+                        </button>
+                    )}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                    <div>
+                        {hasAttention && (
+                            <span title="Contrato com pontos de atenção" className="text-[var(--amber)]">
+                                <AlertTriangle size={15} />
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                        {canManageContracts && (
+                            <>
+                                <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={onAdditive}>
+                                    <FilePlus2 size={13} />
+                                    Aditivo
+                                </button>
+                                <button className="sig-btn sig-btn-primary sig-btn-sm" type="button" onClick={onParametrize}>
+                                    <Settings size={13} />
+                                    Parametrizar
+                                </button>
+                            </>
+                        )}
+                        <Link className="sig-btn sig-btn-secondary sig-btn-sm" href={route('tenant.contracts.show', [tenant.slug, contract.id])}>
+                            Abrir
+                            <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
+                        </Link>
+                    </div>
+                </div>
             </footer>
-        </Link>
+        </article>
     );
 }
 

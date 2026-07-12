@@ -27,9 +27,7 @@ class EmpresaController extends Controller
             'contracts' => $tenant->contracts()
                 ->orderBy('code')
                 ->get(['id', 'code', 'name']),
-            'tiposEmpresa' => TipoEmpresa::query()
-                ->orderBy('nome')
-                ->get(['id', 'nome']),
+            'tiposEmpresa' => TipoEmpresa::allowedCompanyTypeOptions(),
         ]);
     }
 
@@ -112,13 +110,17 @@ class EmpresaController extends Controller
                 $uniqueCnpj,
             ],
             'sigla' => ['required', 'string', 'max:20'],
-            'tipo_empresa_id' => ['required', Rule::exists('tipos_empresa', 'id')],
+            'tipo_empresa_id' => [
+                'required',
+                Rule::exists('tipos_empresa', 'id')->where(fn ($query) => $query->whereIn('nome', TipoEmpresa::allowedCompanyTypeNames())),
+            ],
             'logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
         ], [
             'cnpj.size' => 'Informe um CNPJ com 14 digitos.',
             'cnpj.regex' => 'Informe um CNPJ no formato 00.000.000/0000-00.',
             'contract_id.required' => 'Selecione o contrato.',
             'contract_id.exists' => 'O contrato selecionado nao esta disponivel para este tenant.',
+            'tipo_empresa_id.exists' => 'Selecione um tipo valido: Gerenciadora, Construtora ou Cliente.',
             'logo.image' => 'Envie a logo em formato de imagem.',
             'logo.mimes' => 'A logo deve ser JPG, PNG ou WebP.',
             'logo.max' => 'A logo pode ter no maximo 4 MB.',

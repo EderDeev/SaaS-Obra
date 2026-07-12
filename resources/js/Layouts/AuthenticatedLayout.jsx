@@ -176,20 +176,10 @@ export default function AuthenticatedLayout({ children }) {
                 href: route('tenant.parametrizacao.obras.index', tenant.slug),
                 active: route().current('tenant.parametrizacao.obras.*'),
             }] : []),
-            ...(parametrizacaoCan.view_parametrizacao_contrato ? [{
-                label: 'Contrato',
-                href: route('tenant.parametrizacao.contrato.index', tenant.slug),
-                active: route().current('tenant.parametrizacao.contrato.*'),
-            }] : []),
             ...(parametrizacaoCan.view_parametrizacao_disciplinas ? [{
                 label: 'Disciplinas',
                 href: route('tenant.parametrizacao.disciplinas.index', tenant.slug),
                 active: route().current('tenant.parametrizacao.disciplinas.*'),
-            }] : []),
-            ...(parametrizacaoCan.view_parametrizacao_usuarios_contratos ? [{
-                label: 'Usuários x Contratos',
-                href: route('tenant.parametrizacao.usuarios-contratos.index', tenant.slug),
-                active: route().current('tenant.parametrizacao.usuarios-contratos.*'),
             }] : []),
         ]
         : [];

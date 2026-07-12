@@ -7,6 +7,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Tenant\ActivityController;
 use App\Http\Controllers\Tenant\BoletimMedicaoController;
 use App\Http\Controllers\Tenant\ContractController;
+use App\Http\Controllers\Tenant\ContractAdditiveController;
 use App\Http\Controllers\Tenant\ContractParticipantController;
 use App\Http\Controllers\Tenant\DashboardController as TenantDashboardController;
 use App\Http\Controllers\Tenant\FolhaRostoController;
@@ -16,11 +17,9 @@ use App\Http\Controllers\Tenant\MedicaoController;
 use App\Http\Controllers\Tenant\MedicaoRelatorioController;
 use App\Http\Controllers\Tenant\OrcamentoController;
 use App\Http\Controllers\Tenant\OrdemServicoController;
-use App\Http\Controllers\Tenant\Parametrizacao\ContratoController as ParametrizacaoContratoController;
 use App\Http\Controllers\Tenant\Parametrizacao\DisciplinaController as ParametrizacaoDisciplinaController;
 use App\Http\Controllers\Tenant\Parametrizacao\EmpresaController as ParametrizacaoEmpresaController;
 use App\Http\Controllers\Tenant\Parametrizacao\ObraController as ParametrizacaoObraController;
-use App\Http\Controllers\Tenant\Parametrizacao\UsuarioContratoController as ParametrizacaoUsuarioContratoController;
 use App\Http\Controllers\Tenant\PermissionController as TenantPermissionController;
 use App\Http\Controllers\Tenant\ProjectController;
 use App\Http\Controllers\Tenant\ProjectResponsavelController;
@@ -143,7 +142,11 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::patch('/permissoes', [TenantPermissionController::class, 'update'])->name('permissions.update');
         Route::get('/contracts', [ContractController::class, 'index'])->name('contracts.index');
         Route::post('/contracts', [ContractController::class, 'store'])->name('contracts.store');
+        Route::get('/contracts/{contract}/documento-base/download', [ContractController::class, 'downloadBaseDocument'])->name('contracts.base-document.download');
         Route::get('/contracts/{contract}', [ContractController::class, 'show'])->name('contracts.show');
+        Route::patch('/contracts/{contract}/parametrizacao', [ContractController::class, 'parametrize'])->name('contracts.parametrizacao.update');
+        Route::post('/contracts/{contract}/aditivos', [ContractAdditiveController::class, 'store'])->name('contracts.additives.store');
+        Route::get('/contracts/{contract}/aditivos/{additive}/download', [ContractAdditiveController::class, 'download'])->name('contracts.additives.download');
         Route::post('/contracts/{contract}/participants', [ContractParticipantController::class, 'store'])->name('contracts.participants.store');
         Route::get('/atividades', [ActivityController::class, 'index'])->name('activities.index');
         Route::post('/atividades', [ActivityController::class, 'store'])->name('activities.store');
@@ -348,22 +351,11 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
                     Route::delete('/obras/{obra}', [ParametrizacaoObraController::class, 'destroy'])->name('obras.destroy');
                 });
 
-                Route::middleware('parametrizacao.permission:view_parametrizacao_contrato')->group(function () {
-                    Route::get('/contrato', [ParametrizacaoContratoController::class, 'index'])->name('contrato.index');
-                    Route::post('/contrato', [ParametrizacaoContratoController::class, 'store'])->name('contrato.store');
-                });
-
                 Route::middleware('parametrizacao.permission:view_parametrizacao_disciplinas')->group(function () {
                     Route::get('/disciplinas', [ParametrizacaoDisciplinaController::class, 'index'])->name('disciplinas.index');
                     Route::post('/disciplinas', [ParametrizacaoDisciplinaController::class, 'store'])->name('disciplinas.store');
                     Route::patch('/disciplinas/{disciplina}', [ParametrizacaoDisciplinaController::class, 'update'])->name('disciplinas.update');
                     Route::delete('/disciplinas/{disciplina}', [ParametrizacaoDisciplinaController::class, 'destroy'])->name('disciplinas.destroy');
-                });
-
-                Route::middleware('parametrizacao.permission:view_parametrizacao_usuarios_contratos')->group(function () {
-                    Route::get('/usuarios-contratos', [ParametrizacaoUsuarioContratoController::class, 'index'])->name('usuarios-contratos.index');
-                    Route::post('/usuarios-contratos', [ParametrizacaoUsuarioContratoController::class, 'store'])->name('usuarios-contratos.store');
-                    Route::delete('/usuarios-contratos/{participant}', [ParametrizacaoUsuarioContratoController::class, 'destroy'])->name('usuarios-contratos.destroy');
                 });
             });
     });

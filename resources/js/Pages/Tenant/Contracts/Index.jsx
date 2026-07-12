@@ -1,9 +1,10 @@
 import ContractAccessCard from '@/Components/ContractAccessCard';
 import brazilCities from '@/Data/brazilCities';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { AlertTriangle, LayoutGrid, List, Plus, Search } from 'lucide-react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { AlertTriangle, FilePlus2, FileText, LayoutGrid, List, Plus, Search, Settings, Upload, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ContractAdditiveHistoryModal, ContractAdditiveModal, ContractParametrizacaoModal } from './Show';
 
 const statusMeta = {
     planning: { label: 'Planejamento', pill: 'sig-pill-blue' },
@@ -54,6 +55,12 @@ const currencyOptions = [
     { value: 'EUR', label: 'Euro', locale: 'de-DE', fractionDigits: 2 },
 ];
 
+const additiveTypeLabel = {
+    cost: 'Custo',
+    deadline: 'Prazo',
+    cost_deadline: 'Custo e prazo',
+};
+
 function currencyConfig(currency) {
     return currencyOptions.find((option) => option.value === currency) || currencyOptions[0];
 }
@@ -84,6 +91,15 @@ function formatCurrency(value, currency) {
         minimumFractionDigits: config.fractionDigits,
         maximumFractionDigits: config.fractionDigits,
     });
+}
+
+function fileSize(bytes = 0) {
+    const size = Number(bytes || 0);
+
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
+    return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function enrichContract(contract) {
@@ -119,7 +135,7 @@ function companyOptions(contracts, resolve) {
     }, []).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 }
 
-export default function ContractsIndex({ tenant, contracts, statuses, canCreateContracts }) {
+export default function ContractsIndex({ tenant, contracts, statuses, canCreateContracts, canManageContracts = false, parametrizacao = {} }) {
     const page = usePage();
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState('todos');
@@ -130,6 +146,9 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
     const [attentionOnly, setAttentionOnly] = useState(false);
     const [viewMode, setViewMode] = useState('cards');
     const [showCreate, setShowCreate] = useState(false);
+    const [parametrizacaoContract, setParametrizacaoContract] = useState(null);
+    const [additiveContract, setAdditiveContract] = useState(null);
+    const [additiveHistoryContract, setAdditiveHistoryContract] = useState(null);
     const [totalValueDisplay, setTotalValueDisplay] = useState('');
     const form = useForm({
         code: '',
@@ -139,6 +158,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
         state: '',
         starts_at: '',
         ends_at: '',
+        base_document: null,
     });
 
     const enrichedContracts = useMemo(() => contracts.map(enrichContract), [contracts]);
@@ -209,6 +229,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
         event.preventDefault();
 
         form.post(route('tenant.contracts.store', page.props.currentTenant.slug), {
+            forceFormData: true,
             preserveScroll: true,
             onSuccess: () => {
                 form.reset();
@@ -246,6 +267,12 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
             city: '',
         }));
     };
+    const parametrizacaoForContract = (contract) => ({
+        empresas: Object.values(parametrizacao.empresas?.[contract.id] || {}),
+        obras: Object.values(parametrizacao.obras?.[contract.id] || {}),
+        disciplinas: Object.values(parametrizacao.disciplinas?.[contract.id] || {}),
+        tiposEmpresa: parametrizacao.tiposEmpresa || [],
+    });
 
     return (
         <AuthenticatedLayout>
@@ -262,7 +289,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     </div>
                     <div className="flex flex-wrap gap-2">
                         {canCreateContracts && (
-                            <button className="sig-btn sig-btn-primary" type="button" onClick={() => setShowCreate((value) => !value)}>
+                            <button className="sig-btn sig-btn-primary" type="button" onClick={() => setShowCreate(true)}>
                                 <Plus size={15} />
                                 Novo contrato
                             </button>
@@ -319,7 +346,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     </div>
                 </div>
 
-                {showCreate && canCreateContracts && (
+                {false && showCreate && canCreateContracts && (
                     <form className="sig-card mt-5 grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-[140px_140px_220px_minmax(190px,220px)_minmax(180px,1fr)_160px_160px]" onSubmit={submit}>
                         <Field label="Código" error={form.errors.code}>
                             <input value={form.data.code} onChange={(event) => form.setData('code', event.target.value.toUpperCase())} required placeholder="CT-001" />
@@ -392,11 +419,27 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     {viewMode === 'cards' ? (
                         <div className="grid gap-4 xl:grid-cols-3 lg:grid-cols-2">
                             {filteredContracts.map((contract) => (
-                                <ContractAccessCard key={contract.id} tenant={tenant} contract={contract} shortDate={shortDate} />
+                                <ContractAccessCard
+                                    key={contract.id}
+                                    tenant={tenant}
+                                    contract={contract}
+                                    shortDate={shortDate}
+                                    canManageContracts={canManageContracts}
+                                    onParametrize={() => setParametrizacaoContract(contract)}
+                                    onAdditive={() => setAdditiveContract(contract)}
+                                    onHistory={() => setAdditiveHistoryContract(contract)}
+                                />
                             ))}
                         </div>
                     ) : (
-                        <ContractsTable tenant={tenant} contracts={filteredContracts} />
+                        <ContractsTable
+                            tenant={tenant}
+                            contracts={filteredContracts}
+                            canManageContracts={canManageContracts}
+                            onParametrize={setParametrizacaoContract}
+                            onAdditive={setAdditiveContract}
+                            onHistory={setAdditiveHistoryContract}
+                        />
                     )}
 
                     {filteredContracts.length === 0 && (
@@ -404,7 +447,167 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     )}
                 </section>
             </section>
+
+            {showCreate && canCreateContracts && (
+                <ContractCreateModal
+                    form={form}
+                    totalValueDisplay={totalValueDisplay}
+                    citiesForSelectedState={citiesForSelectedState}
+                    onClose={() => setShowCreate(false)}
+                    onSubmit={submit}
+                    onUpdateCurrency={updateCurrency}
+                    onUpdateState={updateState}
+                    onUpdateTotalValue={updateTotalValue}
+                />
+            )}
+
+            {parametrizacaoContract && (
+                <ContractParametrizacaoModal
+                    tenant={tenant}
+                    contract={parametrizacaoContract}
+                    parametrizacao={parametrizacaoForContract(parametrizacaoContract)}
+                    onClose={() => setParametrizacaoContract(null)}
+                />
+            )}
+
+            {additiveContract && (
+                <ContractAdditiveModal
+                    tenant={tenant}
+                    contract={additiveContract}
+                    onClose={() => setAdditiveContract(null)}
+                    onHistory={() => {
+                        setAdditiveHistoryContract(additiveContract);
+                        setAdditiveContract(null);
+                    }}
+                />
+            )}
+
+            {additiveHistoryContract && (
+                <ContractAdditiveHistoryModal
+                    tenant={tenant}
+                    contract={additiveHistoryContract}
+                    additives={additiveHistoryContract.contract_additives || []}
+                    onClose={() => setAdditiveHistoryContract(null)}
+                />
+            )}
         </AuthenticatedLayout>
+    );
+}
+
+function ContractCreateModal({
+    form,
+    totalValueDisplay,
+    citiesForSelectedState,
+    onClose,
+    onSubmit,
+    onUpdateCurrency,
+    onUpdateState,
+    onUpdateTotalValue,
+}) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4">
+            <form className="sig-card flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden" onSubmit={onSubmit}>
+                <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
+                    <div>
+                        <span className="eyebrow">Contrato</span>
+                        <h2 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">Novo contrato</h2>
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">Informe os dados base para abrir o ambiente do contrato.</p>
+                    </div>
+                    <button className="sig-btn sig-btn-ghost" type="button" onClick={onClose} aria-label="Fechar">
+                        <X size={18} />
+                    </button>
+                </header>
+
+                <div className="grid gap-4 overflow-y-auto px-6 py-5 sm:grid-cols-2 lg:grid-cols-3">
+                    <Field label="Código" error={form.errors.code}>
+                        <input value={form.data.code} onChange={(event) => form.setData('code', event.target.value.toUpperCase())} required placeholder="CT-001" />
+                    </Field>
+                    <Field label="Moeda" error={form.errors.currency}>
+                        <select value={form.data.currency} onChange={(event) => onUpdateCurrency(event.target.value)} required>
+                            {currencyOptions.map((currency) => (
+                                <option key={currency.value} value={currency.value}>
+                                    {currency.label}
+                                </option>
+                            ))}
+                        </select>
+                    </Field>
+                    <Field label="Valor" error={form.errors.total_value}>
+                        <input
+                            value={totalValueDisplay}
+                            onChange={(event) => onUpdateTotalValue(event.target.value)}
+                            placeholder={formatCurrency(0, form.data.currency)}
+                            inputMode="numeric"
+                            required
+                        />
+                    </Field>
+                    <Field label="Estado" error={form.errors.state}>
+                        <select value={form.data.state} onChange={(event) => onUpdateState(event.target.value)} required>
+                            <option value="">Selecione o estado</option>
+                            {stateOptions.map((state) => (
+                                <option key={state.value} value={state.value}>
+                                    {state.label} ({state.value})
+                                </option>
+                            ))}
+                        </select>
+                    </Field>
+                    <Field label="Cidade" error={form.errors.city}>
+                        <select
+                            value={form.data.city}
+                            onChange={(event) => form.setData('city', event.target.value)}
+                            disabled={!form.data.state || citiesForSelectedState.length === 0}
+                            required
+                        >
+                            <option value="">Selecione a cidade</option>
+                            {citiesForSelectedState.map((city) => (
+                                <option key={city} value={city}>
+                                    {city}
+                                </option>
+                            ))}
+                        </select>
+                    </Field>
+                    <Field label="Vigência inicial" error={form.errors.starts_at}>
+                        <input value={form.data.starts_at} onChange={(event) => form.setData('starts_at', event.target.value)} type="date" required />
+                    </Field>
+                    <Field label="Vigência final" error={form.errors.ends_at}>
+                        <input value={form.data.ends_at} onChange={(event) => form.setData('ends_at', event.target.value)} type="date" required />
+                    </Field>
+                    <div className="sm:col-span-2 lg:col-span-3">
+                        <span className="eyebrow mb-1 block">Documento do contrato</span>
+                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                            <label className="sig-btn sig-btn-secondary sig-btn-sm w-fit">
+                                <Upload size={14} />
+                                Selecionar documento
+                                <input
+                                    className="sr-only"
+                                    type="file"
+                                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
+                                    onChange={(event) => form.setData('base_document', event.target.files?.[0] || null)}
+                                />
+                            </label>
+                            {form.data.base_document && (
+                                <div className="mt-3 flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm text-[var(--ink-700)]">
+                                    <FileText size={14} />
+                                    <span className="min-w-0 flex-1 truncate">{form.data.base_document.name}</span>
+                                    <span className="text-xs text-[var(--ink-500)]">{fileSize(form.data.base_document.size)}</span>
+                                </div>
+                            )}
+                        </div>
+                        {form.errors.base_document && <span className="mt-1 block text-xs text-[var(--red)]">{form.errors.base_document}</span>}
+                    </div>
+                </div>
+
+                <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-6 py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose}>
+                        <X size={15} />
+                        Cancelar
+                    </button>
+                    <button className="sig-btn sig-btn-primary" disabled={form.processing}>
+                        <Plus size={15} />
+                        Criar contrato
+                    </button>
+                </footer>
+            </form>
+        </div>
     );
 }
 
@@ -433,7 +636,7 @@ function FilterSelect({ value, onChange, firstLabel, options }) {
     );
 }
 
-function ContractsTable({ tenant, contracts }) {
+function ContractsTable({ tenant, contracts, canManageContracts, onParametrize, onAdditive, onHistory }) {
     return (
         <div className="sig-card overflow-x-auto">
             <table className="sig-table min-w-[1080px]">
@@ -444,6 +647,7 @@ function ContractsTable({ tenant, contracts }) {
                         <th>Local</th>
                         <th>Vigência</th>
                         <th>Pendências</th>
+                        <th>Aditivo</th>
                         <th>Valor</th>
                         <th>Status</th>
                         <th />
@@ -469,12 +673,36 @@ function ContractsTable({ tenant, contracts }) {
                                     <CountPill label="Projetos" count={contract.pending_projects_count} />
                                 </div>
                             </td>
+                            <td>
+                                {Number(contract.contract_additives_count || 0) > 0 ? (
+                                    <button className="sig-pill sig-pill-amber cursor-pointer" type="button" onClick={() => onHistory(contract)}>
+                                        Aditivo {contract.latest_additive?.sequence_number || contract.contract_additives_count}
+                                        {' '}· {additiveTypeLabel[contract.latest_additive?.type] || 'Registrado'}
+                                    </button>
+                                ) : (
+                                    <span className="text-xs text-[var(--ink-400)]">Sem aditivo</span>
+                                )}
+                            </td>
                             <td>{formatCurrency(contract.total_value, contract.currency) || 'Não informado'}</td>
                             <td><span className={`sig-pill ${contract.meta.pill}`}>{contract.meta.label}</span></td>
                             <td>
-                                <Link className="sig-btn sig-btn-secondary" href={route('tenant.contracts.show', [tenant.slug, contract.id])}>
-                                    Abrir
-                                </Link>
+                                <div className="flex justify-end gap-2">
+                                    {canManageContracts && (
+                                        <>
+                                            <button className="sig-btn sig-btn-secondary" type="button" onClick={() => onAdditive(contract)}>
+                                                <FilePlus2 size={14} />
+                                                Aditivo
+                                            </button>
+                                            <button className="sig-btn sig-btn-primary" type="button" onClick={() => onParametrize(contract)}>
+                                                <Settings size={14} />
+                                                Parametrizar
+                                            </button>
+                                        </>
+                                    )}
+                                    <Link className="sig-btn sig-btn-secondary" href={route('tenant.contracts.show', [tenant.slug, contract.id])}>
+                                        Abrir
+                                    </Link>
+                                </div>
                             </td>
                         </tr>
                     ))}

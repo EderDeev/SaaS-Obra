@@ -25,6 +25,12 @@ function initials(name = '') {
         .toUpperCase();
 }
 
+const tipoEmpresaLabel = (tipo) => tipo?.label || {
+    gerenciadora: 'Gerenciadora',
+    construtora: 'Construtora',
+    cliente: 'Cliente',
+}[tipo?.nome] || tipo?.nome || 'Sem tipo';
+
 export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contracts, tiposEmpresa }) {
     const page = usePage();
     const defaultTipoEmpresaId = tiposEmpresa[0]?.id ?? '';
@@ -190,7 +196,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                     <p className="mt-1 text-sm text-[var(--ink-500)]">
                         {editingEmpresa
                             ? 'Atualize os dados da empresa ou selecione uma nova logo para substituir a atual.'
-                            : `Empresas relacionadas ao tenant ${tenant.name}, como construtoras, projetistas, fiscalizadoras e fornecedoras.`}
+                            : `Empresas relacionadas ao tenant ${tenant.name}: gerenciadoras, construtoras e clientes.`}
                     </p>
 
                     {page.props.flash.success && (
@@ -259,7 +265,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                                 >
                                     {tiposEmpresa.map((tipo) => (
                                         <option key={tipo.id} value={tipo.id}>
-                                            {tipo.nome}
+                                            {tipoEmpresaLabel(tipo)}
                                         </option>
                                     ))}
                                 </select>
@@ -384,7 +390,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                                     <option value="todos">Todos os tipos</option>
                                     {tiposEmpresa.map((tipo) => (
                                         <option key={tipo.id} value={tipo.id}>
-                                            {tipo.nome}
+                                            {tipoEmpresaLabel(tipo)}
                                         </option>
                                     ))}
                                 </select>
@@ -429,7 +435,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                                         </td>
                                         <td className="mono">{empresa.cnpj}</td>
                                         <td>
-                                            <span className="sig-pill sig-pill-blue">{empresa.tipo_empresa?.nome}</span>
+                                            <span className="sig-pill sig-pill-blue">{tipoEmpresaLabel(empresa.tipo_empresa)}</span>
                                         </td>
                                         <td className="font-semibold">{empresa.sigla}</td>
                                         <td>
@@ -473,7 +479,7 @@ export default function ParametrizacaoEmpresasIndex({ tenant, empresas, contract
                                         <div className="min-w-0 flex-1">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <h3 className="text-sm font-semibold text-[var(--ink-900)]">{empresa.nome}</h3>
-                                                <span className="sig-pill sig-pill-blue">{empresa.tipo_empresa?.nome || 'Sem tipo'}</span>
+                                                <span className="sig-pill sig-pill-blue">{tipoEmpresaLabel(empresa.tipo_empresa)}</span>
                                             </div>
                                             <div className="mono mt-1 text-xs text-[var(--ink-500)]">{empresa.sigla || '-'}</div>
                                         </div>
