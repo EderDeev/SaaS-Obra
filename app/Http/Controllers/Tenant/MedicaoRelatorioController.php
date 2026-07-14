@@ -63,8 +63,8 @@ class MedicaoRelatorioController extends Controller
             'boletins' => $boletins,
             'reports' => [
                 ['value' => 'pleito_preliminar', 'label' => 'Pleito preliminar'],
-                ['value' => 'analise_pleito', 'label' => 'An?lise do Pleito'],
-                ['value' => 'sintetico', 'label' => 'Sint?tico'],
+                ['value' => 'analise_pleito', 'label' => 'Análise do Pleito'],
+                ['value' => 'sintetico', 'label' => 'Sintético'],
                 ['value' => 'por_fr', 'label' => 'Por FR'],
                 ['value' => 'resumo', 'label' => 'Resumo'],
             ],
@@ -113,7 +113,7 @@ class MedicaoRelatorioController extends Controller
         $boletim = $this->resolveBoletimForExport($request, $tenant);
         $headers = $this->analisePleitoHeaders();
         $rows = $this->analisePleitoRows($tenant, $boletim);
-        $spreadsheet = $this->buildPleitoPreliminarSpreadsheet($boletim, $headers, $rows, 'An?lise do Pleito', $this->reportTotals($headers, $rows));
+        $spreadsheet = $this->buildPleitoPreliminarSpreadsheet($boletim, $headers, $rows, 'Análise do Pleito', $this->reportTotals($headers, $rows));
 
         return response()->streamDownload(function () use ($spreadsheet): void {
             $writer = new Xlsx($spreadsheet);
@@ -132,7 +132,7 @@ class MedicaoRelatorioController extends Controller
         $rows = $this->analisePleitoRows($tenant, $boletim);
 
         $pdf = Pdf::loadView('pdf.medicao-pleito-preliminar', [
-            'title' => 'An?lise do Pleito',
+            'title' => 'Análise do Pleito',
             'boletim' => $this->serializeBoletim($boletim),
             'headers' => $headers,
             'rows' => $rows,
@@ -147,7 +147,7 @@ class MedicaoRelatorioController extends Controller
         $boletim = $this->resolveBoletimForExport($request, $tenant);
         $headers = $this->sinteticoHeaders();
         $rows = $this->sinteticoRows($tenant, $boletim);
-        $spreadsheet = $this->buildPleitoPreliminarSpreadsheet($boletim, $headers, $rows, 'Sint?tico', $this->reportTotals($headers, $rows));
+        $spreadsheet = $this->buildPleitoPreliminarSpreadsheet($boletim, $headers, $rows, 'Sintético', $this->reportTotals($headers, $rows));
 
         return response()->streamDownload(function () use ($spreadsheet): void {
             $writer = new Xlsx($spreadsheet);
@@ -166,7 +166,7 @@ class MedicaoRelatorioController extends Controller
         $rows = $this->sinteticoRows($tenant, $boletim);
 
         $pdf = Pdf::loadView('pdf.medicao-pleito-preliminar', [
-            'title' => 'Sint?tico',
+            'title' => 'Sintético',
             'boletim' => $this->serializeBoletim($boletim),
             'headers' => $headers,
             'rows' => $rows,
@@ -251,12 +251,12 @@ class MedicaoRelatorioController extends Controller
     {
         return [
             ['key' => 'item', 'label' => 'Item'],
-            ['key' => 'codigo_item', 'label' => 'C?digo item'],
+            ['key' => 'codigo_item', 'label' => 'Código item'],
             ['key' => 'descricao', 'label' => "Descri\u{00E7}\u{00E3}o"],
             ['key' => 'unidade', 'label' => 'Unidade'],
             ['key' => 'quantidade_pleiteada', 'label' => 'Qtd. pleiteada', 'numeric' => true],
-            ['key' => 'preco_unitario_p0', 'label' => 'Pre?o unit?rio P0', 'numeric' => true, 'money' => true],
-            ['key' => 'preco_unitario_reajustado', 'label' => 'Pre?o unit?rio reaj.', 'numeric' => true, 'money' => true],
+            ['key' => 'preco_unitario_p0', 'label' => 'Preço unitário P0', 'numeric' => true, 'money' => true],
+            ['key' => 'preco_unitario_reajustado', 'label' => 'Preço unitário reaj.', 'numeric' => true, 'money' => true],
             ['key' => 'total_p0', 'label' => 'Total P0', 'numeric' => true, 'money' => true],
             ['key' => 'total_reajustado', 'label' => 'Total reaj.', 'numeric' => true, 'money' => true],
             ['key' => 'referencia', 'label' => 'Refer\u{00EA}ncia'],
@@ -269,18 +269,18 @@ class MedicaoRelatorioController extends Controller
     {
         return [
             ['key' => 'item', 'label' => 'Item'],
-            ['key' => 'codigo_item', 'label' => 'C?digo item'],
+            ['key' => 'codigo_item', 'label' => 'Código item'],
             ['key' => 'descricao', 'label' => "Descri\u{00E7}\u{00E3}o"],
             ['key' => 'unidade', 'label' => 'Unidade'],
             ['key' => 'quantidade_pleiteada', 'label' => 'Qtd. pleiteada', 'numeric' => true],
-            ['key' => 'quantidade_aprovada_medicao', 'label' => 'Qtd. aprovada medi??o', 'numeric' => true],
-            ['key' => 'preco_unitario_p0', 'label' => 'Pre?o unit?rio P0', 'numeric' => true, 'money' => true],
-            ['key' => 'preco_unitario_reajustado', 'label' => 'Pre?o unit?rio reaj.', 'numeric' => true, 'money' => true],
+            ['key' => 'quantidade_aprovada_medicao', 'label' => 'Qtd. aprovada medição', 'numeric' => true],
+            ['key' => 'preco_unitario_p0', 'label' => 'Preço unitário P0', 'numeric' => true, 'money' => true],
+            ['key' => 'preco_unitario_reajustado', 'label' => 'Preço unitário reaj.', 'numeric' => true, 'money' => true],
             ['key' => 'total_p0', 'label' => 'Total P0', 'numeric' => true, 'money' => true],
             ['key' => 'total_pleiteado_reajustado', 'label' => 'Total pleiteado reaj.', 'numeric' => true, 'money' => true],
-            ['key' => 'total_aprovado_medicao', 'label' => 'Total aprovado medi??o', 'numeric' => true, 'money' => true],
-            ['key' => 'diferenca_valor', 'label' => 'Diferen?a de Valor', 'numeric' => true, 'money' => true],
-            ['key' => 'comentarios_medicao', 'label' => 'Coment?rios medi??o'],
+            ['key' => 'total_aprovado_medicao', 'label' => 'Total aprovado medição', 'numeric' => true, 'money' => true],
+            ['key' => 'diferenca_valor', 'label' => 'Diferença de Valor', 'numeric' => true, 'money' => true],
+            ['key' => 'comentarios_medicao', 'label' => 'Comentários medição'],
             ['key' => 'referencia', 'label' => 'Refer\u{00EA}ncia'],
             ['key' => 'obra', 'label' => 'Obra'],
             ['key' => 'frs', 'label' => 'FR(s)'],
@@ -294,19 +294,19 @@ class MedicaoRelatorioController extends Controller
             ['key' => 'descricao', 'label' => "Descri\u{00E7}\u{00E3}o"],
             ['key' => 'unidade', 'label' => 'Unidade'],
             ['key' => 'quantidade_total', 'label' => 'Quantidade total', 'numeric' => true],
-            ['key' => 'preco_unitario_p0', 'label' => 'Pre?o unit?rio P0', 'numeric' => true, 'money' => true],
-            ['key' => 'preco_total_p0', 'label' => 'Pre?o total P0', 'numeric' => true, 'money' => true],
+            ['key' => 'preco_unitario_p0', 'label' => 'Preço unitário P0', 'numeric' => true, 'money' => true],
+            ['key' => 'preco_total_p0', 'label' => 'Preço total P0', 'numeric' => true, 'money' => true],
             ['key' => 'qtd_acumulado_anterior', 'label' => 'Qtd. acumulado anterior', 'numeric' => true],
-            ['key' => 'qtd_no_periodo', 'label' => 'Qtd. no per?odo', 'numeric' => true],
+            ['key' => 'qtd_no_periodo', 'label' => 'Qtd. no período', 'numeric' => true],
             ['key' => 'qtd_acumulado_atual', 'label' => 'Qtd. acumulado atual', 'numeric' => true],
             ['key' => 'valor_acumulado_anterior', 'label' => 'Valor acumulado anterior', 'numeric' => true, 'money' => true],
-            ['key' => 'valor_no_periodo', 'label' => 'Valor no per?odo', 'numeric' => true, 'money' => true],
+            ['key' => 'valor_no_periodo', 'label' => 'Valor no período', 'numeric' => true, 'money' => true],
             ['key' => 'valor_acumulado_atual', 'label' => 'Valor acumulado atual', 'numeric' => true, 'money' => true],
             ['key' => 'saldo', 'label' => 'Saldo', 'numeric' => true],
             ['key' => 'executado_acumulado_percentual', 'label' => 'Executado acumulado (%)', 'numeric' => true, 'percent' => true],
             ['key' => 'setor_reajuste', 'label' => 'Setor'],
-            ['key' => 'indice_reajuste', 'label' => '?ndice', 'numeric' => true, 'percent' => true],
-            ['key' => 'valor_reajuste_periodo', 'label' => 'Valor reajuste no per?odo', 'numeric' => true, 'money' => true],
+            ['key' => 'indice_reajuste', 'label' => 'Índice', 'numeric' => true, 'percent' => true],
+            ['key' => 'valor_reajuste_periodo', 'label' => 'Valor reajuste no período', 'numeric' => true, 'money' => true],
         ];
     }
 
@@ -380,8 +380,8 @@ class MedicaoRelatorioController extends Controller
     private function titleForReport(string $report): string
     {
         return match ($report) {
-            'analise_pleito' => 'An?lise do Pleito',
-            'sintetico' => 'Sint?tico',
+            'analise_pleito' => 'Análise do Pleito',
+            'sintetico' => 'Sintético',
             'por_fr' => 'Por FR',
             'resumo' => 'Resumo',
             default => 'Pleito preliminar',
@@ -391,8 +391,8 @@ class MedicaoRelatorioController extends Controller
     private function descriptionForReport(string $report): string
     {
         return match ($report) {
-            'analise_pleito' => 'Consolida somente FRs finalizadas e compara o pleito com os quantitativos aprovados pela medi??o.',
-            'sintetico' => 'Apresenta acumulados anteriores, execu??o no per?odo, acumulado atual, saldo e reajustamento somente de FRs finalizadas.',
+            'analise_pleito' => 'Consolida somente FRs finalizadas e compara o pleito com os quantitativos aprovados pela medição.',
+            'sintetico' => 'Apresenta acumulados anteriores, execução no período, acumulado atual, saldo e reajustamento somente de FRs finalizadas.',
             'por_fr' => 'Detalha os itens medidos no BM selecionado, separados pela Folha de Rosto de origem.',
             'resumo' => "Resume o valor P0 geral do contrato e a evolu\u{00E7}\u{00E3}o por planilha no BM selecionado.",
             default => 'Consolida os quantitativos pleiteados pela construtora no BM selecionado.',
