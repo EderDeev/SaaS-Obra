@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Tenant;
+use App\Models\GedEmailProcessedMessage;
 use App\Support\ActivityPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
@@ -121,6 +122,31 @@ class HandleInertiaRequests extends Middleware
                         'status' => $contract->status,
                     ])
                     ->all();
+            },
+            'gedNavigation' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+                $user = $request->user();
+
+                if (! $user || ! $tenant) {
+                    return ['pending_triage_count' => 0];
+                }
+
+                $contractIdsQuery = $tenant->contracts()->select('contracts.id');
+                $tenantRole = $user->tenantRole($tenant);
+
+                if (! $user->is_platform_admin && ! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
+                    $contractIdsQuery->whereHas('participants', function ($query) use ($user): void {
+                        $query->where('user_id', $user->id)->where('status', 'active');
+                    });
+                }
+
+                $pendingTriageCount = GedEmailProcessedMessage::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('status', 'pending_triage')
+                    ->whereHas('rule', fn ($query) => $query->whereIn('contract_id', $contractIdsQuery))
+                    ->count();
+
+                return ['pending_triage_count' => $pendingTriageCount];
             },
             'rncPermissions' => function () use ($request, $tenantForNavigation): array {
                 $tenant = $tenantForNavigation();

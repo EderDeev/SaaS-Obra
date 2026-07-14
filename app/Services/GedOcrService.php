@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\GedDocument;
+use App\Models\GedDocumentAttachment;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -16,14 +17,42 @@ class GedOcrService
 
     public function process(GedDocument $document): array
     {
-        $disk = Storage::disk($document->storage_disk ?: 'public');
+        return $this->processStoredFile(
+            storageDisk: $document->storage_disk ?: 'public',
+            sourcePath: $document->original_path,
+            mimeType: (string) $document->mime_type,
+            extension: strtolower((string) $document->extension),
+            workKey: 'document-'.$document->id,
+            archiveDirectory: 'ged/'.$document->tenant_id.'/archive/'.now()->format('Y/m'),
+            archiveNamePrefix: (string) $document->id,
+            missingMessage: 'Arquivo original nao encontrado para processamento OCR.',
+        );
+    }
 
-        if (! $disk->exists($document->original_path)) {
-            throw new RuntimeException('Arquivo original não encontrado para processamento OCR.');
+    public function processAttachment(GedDocumentAttachment $attachment): array
+    {
+        $attachment->loadMissing('document:id,tenant_id');
+
+        return $this->processStoredFile(
+            storageDisk: $attachment->storage_disk ?: 'public',
+            sourcePath: $attachment->path,
+            mimeType: (string) $attachment->mime_type,
+            extension: strtolower((string) $attachment->extension),
+            workKey: 'attachment-'.$attachment->id,
+            archiveDirectory: 'ged/'.$attachment->document->tenant_id.'/attachments/'.$attachment->document_id.'/archive/'.now()->format('Y/m'),
+            archiveNamePrefix: 'attachment-'.$attachment->id,
+            missingMessage: 'Arquivo do anexo nao encontrado para processamento OCR.',
+        );
+    }
+
+    private function processStoredFile(string $storageDisk, string $sourcePath, string $mimeType, string $extension, string $workKey, string $archiveDirectory, string $archiveNamePrefix, string $missingMessage): array
+    {
+        $disk = Storage::disk($storageDisk);
+
+        if (! $disk->exists($sourcePath)) {
+            throw new RuntimeException($missingMessage);
         }
 
-        $mimeType = (string) $document->mime_type;
-        $extension = strtolower((string) $document->extension);
         $isPdf = $mimeType === 'application/pdf' || $extension === 'pdf';
         $isImage = str_starts_with($mimeType, 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'webp', 'bmp'], true);
 
@@ -33,18 +62,18 @@ class GedOcrService
                 'archive_path' => null,
                 'page_count' => null,
                 'engine' => 'none',
-                'message' => 'Tipo de arquivo não suportado para OCR automático.',
+                'message' => 'Tipo de arquivo nao suportado para OCR automatico.',
             ];
         }
 
-        $workDir = storage_path('app/private/ged-ocr/'.$document->id.'-'.Str::uuid());
+        $workDir = storage_path('app/private/ged-ocr/'.$workKey.'-'.Str::uuid());
         File::ensureDirectoryExists($workDir);
         $inputPath = $workDir.'/input'.($extension ? ".{$extension}" : '');
-        File::put($inputPath, $disk->get($document->original_path));
+        File::put($inputPath, $disk->get($sourcePath));
         $this->deadlineAt = microtime(true) + max(60, (int) config('ged.ocr.timeout', 300));
 
         try {
-            return $this->processWithOcrmypdf($document, $inputPath, $workDir, $isPdf);
+            return $this->processWithOcrmypdf($storageDisk, $archiveDirectory, $archiveNamePrefix, $inputPath, $workDir, $isPdf);
         } catch (RuntimeException|ProcessFailedException $exception) {
             if ($isPdf) {
                 $tesseractText = $this->extractPdfTextWithTesseract($inputPath, $workDir);
@@ -55,7 +84,7 @@ class GedOcrService
                         'archive_path' => null,
                         'page_count' => $this->countPdfPages($inputPath, $workDir),
                         'engine' => 'pdftoppm+tesseract',
-                        'message' => 'Texto extraído com Tesseract local. OCRmyPDF/Ghostscript não ficou disponível: '.$exception->getMessage(),
+                        'message' => 'Texto extraido com Tesseract local. OCRmyPDF/Ghostscript nao ficou disponivel: '.$exception->getMessage(),
                     ];
                 }
 
@@ -67,7 +96,7 @@ class GedOcrService
                         'archive_path' => null,
                         'page_count' => $this->countPdfPages($inputPath, $workDir),
                         'engine' => 'pdftotext',
-                        'message' => 'Texto extraído de PDF pesquisável. OCRmyPDF não ficou disponível: '.$exception->getMessage(),
+                        'message' => 'Texto extraido de PDF pesquisavel. OCRmyPDF nao ficou disponivel: '.$exception->getMessage(),
                     ];
                 }
             }
@@ -81,7 +110,7 @@ class GedOcrService
                         'archive_path' => null,
                         'page_count' => 1,
                         'engine' => 'tesseract',
-                        'message' => 'Texto extraído com Tesseract local. OCRmyPDF/Ghostscript não ficou disponível: '.$exception->getMessage(),
+                        'message' => 'Texto extraido com Tesseract local. OCRmyPDF/Ghostscript nao ficou disponivel: '.$exception->getMessage(),
                     ];
                 }
             }
@@ -93,7 +122,7 @@ class GedOcrService
         }
     }
 
-    private function processWithOcrmypdf(GedDocument $document, string $inputPath, string $workDir, bool $isPdf): array
+    private function processWithOcrmypdf(string $storageDisk, string $archiveDirectory, string $archiveNamePrefix, string $inputPath, string $workDir, bool $isPdf): array
     {
         $outputPdf = $workDir.'/archive.pdf';
         $sidecar = $workDir.'/sidecar.txt';
@@ -158,13 +187,13 @@ class GedOcrService
             $text = trim($this->extractPdfTextWithTesseract($inputPath, $workDir));
         }
 
-        $archivePath = 'ged/'.$document->tenant_id.'/archive/'.now()->format('Y/m').'/'.$document->id.'-'.Str::uuid().'.pdf';
-        Storage::disk($document->storage_disk ?: 'public')->put($archivePath, File::get($outputPdf));
+        $archivePath = $archiveDirectory.'/'.$archiveNamePrefix.'-'.Str::uuid().'.pdf';
+        Storage::disk($storageDisk)->put($archivePath, File::get($outputPdf));
 
         $engine = $text !== '' ? 'ocrmypdf+tesseract-fallback' : 'ocrmypdf';
         $message = $text !== ''
-            ? 'OCR processado com OCRmyPDF e texto extraído com Tesseract.'
-            : 'OCR processado com OCRmyPDF, mas nenhum texto foi extraído.';
+            ? 'OCR processado com OCRmyPDF e texto extraido com Tesseract.'
+            : 'OCR processado com OCRmyPDF, mas nenhum texto foi extraido.';
 
         return [
             'text' => $text,
@@ -332,7 +361,7 @@ class GedOcrService
                 return;
             }
 
-            throw new RuntimeException("Binário OCR não encontrado no caminho configurado: {$binary}");
+            throw new RuntimeException("Binario OCR nao encontrado no caminho configurado: {$binary}");
         }
 
         $process = PHP_OS_FAMILY === 'Windows'
@@ -343,7 +372,7 @@ class GedOcrService
         $process->run();
 
         if (! $process->isSuccessful()) {
-            throw new RuntimeException("Binário OCR não encontrado no PATH: {$binary}");
+            throw new RuntimeException("Binario OCR nao encontrado no PATH: {$binary}");
         }
     }
 }

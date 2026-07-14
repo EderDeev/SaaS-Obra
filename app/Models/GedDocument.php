@@ -93,6 +93,11 @@ class GedDocument extends Model
         return $this->hasMany(GedDocumentVersion::class, 'document_id')->orderByDesc('version_number');
     }
 
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(GedDocumentAttachment::class, 'document_id')->orderByDesc('created_at')->orderByDesc('id');
+    }
+
     public function events(): HasMany
     {
         return $this->hasMany(GedDocumentEvent::class, 'document_id')->orderByDesc('created_at')->orderByDesc('id');

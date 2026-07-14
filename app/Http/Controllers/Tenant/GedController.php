@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessGedDocumentAttachmentOcrJob;
 use App\Jobs\ProcessGedDocumentOcrJob;
 use App\Models\Contract;
 use App\Models\Empresa;
 use App\Models\GedCorrespondent;
 use App\Models\GedDocument;
+use App\Models\GedDocumentAttachment;
 use App\Models\GedDocumentEvent;
 use App\Models\GedDocumentNote;
 use App\Models\GedDocumentType;
@@ -26,6 +28,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Inertia\Inertia;
 use Inertia\Response;
 use setasign\Fpdi\Fpdi;
@@ -37,10 +41,21 @@ class GedController extends Controller
     private const SECTIONS = [
         'details' => 'Detalhes',
         'content' => 'Conteúdo',
+        'attachments' => 'Anexos',
         'metadata' => 'Metadados',
         'notes' => 'Notas',
         'history' => 'Histórico',
         'permissions' => 'Permissões',
+    ];
+
+    private const GED_ACCEPTED_EXTENSIONS = [
+        'pdf',
+    ];
+
+    private const GED_ACCEPTED_MIME_PREFIXES = [];
+
+    private const GED_ACCEPTED_MIME_TYPES = [
+        'application/pdf',
     ];
 
     public function index(Request $request, Tenant $tenant): Response
@@ -193,8 +208,168 @@ class GedController extends Controller
                 'uploaded' => GedDocument::where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->where('status', 'uploaded')->count(),
                 'indexed' => GedDocument::where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->where('status', 'indexed')->count(),
                 'processing' => GedDocument::where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->where('status', 'processing')->count(),
+                'trash' => GedDocument::onlyTrashed()->where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->count(),
             ],
         ]);
+    }
+
+    public function trash(Request $request, Tenant $tenant): Response
+    {
+        $accessibleContracts = $this->accessibleGedContracts($request, $tenant);
+        $accessibleContractIds = $accessibleContracts->pluck('id');
+
+        $documents = GedDocument::onlyTrashed()
+            ->select('ged_documents.*')
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $accessibleContractIds)
+            ->with(['contract:id,code,name', 'type:id,name'])
+            ->orderByDesc('deleted_at')
+            ->paginate(25)
+            ->withQueryString()
+            ->through(fn (GedDocument $document) => [
+                'id' => $document->id,
+                'title' => $document->title,
+                'document_number' => $document->document_number,
+                'original_filename' => $document->original_filename,
+                'deleted_at' => $document->deleted_at?->format('Y-m-d H:i:s'),
+                'details_url' => route('tenant.ged.details', [$tenant->slug, $document]),
+                'preview_url' => route('tenant.ged.preview', [$tenant->slug, $document]),
+                'contract' => $document->contract ? [
+                    'id' => $document->contract->id,
+                    'code' => $document->contract->code,
+                    'name' => $document->contract->name,
+                ] : null,
+                'type' => $document->type ? [
+                    'id' => $document->type->id,
+                    'name' => $document->type->name,
+                ] : null,
+            ]);
+
+        return Inertia::render('Tenant/Ged/Trash', [
+            'tenant' => [
+                'id' => $tenant->id,
+                'name' => $tenant->name,
+                'slug' => $tenant->slug,
+            ],
+            'documents' => $documents,
+            'trashDelayDays' => 30,
+        ]);
+    }
+
+    public function trashAction(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', 'in:restore,empty'],
+            'document_ids' => ['nullable', 'array'],
+            'document_ids.*' => ['integer'],
+        ]);
+
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id');
+        $ids = collect($data['document_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->unique()->values();
+
+        $documentsQuery = GedDocument::onlyTrashed()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $accessibleContractIds)
+            ->when($ids->isNotEmpty(), fn ($query) => $query->whereIn('id', $ids));
+
+        $documents = $documentsQuery->get();
+
+        abort_if($documents->isEmpty(), 422, 'Nenhum documento encontrado na lixeira.');
+
+        if ($data['action'] === 'restore') {
+            foreach ($documents as $document) {
+                $document->restore();
+
+                $this->logGedEvent(
+                    $document,
+                    'document.restored',
+                    'Documento restaurado',
+                    'O documento foi restaurado da lixeira.',
+                );
+            }
+
+            return back()->with('success', $documents->count().' documento(s) restaurado(s).');
+        }
+
+        foreach ($documents as $document) {
+            $this->deleteGedDocumentFiles($document);
+            $document->forceDelete();
+        }
+
+        return back()->with('success', $documents->count().' documento(s) excluido(s) definitivamente.');
+    }
+
+    public function triage(Request $request, Tenant $tenant): Response
+    {
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id');
+
+        $messages = GedEmailProcessedMessage::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('status', 'pending_triage')
+            ->whereHas('rule', fn ($query) => $query->whereIn('contract_id', $accessibleContractIds))
+            ->with(['account:id,name,email,mailbox,host,port,encryption,username,password,post_action,move_to', 'rule.contract:id,code,name', 'rule:id,account_id,contract_id,name,post_action'])
+            ->latest('processed_at')
+            ->paginate(20)
+            ->withQueryString()
+            ->through(fn (GedEmailProcessedMessage $message) => [
+                'id' => $message->id,
+                'subject' => $message->subject,
+                'from' => $message->from,
+                'received_at' => $message->received_at?->format('Y-m-d H:i:s'),
+                'processed_at' => $message->processed_at?->format('Y-m-d H:i:s'),
+                'error' => $message->error,
+                'attachments_count' => $message->attachments_count,
+                'metadata' => $message->metadata ?? [],
+                'resolve_url' => route('tenant.ged.triage.resolve', [$tenant->slug, $message]),
+                'account' => $message->account ? [
+                    'id' => $message->account->id,
+                    'name' => $message->account->name,
+                    'email' => $message->account->email,
+                    'mailbox' => $message->account->mailbox,
+                ] : null,
+                'rule' => $message->rule ? [
+                    'id' => $message->rule->id,
+                    'name' => $message->rule->name,
+                    'contract' => $message->rule->contract ? [
+                        'id' => $message->rule->contract->id,
+                        'code' => $message->rule->contract->code,
+                        'name' => $message->rule->contract->name,
+                    ] : null,
+                ] : null,
+            ]);
+
+        return Inertia::render('Tenant/Ged/Triage', [
+            'tenant' => [
+                'id' => $tenant->id,
+                'name' => $tenant->name,
+                'slug' => $tenant->slug,
+            ],
+            'messages' => $messages,
+        ]);
+    }
+
+    public function resolveTriage(Request $request, Tenant $tenant, GedEmailProcessedMessage $message): RedirectResponse
+    {
+        abort_unless((int) $message->tenant_id === (int) $tenant->id, 404);
+        abort_unless($message->status === 'pending_triage', 422, 'Esta pendencia ja foi resolvida.');
+
+        $data = $request->validate([
+            'main_pdf' => ['required', 'string', 'max:500'],
+        ]);
+
+        $message->load(['account', 'rule']);
+        abort_unless($message->account && $message->rule, 404);
+
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        abort_unless($accessibleContractIds->contains((int) $message->rule->contract_id), 403);
+
+        $result = $this->resolveEmailTriageMessage($tenant, $message, $data['main_pdf']);
+
+        if (! ($result['ok'] ?? false)) {
+            return back()->with('error', $result['message'] ?? 'Nao foi possivel resolver a triagem.');
+        }
+
+        return back()->with('success', $result['message'] ?? 'Triagem resolvida.');
     }
 
     public function settings(Tenant $tenant): Response
@@ -311,6 +486,7 @@ class GedController extends Controller
                         'attachments_count' => $message->attachments_count,
                         'imported_count' => $message->imported_count,
                         'duplicate_count' => $message->duplicate_count,
+                        'metadata' => $message->metadata,
                     ]),
                 'account' => $rule->account ? [
                     'id' => $rule->account->id,
@@ -475,6 +651,18 @@ class GedController extends Controller
 
         if (! empty($result['message'])) {
             return back()->with('success', $result['message']);
+        }
+
+        if (array_key_exists('matched', $result) && (int) ($result['pending_triage'] ?? 0) > 0) {
+            return back()->with('success', sprintf(
+                'Processamento concluido: %d e-mail(s) lido(s), %d compativel(is) com as regras, %d anexo(s) encontrado(s), %d documento(s) importado(s), %d duplicado(s) ignorado(s), %d aguardando triagem.',
+                $result['messages'] ?? 0,
+                $result['matched'] ?? 0,
+                $result['attachments'] ?? 0,
+                $result['imported'] ?? 0,
+                $result['duplicates'] ?? 0,
+                $result['pending_triage'] ?? 0,
+            ));
         }
 
         if (array_key_exists('matched', $result)) {
@@ -722,6 +910,182 @@ class GedController extends Controller
         return $this->renderDocumentWorkspace($tenant, $document, 'content');
     }
 
+    public function attachments(Tenant $tenant, GedDocument $document): Response
+    {
+        return $this->renderDocumentWorkspace($tenant, $document, 'attachments');
+    }
+
+    public function storeAttachment(Request $request, Tenant $tenant, GedDocument $document): RedirectResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+
+        $data = $request->validate([
+            'files' => ['required', 'array', 'min:1'],
+            'files.*' => ['file', 'max:102400'],
+            'title' => ['nullable', 'string', 'max:180'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $storageDisk = (string) config('ged.document_disk', 'public');
+        $directory = 'ged/'.$tenant->id.'/attachments/'.$document->id.'/'.now()->format('Y/m');
+        $attachments = collect();
+
+        foreach ($request->file('files', []) as $file) {
+            $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
+            $checksum = hash_file('sha256', $file->getRealPath());
+            $filename = Str::uuid().($extension ? ".{$extension}" : '');
+            $path = $file->storeAs($directory, $filename, $storageDisk);
+
+            $attachment = GedDocumentAttachment::create([
+                'document_id' => $document->id,
+                'uploaded_by_id' => auth()->id(),
+                'title' => $data['title'] ?: null,
+                'original_filename' => $file->getClientOriginalName(),
+                'mime_type' => $file->getMimeType(),
+                'extension' => $extension,
+                'size_bytes' => $file->getSize() ?: 0,
+                'checksum' => $checksum,
+                'storage_disk' => $storageDisk,
+                'path' => $path,
+                'notes' => $data['notes'] ?: null,
+            ]);
+
+            $this->queueAttachmentOcrIfNeeded($attachment, 'Anexo PDF enviado para fila de OCR.');
+
+            $attachments->push($attachment);
+        }
+
+        $this->logGedEvent(
+            $document,
+            'attachment.created',
+            $attachments->count() === 1 ? 'Anexo adicionado' : 'Anexos adicionados',
+            $attachments->count() === 1
+                ? 'Um arquivo foi vinculado ao documento principal.'
+                : $attachments->count().' arquivos foram vinculados ao documento principal.',
+            [
+                'attachment_ids' => $attachments->pluck('id')->all(),
+                'original_filenames' => $attachments->pluck('original_filename')->all(),
+                'total_size_bytes' => $attachments->sum('size_bytes'),
+            ],
+        );
+
+        return back()->with('success', $attachments->count().' anexo(s) adicionado(s) ao documento.');
+    }
+
+    public function downloadAttachment(Tenant $tenant, GedDocument $document, GedDocumentAttachment $attachment): StreamedResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $attachment->document_id === (int) $document->id, 404);
+
+        $disk = Storage::disk($attachment->storage_disk ?: 'public');
+        abort_unless($disk->exists($attachment->path), 404);
+
+        return $disk->download($attachment->path, $attachment->original_filename);
+    }
+
+    public function previewAttachment(Tenant $tenant, GedDocument $document, GedDocumentAttachment $attachment): StreamedResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $attachment->document_id === (int) $document->id, 404);
+        abort_unless($attachment->isPdf(), 404);
+
+        $disk = Storage::disk($attachment->storage_disk ?: 'public');
+        $path = $attachment->archive_path && $disk->exists($attachment->archive_path)
+            ? $attachment->archive_path
+            : $attachment->path;
+
+        abort_unless($disk->exists($path), 404);
+
+        $filename = str_replace('"', '', ($attachment->title ?: pathinfo($attachment->original_filename, PATHINFO_FILENAME)).'-ocr.pdf');
+
+        return $disk->response($path, $filename, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+        ]);
+    }
+
+    public function queueAttachmentOcr(Tenant $tenant, GedDocument $document, GedDocumentAttachment $attachment): RedirectResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $attachment->document_id === (int) $document->id, 404);
+        abort_unless($attachment->isPdf(), 404);
+
+        $this->queueAttachmentOcrIfNeeded($attachment, 'Anexo PDF reenviado para fila de OCR.', force: true);
+
+        $this->logGedEvent(
+            $document,
+            'attachment.ocr.queued',
+            'OCR do anexo reenviado',
+            'Anexo PDF reenviado manualmente para a fila de OCR.',
+            [
+                'attachment_id' => $attachment->id,
+                'original_filename' => $attachment->original_filename,
+                'engine' => 'ocrmypdf',
+            ],
+        );
+
+        return back()->with('success', 'Anexo reenviado para a fila de OCR.');
+    }
+
+    public function updateAttachment(Request $request, Tenant $tenant, GedDocument $document, GedDocumentAttachment $attachment): RedirectResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $attachment->document_id === (int) $document->id, 404);
+
+        $data = $request->validate([
+            'title' => ['nullable', 'string', 'max:180'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $before = $attachment->only(['title', 'notes']);
+
+        $attachment->update([
+            'title' => $data['title'] ?: null,
+            'notes' => $data['notes'] ?: null,
+        ]);
+
+        $this->logGedEvent(
+            $document,
+            'attachment.updated',
+            'Anexo atualizado',
+            'Titulo ou observacao de um anexo foi atualizado.',
+            [
+                'attachment_id' => $attachment->id,
+                'original_filename' => $attachment->original_filename,
+                'before' => $before,
+                'after' => $attachment->only(['title', 'notes']),
+            ],
+        );
+
+        return back()->with('success', 'Anexo atualizado.');
+    }
+
+    public function destroyAttachment(Tenant $tenant, GedDocument $document, GedDocumentAttachment $attachment): RedirectResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $attachment->document_id === (int) $document->id, 404);
+
+        Storage::disk($attachment->storage_disk ?: 'public')->delete(array_filter([
+            $attachment->path,
+            $attachment->archive_path,
+        ]));
+
+        $this->logGedEvent(
+            $document,
+            'attachment.deleted',
+            'Anexo excluido',
+            'Um arquivo vinculado ao documento principal foi excluido.',
+            [
+                'attachment_id' => $attachment->id,
+                'original_filename' => $attachment->original_filename,
+            ],
+        );
+
+        $attachment->delete();
+
+        return back()->with('success', 'Anexo excluido.');
+    }
+
     public function metadata(Tenant $tenant, GedDocument $document): Response
     {
         return $this->renderDocumentWorkspace($tenant, $document, 'metadata');
@@ -965,6 +1329,26 @@ class GedController extends Controller
         return back()->with('success', 'Dados do documento atualizados.');
     }
 
+    public function destroy(Tenant $tenant, GedDocument $document): RedirectResponse
+    {
+        abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
+
+        $title = $document->title;
+
+        $this->logGedEvent(
+            $document,
+            'document.trashed',
+            'Documento movido para a lixeira',
+            'O documento foi movido para a lixeira.',
+        );
+
+        $document->delete();
+
+        return redirect()
+            ->route('tenant.ged.index', $tenant->slug)
+            ->with('success', "Documento {$title} movido para a lixeira.");
+    }
+
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
         $data = $request->validate([
@@ -980,9 +1364,16 @@ class GedController extends Controller
         ]);
 
         $file = $request->file('file');
+        $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
+
+        if (! $this->isAcceptedGedDocumentType($file->getClientOriginalName(), $file->getMimeType(), $extension)) {
+            throw ValidationException::withMessages([
+                'file' => 'Tipo de arquivo nao aceito. Envie apenas PDF.',
+            ]);
+        }
+
         $checksum = hash_file('sha256', $file->getRealPath());
         $originalMd5 = hash_file('md5', $file->getRealPath());
-        $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
         $directory = 'ged/'.$tenant->id.'/'.now()->format('Y/m');
         $filename = Str::uuid().($extension ? ".{$extension}" : '');
         $storageDisk = (string) config('ged.document_disk', 'public');
@@ -1156,6 +1547,40 @@ class GedController extends Controller
         return back()->with('success', 'Tipo documental cadastrado.');
     }
 
+    public function updateType(Request $request, Tenant $tenant, GedDocumentType $type): RedirectResponse
+    {
+        abort_unless((int) $type->tenant_id === (int) $tenant->id, 404);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'contract_id' => ['required', 'integer'],
+        ]);
+
+        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($data['contract_id'])->exists(), 422);
+
+        $type->update([
+            'name' => $data['name'],
+            'contract_id' => $data['contract_id'],
+        ]);
+
+        return back()->with('success', 'Tipo documental atualizado.');
+    }
+
+    public function destroyType(Tenant $tenant, GedDocumentType $type): RedirectResponse
+    {
+        abort_unless((int) $type->tenant_id === (int) $tenant->id, 404);
+
+        if ($type->documents()->exists()) {
+            return back()->withErrors([
+                'type' => 'Nao e possivel excluir um tipo documental com documentos cadastrados.',
+            ]);
+        }
+
+        $type->delete();
+
+        return back()->with('success', 'Tipo documental excluido.');
+    }
+
     public function storeCorrespondent(Request $request, Tenant $tenant): RedirectResponse
     {
         $data = $request->validate([
@@ -1196,6 +1621,42 @@ class GedController extends Controller
         return back()->with('success', 'Etiqueta cadastrada.');
     }
 
+    public function updateTag(Request $request, Tenant $tenant, GedTag $tag): RedirectResponse
+    {
+        abort_unless((int) $tag->tenant_id === (int) $tenant->id, 404);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:80'],
+            'color' => ['nullable', 'string', 'max:7'],
+            'contract_id' => ['required', 'integer'],
+        ]);
+
+        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($data['contract_id'])->exists(), 422);
+
+        $tag->update([
+            'name' => $data['name'],
+            'contract_id' => $data['contract_id'],
+            'color' => $data['color'] ?: '#2563eb',
+        ]);
+
+        return back()->with('success', 'Etiqueta atualizada.');
+    }
+
+    public function destroyTag(Tenant $tenant, GedTag $tag): RedirectResponse
+    {
+        abort_unless((int) $tag->tenant_id === (int) $tenant->id, 404);
+
+        if ($tag->documents()->exists()) {
+            return back()->withErrors([
+                'tag' => 'Nao e possivel excluir uma etiqueta com documentos cadastrados.',
+            ]);
+        }
+
+        $tag->delete();
+
+        return back()->with('success', 'Etiqueta excluida.');
+    }
+
     private function nextGedDocumentSequence(Tenant $tenant, ?string $documentDate = null): array
     {
         Tenant::query()
@@ -1205,7 +1666,7 @@ class GedController extends Controller
 
         $year = CarbonImmutable::parse($documentDate ?: now())->year;
 
-        $lastDocument = GedDocument::query()
+        $lastDocument = GedDocument::withTrashed()
             ->where('tenant_id', $tenant->id)
             ->where('sequence_year', $year)
             ->orderByDesc('sequence_number')
@@ -1362,6 +1823,52 @@ class GedController extends Controller
             ->onQueue((string) config('ged.ocr.queue', 'ged'));
     }
 
+    private function dispatchAttachmentOcrJob(GedDocumentAttachment $attachment): void
+    {
+        ProcessGedDocumentAttachmentOcrJob::dispatch($attachment->id)
+            ->onConnection((string) config('ged.ocr.connection', 'database'))
+            ->onQueue((string) config('ged.ocr.queue', 'ged'));
+    }
+
+    private function queueAttachmentOcrIfNeeded(GedDocumentAttachment $attachment, string $message, bool $force = false): void
+    {
+        if (! $attachment->isPdf()) {
+            return;
+        }
+
+        if (! (bool) config('ged.ocr.enabled', true)) {
+            $attachment->forceFill([
+                'ocr_status' => 'disabled',
+                'ocr_metadata' => array_merge($attachment->ocr_metadata ?: [], [
+                    'status' => 'disabled',
+                    'message' => 'OCR desabilitado no ambiente.',
+                ]),
+            ])->save();
+
+            return;
+        }
+
+        if (! $force && in_array($attachment->ocr_status, ['queued', 'processing', 'indexed'], true)) {
+            return;
+        }
+
+        $attachment->forceFill([
+            'ocr_status' => 'queued',
+            'ocr_metadata' => array_merge($attachment->ocr_metadata ?: [], [
+                'status' => 'queued',
+                'queued_at' => now()->toDateTimeString(),
+                'started_at' => null,
+                'finished_at' => null,
+                'engine' => 'ocrmypdf',
+                'queue' => (string) config('ged.ocr.queue', 'ged'),
+                'timeout_seconds' => (int) config('ged.ocr.timeout', 300),
+                'message' => $message,
+            ]),
+        ])->save();
+
+        $this->dispatchAttachmentOcrJob($attachment);
+    }
+
     private function renderDocumentWorkspace(Tenant $tenant, GedDocument $document, string $section): Response
     {
         abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
@@ -1376,6 +1883,7 @@ class GedController extends Controller
             'tags:id,name,color',
             'uploader:id,name,email',
             'versions.uploader:id,name,email',
+            'attachments.uploader:id,name,email',
             'events.actor:id,name,email',
             'notes.user:id,name,email',
         ]);
@@ -1455,8 +1963,10 @@ class GedController extends Controller
                 'preview_url' => route('tenant.ged.preview', [$tenant->slug, $document]),
                 'ocr_url' => route('tenant.ged.ocr', [$tenant->slug, $document]),
                 'notes_store_url' => route('tenant.ged.notes.store', [$tenant->slug, $document]),
+                'attachment_store_url' => route('tenant.ged.attachments.store', [$tenant->slug, $document]),
                 'permissions_update_url' => route('tenant.ged.permissions.update', [$tenant->slug, $document]),
                 'update_url' => route('tenant.ged.update', [$tenant->slug, $document]),
+                'delete_url' => route('tenant.ged.destroy', [$tenant->slug, $document]),
                 'index_url' => route('tenant.ged.index', $tenant->slug),
                 'contract' => $document->contract ? [
                     'id' => $document->contract->id,
@@ -1494,6 +2004,34 @@ class GedController extends Controller
                         'id' => $version->uploader->id,
                         'name' => $version->uploader->name,
                         'email' => $version->uploader->email,
+                    ] : null,
+                ])->values(),
+                'attachments' => $document->attachments->map(fn (GedDocumentAttachment $attachment) => [
+                    'id' => $attachment->id,
+                    'title' => $attachment->title,
+                    'original_filename' => $attachment->original_filename,
+                    'mime_type' => $attachment->mime_type,
+                    'extension' => $attachment->extension,
+                    'size_bytes' => $attachment->size_bytes,
+                    'checksum' => $attachment->checksum,
+                    'notes' => $attachment->notes,
+                    'is_pdf' => $attachment->isPdf(),
+                    'ocr_status' => $attachment->ocr_status,
+                    'ocr_metadata' => $attachment->ocr_metadata ?: [],
+                    'extracted_text' => $attachment->extracted_text,
+                    'archive_path' => $attachment->archive_path,
+                    'page_count' => $attachment->page_count,
+                    'processed_at' => $attachment->processed_at?->format('Y-m-d H:i:s'),
+                    'created_at' => $attachment->created_at?->format('Y-m-d H:i:s'),
+                    'download_url' => route('tenant.ged.attachments.download', [$tenant->slug, $document, $attachment]),
+                    'preview_url' => $attachment->isPdf() ? route('tenant.ged.attachments.preview', [$tenant->slug, $document, $attachment]) : null,
+                    'ocr_url' => $attachment->isPdf() ? route('tenant.ged.attachments.ocr', [$tenant->slug, $document, $attachment]) : null,
+                    'update_url' => route('tenant.ged.attachments.update', [$tenant->slug, $document, $attachment]),
+                    'delete_url' => route('tenant.ged.attachments.destroy', [$tenant->slug, $document, $attachment]),
+                    'uploader' => $attachment->uploader ? [
+                        'id' => $attachment->uploader->id,
+                        'name' => $attachment->uploader->name,
+                        'email' => $attachment->uploader->email,
                     ] : null,
                 ])->values(),
                 'history_events' => $document->events->map(fn (GedDocumentEvent $event) => [
@@ -1598,7 +2136,7 @@ class GedController extends Controller
     public function bulkAction(Request $request, Tenant $tenant): RedirectResponse
     {
         $data = $request->validate([
-            'action' => ['required', 'in:reprocess,rotate'],
+            'action' => ['required', 'in:reprocess,rotate,trash'],
             'degrees' => ['nullable', 'integer', 'in:-90,90,180'],
             'document_ids' => ['required', 'array', 'min:1'],
             'document_ids.*' => ['integer'],
@@ -1610,6 +2148,21 @@ class GedController extends Controller
             ->get();
 
         abort_if($documents->isEmpty(), 422, 'Nenhum documento válido selecionado.');
+
+        if ($data['action'] === 'trash') {
+            foreach ($documents as $document) {
+                $this->logGedEvent(
+                    $document,
+                    'document.trashed',
+                    'Documento movido para a lixeira',
+                    'O documento foi movido para a lixeira por acao em massa.',
+                );
+
+                $document->delete();
+            }
+
+            return back()->with('success', $documents->count().' documento(s) movido(s) para a lixeira.');
+        }
 
         if ($data['action'] === 'reprocess') {
             foreach ($documents as $document) {
@@ -1735,6 +2288,33 @@ class GedController extends Controller
             if ($outputPath && File::exists($outputPath)) {
                 File::delete($outputPath);
             }
+        }
+    }
+
+    private function deleteGedDocumentFiles(GedDocument $document): void
+    {
+        $pathsByDisk = [];
+
+        foreach ([$document->original_path, $document->archive_path, $document->thumbnail_path] as $path) {
+            if ($path) {
+                $pathsByDisk[$document->storage_disk ?: 'public'][] = $path;
+            }
+        }
+
+        foreach ($document->versions as $version) {
+            if ($version->path) {
+                $pathsByDisk[$version->storage_disk ?: $document->storage_disk ?: 'public'][] = $version->path;
+            }
+        }
+
+        foreach ($document->attachments as $attachment) {
+            if ($attachment->path) {
+                $pathsByDisk[$attachment->storage_disk ?: $document->storage_disk ?: 'public'][] = $attachment->path;
+            }
+        }
+
+        foreach ($pathsByDisk as $diskName => $paths) {
+            Storage::disk($diskName)->delete(array_values(array_unique($paths)));
         }
     }
 
@@ -1891,6 +2471,7 @@ class GedController extends Controller
             'imported' => 0,
             'duplicates' => 0,
             'errors' => 0,
+            'pending_triage' => 0,
         ];
 
         try {
@@ -1930,12 +2511,66 @@ class GedController extends Controller
                 }
 
                 $stats['matched']++;
+                $messageHasPendingTriage = false;
 
                 foreach ($matchedRules as $rule) {
                     $ruleImported = 0;
                     $ruleDuplicates = 0;
                     $ruleErrors = 0;
                     $lastDocumentId = null;
+
+                    if ($this->emailRuleAlreadyImportedMessage($tenant, $account, $rule, $messageId, $parsed)) {
+                        $stats['duplicates']++;
+                        $ruleDuplicates++;
+                        continue;
+                    }
+
+                    $matchingAttachments = collect($parsed['attachments'])
+                        ->filter(fn (array $attachment) => $this->emailAttachmentMatchesRule($rule, $attachment['filename'] ?? ''))
+                        ->values();
+                    $shouldCreateEmailDocument = ($rule->consume_scope ?: 'attachments') === 'everything';
+
+                    if ($shouldCreateEmailDocument) {
+                        $created = $this->createGedDocumentFromEmailMessage($tenant, $account, $rule, $parsed);
+
+                        if ($created === 'duplicate') {
+                            $stats['duplicates']++;
+                            $ruleDuplicates++;
+                        } elseif ($created instanceof GedDocument) {
+                            $stats['imported']++;
+                            $ruleImported++;
+                            $lastDocumentId = $created->id;
+
+                            if ($rule->consume_attachments) {
+                                foreach ($matchingAttachments as $supportAttachment) {
+                                    $this->createGedDocumentAttachmentFromEmailAttachment($created, $supportAttachment, $account, $rule, $parsed);
+                                }
+                            }
+                        } else {
+                            $stats['errors']++;
+                            $ruleErrors++;
+                        }
+
+                        $this->recordProcessedEmail($tenant, $account, $rule, $messageId, $parsed, [
+                            'document_id' => $lastDocumentId,
+                            'status' => $ruleErrors > 0 ? 'error' : 'success',
+                            'attachments_count' => $matchingAttachments->count(),
+                            'imported_count' => $ruleImported,
+                            'duplicate_count' => $ruleDuplicates,
+                            'error' => $ruleErrors > 0
+                                ? 'Nao foi possivel converter o e-mail em PDF.'
+                                : ($ruleImported === 0 && $ruleDuplicates === 0 ? 'E-mail processado, mas nenhum documento foi importado.' : null),
+                            'metadata' => [
+                                'consume_scope' => 'everything',
+                                'email_pdf' => true,
+                                'support_attachment_names' => $rule->consume_attachments
+                                    ? $matchingAttachments->map(fn (array $attachment) => $attachment['filename'] ?? 'anexo')->values()->all()
+                                    : [],
+                            ],
+                        ]);
+
+                        continue;
+                    }
 
                     if (! $rule->consume_attachments) {
                         $this->recordProcessedEmail($tenant, $account, $rule, $messageId, $parsed, [
@@ -1949,39 +2584,87 @@ class GedController extends Controller
                         continue;
                     }
 
-                    foreach ($parsed['attachments'] as $attachment) {
-                        if (! $this->emailAttachmentMatchesRule($rule, $attachment['filename'] ?? '')) {
-                            continue;
-                        }
+                    $pdfAttachments = $matchingAttachments
+                        ->filter(fn (array $attachment) => $this->isEmailAttachmentPdf($attachment))
+                        ->values();
+                    $supportAttachments = $matchingAttachments
+                        ->reject(fn (array $attachment) => $this->isEmailAttachmentPdf($attachment))
+                        ->values();
 
-                        $created = $this->createGedDocumentFromEmailAttachment($tenant, $account, $rule, $parsed, $attachment);
+                    if ($pdfAttachments->count() > 1) {
+                        $stats['pending_triage']++;
+                        $messageHasPendingTriage = true;
 
-                        if ($created === 'duplicate') {
-                            $stats['duplicates']++;
-                            $ruleDuplicates++;
-                        } elseif ($created instanceof GedDocument) {
-                            $stats['imported']++;
-                            $ruleImported++;
-                            $lastDocumentId = $created->id;
-                        } else {
-                            $stats['errors']++;
-                            $ruleErrors++;
+                        $this->recordProcessedEmail($tenant, $account, $rule, $messageId, $parsed, [
+                            'status' => 'pending_triage',
+                            'attachments_count' => $matchingAttachments->count(),
+                            'imported_count' => 0,
+                            'duplicate_count' => 0,
+                            'error' => 'E-mail recebido com '.$pdfAttachments->count().' PDFs. Escolha o documento principal.',
+                            'metadata' => [
+                                'pdf_candidates' => $pdfAttachments->map(fn (array $attachment) => $attachment['filename'] ?? 'anexo.pdf')->values()->all(),
+                                'support_attachment_names' => $supportAttachments->map(fn (array $attachment) => $attachment['filename'] ?? 'anexo')->values()->all(),
+                            ],
+                        ]);
+
+                        continue;
+                    }
+
+                    if ($pdfAttachments->count() === 0) {
+                        $stats['errors']++;
+                        $ruleErrors++;
+
+                        $this->recordProcessedEmail($tenant, $account, $rule, $messageId, $parsed, [
+                            'status' => 'error',
+                            'attachments_count' => $matchingAttachments->count(),
+                            'imported_count' => 0,
+                            'duplicate_count' => 0,
+                            'error' => 'E-mail processado, mas nenhum PDF principal foi encontrado.',
+                            'metadata' => [
+                                'support_attachment_names' => $supportAttachments->map(fn (array $attachment) => $attachment['filename'] ?? 'anexo')->values()->all(),
+                            ],
+                        ]);
+
+                        continue;
+                    }
+
+                    $created = $this->createGedDocumentFromEmailAttachment($tenant, $account, $rule, $parsed, $pdfAttachments->first());
+
+                    if ($created === 'duplicate') {
+                        $stats['duplicates']++;
+                        $ruleDuplicates++;
+                    } elseif ($created instanceof GedDocument) {
+                        $stats['imported']++;
+                        $ruleImported++;
+                        $lastDocumentId = $created->id;
+
+                        foreach ($supportAttachments as $supportAttachment) {
+                            $this->createGedDocumentAttachmentFromEmailAttachment($created, $supportAttachment, $account, $rule, $parsed);
                         }
+                    } else {
+                        $stats['errors']++;
+                        $ruleErrors++;
                     }
 
                     $this->recordProcessedEmail($tenant, $account, $rule, $messageId, $parsed, [
                         'document_id' => $lastDocumentId,
                         'status' => $ruleErrors > 0 ? 'error' : 'success',
-                        'attachments_count' => count($parsed['attachments']),
+                        'attachments_count' => $matchingAttachments->count(),
                         'imported_count' => $ruleImported,
                         'duplicate_count' => $ruleDuplicates,
                         'error' => $ruleErrors > 0
                             ? 'Alguns anexos não puderam ser importados.'
                             : ($ruleImported === 0 && $ruleDuplicates === 0 ? 'E-mail processado, mas nenhum anexo foi importado.' : null),
+                        'metadata' => [
+                            'main_pdf' => $pdfAttachments->first()['filename'] ?? null,
+                            'support_attachment_names' => $supportAttachments->map(fn (array $attachment) => $attachment['filename'] ?? 'anexo')->values()->all(),
+                        ],
                     ]);
                 }
 
-                $this->applyEmailPostAction($stream, $messageId, $account, $matchedRules->first());
+                if (! $messageHasPendingTriage) {
+                    $this->applyEmailPostAction($stream, $messageId, $account, $matchedRules->first());
+                }
             }
 
             $this->imapCommand($stream, 'LOGOUT');
@@ -2002,6 +2685,130 @@ class GedController extends Controller
         }
 
         return $stats;
+    }
+
+    private function resolveEmailTriageMessage(Tenant $tenant, GedEmailProcessedMessage $message, string $mainPdfFilename): array
+    {
+        /** @var GedEmailAccount|null $account */
+        $account = $message->account;
+        /** @var GedEmailRule|null $rule */
+        $rule = $message->rule;
+
+        if (! $account || ! $rule) {
+            return ['ok' => false, 'message' => 'Conta ou regra da triagem nao encontrada.'];
+        }
+
+        $connection = $this->openImapConnection($account);
+        if (! ($connection['ok'] ?? false)) {
+            return $connection;
+        }
+
+        $stream = $connection['stream'];
+
+        try {
+            $select = $this->imapCommand($stream, 'SELECT '.$this->imapQuoted($account->mailbox ?: 'INBOX'));
+            if (! $select['ok']) {
+                throw new \RuntimeException('Nao foi possivel abrir a pasta IMAP. '.$select['response']);
+            }
+
+            $messageSequenceId = $this->findTriageImapMessageSequence($stream, $message);
+            if (! $messageSequenceId) {
+                throw new \RuntimeException('O e-mail original nao foi encontrado na caixa configurada.');
+            }
+
+            $raw = $this->imapFetchRawMessage($stream, $messageSequenceId);
+            if (! $raw) {
+                throw new \RuntimeException('Nao foi possivel ler o e-mail original.');
+            }
+
+            $parsed = $this->parseRawEmailMessage($raw);
+            $matchingAttachments = collect($parsed['attachments'])
+                ->filter(fn (array $attachment) => $this->emailAttachmentMatchesRule($rule, $attachment['filename'] ?? ''))
+                ->values();
+            $mainPdf = $matchingAttachments->first(fn (array $attachment) => ($attachment['filename'] ?? '') === $mainPdfFilename && $this->isEmailAttachmentPdf($attachment));
+
+            if (! $mainPdf) {
+                throw new \RuntimeException('O PDF principal selecionado nao foi encontrado neste e-mail.');
+            }
+
+            $supportAttachments = $matchingAttachments
+                ->reject(fn (array $attachment) => ($attachment['filename'] ?? '') === $mainPdfFilename)
+                ->values();
+
+            $created = $this->createGedDocumentFromEmailAttachment($tenant, $account, $rule, $parsed, $mainPdf);
+            $importedCount = 0;
+            $duplicateCount = 0;
+            $documentId = null;
+
+            if ($created === 'duplicate') {
+                $duplicateCount = 1;
+            } elseif ($created instanceof GedDocument) {
+                $importedCount = 1;
+                $documentId = $created->id;
+
+                foreach ($supportAttachments as $supportAttachment) {
+                    $this->createGedDocumentAttachmentFromEmailAttachment($created, $supportAttachment, $account, $rule, $parsed);
+                }
+            } else {
+                throw new \RuntimeException('Nao foi possivel importar o PDF principal selecionado.');
+            }
+
+            $message->update([
+                'document_id' => $documentId,
+                'status' => 'success',
+                'error' => $created === 'duplicate' ? 'PDF principal ja existia no GED e foi tratado como duplicado.' : null,
+                'imported_count' => $importedCount,
+                'duplicate_count' => $duplicateCount,
+                'processed_at' => now(),
+                'metadata' => array_merge($message->metadata ?? [], [
+                    'resolved_at' => now()->toDateTimeString(),
+                    'resolved_main_pdf' => $mainPdfFilename,
+                    'support_attachment_names' => $supportAttachments->map(fn (array $attachment) => $attachment['filename'] ?? 'anexo')->values()->all(),
+                ]),
+            ]);
+
+            $this->applyEmailPostAction($stream, $messageSequenceId, $account, $rule);
+            $this->imapCommand($stream, 'LOGOUT');
+
+            return [
+                'ok' => true,
+                'message' => $created === 'duplicate'
+                    ? 'Triagem resolvida: o PDF principal ja existia no GED.'
+                    : 'Triagem resolvida e documento importado.',
+            ];
+        } catch (\Throwable $exception) {
+            $message->update([
+                'error' => $exception->getMessage(),
+                'processed_at' => now(),
+            ]);
+
+            if (is_resource($stream)) {
+                @fwrite($stream, $this->imapTag()." LOGOUT\r\n");
+                @fclose($stream);
+            }
+
+            return ['ok' => false, 'message' => $exception->getMessage()];
+        } finally {
+            if (is_resource($stream)) {
+                @fclose($stream);
+            }
+        }
+    }
+
+    private function findTriageImapMessageSequence($stream, GedEmailProcessedMessage $message): ?int
+    {
+        if ($message->message_id) {
+            $ids = $this->imapSearchIds($stream, 'HEADER Message-ID '.$this->imapQuoted($message->message_id));
+            if ($ids !== []) {
+                return (int) end($ids);
+            }
+        }
+
+        if ($message->message_uid && ctype_digit((string) $message->message_uid)) {
+            return (int) $message->message_uid;
+        }
+
+        return null;
     }
 
     private function imapSearchCriteriaForRule(GedEmailRule $rule): string
@@ -2438,7 +3245,7 @@ class GedController extends Controller
             }
         }
 
-        GedEmailProcessedMessage::create([
+        $payload = [
             'tenant_id' => $tenant->id,
             'account_id' => $account->id,
             'rule_id' => $rule->id,
@@ -2454,11 +3261,281 @@ class GedController extends Controller
             'attachments_count' => (int) ($data['attachments_count'] ?? 0),
             'imported_count' => (int) ($data['imported_count'] ?? 0),
             'duplicate_count' => (int) ($data['duplicate_count'] ?? 0),
-            'metadata' => [
+            'metadata' => array_merge([
                 'to' => $email['to'] ?? null,
                 'attachment_names' => collect($email['attachments'] ?? [])->pluck('filename')->filter()->values()->all(),
-            ],
+            ], $data['metadata'] ?? []),
+        ];
+
+        if (($data['status'] ?? null) === 'pending_triage') {
+            GedEmailProcessedMessage::updateOrCreate([
+                'tenant_id' => $tenant->id,
+                'account_id' => $account->id,
+                'rule_id' => $rule->id,
+                'message_uid' => (string) $messageUid,
+            ], $payload);
+
+            return;
+        }
+
+        GedEmailProcessedMessage::create($payload);
+    }
+
+    private function isAcceptedGedDocumentType(?string $filename, ?string $mimeType, ?string $extension = null): bool
+    {
+        $extension = Str::lower($extension ?: pathinfo((string) $filename, PATHINFO_EXTENSION));
+        $mimeType = Str::lower((string) $mimeType);
+
+        if ($extension && in_array($extension, self::GED_ACCEPTED_EXTENSIONS, true)) {
+            return true;
+        }
+
+        if ($mimeType && in_array($mimeType, self::GED_ACCEPTED_MIME_TYPES, true)) {
+            return true;
+        }
+
+        return $mimeType !== '' && collect(self::GED_ACCEPTED_MIME_PREFIXES)
+            ->contains(fn (string $prefix) => Str::startsWith($mimeType, $prefix));
+    }
+
+    private function isEmailAttachmentPdf(array $attachment): bool
+    {
+        $filename = $this->safeGedFilename($attachment['filename'] ?? 'anexo');
+        $extension = Str::lower(pathinfo($filename, PATHINFO_EXTENSION));
+        $mimeType = Str::lower((string) ($attachment['content_type'] ?? ''));
+
+        return $extension === 'pdf' || $mimeType === 'application/pdf';
+    }
+
+    private function emailRuleAlreadyImportedMessage(Tenant $tenant, GedEmailAccount $account, GedEmailRule $rule, int $messageUid, array $email): bool
+    {
+        return GedEmailProcessedMessage::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('account_id', $account->id)
+            ->where('rule_id', $rule->id)
+            ->where(function ($query) use ($messageUid, $email): void {
+                $query->where('message_uid', (string) $messageUid);
+
+                if (! empty($email['message_id'])) {
+                    $query->orWhere('message_id', $email['message_id']);
+                }
+            })
+            ->whereIn('status', ['success', 'pending_triage'])
+            ->exists();
+    }
+
+    private function createGedDocumentFromEmailMessage(Tenant $tenant, GedEmailAccount $account, GedEmailRule $rule, array $email): GedDocument|string|null
+    {
+        $content = $this->renderEmailMessagePdfContent($email, $account);
+
+        if ($content === '') {
+            return null;
+        }
+
+        return $this->createGedDocumentFromEmailAttachment($tenant, $account, $rule, $email, [
+            'filename' => $this->emailMessagePdfFilename($email),
+            'content_type' => 'application/pdf',
+            'content' => $content,
         ]);
+    }
+
+    private function renderEmailMessagePdfContent(array $email, GedEmailAccount $account): string
+    {
+        $plainBody = trim((string) ($email['text'] ?? ''));
+        $htmlBody = trim((string) ($email['html'] ?? ''));
+
+        if ($plainBody === '' && $htmlBody !== '') {
+            $plainBody = trim(html_entity_decode(strip_tags($htmlBody), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        }
+
+        if ($plainBody === '') {
+            $plainBody = 'E-mail sem corpo de mensagem.';
+        }
+
+        $messageBody = $htmlBody !== ''
+            ? $this->sanitizeEmailHtmlForPdf($htmlBody)
+            : '<div class="plain-body">'.nl2br(e($plainBody), false).'</div>';
+
+        $receivedAt = '--';
+        if (! empty($email['date'])) {
+            try {
+                $receivedAt = CarbonImmutable::parse($email['date'])->format('d/m/Y H:i');
+            } catch (\Throwable) {
+                $receivedAt = (string) $email['date'];
+            }
+        }
+
+        $subject = (string) (($email['subject'] ?? '') ?: 'E-mail recebido');
+        $from = (string) (($email['from'] ?? '') ?: '--');
+        $to = (string) (($email['to'] ?? '') ?: '--');
+        $messageId = (string) (($email['message_id'] ?? '') ?: '--');
+        $fromInitial = Str::upper(Str::substr(trim($from) ?: 'E', 0, 1));
+
+        $rows = [
+            'Conta' => $account->email,
+            'De' => $from,
+            'Para' => $to,
+            'Recebido em' => $receivedAt,
+            'Message-ID' => $messageId,
+        ];
+
+        $metadataRows = collect($rows)->map(function ($value, $label) {
+            return '<tr><th>'.e($label).'</th><td>'.e((string) $value).'</td></tr>';
+        })->implode('');
+
+        $attachments = collect($email['attachments'] ?? [])->pluck('filename')->filter()->values();
+        $attachmentChips = $attachments
+            ->map(fn ($filename) => '<span class="attachment-chip">'.e((string) $filename).'</span>')
+            ->implode('');
+        $attachmentsLabel = $attachments->count().' anexo'.($attachments->count() === 1 ? '' : 's');
+
+        $html = '<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <style>
+        @page { margin: 24px 30px; }
+        body { background: #f3f4f6; color: #111827; font-family: DejaVu Sans, sans-serif; font-size: 12px; line-height: 1.45; }
+        .email-shell { background: #ffffff; border: 1px solid #d8dee8; border-radius: 10px; overflow: hidden; }
+        .email-topbar { background: #0f172a; color: #ffffff; padding: 14px 18px; }
+        .email-topbar .label { color: #cbd5e1; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+        .email-topbar .title { font-size: 20px; font-weight: 700; margin-top: 4px; }
+        .email-header { border-bottom: 1px solid #e5e7eb; padding: 16px 18px; }
+        .sender-row { width: 100%; }
+        .avatar-cell { width: 46px; vertical-align: top; }
+        .avatar { background: #e0f2fe; border-radius: 999px; color: #0369a1; font-size: 18px; font-weight: 700; height: 38px; line-height: 38px; text-align: center; width: 38px; }
+        .sender-name { font-size: 14px; font-weight: 700; margin-bottom: 2px; word-break: break-word; }
+        .sender-sub { color: #64748b; font-size: 11px; word-break: break-word; }
+        .date { color: #475569; font-size: 11px; text-align: right; white-space: nowrap; }
+        .metadata { border-collapse: collapse; margin-top: 14px; width: 100%; }
+        .metadata th { color: #64748b; font-size: 9px; letter-spacing: .12em; padding: 5px 10px 5px 0; text-align: left; text-transform: uppercase; width: 92px; }
+        .metadata td { border-left: 2px solid #e5e7eb; padding: 5px 0 5px 10px; word-break: break-word; }
+        .attachments { background: #f8fafc; border-bottom: 1px solid #e5e7eb; padding: 12px 18px; }
+        .attachments-title { color: #475569; font-size: 10px; font-weight: 700; letter-spacing: .12em; margin-bottom: 8px; text-transform: uppercase; }
+        .attachment-chip { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 999px; display: inline-block; font-size: 10px; margin: 0 6px 6px 0; padding: 5px 9px; word-break: break-word; }
+        .message { padding: 20px 18px 24px; }
+        .message-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+        .message-card, .message-card p, .message-card div, .message-card span, .plain-body { color: #111827; font-family: DejaVu Sans, sans-serif; font-size: 12px; line-height: 1.55; }
+        .plain-body { white-space: pre-wrap; word-break: break-word; }
+        .message-card img { max-width: 100%; }
+        .message-card blockquote { border-left: 3px solid #cbd5e1; color: #475569; margin: 10px 0; padding-left: 10px; }
+        .footer { border-top: 1px solid #e5e7eb; color: #64748b; font-size: 10px; padding: 10px 18px; }
+    </style>
+</head>
+<body>
+    <div class="email-shell">
+        <div class="email-topbar">
+            <div class="label">E-mail recebido</div>
+            <div class="title">'.e($subject).'</div>
+        </div>
+        <div class="email-header">
+            <table class="sender-row">
+                <tr>
+                    <td class="avatar-cell"><div class="avatar">'.e($fromInitial).'</div></td>
+                    <td>
+                        <div class="sender-name">'.e($from).'</div>
+                        <div class="sender-sub">para '.e($to).'</div>
+                    </td>
+                    <td class="date">'.e($receivedAt).'</td>
+                </tr>
+            </table>
+            <table class="metadata">'.$metadataRows.'</table>
+        </div>'.
+        ($attachments->isNotEmpty() ? '<div class="attachments"><div class="attachments-title">'.$attachmentsLabel.'</div>'.$attachmentChips.'</div>' : '').
+        '<div class="message">
+            <div class="message-card">'.$messageBody.'</div>
+        </div>
+        <div class="footer">Documento gerado automaticamente a partir do e-mail recebido pela conta '.e($account->email).'.</div>
+    </div>
+</body>
+</html>';
+
+        return Pdf::loadHTML($html)->setPaper('a4')->output();
+    }
+
+    private function sanitizeEmailHtmlForPdf(string $html): string
+    {
+        $html = preg_replace('/<(script|style|iframe|object|embed|form|input|button|meta|link)\b[^>]*>.*?<\/\1>/is', '', $html) ?? $html;
+        $html = preg_replace('/<(script|style|iframe|object|embed|form|input|button|meta|link)\b[^>]*\/?>/is', '', $html) ?? $html;
+        $html = preg_replace('/\s+on[a-z]+\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/is', '', $html) ?? $html;
+        $html = preg_replace('/\s+(href|src)\s*=\s*("|\')\s*javascript:.*?\2/is', '', $html) ?? $html;
+        $html = preg_replace('/<img\b([^>]*)src=("|\')cid:[^"\']+\2([^>]*)>/is', '<span class="attachment-chip">Imagem embutida no e-mail</span>', $html) ?? $html;
+
+        return trim($html) !== '' ? $html : '<div class="plain-body">E-mail sem corpo de mensagem.</div>';
+    }
+
+    private function emailMessagePdfFilename(array $email): string
+    {
+        $subject = Str::of((string) (($email['subject'] ?? '') ?: 'email-recebido'))
+            ->ascii()
+            ->replaceMatches('/[^A-Za-z0-9\-_ ]+/', '-')
+            ->squish()
+            ->limit(120, '')
+            ->toString();
+
+        return $this->safeGedFilename('Email - '.($subject ?: 'mensagem').'.pdf');
+    }
+
+    private function createGedDocumentAttachmentFromEmailAttachment(GedDocument $document, array $attachment, GedEmailAccount $account, GedEmailRule $rule, array $email): ?GedDocumentAttachment
+    {
+        $content = $attachment['content'] ?? '';
+        if ($content === '' || strlen($content) > 100 * 1024 * 1024) {
+            return null;
+        }
+
+        $checksum = hash('sha256', $content);
+
+        if ($document->attachments()->where('checksum', $checksum)->exists()) {
+            return null;
+        }
+
+        $originalFilename = $this->safeGedFilename($attachment['filename'] ?? 'anexo');
+        $extension = strtolower(pathinfo($originalFilename, PATHINFO_EXTENSION));
+        $mimeType = $attachment['content_type'] ?? null;
+
+        if (! $mimeType && function_exists('finfo_buffer')) {
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($content) ?: null;
+        }
+
+        $storageDisk = (string) config('ged.document_disk', 'public');
+        $directory = 'ged/'.$document->tenant_id.'/attachments/'.$document->id.'/'.now()->format('Y/m');
+        $filename = Str::uuid().($extension ? ".{$extension}" : '');
+        $path = $directory.'/'.$filename;
+
+        Storage::disk($storageDisk)->put($path, $content);
+
+        $created = GedDocumentAttachment::create([
+            'document_id' => $document->id,
+            'uploaded_by_id' => auth()->id(),
+            'title' => pathinfo($originalFilename, PATHINFO_FILENAME) ?: $originalFilename,
+            'original_filename' => $originalFilename,
+            'mime_type' => $mimeType,
+            'extension' => $extension,
+            'size_bytes' => strlen($content),
+            'checksum' => $checksum,
+            'storage_disk' => $storageDisk,
+            'path' => $path,
+            'notes' => trim('Anexo recebido no mesmo e-mail do documento principal. Assunto: '.($email['subject'] ?? '')),
+        ]);
+
+        $this->logGedEvent(
+            $document,
+            'attachment.created',
+            'Anexo importado por e-mail',
+            'Arquivo extra do e-mail foi vinculado ao documento principal.',
+            [
+                'attachment_id' => $created->id,
+                'account_id' => $account->id,
+                'rule_id' => $rule->id,
+                'original_filename' => $originalFilename,
+                'size_bytes' => strlen($content),
+            ],
+        );
+
+        $this->queueAttachmentOcrIfNeeded($created, 'Anexo PDF recebido por e-mail enviado para fila de OCR.');
+
+        return $created;
     }
 
     private function createGedDocumentFromEmailAttachment(Tenant $tenant, GedEmailAccount $account, GedEmailRule $rule, array $email, array $attachment): GedDocument|string|null
@@ -2469,7 +3546,7 @@ class GedController extends Controller
         }
 
         $checksum = hash('sha256', $content);
-        $duplicate = GedDocument::query()
+        $duplicate = GedDocument::withTrashed()
             ->where('tenant_id', $tenant->id)
             ->where('checksum', $checksum)
             ->first();
@@ -2481,6 +3558,14 @@ class GedController extends Controller
         if (! $mimeType && function_exists('finfo_buffer')) {
             $finfo = new \finfo(FILEINFO_MIME_TYPE);
             $mimeType = $finfo->buffer($content) ?: null;
+        }
+
+        if (! $this->isAcceptedGedDocumentType($originalFilename, $mimeType, $extension)) {
+            return null;
+        }
+
+        if ($duplicate) {
+            return 'duplicate';
         }
 
         $directory = 'ged/'.$tenant->id.'/'.now()->format('Y/m');

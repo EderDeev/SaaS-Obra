@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import GedTour from '@/Components/GedTour';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import {
     CheckCircle2,
@@ -468,7 +469,7 @@ function RuleModal({ tenant, contracts, accounts, types, tags, correspondents, r
                 <div className="border-t border-[var(--border)] pt-5">
                     <div className="grid gap-x-6 gap-y-4 lg:grid-cols-2">
                         <label className="ged-field">
-                            <TooltipLabel tip="Define se a regra vai consumir somente anexos ou, futuramente, também o e-mail convertido em documento.">
+                            <TooltipLabel tip="Define se a regra vai importar PDFs anexados ou converter o corpo do e-mail em PDF e vincular os anexos nele.">
                                 Escopo de consumo
                             </TooltipLabel>
                             <select className="ged-control" value={form.data.consume_scope} onChange={(event) => form.setData('consume_scope', event.target.value)}>
@@ -486,7 +487,7 @@ function RuleModal({ tenant, contracts, accounts, types, tags, correspondents, r
                         </label>
 
                         <label className="ged-field">
-                            <TooltipLabel tip="Define quais anexos serão importados. Por enquanto o GED usa anexos originais.">
+                            <TooltipLabel tip="Define quais anexos serão importados. O GED mantém os arquivos originais como anexos do documento principal.">
                                 Tipo de anexo
                             </TooltipLabel>
                             <select className="ged-control" value={form.data.attachment_type} onChange={(event) => form.setData('attachment_type', event.target.value)}>
@@ -504,7 +505,7 @@ function RuleModal({ tenant, contracts, accounts, types, tags, correspondents, r
                         </label>
 
                         <label className="ged-field">
-                            <TooltipLabel tip="Layout usado caso o e-mail seja convertido para PDF em uma evolução futura.">
+                            <TooltipLabel tip="Layout usado quando o e-mail for convertido para PDF.">
                                 Layout do PDF
                             </TooltipLabel>
                             <select className="ged-control" value={form.data.pdf_layout} onChange={(event) => form.setData('pdf_layout', event.target.value)}>
@@ -680,11 +681,9 @@ function ProcessedEmailsModal({ rule, onClose }) {
                         <div>{formatDateTime(row.received_at)}</div>
                         <div>{formatDateTime(row.processed_at)}</div>
                         <div>
-                            {row.status === 'success' ? (
-                                <CheckCircle2 size={18} className="text-emerald-700" />
-                            ) : (
-                                <span className="sig-pill sig-pill-red">Erro</span>
-                            )}
+                            {row.status === 'success' && <CheckCircle2 size={18} className="text-emerald-700" />}
+                            {row.status === 'pending_triage' && <span className="sig-pill sig-pill-amber">Triagem</span>}
+                            {row.status !== 'success' && row.status !== 'pending_triage' && <span className="sig-pill sig-pill-red">Erro</span>}
                         </div>
                         <div className="truncate text-xs text-[var(--ink-500)]" title={row.error || ''}>
                             {row.error || '—'}
@@ -766,7 +765,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                     </div>
                 )}
 
-                <section>
+                <section data-tour="ged-email-overview">
                     <div className="mb-3 flex flex-wrap items-center gap-4">
                         <h1 className="text-3xl font-bold text-[var(--ink-900)]">Contas de e-mail</h1>
                         <button type="button" className="sig-btn sig-btn-secondary border-emerald-800 text-emerald-800" onClick={() => setModal('account')}>
@@ -775,7 +774,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                         </button>
                     </div>
 
-                    <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
+                    <div data-tour="ged-email-accounts" className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
                         <div className="grid grid-cols-12 border-b border-[var(--border)] px-5 py-4 text-base font-medium text-[var(--ink-900)]">
                             <div className="col-span-3">Nome</div>
                             <div className="col-span-3">Servidor</div>
@@ -818,7 +817,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                     </div>
                 </section>
 
-                <section>
+                <section data-tour="ged-email-rules">
                     <div className="mb-3 flex flex-wrap items-center gap-4">
                         <h2 className="text-3xl font-bold text-[var(--ink-900)]">Regras de e-mail</h2>
                         <button type="button" className="sig-btn sig-btn-secondary border-emerald-800 text-emerald-800" onClick={() => setModal('rule')}>
@@ -877,10 +876,6 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                     </div>
                 </section>
 
-                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 text-sm text-blue-900">
-                    <div className="mb-2 flex items-center gap-2 font-semibold"><RefreshCw size={16} /> Teste com Gmail</div>
-                    Para Gmail, ative o IMAP na conta Google e use senha de app. O padrão é servidor <strong>imap.gmail.com</strong>, porta <strong>993</strong>, segurança <strong>SSL</strong> e charset <strong>UTF-8</strong>.
-                </div>
             </div>
 
             {(modal === 'account' || modal?.type === 'account') && (
@@ -901,6 +896,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
             )}
             {modal?.type === 'permissions' && <PermissionsModal item={modal.item} onClose={closeModal} />}
             {modal?.type === 'processed' && <ProcessedEmailsModal rule={modal.rule} onClose={closeModal} />}
+            <GedTour tenant={tenant} section="email" />
         </AuthenticatedLayout>
     );
 }

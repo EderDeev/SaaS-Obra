@@ -392,6 +392,11 @@ export default function AuthenticatedLayout({ children }) {
                 active: route().current('tenant.ged.email'),
             },
             {
+                label: 'Lixeira',
+                href: route('tenant.ged.trash', tenant.slug),
+                active: route().current('tenant.ged.trash'),
+            },
+            {
                 label: 'Parametrização',
                 href: route('tenant.ged.settings', tenant.slug),
                 active: route().current('tenant.ged.settings'),
@@ -592,6 +597,7 @@ export default function AuthenticatedLayout({ children }) {
                                                 >
                                                     <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
                                                     <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                                                    {child.badge && <span className="sig-pill bg-white px-2 py-0.5 text-[10.5px]">{child.badge}</span>}
                                                 </Link>
                                             );
                                             })}

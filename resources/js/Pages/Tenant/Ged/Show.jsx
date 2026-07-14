@@ -1,4 +1,5 @@
 ﻿import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import GedTour from '@/Components/GedTour';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     ArrowLeft,
@@ -7,16 +8,21 @@ import {
     ChevronDown,
     Database,
     Download,
+    Eye,
     FileText,
     History,
     MessageSquare,
     MoreHorizontal,
+    Paperclip,
+    Pencil,
     Plus,
+    RefreshCw,
     Save,
     Send,
     Shield,
     Tags,
     Trash2,
+    UploadCloud,
     UserRound,
     X,
 } from 'lucide-react';
@@ -25,6 +31,7 @@ import { useEffect, useMemo, useState } from 'react';
 const sectionIcons = {
     details: FileText,
     content: FileText,
+    attachments: Paperclip,
     metadata: Database,
     notes: MessageSquare,
     history: History,
@@ -355,6 +362,9 @@ function DetailSection({ document, lookups = {}, quickStoreUrls = {} }) {
 
     function submit(event) {
         event.preventDefault();
+
+        if (!window.confirm('Deseja salvar as alteracoes deste documento?')) return;
+
         form.put(document.update_url, { preserveScroll: true });
     }
 
@@ -453,10 +463,9 @@ function ContentSection({ document }) {
     const currentTone = statusTone[displayStatus] || (hasText ? statusTone.done : statusTone.queued);
     const canReprocess = document.ocr_url && displayStatus !== 'processing';
     const isGenericProcessingMessage = ocr.message === 'Documento em processamento OCR.';
-    const shouldShowProcessingDiagnostic = shouldPollOcrStatus;
     const shouldShowOcrMessage = ocr.message
         && displayStatus !== 'done'
-        && !(shouldShowProcessingDiagnostic && isGenericProcessingMessage)
+        && !shouldPollOcrStatus
         && !(isStaleProcessing && isGenericProcessingMessage)
         && !(displayStatus === 'done' && isGenericProcessingMessage);
 
@@ -488,7 +497,9 @@ function ContentSection({ document }) {
                 <div className="font-bold">
                     {hasText
                         ? 'OCR processado'
-                        : displayStatus === 'failed'
+                        : shouldPollOcrStatus
+                            ? 'Processando OCR'
+                            : displayStatus === 'failed'
                             ? (isStaleProcessing ? 'OCR travado' : 'Falha no OCR')
                             : displayStatus === 'missing_engine'
                                 ? 'Motor OCR não instalado'
@@ -499,27 +510,6 @@ function ContentSection({ document }) {
                 {isStaleProcessing && (
                     <div className="mt-1 text-xs">
                         O processamento passou do tempo esperado. Reenvie o documento para a fila de OCR.
-                    </div>
-                )}
-                {shouldShowProcessingDiagnostic && !isStaleProcessing && (
-                    <div className="mt-2 rounded-lg bg-white/60 p-3 text-xs leading-5 ring-1 ring-inset ring-current/10">
-                        {ocr.status === 'queued' ? (
-                            <>
-                                O documento está na fila <strong>{ocr.queue || 'ged'}</strong> aguardando o worker OCR iniciar.
-                                {ocr.queued_at && <> Entrou na fila em <strong>{formatDateTime(ocr.queued_at)}</strong>.</>}
-                            </>
-                        ) : (
-                            <>
-                                O worker OCR já iniciou o processamento.
-                                {ocr.started_at && <> Início: <strong>{formatDateTime(ocr.started_at)}</strong>.</>}
-                                {elapsedMs !== null && <> Tempo decorrido: <strong>{formatDuration(elapsedMs)}</strong>.</>}
-                                {' '}Timeout configurado: <strong>{timeoutLabel}</strong>.
-                                {' '}Motor: <strong>{ocr.engine || 'ocrmypdf/tesseract'}</strong>.
-                            </>
-                        )}
-                        <div className="mt-1 text-[11px] opacity-80">
-                            Esta tela atualiza o status automaticamente a cada 15 segundos. Se permanecer assim após o timeout, verifique os logs do worker <strong>queue=ged</strong> no Railway.
-                        </div>
                     </div>
                 )}
                 {shouldShowOcrMessage && (
@@ -546,6 +536,306 @@ function ContentSection({ document }) {
                     }
                 />
             </Field>
+        </div>
+    );
+}
+
+function AttachmentsSection({ document }) {
+    const attachments = document.attachments || [];
+    const [previewAttachment, setPreviewAttachment] = useState(null);
+    const form = useForm({
+        files: [],
+        title: '',
+        notes: '',
+    });
+    const selectedFiles = form.data.files || [];
+
+    function submit(event) {
+        event.preventDefault();
+
+        if (selectedFiles.length === 0) return;
+
+        form.post(document.attachment_store_url, {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: () => form.reset(),
+        });
+    }
+
+    function deleteAttachment(attachment) {
+        if (!window.confirm(`Deseja excluir o anexo "${attachment.original_filename}"?`)) return;
+
+        router.delete(attachment.delete_url, {
+            preserveScroll: true,
+        });
+    }
+
+    return (
+        <div className="space-y-5">
+            <form data-tour="ged-attachments-upload" onSubmit={submit} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="grid gap-4">
+                    <Field label="Arquivos">
+                        <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center hover:border-blue-300 hover:bg-blue-50/40">
+                            <UploadCloud size={24} className="text-blue-700" />
+                            <span className="mt-2 text-sm font-bold text-[var(--ink-900)]">
+                                {selectedFiles.length > 0
+                                    ? `${selectedFiles.length} arquivo${selectedFiles.length === 1 ? '' : 's'} selecionado${selectedFiles.length === 1 ? '' : 's'}`
+                                    : 'Selecionar arquivos'}
+                            </span>
+                            <span className="mt-1 text-xs text-[var(--ink-500)]">ZIP, vídeo, planilha, imagem, PDF ou qualquer arquivo de suporte até 100 MB por arquivo.</span>
+                            <input
+                                type="file"
+                                multiple
+                                className="hidden"
+                                onChange={(event) => form.setData('files', Array.from(event.target.files || []))}
+                            />
+                        </label>
+                        {selectedFiles.length > 0 && (
+                            <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2">
+                                <div className="flex flex-wrap gap-1.5">
+                                    {selectedFiles.map((file, index) => (
+                                        <span key={`${file.name}-${index}`} className="max-w-full truncate rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-[var(--ink-700)]">
+                                            {file.name}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {form.errors.files && <span className="text-xs font-semibold text-rose-600">{form.errors.files}</span>}
+                        {Object.entries(form.errors)
+                            .filter(([key]) => key.startsWith('files.'))
+                            .map(([key, error]) => (
+                                <span key={key} className="text-xs font-semibold text-rose-600">{error}</span>
+                            ))}
+                    </Field>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <Field label="Título">
+                            <input className="ged-control" value={form.data.title} onChange={(event) => form.setData('title', event.target.value)} placeholder="Opcional" />
+                            {form.errors.title && <span className="text-xs font-semibold text-rose-600">{form.errors.title}</span>}
+                        </Field>
+                        <Field label="Observação">
+                            <input className="ged-control" value={form.data.notes} onChange={(event) => form.setData('notes', event.target.value)} placeholder="Opcional" />
+                            {form.errors.notes && <span className="text-xs font-semibold text-rose-600">{form.errors.notes}</span>}
+                        </Field>
+                    </div>
+
+                    <div className="flex justify-end">
+                        <button type="submit" className="sig-btn sig-btn-primary" disabled={form.processing || selectedFiles.length === 0}>
+                            <UploadCloud size={16} />
+                            Enviar anexo{selectedFiles.length === 1 ? '' : 's'}
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <div data-tour="ged-attachments-list" className="space-y-3">
+                {attachments.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-[var(--ink-500)]">
+                        Nenhum anexo vinculado a este documento.
+                    </div>
+                )}
+
+                {attachments.map((attachment) => (
+                    <AttachmentRow key={attachment.id} attachment={attachment} onOpen={() => setPreviewAttachment(attachment)} onDelete={() => deleteAttachment(attachment)} />
+                ))}
+            </div>
+
+            {previewAttachment && (
+                <AttachmentPreviewModal
+                    attachment={previewAttachment}
+                    onClose={() => setPreviewAttachment(null)}
+                />
+            )}
+        </div>
+    );
+}
+
+function AttachmentRow({ attachment, onOpen, onDelete }) {
+    const [editing, setEditing] = useState(false);
+    const form = useForm({
+        title: attachment.title || '',
+        notes: attachment.notes || '',
+    });
+    const attachmentTitle = attachment.title || attachment.original_filename;
+    const attachmentMeta = [
+        formatBytes(attachment.size_bytes),
+        attachment.extension?.toUpperCase() || attachment.mime_type || 'Arquivo',
+        formatDateTime(attachment.created_at),
+        attachment.uploader?.name || null,
+    ].filter(Boolean).join('  ');
+    const ocrStatusLabel = {
+        queued: 'OCR na fila',
+        processing: 'OCR processando',
+        indexed: 'OCR concluído',
+        failed: 'OCR falhou',
+        disabled: 'OCR desabilitado',
+    }[attachment.ocr_status];
+
+    function submit(event) {
+        event.preventDefault();
+
+        form.patch(attachment.update_url, {
+            preserveScroll: true,
+            onSuccess: () => setEditing(false),
+        });
+    }
+
+    if (editing) {
+        return (
+            <form onSubmit={submit} className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                <div className="grid gap-3">
+                    <Field label="Título">
+                        <input className="ged-control" value={form.data.title} onChange={(event) => form.setData('title', event.target.value)} placeholder={attachment.original_filename} autoFocus />
+                        {form.errors.title && <span className="text-xs font-semibold text-rose-600">{form.errors.title}</span>}
+                    </Field>
+                    <Field label="Observação">
+                        <input className="ged-control" value={form.data.notes} onChange={(event) => form.setData('notes', event.target.value)} placeholder="Sem observação" />
+                        {form.errors.notes && <span className="text-xs font-semibold text-rose-600">{form.errors.notes}</span>}
+                    </Field>
+                    <div className="flex justify-end gap-2">
+                        <button type="button" className="sig-btn sig-btn-ghost !min-h-8 !px-3" onClick={() => setEditing(false)}>Cancelar</button>
+                        <button type="submit" className="sig-btn sig-btn-primary !min-h-8 !px-3" disabled={form.processing}>
+                            <Save size={15} />
+                            Salvar
+                        </button>
+                    </div>
+                </div>
+            </form>
+        );
+    }
+
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div className="flex items-start gap-2">
+                <Paperclip size={15} className="mt-0.5 shrink-0 text-blue-700" />
+
+                <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold text-[var(--ink-900)]">{attachmentTitle}</div>
+                    <div className="mt-0.5 truncate text-xs text-[var(--ink-500)]">{attachment.original_filename}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--ink-500)]">
+                        <span className="truncate">{attachmentMeta}</span>
+                        {ocrStatusLabel && (
+                            <span className={`rounded-full px-2 py-0.5 font-bold ${
+                                attachment.ocr_status === 'indexed'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : attachment.ocr_status === 'failed'
+                                        ? 'bg-rose-50 text-rose-700'
+                                        : 'bg-blue-50 text-blue-700'
+                            }`}>
+                                {ocrStatusLabel}
+                            </span>
+                        )}
+                    </div>
+                    {attachment.notes && <div className="mt-1 truncate text-xs text-[var(--ink-700)]">{attachment.notes}</div>}
+                </div>
+
+                <div className="flex shrink-0 items-center gap-1">
+                    {attachment.is_pdf && (
+                        <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded border border-blue-100 text-blue-700 hover:bg-blue-50" onClick={onOpen} title="Abrir">
+                            <Eye size={15} />
+                        </button>
+                    )}
+                    <a href={attachment.download_url} className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[var(--ink-700)] hover:bg-slate-50" title="Baixar">
+                        <Download size={15} />
+                    </a>
+                    <button data-tour="ged-attachment-edit" type="button" className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[var(--ink-700)] hover:bg-slate-50" onClick={() => setEditing(true)} title="Editar">
+                        <Pencil size={15} />
+                    </button>
+                    <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-100 text-rose-700 hover:bg-rose-50" onClick={onDelete} title="Excluir">
+                        <Trash2 size={15} />
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function AttachmentPreviewModal({ attachment, onClose }) {
+    const [page, setPage] = useState(1);
+    const [zoom, setZoom] = useState('100');
+    const pageCount = attachment.page_count || 1;
+    const safePage = Math.min(Math.max(Number(page) || 1, 1), pageCount);
+    const viewerUrl = `${attachment.preview_url}#page=${safePage}&zoom=${zoom}&toolbar=0&navpanes=0`;
+    const ocrMessage = attachment.ocr_metadata?.message || null;
+
+    function reprocessOcr() {
+        if (!attachment.ocr_url) return;
+
+        router.post(attachment.ocr_url, {}, {
+            preserveScroll: true,
+            onSuccess: onClose,
+        });
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3">
+            <div className="flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-[var(--ink-900)]">{attachment.title || attachment.original_filename}</div>
+                        <div className="truncate text-xs text-[var(--ink-500)]">{attachment.original_filename}</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" className="sig-btn sig-btn-secondary !min-h-8 !px-3" onClick={reprocessOcr} disabled={!attachment.ocr_url}>
+                            <RefreshCw size={15} />
+                            Reprocessar OCR
+                        </button>
+                        <a href={attachment.download_url} className="sig-btn sig-btn-secondary !min-h-8 !px-3">
+                            <Download size={15} />
+                            Baixar
+                        </a>
+                        <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-[var(--ink-700)] hover:bg-slate-50" onClick={onClose} title="Fechar">
+                            <X size={18} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="flex min-h-[70vh] flex-col bg-slate-100">
+                        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white p-2 text-sm">
+                            <div className="flex overflow-hidden rounded-lg border border-slate-300">
+                                <span className="border-r border-slate-300 bg-slate-50 px-3 py-2">Página</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max={pageCount}
+                                    value={page}
+                                    onChange={(event) => setPage(event.target.value)}
+                                    className="w-16 border-0 px-2 py-2 outline-none"
+                                />
+                                <span className="border-l border-slate-300 bg-slate-50 px-3 py-2">de {pageCount}</span>
+                            </div>
+                            <select value={zoom} onChange={(event) => setZoom(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 outline-none">
+                                <option value="75">75%</option>
+                                <option value="100">100%</option>
+                                <option value="125">125%</option>
+                                <option value="150">150%</option>
+                                <option value="200">200%</option>
+                            </select>
+                        </div>
+                        <iframe
+                            key={viewerUrl}
+                            src={viewerUrl}
+                            title={attachment.title || attachment.original_filename}
+                            className="min-h-[70vh] flex-1 border-8 border-neutral-500 bg-white"
+                        />
+                    </div>
+
+                    <aside className="min-h-0 border-t border-slate-200 bg-white p-4 lg:border-l lg:border-t-0">
+                        <div className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--ink-500)]">OCR do anexo</div>
+                        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-[var(--ink-700)]">
+                            <div className="font-bold text-[var(--ink-900)]">{attachment.ocr_status || 'Sem OCR'}</div>
+                            {ocrMessage && <div className="mt-1 text-xs">{ocrMessage}</div>}
+                            {attachment.processed_at && <div className="mt-1 text-xs">Processado em {formatDateTime(attachment.processed_at)}</div>}
+                        </div>
+                        <div className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-[var(--ink-500)]">Texto extraído</div>
+                        <div className="mt-2 max-h-[58vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-3 text-sm leading-relaxed text-[var(--ink-700)]">
+                            {attachment.extracted_text || 'Texto ainda não disponível para este anexo.'}
+                        </div>
+                    </aside>
+                </div>
+            </div>
         </div>
     );
 }
@@ -886,6 +1176,7 @@ function PermissionsSection({ document, users = [], permissionGroups = [] }) {
 
 function ActiveSection({ activeSection, document, users, permissionGroups, lookups, quickStoreUrls }) {
     if (activeSection === 'content') return <ContentSection document={document} />;
+    if (activeSection === 'attachments') return <AttachmentsSection document={document} />;
     if (activeSection === 'metadata') return <MetadataSection document={document} />;
     if (activeSection === 'notes') return <NotesSection document={document} />;
     if (activeSection === 'history') return <HistorySection document={document} />;
@@ -898,41 +1189,56 @@ function DocumentViewer({ document }) {
     const [page, setPage] = useState(1);
     const [zoom, setZoom] = useState('100');
     const pageCount = document.page_count || 1;
+    const extension = String(document.extension || '').toLowerCase();
+    const mimeType = String(document.mime_type || '').toLowerCase();
+    const isPdf = mimeType === 'application/pdf' || extension === 'pdf';
+    const hasPdfPreview = Boolean(document.archive_path) || isPdf;
+    const isImage = mimeType.startsWith('image/');
+    const isVideo = mimeType.startsWith('video/');
+    const canRenderInline = hasPdfPreview || isImage || isVideo;
 
     const viewerUrl = useMemo(() => {
         const safePage = Math.min(Math.max(Number(page) || 1, 1), pageCount);
+        if (!hasPdfPreview) return document.preview_url;
+
         return `${document.preview_url}#page=${safePage}&zoom=${zoom}&toolbar=0&navpanes=0`;
-    }, [document.preview_url, page, pageCount, zoom]);
+    }, [document.preview_url, hasPdfPreview, page, pageCount, zoom]);
 
     return (
         <div className="flex min-h-[calc(100vh-190px)] flex-col rounded-xl border border-slate-300 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
-                        <span className="border-r border-slate-300 bg-slate-50 px-3 py-2">Página</span>
-                        <input
-                            type="number"
-                            min="1"
-                            max={pageCount}
-                            value={page}
-                            onChange={(event) => setPage(event.target.value)}
-                            className="w-16 border-0 px-2 py-2 outline-none"
-                        />
-                        <span className="border-l border-slate-300 bg-slate-50 px-3 py-2">de {pageCount}</span>
-                    </div>
+                {hasPdfPreview ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
+                            <span className="border-r border-slate-300 bg-slate-50 px-3 py-2">Página</span>
+                            <input
+                                type="number"
+                                min="1"
+                                max={pageCount}
+                                value={page}
+                                onChange={(event) => setPage(event.target.value)}
+                                className="w-16 border-0 px-2 py-2 outline-none"
+                            />
+                            <span className="border-l border-slate-300 bg-slate-50 px-3 py-2">de {pageCount}</span>
+                        </div>
 
-                    <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
-                        <button type="button" className="border-r border-slate-300 px-3 py-2" onClick={() => setZoom((value) => String(Math.max(Number(value) - 10, 50)))}>-</button>
-                        <select value={zoom} onChange={(event) => setZoom(event.target.value)} className="border-0 px-3 py-2 outline-none">
-                            <option value="75">75%</option>
-                            <option value="100">100%</option>
-                            <option value="125">125%</option>
-                            <option value="150">150%</option>
-                            <option value="200">200%</option>
-                        </select>
-                        <button type="button" className="border-l border-slate-300 px-3 py-2" onClick={() => setZoom((value) => String(Math.min(Number(value) + 10, 200)))}>+</button>
+                        <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
+                            <button type="button" className="border-r border-slate-300 px-3 py-2" onClick={() => setZoom((value) => String(Math.max(Number(value) - 10, 50)))}>-</button>
+                            <select value={zoom} onChange={(event) => setZoom(event.target.value)} className="border-0 px-3 py-2 outline-none">
+                                <option value="75">75%</option>
+                                <option value="100">100%</option>
+                                <option value="125">125%</option>
+                                <option value="150">150%</option>
+                                <option value="200">200%</option>
+                            </select>
+                            <button type="button" className="border-l border-slate-300 px-3 py-2" onClick={() => setZoom((value) => String(Math.min(Number(value) + 10, 200)))}>+</button>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    <div className="text-sm font-semibold text-[var(--ink-700)]">
+                        {canRenderInline ? 'Pré-visualização' : 'Arquivo sem pré-visualização'}
+                    </div>
+                )}
 
                 <div className="flex flex-wrap items-center gap-2">
                     <a href={document.download_url} className="sig-btn sig-btn-secondary !min-h-9 !px-3">
@@ -951,12 +1257,44 @@ function DocumentViewer({ document }) {
             </div>
 
             <div className="min-h-0 flex-1 bg-slate-100 p-2">
-                <iframe
-                    key={viewerUrl}
-                    src={viewerUrl}
-                    title={document.title}
-                    className="h-full min-h-[680px] w-full border-8 border-neutral-500 bg-white"
-                />
+                {hasPdfPreview && (
+                    <iframe
+                        key={viewerUrl}
+                        src={viewerUrl}
+                        title={document.title}
+                        className="h-full min-h-[680px] w-full border-8 border-neutral-500 bg-white"
+                    />
+                )}
+
+                {!hasPdfPreview && isImage && (
+                    <div className="flex min-h-[680px] items-center justify-center rounded-lg bg-white p-4">
+                        <img src={document.preview_url} alt={document.title} className="max-h-[660px] max-w-full rounded border border-slate-200 object-contain" />
+                    </div>
+                )}
+
+                {!hasPdfPreview && isVideo && (
+                    <div className="flex min-h-[680px] items-center justify-center rounded-lg bg-slate-950 p-4">
+                        <video src={document.preview_url} className="max-h-[660px] max-w-full" controls preload="metadata" />
+                    </div>
+                )}
+
+                {!canRenderInline && (
+                    <div className="flex min-h-[680px] items-center justify-center rounded-lg bg-white p-6 text-center">
+                        <div className="max-w-md">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                                <FileText size={26} />
+                            </div>
+                            <h3 className="mt-4 text-lg font-bold text-[var(--ink-900)]">Arquivo sem pré-visualização</h3>
+                            <p className="mt-2 text-sm text-[var(--ink-600)]">
+                                Este tipo de arquivo não será aberto automaticamente no visualizador para evitar downloads repetidos.
+                            </p>
+                            <a href={document.download_url} className="sig-btn sig-btn-primary mt-4">
+                                <Download size={16} />
+                                Baixar arquivo
+                            </a>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -964,13 +1302,22 @@ function DocumentViewer({ document }) {
 
 export default function GedShow({ tenant, document, tabs = [], activeSection = 'details', navigation = {}, users = [], permissionGroups = [], lookups = {}, quickStoreUrls = {} }) {
     const ActiveIcon = sectionIcons[activeSection] || FileText;
+    const documentTourUrls = useMemo(() => Object.fromEntries(tabs.map((tab) => [tab.key, tab.url])), [tabs]);
+
+    function destroyDocument() {
+        if (!window.confirm('Deseja mover este documento para a lixeira?')) return;
+
+        router.delete(document.delete_url, {
+            preserveScroll: true,
+        });
+    }
 
     return (
         <AuthenticatedLayout>
             <Head title={`${document.title} - Documentação`} />
 
             <div className="space-y-4 px-1 pb-8 sm:px-2">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div data-tour="ged-document-header" className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                     <div>
                         <div className="eyebrow">Documentação</div>
                         <h1 className="mt-2 text-2xl font-bold text-[var(--ink-900)]">{document.title}</h1>
@@ -982,7 +1329,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        <button type="button" className="sig-btn sig-btn-danger !min-h-9 !px-3 opacity-70" title="Exclusão será habilitada em uma etapa futura">
+                        <button type="button" className="sig-btn sig-btn-danger !min-h-9 !px-3" onClick={destroyDocument}>
                             <Trash2 size={16} />
                             Excluir
                         </button>
@@ -1031,7 +1378,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                         </div>
 
                         <div className="border-b border-slate-200 px-3">
-                            <nav className="flex gap-5 overflow-x-auto">
+                            <nav data-tour="ged-document-tabs" className="flex gap-5 overflow-x-auto">
                                 {tabs.map((tab) => {
                                     const Icon = sectionIcons[tab.key] || FileText;
                                     const active = tab.key === activeSection;
@@ -1039,6 +1386,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                                     return (
                                         <Link
                                             key={tab.key}
+                                            data-tour={`ged-document-tab-${tab.key}`}
                                             href={tab.url}
                                             className={`inline-flex items-center gap-1.5 border-b-2 px-0 py-3 text-sm font-semibold transition ${
                                                 active
@@ -1054,7 +1402,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                             </nav>
                         </div>
 
-                        <div className="p-4">
+                        <div className="p-4" data-tour={`ged-document-section-${activeSection}`}>
                             <div className="mb-4 flex items-center gap-2">
                                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                                     <ActiveIcon size={18} />
@@ -1072,6 +1420,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                     <DocumentViewer document={document} />
                 </div>
             </div>
+            <GedTour tenant={tenant} section="document" documentTourUrls={documentTourUrls} activeDocumentSection={activeSection} />
         </AuthenticatedLayout>
     );
 }

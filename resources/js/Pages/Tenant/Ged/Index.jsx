@@ -1,5 +1,6 @@
 ﻿import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import GedTour, { startGedTour } from '@/Components/GedTour';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     ArrowDownAZ,
     ArrowUpAZ,
@@ -16,15 +17,20 @@ import {
     FileText,
     Filter,
     Grid2X2,
+    Inbox,
     List,
     MessageSquare,
     MoreHorizontal,
+    Plane,
     RotateCw,
     Rows3,
     Search,
     Tag,
+    Trash2,
     UploadCloud,
     UserRound,
+    ArchiveRestore,
+    X,
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 
@@ -57,25 +63,6 @@ function formatDate(date) {
     if (!date) return '—';
 
     return new Date(date).toLocaleDateString('pt-BR');
-}
-
-function StatCard({ icon: Icon, label, value, tone = 'blue' }) {
-    const tones = {
-        blue: 'bg-blue-50 text-blue-700',
-        emerald: 'bg-emerald-50 text-emerald-700',
-        amber: 'bg-amber-50 text-amber-700',
-        slate: 'bg-slate-100 text-slate-700',
-    };
-
-    return (
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-4 shadow-sm">
-            <div className={`mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl ${tones[tone] || tones.blue}`}>
-                <Icon size={20} />
-            </div>
-            <div className="text-2xl font-bold text-[var(--ink-900)]">{value}</div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">{label}</div>
-        </div>
-    );
 }
 
 function DocumentPreview({ document, compact = false }) {
@@ -277,7 +264,7 @@ function FilterDropdown({ icon: Icon, label, activeLabel, children }) {
             <button
                 type="button"
                 onClick={() => setOpen((value) => !value)}
-                className={`inline-flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded border px-3 text-sm font-medium transition sm:w-auto sm:max-w-[230px] ${
+                className={`inline-flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded border px-3 text-sm font-medium transition ${
                     activeLabel
                         ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
                         : 'border-emerald-700 bg-white text-emerald-800 hover:bg-emerald-50'
@@ -553,6 +540,52 @@ function RotateDocumentsModal({ tenant, selectedIds = [], selectedDocuments = []
     );
 }
 
+function MoveToTrashModal({ tenant, selectedIds = [], onClose, onMoved }) {
+    function submit() {
+        router.post(
+            route('tenant.ged.bulk-action', tenant.slug),
+            {
+                action: 'trash',
+                document_ids: selectedIds,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    onMoved?.();
+                    onClose();
+                },
+            },
+        );
+    }
+
+    return (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/45 p-4">
+            <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                    <h3 className="text-xl font-bold text-[var(--ink-900)]">Confirmar</h3>
+                    <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-600 ring-2 ring-blue-200 hover:bg-slate-100">
+                        <X size={19} />
+                    </button>
+                </div>
+
+                <div className="space-y-4 px-5 py-4 text-sm text-[var(--ink-700)]">
+                    <p className="font-bold text-[var(--ink-900)]">
+                        Mover {selectedIds.length} documento{selectedIds.length === 1 ? '' : 's'} selecionado{selectedIds.length === 1 ? '' : 's'} para a lixeira?
+                    </p>
+                    <p>Documentos podem ser restaurados antes da exclusao permanente.</p>
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose}>Cancelar</button>
+                    <button type="button" className="sig-btn bg-rose-500 text-white hover:bg-rose-600" onClick={submit}>
+                        Mover para lixeira
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 const sortOptions = [
     ['nsa', 'NSA'],
     ['correspondent', 'Correspondente'],
@@ -567,10 +600,21 @@ const sortOptions = [
 ];
 
 function DocumentActions({ document, compact = false, previewPlacement = 'top', previewAlignClass = 'left-1/2 -translate-x-1/2' }) {
+    function continueTourOnOpen() {
+        if (typeof window === 'undefined') return;
+
+        if (window.sessionStorage.getItem('ged:tour-active') === '1') {
+            window.sessionStorage.setItem('ged:tour-section', 'document');
+            window.sessionStorage.setItem('ged:tour-step', '0');
+        }
+    }
+
     return (
         <div className={`flex ${compact ? 'w-full divide-x divide-slate-200 rounded-lg border border-slate-200' : 'flex-wrap gap-2'}`}>
             <a
+                data-tour="ged-open-document"
                 href={document.details_url || document.preview_url || document.download_url}
+                onClick={continueTourOnOpen}
                 className={
                     compact
                         ? 'inline-flex flex-1 items-center justify-center px-3 py-2 text-slate-600 hover:bg-slate-50'
@@ -606,9 +650,111 @@ function EmptyDocuments() {
     );
 }
 
+function cleanPaginationLabel(label = '') {
+    return String(label)
+        .replace(/&laquo;/g, '«')
+        .replace(/&raquo;/g, '»')
+        .replace(/&hellip;/g, '...')
+        .replace(/<\/?[^>]+(>|$)/g, '')
+        .trim();
+}
+
+function PaperlessPaginationControls({ pagination }) {
+    const links = pagination.links || [];
+    const pageLinks = links.filter((link) => {
+        const label = cleanPaginationLabel(link.label);
+
+        return /^\d+$/.test(label) || label === '...';
+    });
+    const lastPage = Number(pagination.last_page || 1);
+
+    if (lastPage <= 1) {
+        return null;
+    }
+
+    return (
+        <div className="inline-flex overflow-hidden rounded border border-slate-300 bg-white text-sm shadow-sm">
+            <Link
+                href={pagination.prev_page_url || '#'}
+                preserveScroll
+                className={`inline-flex h-9 min-w-9 items-center justify-center border-r border-slate-300 px-3 font-semibold ${pagination.prev_page_url ? 'text-[var(--ink-700)] hover:bg-slate-50' : 'pointer-events-none text-slate-300'}`}
+            >
+                «
+            </Link>
+
+            {pageLinks.map((link, index) => {
+                const label = cleanPaginationLabel(link.label);
+
+                if (label === '...') {
+                    return (
+                        <span key={`ellipsis-${index}`} className="inline-flex h-9 min-w-9 items-center justify-center border-r border-slate-300 px-3 text-slate-400">
+                            ...
+                        </span>
+                    );
+                }
+
+                return (
+                    <Link
+                        key={`${label}-${index}`}
+                        href={link.url || '#'}
+                        preserveScroll
+                        className={`inline-flex h-9 min-w-9 items-center justify-center border-r border-slate-300 px-3 font-semibold ${link.active ? 'bg-emerald-800 text-white' : 'text-[var(--ink-700)] hover:bg-slate-50'} ${!link.url ? 'pointer-events-none text-slate-300' : ''}`}
+                    >
+                        {label}
+                    </Link>
+                );
+            })}
+
+            <Link
+                href={pagination.next_page_url || '#'}
+                preserveScroll
+                className={`inline-flex h-9 min-w-9 items-center justify-center px-3 font-semibold ${pagination.next_page_url ? 'text-[var(--ink-700)] hover:bg-slate-50' : 'pointer-events-none text-slate-300'}`}
+            >
+                »
+            </Link>
+        </div>
+    );
+}
+
+function PaperlessPagination({ pagination, selectedCount = 0, compact = false }) {
+    const total = Number(pagination.total || 0);
+    const from = pagination.from || 0;
+    const to = pagination.to || 0;
+    const lastPage = Number(pagination.last_page || 1);
+
+    if (!total) {
+        return null;
+    }
+
+    if (compact) {
+        if (lastPage <= 1) {
+            return null;
+        }
+
+        return (
+            <div className="border-b border-[var(--border)] bg-white px-4 py-3">
+                <PaperlessPaginationControls pagination={pagination} />
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col gap-3 border-t border-[var(--border)] bg-white px-4 py-3 text-sm text-[var(--ink-600)] sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                Mostrando {from} - {to} de {total} documento{total === 1 ? '' : 's'}
+                {selectedCount > 0 && ` (${selectedCount} selecionado${selectedCount === 1 ? '' : 's'})`}
+            </div>
+
+            <PaperlessPaginationControls pagination={pagination} />
+        </div>
+    );
+}
+
 export default function GedIndex({ tenant, documents, filters = {}, contracts = [], types = [], tags = [], correspondents = [], filterCorrespondents = [], stats = {} }) {
+    const { props } = usePage();
     const [showUpload, setShowUpload] = useState(false);
     const [showRotateModal, setShowRotateModal] = useState(false);
+    const [showTrashModal, setShowTrashModal] = useState(false);
     const [viewMode, setViewMode] = useState(() => (typeof window === 'undefined' ? 'table' : window.localStorage.getItem('ged:viewMode') || 'table'));
     const [selectedIds, setSelectedIds] = useState([]);
     const [filterState, setFilterState] = useState({
@@ -705,6 +851,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
     const pageDocumentIds = (documents.data || []).map((document) => document.id);
     const selectedDocuments = (documents.data || []).filter((document) => selectedIds.includes(document.id));
     const allPageSelected = pageDocumentIds.length > 0 && pageDocumentIds.every((id) => selectedIds.includes(id));
+    const pendingTriageCount = Number(props.gedNavigation?.pending_triage_count || 0);
 
     function toggleDocumentSelection(documentId) {
         setSelectedIds((current) => current.includes(documentId) ? current.filter((id) => id !== documentId) : [...current, documentId]);
@@ -724,8 +871,8 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
         <AuthenticatedLayout>
             <Head title="Documentação" />
 
-            <div className="space-y-6 px-3 pb-8 sm:px-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-6 px-4 pb-10 pt-6 sm:px-6 lg:px-8 xl:px-10">
+                <div data-tour="ged-documents-overview" className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                         <h1 className="text-2xl font-bold text-[var(--ink-900)]">Documentação</h1>
                         <p className="mt-1 max-w-3xl text-sm text-[var(--ink-600)]">
@@ -734,22 +881,33 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                     </div>
 
                     <div className="flex flex-wrap gap-3 pt-1 lg:pr-2">
-                        <Link href={route('tenant.ged.settings', tenant.slug)} className="sig-btn sig-btn-secondary">
+                        <button type="button" className="sig-btn sig-btn-secondary border-emerald-700 text-emerald-800 hover:bg-emerald-50" onClick={() => startGedTour(tenant.slug)}>
+                            <Plane size={17} />
+                            Iniciar tour
+                        </button>
+                        <Link data-tour="ged-settings-link" href={route('tenant.ged.settings', tenant.slug)} className="sig-btn sig-btn-secondary">
                             <FileSearch size={17} />
                             Parametrização
                         </Link>
-                        <button type="button" className="sig-btn sig-btn-primary" onClick={() => setShowUpload((open) => !open)}>
+                        <Link data-tour="ged-triage-link" href={route('tenant.ged.triage', tenant.slug)} className="sig-btn sig-btn-secondary">
+                            <Inbox size={17} />
+                            Triagem
+                            {pendingTriageCount > 0 && (
+                                <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">{pendingTriageCount}</span>
+                            )}
+                        </Link>
+                        <Link data-tour="ged-trash-link" href={route('tenant.ged.trash', tenant.slug)} className="sig-btn sig-btn-secondary">
+                            <ArchiveRestore size={17} />
+                            Lixeira
+                            {Number(stats.trash || 0) > 0 && (
+                                <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">{stats.trash}</span>
+                            )}
+                        </Link>
+                        <button data-tour="ged-upload" type="button" className="sig-btn sig-btn-primary" onClick={() => setShowUpload((open) => !open)}>
                             <UploadCloud size={17} />
                             Enviar documento
                         </button>
                     </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <StatCard icon={FileText} label="Documentos" value={stats.total || 0} />
-                    <StatCard icon={UploadCloud} label="Enviados" value={stats.uploaded || 0} tone="slate" />
-                    <StatCard icon={FileCheck2} label="Indexados" value={stats.indexed || 0} tone="emerald" />
-                    <StatCard icon={FileArchive} label="Em processamento" value={stats.processing || 0} tone="amber" />
                 </div>
 
                 {showUpload && (
@@ -770,6 +928,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                 <input
                                     type="file"
                                     className="ged-control"
+                                    accept=".pdf,application/pdf"
                                     onChange={(event) => uploadForm.setData('file', event.target.files?.[0] || null)}
                                 />
                                 {uploadForm.errors.file && <p className="mt-1 text-xs text-rose-600">{uploadForm.errors.file}</p>}
@@ -851,10 +1010,10 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                 )}
 
 
-                <div className="rounded-2xl border border-[var(--border)] bg-white shadow-sm">
-                    <form onSubmit={applyFilters} className="space-y-4 border-b border-[var(--border)] p-4 sm:p-5">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-                            <div className="w-full lg:w-[420px] lg:flex-none">
+                <div data-tour="ged-document-list" className="rounded-2xl border border-[var(--border)] bg-white shadow-sm">
+                    <form data-tour="ged-filters" onSubmit={applyFilters} className="space-y-4 border-b border-[var(--border)] p-4 sm:p-5">
+                        <div className="grid gap-4 2xl:grid-cols-[minmax(300px,420px)_minmax(0,1fr)] 2xl:items-end">
+                            <div className="w-full">
                                 <label className="ged-label">Buscar</label>
                                 <div className="relative">
                                     <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-400)]" size={16} />
@@ -862,109 +1021,127 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                 </div>
                             </div>
 
-                            <div className="flex w-full flex-wrap items-end gap-2 lg:flex-1 lg:pl-4 xl:pl-8 [&>div]:w-full sm:[&>div]:w-auto">
-                                <FilterDropdown icon={FileCheck2} label="Contrato" activeLabel={selectedContract ? `${selectedContract.code} - ${selectedContract.name}` : null}>
-                                    <label className="ged-label">Contrato</label>
-                                    <DropdownSelect
-                                        value={filterState.contract_id}
-                                        options={contracts}
-                                        placeholder="Todos"
-                                        getLabel={(contract) => `${contract.code} - ${contract.name}`}
-                                        onChange={(value) => setFilterState((state) => ({
-                                            ...state,
-                                            contract_id: value,
-                                            type_id: '',
-                                            tag_id: '',
-                                            correspondent_id: '',
-                                        }))}
-                                    />
-                                </FilterDropdown>
+                            <div className="space-y-3">
+                                <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                                    <FilterDropdown icon={FileCheck2} label="Contrato" activeLabel={selectedContract ? `${selectedContract.code} - ${selectedContract.name}` : null}>
+                                        <label className="ged-label">Contrato</label>
+                                        <DropdownSelect
+                                            value={filterState.contract_id}
+                                            options={contracts}
+                                            placeholder="Todos"
+                                            getLabel={(contract) => `${contract.code} - ${contract.name}`}
+                                            onChange={(value) => setFilterState((state) => ({
+                                                ...state,
+                                                contract_id: value,
+                                                type_id: '',
+                                                tag_id: '',
+                                                correspondent_id: '',
+                                            }))}
+                                        />
+                                    </FilterDropdown>
 
-                                <FilterDropdown icon={Tag} label="Etiquetas" activeLabel={selectedTag?.name}>
-                                    <label className="ged-label">Etiqueta</label>
-                                    <DropdownSelect value={filterState.tag_id} options={filterTags} placeholder="Todas" onChange={(value) => setFilterState((state) => ({ ...state, tag_id: value }))} />
-                                </FilterDropdown>
+                                    <FilterDropdown icon={Tag} label="Etiquetas" activeLabel={selectedTag?.name}>
+                                        <label className="ged-label">Etiqueta</label>
+                                        <DropdownSelect value={filterState.tag_id} options={filterTags} placeholder="Todas" onChange={(value) => setFilterState((state) => ({ ...state, tag_id: value }))} />
+                                    </FilterDropdown>
 
-                                <FilterDropdown icon={UserRound} label="Correspondente" activeLabel={selectedCorrespondent?.name}>
-                                    <label className="ged-label">Correspondente</label>
-                                    <DropdownSelect value={filterState.correspondent_id} options={filteredFilterCorrespondents} placeholder="Todos" onChange={(value) => setFilterState((state) => ({ ...state, correspondent_id: value }))} />
-                                </FilterDropdown>
+                                    <FilterDropdown icon={UserRound} label="Correspondente" activeLabel={selectedCorrespondent?.name}>
+                                        <label className="ged-label">Correspondente</label>
+                                        <DropdownSelect value={filterState.correspondent_id} options={filteredFilterCorrespondents} placeholder="Todos" onChange={(value) => setFilterState((state) => ({ ...state, correspondent_id: value }))} />
+                                    </FilterDropdown>
 
-                                <FilterDropdown icon={FileText} label="Tipo de Documento" activeLabel={selectedType?.name}>
-                                    <label className="ged-label">Tipo de Documento</label>
-                                    <DropdownSelect value={filterState.type_id} options={filterTypes} placeholder="Todos" onChange={(value) => setFilterState((state) => ({ ...state, type_id: value }))} />
-                                </FilterDropdown>
+                                    <FilterDropdown icon={FileText} label="Tipo de Documento" activeLabel={selectedType?.name}>
+                                        <label className="ged-label">Tipo de Documento</label>
+                                        <DropdownSelect value={filterState.type_id} options={filterTypes} placeholder="Todos" onChange={(value) => setFilterState((state) => ({ ...state, type_id: value }))} />
+                                    </FilterDropdown>
 
-                                <FilterDropdown icon={CalendarDays} label="Datas" activeLabel={hasDateFilter ? 'Datas' : null}>
-                                    <div className="grid gap-3">
-                                        <div>
-                                            <label className="ged-label">Criado de</label>
-                                            <input type="date" className="ged-control" value={filterState.date_from} onChange={(event) => setFilterState((state) => ({ ...state, date_from: event.target.value }))} />
-                                        </div>
-                                        <div>
-                                            <label className="ged-label">Criado até</label>
-                                            <input type="date" className="ged-control" value={filterState.date_to} onChange={(event) => setFilterState((state) => ({ ...state, date_to: event.target.value }))} />
-                                        </div>
-                                    </div>
-                                </FilterDropdown>
-
-                                <button className="sig-btn sig-btn-primary w-full sm:w-auto sm:flex-none">
-                                    <Filter size={16} />
-                                    Filtrar
-                                </button>
-                                <button type="button" className="sig-btn sig-btn-ghost w-full sm:w-auto sm:flex-none" onClick={resetFilters}>Limpar</button>
-
-                                <div className="btn-group flex-fill flex w-full sm:w-[170px] sm:flex-none">
-                                    <ViewButton active={viewMode === 'table'} icon={List} label="Tabela" onClick={() => changeViewMode('table')} />
-                                    <ViewButton active={viewMode === 'grid'} icon={Grid2X2} label="Grade" onClick={() => changeViewMode('grid')} />
-                                    <ViewButton active={viewMode === 'detail'} icon={Rows3} label="Detalhado" onClick={() => changeViewMode('detail')} />
-                                </div>
-
-                                <div className="w-full sm:w-auto sm:flex-none">
-                                    <FilterDropdown icon={ArrowUpDown} label="Ordenar" activeLabel={`Ordenar: ${selectedSortLabel}`}>
-                                        <div className="space-y-3">
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <button
-                                                    type="button"
-                                                    className={`inline-flex min-h-9 items-center justify-center rounded border px-3 text-sm font-semibold ${filterState.direction === 'asc' ? 'border-emerald-700 bg-emerald-800 text-white' : 'border-emerald-700 bg-white text-emerald-800'}`}
-                                                    onClick={() => applyListingState({ ...filterState, direction: 'asc' })}
-                                                >
-                                                    <ArrowDownAZ size={16} />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className={`inline-flex min-h-9 items-center justify-center rounded border px-3 text-sm font-semibold ${filterState.direction === 'desc' ? 'border-emerald-700 bg-emerald-800 text-white' : 'border-emerald-700 bg-white text-emerald-800'}`}
-                                                    onClick={() => applyListingState({ ...filterState, direction: 'desc' })}
-                                                >
-                                                    <ArrowUpAZ size={16} />
-                                                </button>
+                                    <FilterDropdown icon={CalendarDays} label="Datas" activeLabel={hasDateFilter ? 'Datas' : null}>
+                                        <div className="grid gap-3">
+                                            <div>
+                                                <label className="ged-label">Criado de</label>
+                                                <input type="date" className="ged-control" value={filterState.date_from} onChange={(event) => setFilterState((state) => ({ ...state, date_from: event.target.value }))} />
                                             </div>
-
-                                            <div className="-mx-3 max-h-80 overflow-y-auto">
-                                                {sortOptions.map(([value, label]) => (
-                                                    <button
-                                                        key={value}
-                                                        type="button"
-                                                        className={`flex w-full px-3 py-2 text-left text-sm hover:bg-emerald-50 ${filterState.sort === value ? 'bg-emerald-800 font-semibold text-white hover:bg-emerald-800' : 'text-[var(--ink-800)]'}`}
-                                                        onClick={() => applyListingState({ ...filterState, sort: value })}
-                                                    >
-                                                        {label}
-                                                    </button>
-                                                ))}
+                                            <div>
+                                                <label className="ged-label">Criado até</label>
+                                                <input type="date" className="ged-control" value={filterState.date_to} onChange={(event) => setFilterState((state) => ({ ...state, date_to: event.target.value }))} />
                                             </div>
                                         </div>
                                     </FilterDropdown>
                                 </div>
 
-                                {selectedIds.length > 0 && (
-                                    <div className="inline-flex">
-                                        <BulkActionsDropdown tenant={tenant} selectedIds={selectedIds} onRotate={() => setShowRotateModal(true)} />
-                                        <BulkDownloadDropdown tenant={tenant} selectedIds={selectedIds} />
+                                <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center xl:justify-between">
+                                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:w-[20rem]">
+                                        <button className="sig-btn sig-btn-primary w-full justify-center">
+                                            <Filter size={16} />
+                                            Filtrar
+                                        </button>
+                                        <button type="button" className="sig-btn sig-btn-ghost px-4" onClick={resetFilters}>Limpar</button>
                                     </div>
-                                )}
+
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
+                                        <div className="btn-group flex h-10 w-full sm:w-44">
+                                            <ViewButton active={viewMode === 'table'} icon={List} label="Tabela" onClick={() => changeViewMode('table')} />
+                                            <ViewButton active={viewMode === 'grid'} icon={Grid2X2} label="Grade" onClick={() => changeViewMode('grid')} />
+                                            <ViewButton active={viewMode === 'detail'} icon={Rows3} label="Detalhado" onClick={() => changeViewMode('detail')} />
+                                        </div>
+
+                                        <div className="w-full sm:w-56">
+                                            <FilterDropdown icon={ArrowUpDown} label="Ordenar" activeLabel={`Ordenar: ${selectedSortLabel}`}>
+                                                <div className="space-y-3">
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <button
+                                                            type="button"
+                                                            className={`inline-flex min-h-9 items-center justify-center rounded border px-3 text-sm font-semibold ${filterState.direction === 'asc' ? 'border-emerald-700 bg-emerald-800 text-white' : 'border-emerald-700 bg-white text-emerald-800'}`}
+                                                            onClick={() => applyListingState({ ...filterState, direction: 'asc' })}
+                                                        >
+                                                            <ArrowDownAZ size={16} />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className={`inline-flex min-h-9 items-center justify-center rounded border px-3 text-sm font-semibold ${filterState.direction === 'desc' ? 'border-emerald-700 bg-emerald-800 text-white' : 'border-emerald-700 bg-white text-emerald-800'}`}
+                                                            onClick={() => applyListingState({ ...filterState, direction: 'desc' })}
+                                                        >
+                                                            <ArrowUpAZ size={16} />
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="-mx-3 max-h-80 overflow-y-auto">
+                                                        {sortOptions.map(([value, label]) => (
+                                                            <button
+                                                                key={value}
+                                                                type="button"
+                                                                className={`flex w-full px-3 py-2 text-left text-sm hover:bg-emerald-50 ${filterState.sort === value ? 'bg-emerald-800 font-semibold text-white hover:bg-emerald-800' : 'text-[var(--ink-800)]'}`}
+                                                                onClick={() => applyListingState({ ...filterState, sort: value })}
+                                                            >
+                                                                {label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </FilterDropdown>
+                                        </div>
+
+                                        {selectedIds.length > 0 && (
+                                            <div className="inline-flex flex-wrap gap-2 sm:flex-nowrap">
+                                                <BulkActionsDropdown tenant={tenant} selectedIds={selectedIds} onRotate={() => setShowRotateModal(true)} />
+                                                <button
+                                                    type="button"
+                                                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-rose-500 bg-rose-500 px-3 text-sm font-bold text-white shadow-sm hover:bg-rose-600"
+                                                    onClick={() => setShowTrashModal(true)}
+                                                >
+                                                    <Trash2 size={16} />
+                                                    Excluir
+                                                </button>
+                                                <BulkDownloadDropdown tenant={tenant} selectedIds={selectedIds} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </form>
+
+                    <PaperlessPagination pagination={documents} compact />
 
                     {documents.data.length === 0 && <EmptyDocuments />}
 
@@ -1177,19 +1354,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                         </table>
                     </div>
 
-                    {documents.links?.length > 3 && (
-                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] p-4">
-                            {documents.links.map((link, index) => (
-                                <Link
-                                    key={`${link.label}-${index}`}
-                                    href={link.url || '#'}
-                                    preserveScroll
-                                    className={`rounded-lg border px-3 py-1.5 text-sm ${link.active ? 'border-blue-600 bg-blue-600 text-white' : 'border-[var(--border)] bg-white text-[var(--ink-700)]'} ${!link.url ? 'pointer-events-none opacity-40' : ''}`}
-                                    dangerouslySetInnerHTML={{ __html: link.label }}
-                                />
-                            ))}
-                        </div>
-                    )}
+                    <PaperlessPagination pagination={documents} selectedCount={selectedIds.length} />
                 </div>
 
                 {showRotateModal && (
@@ -1200,8 +1365,16 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                         onClose={() => setShowRotateModal(false)}
                     />
                 )}
+                {showTrashModal && (
+                    <MoveToTrashModal
+                        tenant={tenant}
+                        selectedIds={selectedIds}
+                        onClose={() => setShowTrashModal(false)}
+                        onMoved={() => setSelectedIds([])}
+                    />
+                )}
+                <GedTour tenant={tenant} section="documents" />
             </div>
         </AuthenticatedLayout>
     );
 }
-
