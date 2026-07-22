@@ -60,6 +60,14 @@ function UserAvatar({ user, className = '' }) {
     return <span className={`sig-avatar ${className}`}>{initials(user?.name)}</span>;
 }
 
+function CollapsibleNav({ open, children, className = '' }) {
+    return (
+        <div className={`sig-nav-submenu ${open ? 'is-open' : ''} ${className}`} aria-hidden={!open}>
+            <div className="sig-nav-submenu-inner">{children}</div>
+        </div>
+    );
+}
+
 export default function AuthenticatedLayout({ children }) {
     const { props } = usePage();
     const user = props.auth.user;
@@ -484,6 +492,32 @@ export default function AuthenticatedLayout({ children }) {
             ? { ...item, label: 'Parametrização' }
             : item
     ));
+    const navSections = [
+        {
+            label: isPlatformAdmin ? 'Plataforma' : null,
+            items: navItems.filter((item) => ['Super Admin', 'Tenants', 'Uso APS'].includes(item.label)),
+        },
+        {
+            label: 'Gestão',
+            items: navItems.filter((item) => ['Visão geral', 'Contratos', 'Atividades'].includes(item.label)),
+        },
+        {
+            label: 'Orçamentos e medições',
+            items: navItems.filter((item) => ['Orçamentos', 'Medição', 'Ordem de Serviço'].includes(item.label)),
+        },
+        {
+            label: 'Campo',
+            items: navItems.filter((item) => ['Diário de Obra', 'Qualidade'].includes(item.label)),
+        },
+        {
+            label: 'Controle',
+            items: navItems.filter((item) => ['Documentação', 'Projetos', 'Tutoriais'].includes(item.label)),
+        },
+        {
+            label: 'Administração',
+            items: navItems.filter((item) => ['Usuários', 'Permissões'].includes(item.label)),
+        },
+    ].filter((section) => section.items.length > 0);
 
     return (
         <div className={`sig-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -511,9 +545,12 @@ export default function AuthenticatedLayout({ children }) {
                     </div>
                 )}
 
-                <nav className="flex-1 overflow-y-auto py-3">
+                <nav className="flex-1 overflow-y-auto py-2">
                     <div className="eyebrow px-5 pb-2 pt-1 text-[var(--side-fg-dim)]">Workspace</div>
-                    {navItems.map((item) => {
+                    {navSections.map((section) => (
+                        <div key={section.label || 'workspace'} className="sig-nav-section">
+                            {section.label && <div className="sig-nav-section-label">{section.label}</div>}
+                            {section.items.map((item) => {
                         const Icon = item.icon;
                         const childrenOpen = item.label === 'Qualidade'
                             ? qualidadeOpen
@@ -544,7 +581,7 @@ export default function AuthenticatedLayout({ children }) {
 
                         if (item.children) {
                             return (
-                                <div key={item.label}>
+                                <div key={item.label} data-tour={item.label === 'Projetos' ? 'projects-navigation' : undefined}>
                                     <button
                                         type="button"
                                         className={`sig-nav-item border-0 bg-transparent text-left ${item.active ? 'active' : ''}`}
@@ -557,8 +594,7 @@ export default function AuthenticatedLayout({ children }) {
                                             className={`transition-transform ${childrenOpen ? 'rotate-90' : ''}`}
                                         />
                                     </button>
-                                    {childrenOpen && (
-                                        <div className="ml-7">
+                                    <CollapsibleNav open={childrenOpen} className="ml-7">
                                             {item.children.map((child) => {
                                                 const nestedOpen = child.label === 'RDA' ? rdaOpen : rdoOpen;
                                                 const toggleNestedOpen = child.label === 'RDA' ? setRdaOpen : setRdoOpen;
@@ -574,8 +610,7 @@ export default function AuthenticatedLayout({ children }) {
                                                         <span className="min-w-0 flex-1 truncate">{child.label}</span>
                                                         <ChevronRight size={13} className={`transition-transform ${nestedOpen ? 'rotate-90' : ''}`} />
                                                     </button>
-                                                    {nestedOpen && (
-                                                        <div className="ml-5">
+                                                    <CollapsibleNav open={nestedOpen} className="ml-5">
                                                             {child.children.map((grandchild) => (
                                                                 <Link
                                                                     key={grandchild.label}
@@ -586,8 +621,7 @@ export default function AuthenticatedLayout({ children }) {
                                                                     <span className="min-w-0 flex-1 truncate">{grandchild.label}</span>
                                                                 </Link>
                                                             ))}
-                                                        </div>
-                                                    )}
+                                                    </CollapsibleNav>
                                                 </div>
                                             ) : (
                                                 <Link
@@ -601,8 +635,7 @@ export default function AuthenticatedLayout({ children }) {
                                                 </Link>
                                             );
                                             })}
-                                        </div>
-                                    )}
+                                    </CollapsibleNav>
                                 </div>
                             );
                         }
@@ -618,7 +651,9 @@ export default function AuthenticatedLayout({ children }) {
                                 {item.badge && <span className="sig-pill bg-white px-2 py-0.5 text-[10.5px]">{item.badge}</span>}
                             </Link>
                         );
-                    })}
+                            })}
+                        </div>
+                    ))}
 
                     {parametrizacaoItems.length > 0 && (
                         <div className="mt-2">
@@ -634,8 +669,7 @@ export default function AuthenticatedLayout({ children }) {
                                     className={`transition-transform ${parametrizacaoOpen ? 'rotate-90' : ''}`}
                                 />
                             </button>
-                            {parametrizacaoOpen && (
-                                <div className="ml-7">
+                            <CollapsibleNav open={parametrizacaoOpen} className="ml-7">
                                 {parametrizacaoItems.map((item) => (
                                     <Link
                                         key={item.label}
@@ -646,8 +680,7 @@ export default function AuthenticatedLayout({ children }) {
                                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                                     </Link>
                                 ))}
-                                </div>
-                            )}
+                            </CollapsibleNav>
                         </div>
                     )}
 
@@ -656,7 +689,7 @@ export default function AuthenticatedLayout({ children }) {
 
             <section className="sig-main">
                 <header className="sig-topbar">
-                    <div ref={mobileNavRef} className="relative lg:hidden">
+                    <div ref={mobileNavRef} className="sig-mobile-nav-trigger relative lg:hidden">
                         <button
                             type="button"
                             className="sig-btn sig-btn-primary !min-h-9 !px-3"
@@ -671,11 +704,11 @@ export default function AuthenticatedLayout({ children }) {
 
                         {mobileNavOpen && (
                             <div
-                                className="absolute left-0 top-[calc(100%+10px)] z-50 w-[min(340px,calc(100vw-32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.14)]"
+                                className="fixed inset-x-3 top-[68px] z-50 max-h-[calc(100vh-84px)] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.14)] sm:absolute sm:left-0 sm:right-auto sm:top-[calc(100%+10px)] sm:w-[min(360px,calc(100vw-32px))]"
                                 role="menu"
                                 aria-label="Menu principal"
                             >
-                                <div className="max-h-[70vh] overflow-y-auto p-2">
+                                <div className="max-h-[calc(100vh-100px)] overflow-y-auto p-2 sm:max-h-[70vh]">
                                     <MobileNavList items={normalizedMobileNavItems} onNavigate={() => setMobileNavOpen(false)} />
                                 </div>
                             </div>
@@ -684,7 +717,7 @@ export default function AuthenticatedLayout({ children }) {
 
                     <button
                         type="button"
-                        className="sig-btn sig-btn-ghost !hidden !min-h-9 !px-2 lg:!inline-flex"
+                        className="sig-desktop-sidebar-toggle sig-btn sig-btn-ghost !hidden !min-h-9 !px-2 lg:!inline-flex"
                         title={sidebarCollapsed ? 'Mostrar menu lateral' : 'Esconder menu lateral'}
                         aria-label={sidebarCollapsed ? 'Mostrar menu lateral' : 'Esconder menu lateral'}
                         aria-pressed={sidebarCollapsed}

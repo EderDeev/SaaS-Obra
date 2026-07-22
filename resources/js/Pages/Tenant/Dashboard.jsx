@@ -7,11 +7,16 @@ import {
     Building2,
     CalendarClock,
     CheckCircle2,
+    ClipboardCheck,
     ClipboardList,
+    FileText,
     FileWarning,
     FolderOpen,
+    HardHat,
+    Inbox,
     ListTodo,
     Plus,
+    ReceiptText,
     Send,
     Users,
 } from 'lucide-react';
@@ -20,6 +25,11 @@ const eventIcons = {
     Atividade: Activity,
     Projeto: FolderOpen,
     RNC: FileWarning,
+    Documento: FileText,
+    RDO: HardHat,
+    Medição: ReceiptText,
+    'Ordem de serviço': ClipboardCheck,
+    Aditivo: ClipboardList,
 };
 
 const toneClasses = {
@@ -102,6 +112,19 @@ export default function TenantDashboard({
                     <Metric icon={FileWarning} label="RNCs abertas" value={stats.openRncs} sub={`${stats.overdueRncs} com resposta em atraso`} accent={stats.overdueRncs > 0 ? 'red' : 'amber'} />
                     <Metric icon={FolderOpen} label="Projetos pendentes" value={stats.pendingProjects} sub="Em análise ou aprovação" accent={stats.pendingProjects > 0 ? 'amber' : 'green'} />
                 </div>
+
+                <section className="mt-6">
+                    <div className="mb-3">
+                        <h2 className="text-[16px] font-semibold text-[var(--ink-900)]">Operação do contrato</h2>
+                        <p className="text-sm text-[var(--ink-500)]">Fluxos que passaram a integrar o workspace.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <OperationalCard icon={Inbox} title="Documentação" value={stats.documents} detail={stats.pendingTriage > 0 ? `${stats.pendingTriage} e-mail(s) em triagem` : `${stats.documentsInProgress} em processamento OCR`} tone={stats.pendingTriage > 0 ? 'amber' : stats.documentsInProgress > 0 ? 'blue' : 'green'} href={route(stats.pendingTriage > 0 ? 'tenant.ged.triage' : 'tenant.ged.index', tenant.slug)} />
+                        <OperationalCard icon={HardHat} title="Diário de obra" value={stats.rdoAwaitingReview} detail={stats.rdoAwaitingReview > 0 ? 'RDO(s) aguardando fluxo' : 'Nenhum RDO pendente'} tone={stats.rdoAwaitingReview > 0 ? 'amber' : 'green'} href={route('tenant.diario-obra.rdo.dashboard', tenant.slug)} />
+                        <OperationalCard icon={ReceiptText} title="Medição" value={stats.openBoletins} detail={stats.openBoletins > 0 ? 'boletim(ns) em lançamento' : 'Nenhum boletim aberto'} tone={stats.openBoletins > 0 ? 'blue' : 'green'} href={route('tenant.medicao.boletim-medicao.index', tenant.slug)} />
+                        <OperationalCard icon={ClipboardCheck} title="Ordem de serviço" value={stats.pendingOrders} detail={stats.pendingOrders > 0 ? 'OS(s) em análise ou aprovação' : 'Nenhuma OS pendente'} tone={stats.pendingOrders > 0 ? 'amber' : 'green'} href={route('tenant.ordem-servico.analise.index', tenant.slug)} />
+                    </div>
+                </section>
 
                 <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
                     <div className="grid gap-5">
@@ -215,6 +238,24 @@ function Metric({ icon: Icon, label, value, sub, accent = 'blue' }) {
             <div className={`mono mt-2 text-[28px] font-semibold ${toneClasses[accent]?.split(' ').at(-1) || 'text-[var(--ink-900)]'}`}>{value}</div>
             <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">{sub}</p>
         </div>
+    );
+}
+
+function OperationalCard({ icon: Icon, title, value, detail, tone, href }) {
+    return (
+        <Link href={href} className="sig-card group flex min-h-[132px] flex-col justify-between p-[18px] transition hover:-translate-y-0.5 hover:border-[var(--primary-200)] hover:shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+                <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${toneClasses[tone] || toneClasses.blue}`}>
+                    <Icon size={16} />
+                </span>
+                <ArrowRight size={15} className="mt-1 text-[var(--ink-400)] transition group-hover:translate-x-0.5 group-hover:text-[var(--primary)]" />
+            </div>
+            <div>
+                <div className="mono text-[26px] font-semibold text-[var(--ink-900)]">{value}</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ink-900)]">{title}</div>
+                <div className="mt-0.5 text-[12px] text-[var(--ink-500)]">{detail}</div>
+            </div>
+        </Link>
     );
 }
 

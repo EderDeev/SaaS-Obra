@@ -243,33 +243,35 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                         <div className="max-w-[240px] truncate text-xs text-[var(--ink-500)]">Original: {version.original_name}</div>
                                                     )}
                                                     <div className="text-xs text-[var(--ink-500)]">{version?.size_label}</div>
-                                                    {version?.url && (
-                                                        <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm mt-2">
-                                                            <Download size={13} />
-                                                            Baixar
-                                                        </a>
-                                                    )}
-                                                    {version && (
-                                                        version.aps_urn ? (
-                                                             <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm mt-2">
-                                                                 <Eye size={13} />
-                                                                 Checklist
-                                                             </Link>
-                                                        ) : isApsWaiting(version) ? (
-                                                            <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)] mt-2">
-                                                                Processando APS
-                                                            </span>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                className="sig-btn sig-btn-secondary sig-btn-sm mt-2"
-                                                                onClick={() => router.post(route('tenant.projects.process-aps', [tenant.slug, version.id]), {}, { preserveScroll: true })}
-                                                            >
-                                                                <Play size={13} />
-                                                                Processar APS
-                                                            </button>
-                                                        )
-                                                    )}
+                                                    <div className="mt-2 flex flex-wrap gap-2">
+                                                        {version?.url && (
+                                                            <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                                <Download size={13} />
+                                                                Baixar
+                                                            </a>
+                                                        )}
+                                                        {version && (
+                                                            version.aps_urn ? (
+                                                                 <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm">
+                                                                     <Eye size={13} />
+                                                                     Checklist
+                                                                 </Link>
+                                                            ) : isApsWaiting(version) ? (
+                                                                <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                                                                    Processando APS
+                                                                </span>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    className="sig-btn sig-btn-secondary sig-btn-sm"
+                                                                    onClick={() => router.post(route('tenant.projects.process-aps', [tenant.slug, version.id]), {}, { preserveScroll: true })}
+                                                                >
+                                                                    <Play size={13} />
+                                                                    Processar APS
+                                                                </button>
+                                                            )
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     {actionable ? (

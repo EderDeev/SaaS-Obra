@@ -58,7 +58,7 @@ class DisciplinaController extends Controller
     private function validatedDisciplinaData(Request $request, Tenant $tenant, ?Disciplina $disciplina = null): array
     {
         $request->merge([
-            'sigla' => mb_strtoupper((string) $request->input('sigla', '')),
+            'sigla' => mb_strtoupper(trim((string) $request->input('sigla', ''))),
             'cor' => $request->input('cor') ?: '#2563eb',
         ]);
 
@@ -78,13 +78,14 @@ class DisciplinaController extends Controller
                 Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'nome' => ['required', 'string', 'max:255'],
-            'sigla' => ['required', 'string', 'max:20', $uniqueSigla],
-            'descricao' => ['nullable', 'string', 'max:2000'],
+            'sigla' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/', $uniqueSigla],
             'cor' => ['required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ], [
             'contract_id.required' => 'Selecione o contrato.',
             'contract_id.exists' => 'O contrato selecionado nao pertence a este tenant.',
             'sigla.unique' => 'Esta sigla ja esta cadastrada neste contrato.',
+            'sigla.size' => 'A sigla deve conter exatamente 3 letras.',
+            'sigla.regex' => 'A sigla deve conter apenas letras.',
             'cor.regex' => 'Informe uma cor valida no formato hexadecimal.',
         ]);
     }

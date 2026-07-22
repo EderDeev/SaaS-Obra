@@ -15,6 +15,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ProjectSubmittedForReviewNotification;
 use App\Services\AutodeskApsService;
+use App\Services\ProjectMasterListExportService;
 use App\Support\ProjectCap;
 use App\Support\ProjectPermissions;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -26,6 +27,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ProjectController extends Controller
 {
@@ -269,13 +271,29 @@ class ProjectController extends Controller
         ]);
     }
 
+    public function tourPreview(Request $request, Tenant $tenant): Response
+    {
+        abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
+
+        return Inertia::render('Tenant/Projects/TourPreview', [
+            'tenant' => $tenant,
+        ]);
+    }
+
     public function masterList(Request $request, Tenant $tenant): Response
     {
         abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
 
         $contracts = $this->masterListContracts($request, $tenant);
         $contractIds = $contracts->pluck('id');
-        $documents = $this->masterListDocumentsQuery($request, $tenant, $contractIds)
+        $filtersApplied = $request->boolean('applied');
+        $documentsQuery = $this->masterListDocumentsQuery($request, $tenant, $contractIds);
+
+        if (! $filtersApplied) {
+            $documentsQuery->whereRaw('1 = 0');
+        }
+
+        $documents = $documentsQuery
             ->latest()
             ->paginate(50)
             ->withQueryString()
@@ -321,25 +339,29 @@ class ProjectController extends Controller
             'documentTypes' => self::DOCUMENT_TYPES,
             'statusLabels' => self::STATUS_LABELS,
             'filters' => $this->masterListFilters($request),
+            'filtersApplied' => $filtersApplied,
             'totalDocuments' => $tenant->projectDocuments()
                 ->whereIn('contract_id', $contractIds)
                 ->count(),
         ]);
     }
 
-    public function masterListPdf(Request $request, Tenant $tenant)
+    public function masterListPdf(Request $request, Tenant $tenant, ProjectMasterListExportService $exportService)
     {
         abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
 
         $contracts = $this->masterListContracts($request, $tenant);
-        $documents = $this->masterListDocumentsQuery($request, $tenant, $contracts->pluck('id'))
+        $documentModels = $this->masterListDocumentsQuery($request, $tenant, $contracts->pluck('id'))
             ->orderBy('code')
-            ->get()
+            ->get();
+        $documents = $documentModels
             ->map(fn (ProjectDocument $document): array => $this->serializeMasterListDocument($document));
+        $branding = $exportService->branding($tenant, $documentModels->pluck('contract_id'));
 
         $pdf = Pdf::loadView('pdf.project-master-list', [
             'tenant' => $tenant,
             'documents' => $documents,
+            'branding' => $branding,
             'filters' => $this->masterListFilters($request),
             'generatedAt' => now(),
         ])->setPaper('a4', 'landscape');
@@ -351,27 +373,29 @@ class ProjectController extends Controller
         return $response;
     }
 
-    public function masterListExcel(Request $request, Tenant $tenant)
+    public function masterListExcel(Request $request, Tenant $tenant, ProjectMasterListExportService $exportService)
     {
         abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
 
         $contracts = $this->masterListContracts($request, $tenant);
-        $documents = $this->masterListDocumentsQuery($request, $tenant, $contracts->pluck('id'))
+        $documentModels = $this->masterListDocumentsQuery($request, $tenant, $contracts->pluck('id'))
             ->orderBy('code')
-            ->get()
+            ->get();
+        $documents = $documentModels
             ->map(fn (ProjectDocument $document): array => $this->serializeMasterListDocument($document));
-        $fileName = 'lista-mestra-projetos-'.now()->format('Ymd-His').'.xls';
+        $generatedAt = now();
+        $branding = $exportService->branding($tenant, $documentModels->pluck('contract_id'));
+        $spreadsheet = $exportService->spreadsheet($tenant, $documents, $branding, $generatedAt);
+        $fileName = 'lista-mestra-projetos-'.$generatedAt->format('Ymd-His').'.xlsx';
 
-        return response()
-            ->view('exports.project-master-list-excel', [
-                'tenant' => $tenant,
-                'documents' => $documents,
-                'generatedAt' => now(),
-            ], 200, [
-                'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-                'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
-                'Cache-Control' => 'max-age=0, no-cache, must-revalidate',
-            ]);
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            $writer = new Xlsx($spreadsheet);
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Cache-Control' => 'max-age=0, no-cache, must-revalidate',
+        ]);
     }
 
     public function store(Request $request, Tenant $tenant, AutodeskApsService $aps): RedirectResponse
@@ -657,32 +681,38 @@ class ProjectController extends Controller
                 'latestVersion.approver:id,name,email',
             ]);
 
-        if ($contractId = $this->masterListFilterValue($request, 'contract_id')) {
-            $query->where('contract_id', $contractId);
+        if ($contractIdsFilter = $this->masterListFilterValues($request, 'contract_ids', 'contract_id')) {
+            $query->whereIn('contract_id', $contractIdsFilter);
         }
 
-        if ($obraId = $this->masterListFilterValue($request, 'obra_id')) {
-            $query->where('obra_id', $obraId);
+        if ($obraIds = $this->masterListFilterValues($request, 'obra_ids', 'obra_id')) {
+            $query->whereIn('obra_id', $obraIds);
         }
 
-        if ($disciplinaId = $this->masterListFilterValue($request, 'disciplina_id')) {
-            $query->where('disciplina_id', $disciplinaId);
+        if ($disciplinaIds = $this->masterListFilterValues($request, 'disciplina_ids', 'disciplina_id')) {
+            $query->whereIn('disciplina_id', $disciplinaIds);
         }
 
-        if ($phaseId = $this->masterListFilterValue($request, 'project_phase_id')) {
-            $query->where('project_phase_id', $phaseId);
+        if ($phaseIds = $this->masterListFilterValues($request, 'project_phase_ids', 'project_phase_id')) {
+            $query->whereIn('project_phase_id', $phaseIds);
         }
 
-        if ($documentType = $this->masterListFilterValue($request, 'document_type')) {
-            if (array_key_exists($documentType, self::DOCUMENT_TYPES)) {
-                $query->where('document_type', $documentType);
-            }
+        $documentTypes = array_values(array_intersect(
+            $this->masterListFilterValues($request, 'document_types', 'document_type'),
+            array_keys(self::DOCUMENT_TYPES),
+        ));
+
+        if ($documentTypes) {
+            $query->whereIn('document_type', $documentTypes);
         }
 
-        if ($status = $this->masterListFilterValue($request, 'status')) {
-            if (array_key_exists($status, self::STATUS_LABELS)) {
-                $query->where('status', $status);
-            }
+        $statuses = array_values(array_intersect(
+            $this->masterListFilterValues($request, 'statuses', 'status'),
+            array_keys(self::STATUS_LABELS),
+        ));
+
+        if ($statuses) {
+            $query->whereIn('status', $statuses);
         }
 
         if ($search = trim((string) $request->query('q', ''))) {
@@ -724,26 +754,35 @@ class ProjectController extends Controller
         return $query;
     }
 
-    private function masterListFilterValue(Request $request, string $key): ?string
+    /**
+     * @return array<int, string>
+     */
+    private function masterListFilterValues(Request $request, string $key, ?string $legacyKey = null): array
     {
-        $value = $request->query($key);
+        $values = $request->query($key);
 
-        if (blank($value) || $value === 'todos') {
-            return null;
+        if ($values === null && $legacyKey) {
+            $values = $request->query($legacyKey);
         }
 
-        return (string) $value;
+        return collect(is_array($values) ? $values : [$values])
+            ->flatten()
+            ->filter(fn ($value): bool => ! blank($value) && $value !== 'todos')
+            ->map(fn ($value): string => (string) $value)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function masterListFilters(Request $request): array
     {
         return [
-            'contract_id' => $request->query('contract_id', 'todos'),
-            'obra_id' => $request->query('obra_id', 'todos'),
-            'disciplina_id' => $request->query('disciplina_id', 'todos'),
-            'project_phase_id' => $request->query('project_phase_id', 'todos'),
-            'document_type' => $request->query('document_type', 'todos'),
-            'status' => $request->query('status', 'todos'),
+            'contract_ids' => $this->masterListFilterValues($request, 'contract_ids', 'contract_id'),
+            'obra_ids' => $this->masterListFilterValues($request, 'obra_ids', 'obra_id'),
+            'disciplina_ids' => $this->masterListFilterValues($request, 'disciplina_ids', 'disciplina_id'),
+            'project_phase_ids' => $this->masterListFilterValues($request, 'project_phase_ids', 'project_phase_id'),
+            'document_types' => $this->masterListFilterValues($request, 'document_types', 'document_type'),
+            'statuses' => $this->masterListFilterValues($request, 'statuses', 'status'),
             'q' => $request->query('q', ''),
         ];
     }

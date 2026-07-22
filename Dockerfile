@@ -41,6 +41,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+ARG VITE_APP_NAME
+ARG VITE_MAPBOX_ACCESS_TOKEN
 RUN npm run build
 
 COPY docker/php.ini /usr/local/etc/php/conf.d/deming-local.ini

@@ -15,6 +15,24 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
+const tourDemoAccount = {
+    id: 'tour-demo-account',
+    name: 'Caixa de documentos do contrato',
+    host: 'imap.empresa.com.br',
+    username: 'documentos@empresa.com.br',
+    _tourDemo: true,
+};
+
+const tourDemoRule = {
+    id: 'tour-demo-rule',
+    name: 'Documentos do contrato',
+    priority: 1,
+    is_active: true,
+    processed_messages_count: 12,
+    account: tourDemoAccount,
+    _tourDemo: true,
+};
+
 function FieldError({ children }) {
     if (!children) return null;
 
@@ -722,7 +740,12 @@ function formatDateTime(value) {
 
 export default function GedEmail({ tenant, contracts = [], accounts = [], rules = [], types = [], tags = [], correspondents = [] }) {
     const { flash = {} } = usePage().props;
+    const [showTourDemos, setShowTourDemos] = useState(() => typeof window !== 'undefined'
+        && window.sessionStorage.getItem('ged:tour-active') === '1'
+        && window.sessionStorage.getItem('ged:tour-section') === 'email');
     const [modal, setModal] = useState(null);
+    const visibleAccounts = showTourDemos ? [tourDemoAccount] : accounts;
+    const visibleRules = showTourDemos ? [tourDemoRule] : rules;
 
     function closeModal() {
         setModal(null);
@@ -782,10 +805,10 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                             <div className="col-span-3">Ações</div>
                         </div>
 
-                        {accounts.length === 0 ? (
+                        {visibleAccounts.length === 0 ? (
                             <div className="px-5 py-5 text-[var(--ink-600)]">Nenhuma conta de e-mail definida.</div>
-                        ) : accounts.map((account) => (
-                            <div key={account.id} className="grid min-h-28 grid-cols-12 items-center border-b border-[var(--border)] px-5 py-4 text-base text-[var(--ink-900)] last:border-b-0">
+                        ) : visibleAccounts.map((account, index) => (
+                            <div key={account.id} data-tour={index === 0 ? 'ged-email-account-example' : undefined} className="grid min-h-28 grid-cols-12 items-center border-b border-[var(--border)] px-5 py-4 text-base text-[var(--ink-900)] last:border-b-0">
                                 <div className="col-span-3 flex items-center gap-2 text-emerald-800">
                                     <span>{account.name}</span>
                                     <Mail size={20} />
@@ -794,20 +817,20 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                                 <div className="col-span-3">{account.username}</div>
                                 <div className="col-span-3 flex flex-wrap items-center gap-3">
                                     <div className="inline-flex overflow-hidden rounded-md border border-slate-400 bg-white">
-                                        <ActionButton title="Editar" onClick={() => setModal({ type: 'account', account })}>
+                                        <ActionButton title="Editar" disabled={account._tourDemo} onClick={() => setModal({ type: 'account', account })}>
                                             <Edit3 size={20} />
                                             Editar
                                         </ActionButton>
-                                        <ActionButton title="Permissões" onClick={() => setModal({ type: 'permissions', item: account })}>
+                                        <ActionButton title="Permissões" disabled={account._tourDemo} onClick={() => setModal({ type: 'permissions', item: account })}>
                                             <KeyRound size={20} />
                                             Permissões
                                         </ActionButton>
-                                        <ActionButton title="Excluir" tone="danger" onClick={() => destroyAccount(account)}>
+                                        <ActionButton title="Excluir" tone="danger" disabled={account._tourDemo} onClick={() => destroyAccount(account)}>
                                             <Trash2 size={20} />
                                             Excluir
                                         </ActionButton>
                                     </div>
-                                    <ActionButton title="Processar e-mail" onClick={() => processAccount(account)}>
+                                    <ActionButton title="Processar e-mail" disabled={account._tourDemo} onClick={() => processAccount(account)}>
                                         <RotateCw size={18} />
                                         Processar E-mail
                                     </ActionButton>
@@ -836,10 +859,10 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                             <div className="col-span-3">Ações</div>
                         </div>
 
-                        {rules.length === 0 ? (
+                        {visibleRules.length === 0 ? (
                             <div className="px-5 py-5 text-base text-[var(--ink-900)]">Nenhuma regra de e-mail definida.</div>
-                        ) : rules.map((rule) => (
-                            <div key={rule.id} className="grid grid-cols-12 items-center border-b border-[var(--border)] px-5 py-4 text-base last:border-b-0">
+                        ) : visibleRules.map((rule, index) => (
+                            <div key={rule.id} data-tour={index === 0 ? 'ged-email-rule-example' : undefined} className="grid grid-cols-12 items-center border-b border-[var(--border)] px-5 py-4 text-base last:border-b-0">
                                 <div className="col-span-2 font-medium">{rule.name}</div>
                                 <div className="col-span-1">{rule.priority}</div>
                                 <div className="col-span-2">{rule.account?.name || '—'}</div>
@@ -852,6 +875,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                                     <button
                                         type="button"
                                         className="sig-btn sig-btn-secondary min-h-9 px-3 py-1 text-xs"
+                                        disabled={rule._tourDemo}
                                         onClick={() => setModal({ type: 'processed', rule })}
                                     >
                                         <RefreshCw size={14} />
@@ -861,11 +885,11 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                                 </div>
                                 <div className="col-span-3">
                                     <div className="inline-flex overflow-hidden rounded-md border border-slate-400 bg-white">
-                                        <ActionButton title="Editar" onClick={() => setModal({ type: 'rule', rule })}>
+                                        <ActionButton title="Editar" disabled={rule._tourDemo} onClick={() => setModal({ type: 'rule', rule })}>
                                             <Edit3 size={18} />
                                             Editar
                                         </ActionButton>
-                                        <ActionButton title="Excluir" tone="danger" onClick={() => destroyRule(rule)}>
+                                        <ActionButton title="Excluir" tone="danger" disabled={rule._tourDemo} onClick={() => destroyRule(rule)}>
                                             <Trash2 size={18} />
                                             Excluir
                                         </ActionButton>
@@ -896,7 +920,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
             )}
             {modal?.type === 'permissions' && <PermissionsModal item={modal.item} onClose={closeModal} />}
             {modal?.type === 'processed' && <ProcessedEmailsModal rule={modal.rule} onClose={closeModal} />}
-            <GedTour tenant={tenant} section="email" />
+            <GedTour tenant={tenant} section="email" onExit={() => setShowTourDemos(false)} />
         </AuthenticatedLayout>
     );
 }

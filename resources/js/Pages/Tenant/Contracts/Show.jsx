@@ -1,10 +1,12 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ContractTour from '@/Components/ContractTour';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     Activity,
     AlertTriangle,
     Building2,
     Calendar,
+    CheckCircle2,
     ClipboardCheck,
     Download,
     FileText,
@@ -207,7 +209,7 @@ export default function ContractShow({
             <Head title={contractTitle} />
 
             <section className="sig-content fade-in">
-                <header className="flex flex-wrap items-start gap-5">
+                <header data-tour="contract-detail-header" className="flex flex-wrap items-start gap-5">
                     <div className="min-w-0 flex-1">
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[15px] font-bold text-[var(--primary)]">
@@ -237,7 +239,7 @@ export default function ContractShow({
                     />
                 </header>
 
-                <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <section data-tour="contract-detail-metrics" className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <Metric icon={Activity} label="Atividades abertas" value={contract.open_activities_count} />
                     <Metric icon={AlertTriangle} label="Atividades atrasadas" value={contract.overdue_activities_count} attention={contract.overdue_activities_count > 0} />
                     <Metric icon={ClipboardCheck} label="RNCs abertas" value={contract.open_rncs_count} attention={contract.open_rncs_count > 0} />
@@ -302,8 +304,8 @@ export default function ContractShow({
                     </div>
 
                     <aside className="grid content-start gap-5">
-                        <ContractDetails contract={contract} cliente={cliente} construtora={construtora} location={location} />
-                        <AdditiveSummaryCard contract={contract} additives={additives} onHistory={() => setShowAdditiveHistory(true)} />
+                        <div data-tour="contract-detail-data"><ContractDetails contract={contract} cliente={cliente} construtora={construtora} location={location} /></div>
+                        <div data-tour="contract-detail-additives"><AdditiveSummaryCard contract={contract} additives={additives} onHistory={() => setShowAdditiveHistory(true)} /></div>
                         <TeamCard participants={contract.participants || []} />
                     </aside>
                 </section>
@@ -338,6 +340,7 @@ export default function ContractShow({
                     onClose={() => setShowAdditiveHistory(false)}
                 />
             )}
+            <ContractTour section="detail" />
         </AuthenticatedLayout>
     );
 }
@@ -363,7 +366,7 @@ function QuickActions({ tenant, capabilities, onParametrize, onAdditive }) {
     if (actions.length === 0) return null;
 
     return (
-        <div className="flex flex-wrap gap-2">
+        <div data-tour="contract-detail-actions" className="flex flex-wrap gap-2">
             {actions.map(({ label, icon: Icon, href, onClick }) => (
                 href ? (
                     <Link key={label} className="sig-btn sig-btn-secondary" href={href}>
@@ -812,6 +815,8 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
 function ContractLinksTab({ tenant, contract, parametrizacao }) {
     const empresas = parametrizacao.empresas || [];
     const obras = parametrizacao.obras || [];
+    const obrasPrincipais = obras.filter((obra) => obra.tipo === 'pai');
+    const [saved, setSaved] = useState(false);
     const empresasByTipo = useMemo(() => {
         const normalized = (nome = '') => nome.toLowerCase();
 
@@ -830,34 +835,47 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
 
     const submit = (event) => {
         event.preventDefault();
+        setSaved(false);
         form.patch(route('tenant.contracts.parametrizacao.update', [tenant.slug, contract.id]), {
             preserveScroll: true,
+            onSuccess: () => setSaved(true),
         });
+    };
+
+    const updateLink = (field, value) => {
+        setSaved(false);
+        form.setData(field, value);
     };
 
     return (
         <form className="grid gap-5 lg:grid-cols-2" onSubmit={submit}>
-            <SelectField label="Obra principal" value={form.data.obra_id} onChange={(value) => form.setData('obra_id', value)} error={form.errors.obra_id}>
+            <SelectField label="Obra principal" value={form.data.obra_id} onChange={(value) => updateLink('obra_id', value)} error={form.errors.obra_id}>
                 <option value="">Sem obra principal</option>
-                {obras.map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}
+                {obrasPrincipais.map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}
             </SelectField>
-            <SelectField label="Cliente" value={form.data.cliente_empresa_id} onChange={(value) => form.setData('cliente_empresa_id', value)} error={form.errors.cliente_empresa_id}>
+            <SelectField label="Cliente" value={form.data.cliente_empresa_id} onChange={(value) => updateLink('cliente_empresa_id', value)} error={form.errors.cliente_empresa_id}>
                 <option value="">Sem cliente</option>
                 {empresasByTipo.cliente.map((empresa) => <option key={empresa.id} value={empresa.id}>{empresa.sigla} - {empresa.nome}</option>)}
             </SelectField>
-            <SelectField label="Construtora" value={form.data.construtora_empresa_id} onChange={(value) => form.setData('construtora_empresa_id', value)} error={form.errors.construtora_empresa_id}>
+            <SelectField label="Construtora" value={form.data.construtora_empresa_id} onChange={(value) => updateLink('construtora_empresa_id', value)} error={form.errors.construtora_empresa_id}>
                 <option value="">Sem construtora</option>
                 {empresasByTipo.construtora.map((empresa) => <option key={empresa.id} value={empresa.id}>{empresa.sigla} - {empresa.nome}</option>)}
             </SelectField>
-            <SelectField label="Gerenciadora" value={form.data.gerenciadora_empresa_id} onChange={(value) => form.setData('gerenciadora_empresa_id', value)} error={form.errors.gerenciadora_empresa_id}>
+            <SelectField label="Gerenciadora" value={form.data.gerenciadora_empresa_id} onChange={(value) => updateLink('gerenciadora_empresa_id', value)} error={form.errors.gerenciadora_empresa_id}>
                 <option value="">Sem gerenciadora</option>
                 {empresasByTipo.gerenciadora.map((empresa) => <option key={empresa.id} value={empresa.id}>{empresa.sigla} - {empresa.nome}</option>)}
             </SelectField>
-            <div className="lg:col-span-2">
+            <div className="flex flex-wrap items-center gap-3 lg:col-span-2">
                 <button className="sig-btn sig-btn-primary" disabled={form.processing}>
                     <Save size={14} />
                     Salvar vínculos
                 </button>
+                {saved && (
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--green)]" role="status">
+                        <CheckCircle2 size={16} />
+                        Vínculos salvos com sucesso.
+                    </span>
+                )}
             </div>
         </form>
     );
@@ -868,6 +886,7 @@ function EmpresaQuickTab({ tenant, contract, parametrizacao }) {
     const logoPreviewRef = useRef(null);
     const [logoPreview, setLogoPreview] = useState(null);
     const [logoPreviewOrigin, setLogoPreviewOrigin] = useState(null);
+    const [saved, setSaved] = useState(false);
     const form = useForm({
         contract_id: String(contract.id),
         nome: '',
@@ -927,6 +946,7 @@ function EmpresaQuickTab({ tenant, contract, parametrizacao }) {
             onSuccess: () => {
                 form.reset('nome', 'sigla', 'cnpj', 'logo');
                 clearLogo();
+                setSaved(true);
             },
         });
     };
@@ -981,6 +1001,7 @@ function EmpresaQuickTab({ tenant, contract, parametrizacao }) {
                     <Plus size={14} />
                     Criar empresa
                 </button>
+                {saved && !form.isDirty && <SaveSuccessNotice />}
             </form>
             <MiniList title="Empresas vinculadas" items={(parametrizacao.empresas || []).map((empresa) => ({
                 id: empresa.id,
@@ -994,6 +1015,7 @@ function EmpresaQuickTab({ tenant, contract, parametrizacao }) {
 
 function ObraQuickTab({ tenant, contract, parametrizacao }) {
     const obrasPai = (parametrizacao.obras || []).filter((obra) => obra.tipo === 'pai');
+    const [saved, setSaved] = useState(false);
     const form = useForm({
         contract_id: String(contract.id),
         nome: '',
@@ -1006,14 +1028,17 @@ function ObraQuickTab({ tenant, contract, parametrizacao }) {
         event.preventDefault();
         form.post(route('tenant.parametrizacao.obras.store', tenant.slug), {
             preserveScroll: true,
-            onSuccess: () => form.reset('nome', 'codigo', 'obra_pai_id'),
+            onSuccess: () => {
+                form.reset('nome', 'codigo', 'obra_pai_id');
+                setSaved(true);
+            },
         });
     };
 
     return (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(280px,1fr)]">
             <form className="grid gap-4" onSubmit={submit}>
-                <InputField label="Código" value={form.data.codigo} onChange={(value) => form.setData('codigo', value.toUpperCase())} error={form.errors.codigo} required />
+                <InputField label="Código" value={form.data.codigo} onChange={(value) => form.setData('codigo', value.replace(/\D/g, '').slice(0, 3))} error={form.errors.codigo} placeholder="001" inputMode="numeric" maxLength={3} pattern="[0-9]{3}" required />
                 <InputField label="Nome" value={form.data.nome} onChange={(value) => form.setData('nome', value)} error={form.errors.nome} required />
                 <SelectField label="Tipo" value={form.data.tipo} onChange={(value) => form.setData((data) => ({ ...data, tipo: value, obra_pai_id: value === 'pai' ? '' : data.obra_pai_id }))} error={form.errors.tipo}>
                     <option value="pai">Obra / Frente principal</option>
@@ -1029,6 +1054,7 @@ function ObraQuickTab({ tenant, contract, parametrizacao }) {
                     <Plus size={14} />
                     Criar obra
                 </button>
+                {saved && !form.isDirty && <SaveSuccessNotice />}
             </form>
             <MiniList title="Obras vinculadas" items={(parametrizacao.obras || []).map((obra) => ({
                 id: obra.id,
@@ -1040,11 +1066,11 @@ function ObraQuickTab({ tenant, contract, parametrizacao }) {
 }
 
 function DisciplinaQuickTab({ tenant, contract, parametrizacao }) {
+    const [saved, setSaved] = useState(false);
     const form = useForm({
         contract_id: String(contract.id),
         nome: '',
         sigla: '',
-        descricao: '',
         cor: '#2563eb',
     });
 
@@ -1052,7 +1078,10 @@ function DisciplinaQuickTab({ tenant, contract, parametrizacao }) {
         event.preventDefault();
         form.post(route('tenant.parametrizacao.disciplinas.store', tenant.slug), {
             preserveScroll: true,
-            onSuccess: () => form.reset('nome', 'sigla', 'descricao'),
+            onSuccess: () => {
+                form.reset('nome', 'sigla');
+                setSaved(true);
+            },
         });
     };
 
@@ -1060,13 +1089,13 @@ function DisciplinaQuickTab({ tenant, contract, parametrizacao }) {
         <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(280px,1fr)]">
             <form className="grid gap-4" onSubmit={submit}>
                 <InputField label="Nome" value={form.data.nome} onChange={(value) => form.setData('nome', value)} error={form.errors.nome} required />
-                <InputField label="Sigla" value={form.data.sigla} onChange={(value) => form.setData('sigla', value.toUpperCase())} error={form.errors.sigla} required />
+                <InputField label="Sigla" value={form.data.sigla} onChange={(value) => form.setData('sigla', value.toUpperCase())} error={form.errors.sigla} maxLength={3} pattern="[A-Za-z]{3}" required />
                 <InputField label="Cor" type="color" value={form.data.cor} onChange={(value) => form.setData('cor', value)} error={form.errors.cor} required />
-                <TextAreaField label="Descrição" value={form.data.descricao} onChange={(value) => form.setData('descricao', value)} error={form.errors.descricao} />
                 <button className="sig-btn sig-btn-primary" disabled={form.processing}>
                     <Plus size={14} />
                     Criar disciplina
                 </button>
+                {saved && !form.isDirty && <SaveSuccessNotice />}
             </form>
             <MiniList title="Disciplinas vinculadas" items={(parametrizacao.disciplinas || []).map((disciplina) => ({
                 id: disciplina.id,
@@ -1078,12 +1107,21 @@ function DisciplinaQuickTab({ tenant, contract, parametrizacao }) {
     );
 }
 
-function InputField({ label, value, onChange, error, type = 'text', required = false, placeholder = '', min = undefined }) {
+function SaveSuccessNotice() {
+    return (
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--green)]" role="status">
+            <CheckCircle2 size={16} />
+            Salvo com sucesso.
+        </span>
+    );
+}
+
+function InputField({ label, value, onChange, error, type = 'text', required = false, placeholder = '', min = undefined, maxLength = undefined, pattern = undefined, inputMode = undefined }) {
     return (
         <label>
             <span className="eyebrow mb-1 block">{label}</span>
             <span className="sig-input">
-                <input type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} placeholder={placeholder} min={min} />
+                <input type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} placeholder={placeholder} min={min} maxLength={maxLength} pattern={pattern} inputMode={inputMode} />
             </span>
             {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
         </label>

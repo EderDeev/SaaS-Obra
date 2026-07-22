@@ -4,6 +4,27 @@ import { Head, Link, router, useForm } from '@inertiajs/react';
 import { ArrowLeft, Check, FileSearch, Pencil, Plus, Tags, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 
+const tourDocumentType = {
+    id: 'tour-type-1',
+    name: 'Carta de encaminhamento',
+    contract_id: 'tour-contract-1',
+    contract: { code: 'CT-001', name: 'Contrato de Obras' },
+    documents_count: 4,
+    created_at: '2026-01-10T09:00:00-03:00',
+    _tourDemo: true,
+};
+
+const tourTag = {
+    id: 'tour-tag-1',
+    name: 'Aguardando analise',
+    color: '#2563eb',
+    contract_id: 'tour-contract-1',
+    contract: { code: 'CT-001', name: 'Contrato de Obras' },
+    documents_count: 2,
+    created_at: '2026-01-10T09:10:00-03:00',
+    _tourDemo: true,
+};
+
 function formatDateTime(value) {
     if (!value) return '—';
 
@@ -38,8 +59,13 @@ function ContractOptions({ contracts }) {
 }
 
 export default function GedSettings({ tenant, contracts = [], types = [], tags = [] }) {
+    const [showTourData, setShowTourData] = useState(() => typeof window !== 'undefined'
+        && window.sessionStorage.getItem('ged:tour-active') === '1'
+        && window.sessionStorage.getItem('ged:tour-section') === 'settings');
     const [editingTypeId, setEditingTypeId] = useState(null);
     const [editingTagId, setEditingTagId] = useState(null);
+    const visibleTypes = showTourData ? [tourDocumentType] : types;
+    const visibleTags = showTourData ? [tourTag] : tags;
     const typeForm = useForm({
         name: '',
         contract_id: '',
@@ -81,6 +107,8 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
     }
 
     function startEditType(type) {
+        if (type._tourDemo) return;
+
         setEditingTagId(null);
         setEditingTypeId(type.id);
         editTypeForm.setData({
@@ -105,6 +133,8 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
     }
 
     function destroyType(type) {
+        if (type._tourDemo) return;
+
         if ((type.documents_count || 0) > 0) {
             window.alert('Nao e possivel excluir este tipo documental porque existem documentos cadastrados com ele.');
             return;
@@ -119,6 +149,8 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
     }
 
     function startEditTag(tag) {
+        if (tag._tourDemo) return;
+
         setEditingTypeId(null);
         setEditingTagId(tag.id);
         editTagForm.setData({
@@ -144,6 +176,8 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
     }
 
     function destroyTag(tag) {
+        if (tag._tourDemo) return;
+
         if ((tag.documents_count || 0) > 0) {
             window.alert('Nao e possivel excluir esta etiqueta porque existem documentos cadastrados com ela.');
             return;
@@ -218,7 +252,7 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                             </div>
 
                             <div className="flex justify-end">
-                                <button className="sig-btn sig-btn-primary" disabled={typeForm.processing}>
+                                <button className="sig-btn sig-btn-primary" disabled={showTourData || typeForm.processing}>
                                     <Plus size={16} />
                                     Criar tipo documental
                                 </button>
@@ -226,11 +260,11 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                         </form>
 
                         <div className="p-5">
-                            {types.length === 0 ? (
+                            {visibleTypes.length === 0 ? (
                                 <EmptyState>Nenhum tipo documental cadastrado.</EmptyState>
                             ) : (
                                 <div className="space-y-2">
-                                    {types.map((type) => (
+                                    {visibleTypes.map((type, index) => (
                                         editingTypeId === type.id ? (
                                             <form key={type.id} onSubmit={(event) => submitTypeEdit(event, type)} className="grid gap-3 rounded-xl border border-blue-200 bg-blue-50/40 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                                                 <label className="ged-field">
@@ -257,7 +291,7 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                                                 </div>
                                             </form>
                                         ) : (
-                                        <div key={type.id} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-slate-50/50 p-3">
+                                        <div key={type.id} data-tour={index === 0 ? 'ged-type-item' : undefined} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-slate-50/50 p-3">
                                             <div className="min-w-0">
                                                 <div className="truncate font-semibold text-[var(--ink-900)]">{type.name}</div>
                                                 <div className="text-xs text-[var(--ink-500)]">
@@ -266,10 +300,10 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                                             </div>
                                             <div className="flex shrink-0 items-center gap-2">
                                                 <span className="sig-pill sig-pill-blue">{type.documents_count || 0}</span>
-                                                <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700" onClick={() => startEditType(type)} title="Editar tipo documental">
+                                                <button type="button" disabled={type._tourDemo} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700 disabled:cursor-default disabled:opacity-50" onClick={() => startEditType(type)} title="Editar tipo documental">
                                                     <Pencil size={16} />
                                                 </button>
-                                                <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-100 bg-white text-rose-600 hover:bg-rose-50" onClick={() => destroyType(type)} title="Excluir tipo documental">
+                                                <button type="button" disabled={type._tourDemo} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-100 bg-white text-rose-600 hover:bg-rose-50 disabled:cursor-default disabled:opacity-50" onClick={() => destroyType(type)} title="Excluir tipo documental">
                                                     <Trash2 size={16} />
                                                 </button>
                                             </div>
@@ -331,7 +365,7 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                             </div>
 
                             <div className="flex justify-end">
-                                <button className="sig-btn sig-btn-primary" disabled={tagForm.processing}>
+                                <button className="sig-btn sig-btn-primary" disabled={showTourData || tagForm.processing}>
                                     <Plus size={16} />
                                     Criar etiqueta
                                 </button>
@@ -339,11 +373,11 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                         </form>
 
                         <div className="p-5">
-                            {tags.length === 0 ? (
+                            {visibleTags.length === 0 ? (
                                 <EmptyState>Nenhuma etiqueta cadastrada.</EmptyState>
                             ) : (
                                 <div className="space-y-2">
-                                    {tags.map((tag) => (
+                                    {visibleTags.map((tag, index) => (
                                         editingTagId === tag.id ? (
                                             <form key={tag.id} onSubmit={(event) => submitTagEdit(event, tag)} className="grid gap-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_96px_auto] md:items-end">
                                                 <label className="ged-field">
@@ -376,7 +410,7 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                                                 </div>
                                             </form>
                                         ) : (
-                                            <div key={tag.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm shadow-sm">
+                                            <div key={tag.id} data-tour={index === 0 ? 'ged-tag-item' : undefined} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm shadow-sm">
                                                 <div className="flex min-w-0 items-center gap-2">
                                                     <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
                                                     <span className="truncate font-semibold text-[var(--ink-800)]">{tag.name}</span>
@@ -384,10 +418,10 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                                                     <span className="text-xs text-[var(--ink-500)]">{tag.documents_count || 0} documento(s)</span>
                                                 </div>
                                                 <div className="flex shrink-0 items-center gap-2">
-                                                    <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:text-emerald-700" onClick={() => startEditTag(tag)} title="Editar etiqueta">
+                                                    <button type="button" disabled={tag._tourDemo} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:text-emerald-700 disabled:cursor-default disabled:opacity-50" onClick={() => startEditTag(tag)} title="Editar etiqueta">
                                                         <Pencil size={16} />
                                                     </button>
-                                                    <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-100 bg-white text-rose-600 hover:bg-rose-50" onClick={() => destroyTag(tag)} title="Excluir etiqueta">
+                                                    <button type="button" disabled={tag._tourDemo} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-100 bg-white text-rose-600 hover:bg-rose-50 disabled:cursor-default disabled:opacity-50" onClick={() => destroyTag(tag)} title="Excluir etiqueta">
                                                         <Trash2 size={16} />
                                                     </button>
                                                 </div>
@@ -400,7 +434,7 @@ export default function GedSettings({ tenant, contracts = [], types = [], tags =
                     </section>
                 </div>
             </div>
-            <GedTour tenant={tenant} section="settings" />
+            <GedTour tenant={tenant} section="settings" onExit={() => setShowTourData(false)} />
         </AuthenticatedLayout>
     );
 }

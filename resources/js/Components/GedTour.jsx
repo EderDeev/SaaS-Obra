@@ -8,6 +8,14 @@ const stepStorageKey = 'ged:tour-step';
 const navigationStorageKey = 'ged:tour-navigating';
 const startedAtStorageKey = 'ged:tour-started-at';
 const maxTourAgeMs = 30 * 60 * 1000;
+const pinnedDocumentTourTitles = new Set([
+    'Submenus do documento',
+    'Detalhes',
+    'Conteudo',
+    'Anexos',
+    'Notas',
+    'Permissoes',
+]);
 
 const sectionOrder = ['documents', 'triage', 'document', 'trash', 'email', 'settings'];
 
@@ -84,19 +92,19 @@ const stepsBySection = {
             placement: 'bottom',
         },
         {
-            target: '[data-tour="ged-document-section-details"]',
+            target: '[data-tour="ged-document-tab-details"]',
             title: 'Detalhes',
             content: 'Em Detalhes ficam os metadados principais: contrato, tipo, correspondente, etiquetas, data e descricao.',
             placement: 'bottom',
         },
         {
-            target: '[data-tour="ged-document-section-content"]',
+            target: '[data-tour="ged-document-tab-content"]',
             title: 'Conteudo',
             content: 'Em Conteudo voce acompanha o OCR e consulta o texto extraido do documento.',
             placement: 'bottom',
         },
         {
-            target: '[data-tour="ged-document-section-attachments"]',
+            target: '[data-tour="ged-document-tab-attachments"]',
             title: 'Anexos',
             content: 'Em Anexos voce vincula arquivos de apoio ao documento principal, como ZIP, planilhas, videos, imagens ou PDFs complementares. PDFs anexados tambem podem passar por OCR e serem visualizados sem virar um novo documento do GED.',
             placement: 'bottom',
@@ -114,13 +122,13 @@ const stepsBySection = {
             placement: 'top',
         },
         {
-            target: '[data-tour="ged-document-section-notes"]',
+            target: '[data-tour="ged-document-tab-notes"]',
             title: 'Notas',
             content: 'Em Notas ficam observacoes internas, comentarios e registros de acompanhamento do documento.',
             placement: 'bottom',
         },
         {
-            target: '[data-tour="ged-document-section-permissions"]',
+            target: '[data-tour="ged-document-tab-permissions"]',
             title: 'Permissoes',
             content: 'Em Permissoes voce controla proprietario, usuarios e empresas que podem visualizar ou editar o documento.',
             placement: 'bottom',
@@ -177,6 +185,12 @@ const stepsBySection = {
             content: 'A tabela mostra o documento, o prazo restante e as acoes individuais para restaurar ou excluir de vez.',
             placement: 'top',
         },
+        {
+            target: '[data-tour="ged-trash-item"]',
+            title: 'Documento na lixeira',
+            content: 'Cada item conserva o titulo, o arquivo de origem, o contrato e o tipo documental. O prazo restante indica quanto tempo ainda ha para restaurar o documento antes da exclusao definitiva.',
+            placement: 'top',
+        },
     ],
     email: [
         {
@@ -192,9 +206,21 @@ const stepsBySection = {
             placement: 'bottom',
         },
         {
+            target: '[data-tour="ged-email-account-example"]',
+            title: 'Conta IMAP do contrato',
+            content: 'A conta mostra os dados usados na leitura: nome, servidor IMAP e usuario. Voce tambem define contrato, seguranca, porta, caixa de entrada e o que fazer apos processar a mensagem.',
+            placement: 'bottom',
+        },
+        {
             target: '[data-tour="ged-email-rules"]',
             title: 'Regras de e-mail',
             content: 'As regras dizem o que consumir. Em "Processar somente anexos", um unico PDF vira documento principal; se houver mais de um PDF, entra em triagem. Em "Processar e-mail e anexos", o e-mail e convertido em PDF e vira o documento principal, enquanto todos os arquivos recebidos ficam como anexos.',
+            placement: 'top',
+        },
+        {
+            target: '[data-tour="ged-email-rule-example"]',
+            title: 'Regra de recebimento',
+            content: 'A regra mostra a vinculacao com a conta, a prioridade, o estado e o historico de mensagens processadas. Nela voce filtra remetente, destinatario, assunto, corpo e nome dos anexos, alem de escolher o escopo de consumo.',
             placement: 'top',
         },
     ],
@@ -212,9 +238,21 @@ const stepsBySection = {
             placement: 'right',
         },
         {
+            target: '[data-tour="ged-type-item"]',
+            title: 'Tipo documental cadastrado',
+            content: 'Cada tipo fica ligado a um contrato e mostra quantos documentos usam essa classificacao. Os botoes ao lado permitem editar ou excluir quando nao houver documentos vinculados.',
+            placement: 'right',
+        },
+        {
             target: '[data-tour="ged-tags"]',
             title: 'Etiquetas',
             content: 'Etiquetas ajudam a marcar tema, prioridade, status ou etapa. Elas tambem podem ser aplicadas por regras de e-mail.',
+            placement: 'left',
+        },
+        {
+            target: '[data-tour="ged-tag-item"]',
+            title: 'Etiqueta cadastrada',
+            content: 'A etiqueta exibe sua cor, o contrato e a quantidade de documentos associados. Ela pode ser editada ou excluida quando nao estiver em uso.',
             placement: 'left',
         },
     ],
@@ -243,17 +281,25 @@ const documentStepSections = {
     8: 'permissions',
 };
 
-export default function GedTour({ tenant, section, documentTourUrls = {}, activeDocumentSection = null }) {
+export default function GedTour({ tenant, section, documentTourUrls = {}, activeDocumentSection = null, onDocumentSectionChange = null, onExit = null }) {
+    const initialTourStep = typeof window === 'undefined'
+        ? 0
+        : Number(new URLSearchParams(window.location.search).get('tour_step') || 0);
     const [run, setRun] = useState(false);
-    const [stepIndex, setStepIndex] = useState(0);
     const navigatingRef = useRef(false);
     const steps = useMemo(
         () => (stepsBySection[section] || []).map((step) => ({ ...step, skipBeacon: true, spotlightClicks: true })),
         [section]
     );
+    const tourStepOffset = section === 'document'
+        ? Math.max(0, Math.min(initialTourStep, Math.max(steps.length - 1, 0)))
+        : 0;
+    const joyrideSteps = useMemo(
+        () => (tourStepOffset > 0 ? steps.slice(tourStepOffset) : steps),
+        [steps, tourStepOffset]
+    );
 
-    function showTourStep(index) {
-        setStepIndex(index);
+    function showTourStep() {
         setRun(true);
     }
 
@@ -279,10 +325,12 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
         if (shouldRun) {
             navigatingRef.current = false;
             window.sessionStorage.removeItem(navigationStorageKey);
-            const storedStep = Number(window.sessionStorage.getItem(stepStorageKey) || 0);
+            const storedStep = Number(params.get('tour_step') || window.sessionStorage.getItem(stepStorageKey) || 0);
             window.sessionStorage.setItem(activeStorageKey, '1');
             window.sessionStorage.setItem(storageKey, section);
-            showTourStep(storedStep);
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            window.setTimeout(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }), 120);
+            showTourStep();
             return;
         }
 
@@ -292,6 +340,154 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
 
         setRun(false);
     }, [section, steps]);
+
+    useEffect(() => {
+        if (!run || section !== 'documents') {
+            return undefined;
+        }
+
+        const openDocumentFromTour = (event) => {
+            const nextButton = event.target.closest('[aria-label="Avançar"], [aria-label="Continuar"]');
+            const title = document.querySelector('[role="alertdialog"] h4')?.textContent?.trim();
+
+            if (!nextButton || title !== 'Abrir documento') {
+                return;
+            }
+
+            const documentLink = document.querySelector('[data-tour="ged-open-document"]');
+
+            if (!documentLink?.href) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            window.sessionStorage.setItem(activeStorageKey, '1');
+            window.sessionStorage.setItem(storageKey, 'document');
+            window.sessionStorage.setItem(stepStorageKey, '0');
+            window.sessionStorage.setItem(navigationStorageKey, '1');
+            window.location.assign(documentLink.href);
+        };
+
+        document.addEventListener('click', openDocumentFromTour, true);
+
+        return () => document.removeEventListener('click', openDocumentFromTour, true);
+    }, [run, section]);
+
+    useEffect(() => {
+        if (!run || section === 'documents' || section === 'document') {
+            return undefined;
+        }
+
+        const continueSectionTour = (event) => {
+            const primaryButton = event.target.closest('[data-action="primary"]');
+            const title = document.querySelector('[role="alertdialog"] h4')?.textContent?.trim();
+            const lastStepTitle = steps[steps.length - 1]?.title;
+
+            if (!primaryButton || title !== lastStepTitle) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            goToNextSection();
+        };
+
+        document.addEventListener('click', continueSectionTour, true);
+
+        return () => document.removeEventListener('click', continueSectionTour, true);
+    }, [run, section, steps]);
+
+    useEffect(() => {
+        if (!run) {
+            return undefined;
+        }
+
+        const cancelOnClose = (event) => {
+            if (!event.target.closest('[aria-label="Fechar tour"]')) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            clearTour();
+        };
+
+        document.addEventListener('click', cancelOnClose, true);
+
+        return () => document.removeEventListener('click', cancelOnClose, true);
+    }, [run]);
+
+    useEffect(() => {
+        if (!run || section !== 'document') {
+            return undefined;
+        }
+
+        const keepTabsVisible = () => {
+            const title = document.querySelector('[role="alertdialog"] h4')?.textContent?.trim();
+
+            if (pinnedDocumentTourTitles.has(title) && window.scrollY !== 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            }
+        };
+
+        const timer = window.setInterval(keepTabsVisible, 80);
+        window.addEventListener('scroll', keepTabsVisible, { passive: true });
+
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('scroll', keepTabsVisible);
+        };
+    }, [run, section]);
+
+    useEffect(() => {
+        if (!run || section !== 'document') {
+            return undefined;
+        }
+
+        const documentTransitions = {
+            Detalhes: 3,
+            Conteudo: 4,
+            'Lista de anexos': 7,
+            Notas: 8,
+        };
+
+        const changeDocumentTabFromTour = (event) => {
+            const nextButton = event.target.closest('[data-action="primary"]');
+            const title = document.querySelector('[role="alertdialog"] h4')?.textContent?.trim();
+            const nextStepIndex = documentTransitions[title];
+
+            if (nextButton && title === 'Permissoes') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                goToNextSection();
+                return;
+            }
+
+            if (!nextButton || !nextStepIndex) {
+                return;
+            }
+
+            if (onDocumentSectionChange) {
+                const nextDocumentSection = documentStepSections[nextStepIndex];
+
+                if (nextDocumentSection) {
+                    window.sessionStorage.setItem(stepStorageKey, String(nextStepIndex));
+                    onDocumentSectionChange(nextDocumentSection);
+                }
+
+                return;
+            }
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            maybeNavigateDocumentStep(nextStepIndex);
+        };
+
+        document.addEventListener('click', changeDocumentTabFromTour, true);
+
+        return () => document.removeEventListener('click', changeDocumentTabFromTour, true);
+    }, [run, section, activeDocumentSection, documentTourUrls, onDocumentSectionChange]);
 
     function clearTour() {
         navigatingRef.current = false;
@@ -304,15 +500,17 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
         const url = new URL(window.location.href);
         url.searchParams.delete('tour');
         url.searchParams.delete('tour_started_at');
+        url.searchParams.delete('tour_step');
         window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
         setRun(false);
+        onExit?.();
     }
 
     function setStoredStep(nextStepIndex) {
         const normalized = Math.max(0, Math.min(nextStepIndex, steps.length - 1));
 
         window.sessionStorage.setItem(stepStorageKey, String(normalized));
-        showTourStep(normalized);
+        setRun(true);
     }
 
     function goToNextSection() {
@@ -333,7 +531,7 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
         window.sessionStorage.setItem(storageKey, nextSection);
         window.sessionStorage.setItem(stepStorageKey, '0');
         window.sessionStorage.setItem(navigationStorageKey, '1');
-        router.visit(route(sectionRoutes[nextSection], tenant.slug));
+        window.location.assign(route(sectionRoutes[nextSection], tenant.slug));
     }
 
     function maybeNavigateDocumentStep(nextStepIndex) {
@@ -345,6 +543,11 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
 
         if (!nextDocumentSection) {
             setStoredStep(nextStepIndex);
+            return false;
+        }
+
+        if (onDocumentSectionChange) {
+            onDocumentSectionChange(nextDocumentSection);
             return false;
         }
 
@@ -360,22 +563,43 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
         window.sessionStorage.setItem(storageKey, 'document');
         window.sessionStorage.setItem(stepStorageKey, String(nextStepIndex));
         window.sessionStorage.setItem(navigationStorageKey, '1');
-        router.visit(nextUrl, {
-            preserveScroll: false,
-            preserveState: false,
-        });
+        const tourUrl = new URL(nextUrl, window.location.origin);
+        const currentUrl = new URL(window.location.href);
+        const startedAt = currentUrl.searchParams.get('tour_started_at') || window.sessionStorage.getItem(startedAtStorageKey) || String(Date.now());
+
+        tourUrl.searchParams.set('tour', 'document');
+        tourUrl.searchParams.set('tour_started_at', startedAt);
+        tourUrl.searchParams.set('tour_step', String(nextStepIndex));
+        window.location.assign(tourUrl.href);
 
         return true;
     }
 
     function handleCallback(data) {
+        const currentStepIndex = section === 'document'
+            ? data.index + tourStepOffset
+            : data.index;
+
         if (data.status === STATUS.SKIPPED || data.action === ACTIONS.CLOSE) {
             clearTour();
             return;
         }
 
         if (data.type === EVENTS.TARGET_NOT_FOUND) {
-            const nextStepIndex = data.index + 1;
+            // During a document-tab transition, the next panel has not rendered yet.
+            // Ignoring this transient event prevents Joyride from skipping the remaining steps.
+            if (navigatingRef.current) {
+                return;
+            }
+
+            // Joyride can report the missing next target without first emitting
+            // STEP_AFTER. In a document, use that index to open the matching tab
+            // instead of advancing again and skipping its explanation.
+            if (section === 'document' && documentStepSections[currentStepIndex] && maybeNavigateDocumentStep(currentStepIndex)) {
+                return;
+            }
+
+            const nextStepIndex = currentStepIndex + 1;
 
             if (nextStepIndex >= steps.length) {
                 goToNextSection();
@@ -392,7 +616,7 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
 
         if (data.type === EVENTS.STEP_AFTER) {
             const direction = data.action === ACTIONS.PREV ? -1 : 1;
-            const nextStepIndex = data.index + direction;
+            const nextStepIndex = currentStepIndex + direction;
 
             if (nextStepIndex >= steps.length) {
                 goToNextSection();
@@ -407,7 +631,9 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
             return;
         }
 
-        if (data.status === STATUS.FINISHED || data.type === EVENTS.TOUR_END) {
+        // Joyride emits TOUR_END while Inertia replaces the page for a document tab.
+        // STATUS.FINISHED is the reliable signal that the user reached the real last step.
+        if (data.status === STATUS.FINISHED && !navigatingRef.current) {
             goToNextSection();
         }
     }
@@ -420,13 +646,14 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
         <Joyride
             continuous
             disableOverlayClose
+            disableScrolling
             hideCloseButton
             callback={handleCallback}
             run={run}
             scrollOffset={90}
             showProgress
             showSkipButton
-            steps={steps}
+            steps={joyrideSteps}
             styles={{
                 options: {
                     arrowColor: '#ffffff',
@@ -470,7 +697,7 @@ export default function GedTour({ tenant, section, documentTourUrls = {}, active
                 back: 'Voltar',
                 close: 'Fechar tour',
                 last: section === 'settings' ? 'Terminar tour' : 'Continuar',
-                next: 'Avancar',
+                next: 'Avan\u00e7ar',
                 skip: 'Fechar tour',
             }}
         />

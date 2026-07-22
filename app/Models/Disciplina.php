@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['tenant_id', 'contract_id', 'nome', 'sigla', 'descricao', 'cor'])]
+#[Fillable(['tenant_id', 'contract_id', 'nome', 'sigla', 'cor'])]
 class Disciplina extends Model
 {
     use SoftDeletes;

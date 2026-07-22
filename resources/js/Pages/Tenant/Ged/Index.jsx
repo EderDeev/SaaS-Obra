@@ -650,6 +650,33 @@ function EmptyDocuments() {
     );
 }
 
+function TourDocumentCard({ tenant }) {
+    const openPreview = () => {
+        window.sessionStorage.setItem('ged:tour-section', 'document');
+        window.sessionStorage.setItem('ged:tour-step', '0');
+        window.sessionStorage.setItem('ged:tour-navigating', '1');
+    };
+
+    return (
+        <article className="m-5 grid gap-4 rounded-xl border border-emerald-700/70 bg-white p-4 shadow-sm md:grid-cols-[220px_1fr]">
+            <div className="flex min-h-40 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400">
+                <FileText size={42} />
+            </div>
+            <div className="flex min-w-0 flex-col justify-between gap-4">
+                <div>
+                    <div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-bold text-[var(--ink-900)]">Carta de encaminhamento - Contrato CT-001</h3><span className="rounded-md bg-cyan-100 px-2 py-1 text-xs font-bold text-cyan-800">Carta</span></div>
+                    <p className="mt-2 text-sm text-[var(--ink-600)]">Encaminhamento dos documentos de apoio para analise e providencias contratuais.</p>
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--ink-500)]"><span>CT-001</span><span>01/01/2026</span><span>2 paginas</span></div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Link data-tour="ged-open-document" href={route('tenant.ged.tour-preview', tenant.slug)} onClick={openPreview} className="sig-btn sig-btn-ghost !min-h-9 !px-3"><FileText size={15} /> Abrir</Link>
+                    <span className="sig-btn sig-btn-secondary !min-h-9 !px-3 opacity-60"><FileText size={15} /> Baixar</span>
+                </div>
+            </div>
+        </article>
+    );
+}
+
 function cleanPaginationLabel(label = '') {
     return String(label)
         .replace(/&laquo;/g, '«')
@@ -757,6 +784,8 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
     const [showTrashModal, setShowTrashModal] = useState(false);
     const [viewMode, setViewMode] = useState(() => (typeof window === 'undefined' ? 'table' : window.localStorage.getItem('ged:viewMode') || 'table'));
     const [selectedIds, setSelectedIds] = useState([]);
+    const [showTourDemo, setShowTourDemo] = useState(() => typeof window !== 'undefined'
+        && new URLSearchParams(window.location.search).get('tour') === 'documents');
     const [filterState, setFilterState] = useState({
         q: filters.q || '',
         status: filters.status || '',
@@ -1141,11 +1170,12 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                         </div>
                     </form>
 
-                    <PaperlessPagination pagination={documents} compact />
+                    {!showTourDemo && <PaperlessPagination pagination={documents} compact />}
 
-                    {documents.data.length === 0 && <EmptyDocuments />}
+                    {showTourDemo && <TourDocumentCard tenant={tenant} />}
+                    {documents.data.length === 0 && !showTourDemo && <EmptyDocuments />}
 
-                    {documents.data.length > 0 && viewMode === 'table' && (
+                    {!showTourDemo && documents.data.length > 0 && viewMode === 'table' && (
                         <div className="overflow-visible">
                             <table className="min-w-full text-sm">
                                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-[var(--ink-500)]">
@@ -1176,6 +1206,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-2">
                                                     <Link
+                                                        data-tour="ged-open-document"
                                                         href={route('tenant.ged.details', [tenant.slug, document.id])}
                                                         className="font-semibold text-emerald-800 underline-offset-2 hover:underline"
                                                     >
@@ -1203,7 +1234,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                         </div>
                     )}
 
-                    {documents.data.length > 0 && viewMode === 'grid' && (
+                    {!showTourDemo && documents.data.length > 0 && viewMode === 'grid' && (
                         <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                             {documents.data.map((document) => {
                                 const selected = selectedIds.includes(document.id);
@@ -1246,7 +1277,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                         </div>
                     )}
 
-                    {documents.data.length > 0 && viewMode === 'detail' && (
+                    {!showTourDemo && documents.data.length > 0 && viewMode === 'detail' && (
                         <div className="space-y-4 p-5">
                             {documents.data.map((document) => {
                                 const selected = selectedIds.includes(document.id);
@@ -1354,7 +1385,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                         </table>
                     </div>
 
-                    <PaperlessPagination pagination={documents} selectedCount={selectedIds.length} />
+                    {!showTourDemo && <PaperlessPagination pagination={documents} selectedCount={selectedIds.length} />}
                 </div>
 
                 {showRotateModal && (
@@ -1373,7 +1404,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                         onMoved={() => setSelectedIds([])}
                     />
                 )}
-                <GedTour tenant={tenant} section="documents" />
+                <GedTour tenant={tenant} section="documents" onExit={() => setShowTourDemo(false)} />
             </div>
         </AuthenticatedLayout>
     );

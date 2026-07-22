@@ -460,6 +460,7 @@ body.sig-viewer-body .sig-main > main {
 }
 
 .sig-nav-item {
+    position: relative;
     display: flex;
     width: calc(100% - 16px);
     align-items: center;
@@ -481,6 +482,57 @@ body.sig-viewer-body .sig-main > main {
     background: var(--side-active);
     color: var(--side-active-fg);
     font-weight: 650;
+}
+
+.sig-nav-item.active::before {
+    position: absolute;
+    left: 0;
+    width: 3px;
+    height: 18px;
+    border-radius: 0 3px 3px 0;
+    background: var(--primary);
+    content: '';
+}
+
+.sig-nav-section + .sig-nav-section {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid color-mix(in srgb, var(--side-border) 72%, transparent);
+}
+
+.sig-nav-section-label {
+    padding: 0 20px 3px;
+    color: var(--side-fg-dim);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.sig-nav-submenu {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: grid-template-rows 220ms ease, opacity 180ms ease, transform 220ms ease;
+}
+
+.sig-nav-submenu.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.sig-nav-submenu-inner {
+    min-height: 0;
+    overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sig-nav-item,
+    .sig-nav-submenu {
+        transition: none;
+    }
 }
 
 .sig-btn {
@@ -771,6 +823,18 @@ body.sig-viewer-body .sig-main > main {
 
 .sig-table tr:last-child td {
     border-bottom: 0;
+}
+
+.sig-table-compact th {
+    padding: 8px 10px;
+    font-size: 10.5px;
+}
+
+.sig-table-compact td {
+    padding: 8px 10px;
+    font-size: 12.5px;
+    line-height: 1.25;
+    vertical-align: middle;
 }
 
 .budget-table-wrap {
@@ -1252,6 +1316,16 @@ body.sig-viewer-body .sig-main > main {
 
     .projects-responsive-list,
     .projects-compact-only {
+        display: none;
+    }
+}
+
+@container (min-width: 900px) {
+    .projects-list-card .projects-wide-only {
+        display: block;
+    }
+
+    .projects-list-card .projects-compact-only {
         display: none;
     }
 }

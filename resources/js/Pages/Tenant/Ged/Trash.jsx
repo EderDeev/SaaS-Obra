@@ -4,6 +4,27 @@ import { Head, Link, router } from '@inertiajs/react';
 import { ArchiveRestore, ArrowLeft, FileText, RotateCcw, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+const tourTrashDocuments = [
+    {
+        id: 'tour-trash-1',
+        title: 'Relatorio mensal de acompanhamento',
+        original_filename: 'relatorio-acompanhamento-janeiro.pdf',
+        deleted_at: new Date(Date.now() - (3 * 86400000)).toISOString(),
+        contract: { code: 'CT-001', name: 'Contrato de Obras' },
+        type: { name: 'Relatorio' },
+        _tourDemo: true,
+    },
+    {
+        id: 'tour-trash-2',
+        title: 'Memorial descritivo revisao 01',
+        original_filename: 'memorial-descritivo-r01.pdf',
+        deleted_at: new Date(Date.now() - (8 * 86400000)).toISOString(),
+        contract: { code: 'CT-001', name: 'Contrato de Obras' },
+        type: { name: 'Memorial descritivo' },
+        _tourDemo: true,
+    },
+];
+
 function formatDateTime(value) {
     if (!value) return '--';
 
@@ -21,12 +42,13 @@ function remainingDays(deletedAt, trashDelayDays) {
     return Math.max(0, Number(trashDelayDays || 30) - elapsedDays);
 }
 
-function DocumentSelectionToggle({ checked, onToggle, className = '' }) {
+function DocumentSelectionToggle({ checked, onToggle, disabled = false, className = '' }) {
     return (
         <button
             type="button"
             aria-pressed={checked}
-            className={`inline-flex h-5 w-5 items-center justify-center rounded border text-white transition ${checked ? 'border-emerald-700 bg-emerald-700' : 'border-slate-300 bg-white hover:border-emerald-700'} ${className}`}
+            disabled={disabled}
+            className={`inline-flex h-5 w-5 items-center justify-center rounded border text-white transition ${checked ? 'border-emerald-700 bg-emerald-700' : 'border-slate-300 bg-white hover:border-emerald-700'} ${disabled ? 'cursor-default opacity-60' : ''} ${className}`}
             onClick={onToggle}
         >
             {checked && <span className="h-2 w-2 rounded-sm bg-white" />}
@@ -62,18 +84,26 @@ function ConfirmModal({ title = 'Confirmar', message, details, confirmLabel, onC
 }
 
 export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
+    const [showTourData, setShowTourData] = useState(() => typeof window !== 'undefined'
+        && window.sessionStorage.getItem('ged:tour-active') === '1'
+        && window.sessionStorage.getItem('ged:tour-section') === 'trash');
     const [selectedIds, setSelectedIds] = useState([]);
     const [confirmState, setConfirmState] = useState(null);
-    const pageDocumentIds = useMemo(() => (documents.data || []).map((document) => document.id), [documents.data]);
+    const visibleDocuments = showTourData ? tourTrashDocuments : (documents.data || []);
+    const pageDocumentIds = useMemo(() => visibleDocuments.map((document) => document.id), [visibleDocuments]);
     const allPageSelected = pageDocumentIds.length > 0 && pageDocumentIds.every((id) => selectedIds.includes(id));
     const selectedCount = selectedIds.length;
-    const hasDocuments = (documents.data || []).length > 0;
+    const hasDocuments = visibleDocuments.length > 0;
 
     function toggleDocumentSelection(documentId) {
+        if (showTourData) return;
+
         setSelectedIds((current) => current.includes(documentId) ? current.filter((id) => id !== documentId) : [...current, documentId]);
     }
 
     function togglePageSelection() {
+        if (showTourData) return;
+
         setSelectedIds((current) => {
             if (allPageSelected) {
                 return current.filter((id) => !pageDocumentIds.includes(id));
@@ -84,6 +114,8 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
     }
 
     function postTrashAction(action, ids = null) {
+        if (showTourData) return;
+
         const payload = ids && ids.length ? { action, document_ids: ids } : { action };
 
         router.post(route('tenant.ged.trash.action', tenant.slug), payload, {
@@ -113,7 +145,7 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
     }
 
     function askEmptyTrash() {
-        if (!hasDocuments) return;
+        if (showTourData || !hasDocuments) return;
 
         setConfirmState({
             message: 'Esvaziar a lixeira?',
@@ -153,7 +185,7 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                             <Trash2 size={16} />
                             Excluir os itens selecionados
                         </button>
-                        <button type="button" className="sig-btn border-rose-500 bg-white text-rose-600 hover:bg-rose-50" disabled={!hasDocuments} onClick={askEmptyTrash}>
+                        <button type="button" className="sig-btn border-rose-500 bg-white text-rose-600 hover:bg-rose-50" disabled={showTourData || !hasDocuments} onClick={askEmptyTrash}>
                             <Trash2 size={16} />
                             Esvaziar Lixeira
                         </button>
@@ -166,7 +198,7 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                             <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-[var(--ink-500)]">
                                 <tr>
                                     <th className="w-10 px-4 py-3">
-                                        <DocumentSelectionToggle checked={allPageSelected} onToggle={togglePageSelection} />
+                                        <DocumentSelectionToggle checked={allPageSelected} disabled={showTourData} onToggle={togglePageSelection} />
                                     </th>
                                     <th className="px-4 py-3">Nome</th>
                                     <th className="px-4 py-3">Restantes</th>
@@ -182,14 +214,14 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                                     </tr>
                                 )}
 
-                                {(documents.data || []).map((document) => {
+                                {visibleDocuments.map((document, index) => {
                                     const selected = selectedIds.includes(document.id);
                                     const remaining = remainingDays(document.deleted_at, trashDelayDays);
 
                                     return (
-                                        <tr key={document.id} className={`align-middle hover:bg-emerald-50/40 ${selected ? 'bg-emerald-50/60' : ''}`}>
+                                        <tr key={document.id} data-tour={index === 0 ? 'ged-trash-item' : undefined} className={`align-middle hover:bg-emerald-50/40 ${selected ? 'bg-emerald-50/60' : ''}`}>
                                             <td className="px-4 py-3">
-                                                <DocumentSelectionToggle checked={selected} onToggle={() => toggleDocumentSelection(document.id)} />
+                                                <DocumentSelectionToggle checked={selected} disabled={showTourData} onToggle={() => toggleDocumentSelection(document.id)} />
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-start gap-3">
@@ -213,11 +245,11 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-wrap gap-2">
-                                                    <button type="button" className="sig-btn sig-btn-secondary !min-h-9 !px-3" onClick={() => restoreSelected([document.id])}>
+                                                    <button type="button" disabled={showTourData} className="sig-btn sig-btn-secondary !min-h-9 !px-3" onClick={() => restoreSelected([document.id])}>
                                                         <RotateCcw size={15} />
                                                         Restaurar
                                                     </button>
-                                                    <button type="button" className="sig-btn border-rose-500 bg-white text-rose-600 hover:bg-rose-50 !min-h-9 !px-3" onClick={() => askPermanentDelete([document.id])}>
+                                                    <button type="button" disabled={showTourData} className="sig-btn border-rose-500 bg-white text-rose-600 hover:bg-rose-50 !min-h-9 !px-3" onClick={() => askPermanentDelete([document.id])}>
                                                         <Trash2 size={15} />
                                                         Excluir
                                                     </button>
@@ -232,11 +264,11 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
 
                     <div className="flex flex-col gap-3 border-t border-[var(--border)] px-4 py-3 text-sm text-[var(--ink-600)] sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                            {documents.total || 0} documento{Number(documents.total || 0) === 1 ? '' : 's'} na lixeira
+                            {showTourData ? visibleDocuments.length : (documents.total || 0)} documento{Number(showTourData ? visibleDocuments.length : (documents.total || 0)) === 1 ? '' : 's'} na lixeira
                             {selectedCount > 0 && ` (${selectedCount} selecionado${selectedCount === 1 ? '' : 's'})`}
                         </div>
 
-                        {documents.links?.length > 3 && (
+                        {!showTourData && documents.links?.length > 3 && (
                             <div className="flex flex-wrap items-center gap-2">
                                 {documents.links.map((link, index) => (
                                     <Link
@@ -267,7 +299,7 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                     onConfirm={confirmState.onConfirm}
                 />
             )}
-            <GedTour tenant={tenant} section="trash" />
+            <GedTour tenant={tenant} section="trash" onExit={() => setShowTourData(false)} />
         </AuthenticatedLayout>
     );
 }

@@ -89,9 +89,9 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
                         <h2 className="text-lg font-bold">{editing ? 'Editar cadastro' : `Cadastrar ${tabs.find((tab) => tab.key === activeTab)?.label.toLowerCase()}`}</h2>
                     </header>
                     <div className="p-5">
-                        {activeTab === 'mao-obra' && <LaborForm form={laborForm} />}
-                        {activeTab === 'equipamentos' && <EquipmentForm form={equipmentForm} />}
-                        {activeTab === 'subcontratadas' && <SubcontractorForm form={subcontractorForm} />}
+                        {activeTab === 'mao-obra' && <LaborForm form={laborForm} editing={Boolean(editing)} />}
+                        {activeTab === 'equipamentos' && <EquipmentForm form={equipmentForm} editing={Boolean(editing)} />}
+                        {activeTab === 'subcontratadas' && <SubcontractorForm form={subcontractorForm} editing={Boolean(editing)} />}
                         <div className="mt-5 flex justify-end gap-2">
                             {editing && <button type="button" onClick={reset} className="sig-btn">Cancelar</button>}
                             <button type="submit" disabled={currentForm.processing} className="sig-btn sig-btn-primary">
@@ -132,26 +132,26 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
     );
 }
 
-function LaborForm({ form }) {
+function LaborForm({ form, editing }) {
     return <div className="grid gap-4 md:grid-cols-3">
         <Field label="Função / descrição" error={form.errors.descricao}><input className="sig-input" value={form.data.descricao} onChange={(e) => form.setData('descricao', e.target.value)} placeholder="Ex.: Pedreiro" /></Field>
         <Field label="Classificação" error={form.errors.tipo}><select className="sig-input" value={form.data.tipo} onChange={(e) => form.setData('tipo', e.target.value)}><option value="direta">Mão de obra direta</option><option value="indireta">Mão de obra indireta</option></select></Field>
         <Field label="Unidade" error={form.errors.unidade}><input className="sig-input" value={form.data.unidade} onChange={(e) => form.setData('unidade', e.target.value)} /></Field>
-        <ActiveField form={form} />
+        {editing && <ActiveField form={form} />}
     </div>;
 }
 
-function EquipmentForm({ form }) {
+function EquipmentForm({ form, editing }) {
     return <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Field label="Código" error={form.errors.codigo}><input className="sig-input" value={form.data.codigo} onChange={(e) => form.setData('codigo', e.target.value)} placeholder="Opcional" /></Field>
         <Field label="Equipamento" error={form.errors.descricao}><input className="sig-input" value={form.data.descricao} onChange={(e) => form.setData('descricao', e.target.value)} placeholder="Ex.: Escavadeira hidráulica" /></Field>
         <Field label="Unidade" error={form.errors.unidade}><input className="sig-input" value={form.data.unidade} onChange={(e) => form.setData('unidade', e.target.value)} /></Field>
         <Field label="Propriedade" error={form.errors.propriedade}><select className="sig-input" value={form.data.propriedade} onChange={(e) => form.setData('propriedade', e.target.value)}><option value="proprio">Próprio</option><option value="locado">Locado</option><option value="subcontratada">Subcontratada</option></select></Field>
-        <ActiveField form={form} />
+        {editing && <ActiveField form={form} />}
     </div>;
 }
 
-function SubcontractorForm({ form }) {
+function SubcontractorForm({ form, editing }) {
     return <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Field label="Razão social" error={form.errors.razao_social}><input className="sig-input" value={form.data.razao_social} onChange={(e) => form.setData('razao_social', e.target.value)} /></Field>
         <Field label="Nome fantasia" error={form.errors.nome_fantasia}><input className="sig-input" value={form.data.nome_fantasia} onChange={(e) => form.setData('nome_fantasia', e.target.value)} /></Field>
@@ -168,7 +168,7 @@ function SubcontractorForm({ form }) {
         <Field label="Responsável" error={form.errors.responsavel}><input className="sig-input" value={form.data.responsavel} onChange={(e) => form.setData('responsavel', e.target.value)} /></Field>
         <Field label="Telefone" error={form.errors.telefone}><input className="sig-input" value={form.data.telefone} onChange={(e) => form.setData('telefone', e.target.value)} /></Field>
         <Field label="E-mail" error={form.errors.email}><input type="email" className="sig-input" value={form.data.email} onChange={(e) => form.setData('email', e.target.value)} /></Field>
-        <ActiveField form={form} />
+        {editing && <ActiveField form={form} />}
     </div>;
 }
 

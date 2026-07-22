@@ -101,7 +101,7 @@ class ObraController extends Controller
     private function validatedObraData(Request $request, Tenant $tenant, ?Obra $obra = null): array
     {
         $request->merge([
-            'codigo' => mb_strtoupper((string) $request->input('codigo', '')),
+            'codigo' => trim((string) $request->input('codigo', '')),
         ]);
 
         $uniqueCodigo = Rule::unique('obras', 'codigo')->where(fn ($query) => $query
@@ -118,7 +118,7 @@ class ObraController extends Controller
                 'required',
                 Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
-            'codigo' => ['required', 'string', 'max:50', $uniqueCodigo],
+            'codigo' => ['required', 'string', 'size:3', 'regex:/^\d{3}$/', $uniqueCodigo],
             'tipo' => ['required', Rule::in(['pai', 'filha'])],
             'obra_pai_id' => [
                 'nullable',
@@ -133,6 +133,8 @@ class ObraController extends Controller
             'obra_pai_id.exists' => 'A obra pai selecionada nao esta disponivel para este contrato.',
             'contract_id.required' => 'Selecione o contrato.',
             'contract_id.exists' => 'O contrato selecionado nao esta disponivel para este tenant.',
+            'codigo.size' => 'O codigo deve conter exatamente 3 digitos.',
+            'codigo.regex' => 'O codigo deve conter apenas numeros.',
         ]);
 
         if ($data['tipo'] === 'pai') {

@@ -15,7 +15,6 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
         contract_id: defaultContractId,
         nome: '',
         sigla: '',
-        descricao: '',
         cor: '#2563eb',
     });
 
@@ -31,7 +30,7 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                 return true;
             }
 
-            return `${disciplina.nome} ${disciplina.sigla} ${disciplina.descricao || ''}`
+            return `${disciplina.nome} ${disciplina.sigla}`
                 .toLowerCase()
                 .includes(term);
         });
@@ -44,7 +43,6 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
             contract_id: defaultContractId,
             nome: '',
             sigla: '',
-            descricao: '',
             cor: '#2563eb',
         });
     };
@@ -67,7 +65,6 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
             contract_id: disciplina.contract_id || defaultContractId,
             nome: disciplina.nome || '',
             sigla: disciplina.sigla || '',
-            descricao: disciplina.descricao || '',
             cor: disciplina.cor || '#2563eb',
         });
     };
@@ -160,7 +157,8 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                                     value={form.data.sigla}
                                     onChange={(event) => form.setData('sigla', event.target.value.toUpperCase())}
                                     placeholder="ARQ"
-                                    maxLength={20}
+                                    maxLength={3}
+                                    pattern="[A-Za-z]{3}"
                                     required
                                 />
                             </Field>
@@ -184,14 +182,6 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                             </Field>
                         </div>
 
-                        <Field label="Descricao" error={form.errors.descricao}>
-                            <textarea
-                                value={form.data.descricao}
-                                onChange={(event) => form.setData('descricao', event.target.value)}
-                                placeholder="Detalhes opcionais da disciplina"
-                                rows="4"
-                            />
-                        </Field>
                     </div>
 
                     <div className="mt-5 flex flex-wrap gap-2">
@@ -265,7 +255,7 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                                 Busca
                             </span>
                             <span className="sig-input bg-white">
-                                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome, sigla ou descricao" />
+                                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome ou sigla" />
                             </span>
                         </label>
                     </div>
@@ -273,14 +263,13 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                     {filteredDisciplinas.length > 0 ? (
                         <>
                         <div className="param-desktop-table overflow-x-auto">
-                        <table className="sig-table min-w-[920px]">
+                        <table className="sig-table min-w-[760px]">
                             <thead>
                                 <tr>
                                     <th>Disciplina</th>
                                     <th>Contrato</th>
                                     <th>Sigla</th>
                                     <th>Cor</th>
-                                    <th>Descricao</th>
                                     <th>Acoes</th>
                                 </tr>
                             </thead>
@@ -299,11 +288,6 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                                             <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ink-700)]">
                                                 <span className="h-4 w-4 rounded-full border border-[var(--border)]" style={{ backgroundColor: disciplina.cor }} />
                                                 <span className="mono text-xs">{disciplina.cor}</span>
-                                            </span>
-                                        </td>
-                                        <td className="max-w-[280px]">
-                                            <span className="line-clamp-2 text-sm text-[var(--ink-500)]">
-                                                {disciplina.descricao || 'Sem descricao'}
                                             </span>
                                         </td>
                                         <td>
@@ -345,10 +329,6 @@ export default function ParametrizacaoDisciplinasIndex({ tenant, disciplinas, co
                                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                                         <CompactInfo label="Contrato" value={`${disciplina.contract?.code || '-'} - ${disciplina.contract?.name || 'Sem contrato'}`} />
                                         <CompactInfo label="Cor" value={disciplina.cor || '-'} />
-                                    </div>
-
-                                    <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-[13px] text-[var(--ink-600)]">
-                                        {disciplina.descricao || 'Sem descricao'}
                                     </div>
 
                                     <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">

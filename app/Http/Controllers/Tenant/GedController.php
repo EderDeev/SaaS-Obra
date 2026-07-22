@@ -38,6 +38,13 @@ use ZipArchive;
 
 class GedController extends Controller
 {
+    public function tourPreview(Tenant $tenant): Response
+    {
+        return Inertia::render('Tenant/Ged/TourPreview', [
+            'tenant' => $tenant,
+        ]);
+    }
+
     private const SECTIONS = [
         'details' => 'Detalhes',
         'content' => 'Conteúdo',

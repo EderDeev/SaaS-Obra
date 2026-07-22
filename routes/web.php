@@ -104,6 +104,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
     ->group(function () {
         Route::get('/', TenantDashboardController::class)->name('dashboard');
         Route::get('/documentacao', [GedController::class, 'index'])->name('ged.index');
+        Route::get('/documentacao/tour-preview', [GedController::class, 'tourPreview'])->name('ged.tour-preview');
         Route::post('/documentacao', [GedController::class, 'store'])->name('ged.store');
         Route::get('/documentacao/lixeira', [GedController::class, 'trash'])->name('ged.trash');
         Route::post('/documentacao/lixeira', [GedController::class, 'trashAction'])->name('ged.trash.action');
@@ -157,6 +158,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/permissoes', [TenantPermissionController::class, 'index'])->name('permissions.index');
         Route::patch('/permissoes', [TenantPermissionController::class, 'update'])->name('permissions.update');
         Route::get('/contracts', [ContractController::class, 'index'])->name('contracts.index');
+        Route::get('/contracts/tour-preview', [ContractController::class, 'tourPreview'])->name('contracts.tour-preview');
         Route::post('/contracts', [ContractController::class, 'store'])->name('contracts.store');
         Route::get('/contracts/{contract}/documento-base/download', [ContractController::class, 'downloadBaseDocument'])->name('contracts.base-document.download');
         Route::get('/contracts/{contract}', [ContractController::class, 'show'])->name('contracts.show');
@@ -306,6 +308,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::delete('/orcamentos/{orcamento}/etapas/{etapa}', [OrcamentoController::class, 'destroyEtapa'])->name('orcamentos.etapas.destroy');
         Route::get('/orcamentos/{orcamento}', [OrcamentoController::class, 'show'])->name('orcamentos.show');
         Route::get('/projetos/visualizar', [ProjectController::class, 'tree'])->name('projects.visualizar.index');
+        Route::get('/projetos/tour-preview', [ProjectController::class, 'tourPreview'])->name('projects.tour-preview');
         Route::get('/projetos/lista-mestra', [ProjectController::class, 'masterList'])->name('projects.master-list.index');
         Route::get('/projetos/lista-mestra/pdf', [ProjectController::class, 'masterListPdf'])->name('projects.master-list.pdf');
         Route::get('/projetos/lista-mestra/excel', [ProjectController::class, 'masterListExcel'])->name('projects.master-list.excel');

@@ -1,8 +1,9 @@
 import ContractAccessCard from '@/Components/ContractAccessCard';
+import ContractTour, { startContractTour } from '@/Components/ContractTour';
 import brazilCities from '@/Data/brazilCities';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { AlertTriangle, FilePlus2, FileText, LayoutGrid, List, Plus, Search, Settings, Upload, X } from 'lucide-react';
+import { AlertTriangle, FilePlus2, FileText, LayoutGrid, List, Plane, Plus, Search, Settings, Upload, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ContractAdditiveHistoryModal, ContractAdditiveModal, ContractParametrizacaoModal } from './Show';
 
@@ -122,6 +123,29 @@ const hasAttention = (contract) => Number(contract.overdue_activities_count || 0
     || Number(contract.open_rncs_count || 0) > 0
     || Number(contract.pending_projects_count || 0) > 0;
 
+const tourDemoContract = {
+    id: 'tour-demo',
+    code: 'CT-001',
+    name: 'Contrato CT-001',
+    status: 'planning',
+    city: 'Sao Paulo',
+    state: 'SP',
+    total_value: 12500000,
+    currency: 'BRL',
+    starts_at: '2026-01-01',
+    ends_at: '2027-12-31',
+    obra: { nome: 'Obra Jardim Central' },
+    cliente_empresa: { nome: 'Cliente Alpha' },
+    construtora_empresa: { nome: 'Construtora Horizonte' },
+    gerenciadora_empresa: { nome: 'Gerenciadora Tecnica' },
+    open_activities_count: 8,
+    overdue_activities_count: 1,
+    open_rncs_count: 2,
+    pending_projects_count: 3,
+    contract_additives_count: 1,
+    latest_additive: { sequence_number: 1, type: 'cost_deadline', title: 'Reequilibrio e prorrogacao contratual' },
+};
+
 function companyOptions(contracts, resolve) {
     return contracts.reduce((options, contract) => {
         const [company, fallback] = resolve(contract);
@@ -150,6 +174,8 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
     const [additiveContract, setAdditiveContract] = useState(null);
     const [additiveHistoryContract, setAdditiveHistoryContract] = useState(null);
     const [totalValueDisplay, setTotalValueDisplay] = useState('');
+    const [showTourDemo, setShowTourDemo] = useState(() => typeof window !== 'undefined'
+        && new URLSearchParams(window.location.search).get('tour') === 'contracts');
     const form = useForm({
         code: '',
         total_value: '',
@@ -273,13 +299,17 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
         disciplinas: Object.values(parametrizacao.disciplinas?.[contract.id] || {}),
         tiposEmpresa: parametrizacao.tiposEmpresa || [],
     });
+    const displayedContracts = showTourDemo ? [enrichContract(tourDemoContract)] : filteredContracts;
+    const tourDetailUrl = showTourDemo
+        ? route('tenant.contracts.tour-preview', tenant.slug)
+        : (filteredContracts[0] ? route('tenant.contracts.show', [tenant.slug, filteredContracts[0].id]) : null);
 
     return (
         <AuthenticatedLayout>
             <Head title="Acessar contrato" />
 
             <section className="sig-content fade-in">
-                <div className="flex flex-wrap items-end gap-6">
+                <div data-tour="contracts-overview" className="flex flex-wrap items-end gap-6">
                     <div className="min-w-0 flex-1">
                         <div className="eyebrow">Workspace · Contratos</div>
                         <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Acessar contrato</h1>
@@ -288,6 +318,10 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                        <button className="sig-btn sig-btn-secondary" type="button" onClick={() => startContractTour(tenant.slug)}>
+                            <Plane size={15} />
+                            Iniciar tour
+                        </button>
                         {canCreateContracts && (
                             <button className="sig-btn sig-btn-primary" type="button" onClick={() => setShowCreate(true)}>
                                 <Plus size={15} />
@@ -297,7 +331,8 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     </div>
                 </div>
 
-                <div className="mt-6 flex flex-wrap items-center gap-3">
+                <div data-tour="contracts-filters" className="mt-6 space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <div className="flex flex-wrap gap-2">
                         <FilterButton active={filter === 'todos'} onClick={() => setFilter('todos')} label="Todos" count={counts.todos} />
                         <FilterButton active={filter === 'active'} onClick={() => setFilter('active')} label="Em andamento" count={counts.active} />
@@ -313,7 +348,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     </label>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <FilterSelect value={stateFilter} onChange={setStateFilter} firstLabel="Todos os estados" options={stateOptions} />
                     <FilterSelect value={clientFilter} onChange={setClientFilter} firstLabel="Todos os clientes" options={clientOptions} />
                     <FilterSelect value={contractorFilter} onChange={setContractorFilter} firstLabel="Todas as construtoras" options={contractorOptions} />
@@ -344,6 +379,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                             <List size={15} />
                         </button>
                     </div>
+                </div>
                 </div>
 
                 {false && showCreate && canCreateContracts && (
@@ -413,36 +449,38 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                 <section className="mt-7">
                     <div className="mb-3">
                         <span className="eyebrow">Portfólio de contratos</span>
-                        <p className="mt-1 text-xs text-[var(--ink-400)]">{filteredContracts.length} contrato(s) encontrado(s)</p>
+                        <p className="mt-1 text-xs text-[var(--ink-400)]">{displayedContracts.length} contrato(s) encontrado(s)</p>
                     </div>
 
                     {viewMode === 'cards' ? (
-                        <div className="grid gap-4 xl:grid-cols-3 lg:grid-cols-2">
-                            {filteredContracts.map((contract) => (
+                        <div data-tour="contracts-list" className="grid gap-4 xl:grid-cols-3 lg:grid-cols-2">
+                            {displayedContracts.map((contract, index) => (
                                 <ContractAccessCard
                                     key={contract.id}
                                     tenant={tenant}
                                     contract={contract}
                                     shortDate={shortDate}
-                                    canManageContracts={canManageContracts}
+                                    canManageContracts={canManageContracts || showTourDemo}
                                     onParametrize={() => setParametrizacaoContract(contract)}
                                     onAdditive={() => setAdditiveContract(contract)}
                                     onHistory={() => setAdditiveHistoryContract(contract)}
+                                    tour={index === 0}
+                                    detailUrl={showTourDemo ? tourDetailUrl : null}
                                 />
                             ))}
                         </div>
                     ) : (
                         <ContractsTable
                             tenant={tenant}
-                            contracts={filteredContracts}
-                            canManageContracts={canManageContracts}
+                            contracts={displayedContracts}
+                            canManageContracts={canManageContracts || showTourDemo}
                             onParametrize={setParametrizacaoContract}
                             onAdditive={setAdditiveContract}
                             onHistory={setAdditiveHistoryContract}
                         />
                     )}
 
-                    {filteredContracts.length === 0 && (
+                    {displayedContracts.length === 0 && (
                         <div className="sig-card p-12 text-center text-[var(--ink-500)]">Nenhum contrato encontrado.</div>
                     )}
                 </section>
@@ -490,6 +528,11 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                     onClose={() => setAdditiveHistoryContract(null)}
                 />
             )}
+            <ContractTour
+                section="contracts"
+                detailUrl={tourDetailUrl}
+                onExit={() => setShowTourDemo(false)}
+            />
         </AuthenticatedLayout>
     );
 }

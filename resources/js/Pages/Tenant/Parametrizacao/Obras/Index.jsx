@@ -173,9 +173,11 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                         <Field label="Codigo" error={form.errors.codigo}>
                             <input
                                 value={form.data.codigo}
-                                onChange={(event) => form.setData('codigo', event.target.value.toUpperCase())}
-                                placeholder="OBR-001"
-                                maxLength={50}
+                                onChange={(event) => form.setData('codigo', event.target.value.replace(/\D/g, '').slice(0, 3))}
+                                placeholder="001"
+                                inputMode="numeric"
+                                pattern="[0-9]{3}"
+                                maxLength={3}
                                 required
                             />
                         </Field>

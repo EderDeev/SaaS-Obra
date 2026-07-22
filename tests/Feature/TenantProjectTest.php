@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Disciplina;
+use App\Models\Empresa;
 use App\Models\Obra;
 use App\Models\ProjectDisciplineResponsavel;
 use App\Models\ProjectDocument;
@@ -10,6 +11,7 @@ use App\Models\ProjectPhase;
 use App\Models\ProjectReviewChecklistItem;
 use App\Models\ProjectReviewMarkup;
 use App\Models\Tenant;
+use App\Models\TipoEmpresa;
 use App\Models\User;
 use App\Jobs\ProcessProjectVersionApsJob;
 use App\Notifications\ProjectApprovedNotification;
@@ -24,6 +26,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
+use ZipArchive;
 
 class TenantProjectTest extends TestCase
 {
@@ -1109,6 +1112,264 @@ class TenantProjectTest extends TestCase
             ->assertSessionHasErrors('file');
 
         $this->assertDatabaseCount('project_documents', 0);
+    }
+
+    public function test_master_list_accepts_multiple_filters(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $arquitetura = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Arquitetura',
+            'sigla' => 'ARQ',
+            'cor' => '#2563eb',
+        ]);
+        $urbanismo = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Urbanismo',
+            'sigla' => 'URB',
+            'cor' => '#16a34a',
+        ]);
+        $estrutura = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Estrutura',
+            'sigla' => 'EST',
+            'cor' => '#d97706',
+        ]);
+        $obra100 = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Obra 100',
+            'codigo' => '100',
+            'tipo' => 'pai',
+        ]);
+        $obra101 = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Obra 101',
+            'codigo' => '101',
+            'tipo' => 'pai',
+        ]);
+        $obra102 = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Obra 102',
+            'codigo' => '102',
+            'tipo' => 'pai',
+        ]);
+        $phasePe = $this->projectPhase('PE');
+        $phasePb = $this->projectPhase('PB');
+
+        ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra100->id,
+            'disciplina_id' => $arquitetura->id,
+            'project_phase_id' => $phasePe->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto 100 ARQ',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+        ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra101->id,
+            'disciplina_id' => $urbanismo->id,
+            'project_phase_id' => $phasePb->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto 101 URB',
+            'document_type' => 'prancha',
+            'status' => 'em_analise',
+        ]);
+        ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra102->id,
+            'disciplina_id' => $estrutura->id,
+            'project_phase_id' => $phasePe->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto 102 EST',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.master-list.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filtersApplied', false)
+                ->where('documents.total', 0));
+
+        $response = $this->actingAs($user)->get(route('tenant.projects.master-list.index', [
+            'tenant' => $tenant,
+            'applied' => 1,
+            'obra_ids' => [$obra100->id, $obra101->id],
+            'disciplina_ids' => [$arquitetura->id, $urbanismo->id],
+            'project_phase_ids' => [$phasePe->id, $phasePb->id],
+            'document_types' => ['projeto', 'prancha'],
+            'statuses' => ['ativo', 'em_analise'],
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertSee('Projeto 100 ARQ')
+            ->assertSee('Projeto 101 URB')
+            ->assertDontSee('Projeto 102 EST')
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/MasterList')
+                ->where('documents.total', 2)
+                ->where('filters.obra_ids', [(string) $obra100->id, (string) $obra101->id])
+                ->where('filters.disciplina_ids', [(string) $arquitetura->id, (string) $urbanismo->id]));
+    }
+
+    public function test_master_list_only_includes_contracts_linked_to_a_non_administrator(): void
+    {
+        [$tenant, $user, $linkedContract] = $this->tenantScenario('engineer');
+        $linkedContract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+        $unlinkedContract = $tenant->contracts()->create([
+            'code' => '002',
+            'name' => 'Contrato sem vinculo',
+            'status' => 'active',
+        ]);
+
+        ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $linkedContract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto vinculado',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+        ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $unlinkedContract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto sem vinculo',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.master-list.index', [
+                'tenant' => $tenant,
+                'applied' => 1,
+            ]))
+            ->assertOk()
+            ->assertSee('Projeto vinculado')
+            ->assertDontSee('Projeto sem vinculo')
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('contracts', 1)
+                ->where('contracts.0.id', $linkedContract->id)
+                ->where('documents.total', 1));
+    }
+
+    public function test_master_list_includes_all_contracts_for_an_administrator(): void
+    {
+        [$tenant, $user, $firstContract] = $this->tenantScenario('tenant_admin');
+        $secondContract = $tenant->contracts()->create([
+            'code' => '002',
+            'name' => 'Segundo contrato',
+            'status' => 'active',
+        ]);
+
+        foreach ([$firstContract, $secondContract] as $index => $contract) {
+            ProjectDocument::create([
+                'tenant_id' => $tenant->id,
+                'contract_id' => $contract->id,
+                'created_by_id' => $user->id,
+                'title' => 'Projeto administrativo '.($index + 1),
+                'document_type' => 'projeto',
+                'status' => 'ativo',
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.master-list.index', [
+                'tenant' => $tenant,
+                'applied' => 1,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('contracts', 2)
+                ->where('documents.total', 2));
+    }
+
+    public function test_master_list_exports_pdf_and_xlsx_with_company_branding(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $logoImage = imagecreatetruecolor(120, 40);
+        imagefill($logoImage, 0, 0, imagecolorallocate($logoImage, 37, 99, 235));
+        ob_start();
+        imagepng($logoImage);
+        $logo = ob_get_clean();
+        imagedestroy($logoImage);
+        $companies = collect([
+            'gerenciadora' => ['name' => 'Gestao Engenharia', 'sigla' => 'GES', 'cnpj' => '11111111000191'],
+            'cliente' => ['name' => 'Cliente Institucional', 'sigla' => 'CLI', 'cnpj' => '22222222000191'],
+            'construtora' => ['name' => 'Construtora Modelo', 'sigla' => 'CON', 'cnpj' => '33333333000191'],
+        ])->map(function (array $company, string $type) use ($tenant, $contract, $logo): Empresa {
+            $path = "tenant-{$tenant->id}/empresas/logos/{$type}.png";
+            Storage::disk('public')->put($path, $logo);
+
+            return $tenant->empresas()->create([
+                'contract_id' => $contract->id,
+                'tipo_empresa_id' => TipoEmpresa::query()->where('nome', $type)->value('id'),
+                'nome' => $company['name'],
+                'cnpj' => $company['cnpj'],
+                'sigla' => $company['sigla'],
+                'logo_path' => $path,
+            ]);
+        });
+
+        $contract->update([
+            'fiscalizadora_empresa_id' => $companies['gerenciadora']->id,
+            'cliente_empresa_id' => $companies['cliente']->id,
+            'construtora_empresa_id' => $companies['construtora']->id,
+        ]);
+        ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto institucional',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+        $parameters = [
+            'tenant' => $tenant,
+            'applied' => 1,
+        ];
+
+        $pdfResponse = $this->actingAs($user)
+            ->get(route('tenant.projects.master-list.pdf', $parameters))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', (string) $pdfResponse->getContent());
+
+        $excelResponse = $this->actingAs($user)
+            ->get(route('tenant.projects.master-list.excel', $parameters))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $temporaryFile = tempnam(sys_get_temp_dir(), 'master-list-');
+        file_put_contents($temporaryFile, $excelResponse->streamedContent());
+
+        $archive = new ZipArchive();
+        $this->assertTrue($archive->open($temporaryFile) === true);
+        $entries = collect(range(0, $archive->numFiles - 1))
+            ->map(fn (int $index): string => (string) $archive->getNameIndex($index));
+        $this->assertTrue($entries->contains('xl/worksheets/sheet1.xml'), $entries->implode(', '));
+        $this->assertTrue($entries->contains(fn (string $entry): bool => str_starts_with($entry, 'xl/media/')), $entries->implode(', '));
+        $archive->close();
+        unlink($temporaryFile);
     }
 
     public function test_project_document_delete_is_soft_delete(): void

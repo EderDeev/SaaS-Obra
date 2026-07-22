@@ -2,7 +2,7 @@ import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { Check, ChevronDown, ClipboardList, Filter, FolderOpen, Plus, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 function contractLabel(contract) {
     return `${contract.code} - ${contract.name}`;
@@ -41,7 +41,7 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
     const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
     const [tipoFilter, setTipoFilter] = useState('todos');
     const [userFilter, setUserFilter] = useState('');
-    const [expandedResponsavelIds, setExpandedResponsavelIds] = useState([]);
+    const [expandedUserIds, setExpandedUserIds] = useState([]);
 
     const disciplinas = disciplinasByContract[form.data.contract_id] || [];
     const users = usersByContract[form.data.contract_id] || [];
@@ -86,6 +86,43 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
             return `${responsavel.user?.name || ''} ${responsavel.user?.email || ''}`.toLowerCase().includes(userTerm);
         });
     }, [responsaveis, contractFilter, disciplinaFilter, tipoFilter, userFilter]);
+    const groupedResponsaveis = useMemo(() => {
+        const groups = new Map();
+
+        filteredResponsaveis.forEach((responsavel) => {
+            const key = String(responsavel.user?.id ?? `responsavel-${responsavel.id}`);
+            const group = groups.get(key) || {
+                key,
+                user: responsavel.user,
+                responsaveis: [],
+            };
+
+            group.responsaveis.push(responsavel);
+            groups.set(key, group);
+        });
+
+        return Array.from(groups.values())
+            .map((group) => ({
+                ...group,
+                disciplinas: group.responsaveis
+                    .map((responsavel) => responsavel.disciplina)
+                    .filter(Boolean)
+                    .filter((disciplina, index, list) => list.findIndex((item) => String(item.id) === String(disciplina.id)) === index)
+                    .sort((a, b) => `${a.sigla} ${a.nome}`.localeCompare(`${b.sigla} ${b.nome}`)),
+                contracts: group.responsaveis
+                    .map((responsavel) => responsavel.contract)
+                    .filter(Boolean)
+                    .filter((contract, index, list) => list.findIndex((item) => String(item.id) === String(contract.id)) === index),
+                tipos: group.responsaveis
+                    .filter((responsavel, index, list) => list.findIndex((item) => item.tipo === responsavel.tipo) === index,
+                    ),
+            }))
+            .sort((a, b) => (a.user?.name || '').localeCompare(b.user?.name || ''));
+    }, [filteredResponsaveis]);
+    const totalUsers = useMemo(
+        () => new Set(responsaveis.map((responsavel) => responsavel.user?.id).filter(Boolean)).size,
+        [responsaveis],
+    );
 
     useEffect(() => {
         if (disciplinas.length === 0) {
@@ -147,10 +184,10 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
         setDisciplinaFilter('todos');
     };
 
-    const toggleResponsavelDetails = (responsavelId) => {
-        setExpandedResponsavelIds((currentIds) => currentIds.includes(responsavelId)
-            ? currentIds.filter((currentId) => currentId !== responsavelId)
-            : [...currentIds, responsavelId]);
+    const toggleUserDetails = (userId) => {
+        setExpandedUserIds((currentIds) => currentIds.includes(userId)
+            ? currentIds.filter((currentId) => currentId !== userId)
+            : [...currentIds, userId]);
     };
 
     return (
@@ -304,12 +341,12 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
                                 <span className="eyebrow">Fluxo por disciplina</span>
                             </div>
                             <h2 className="mt-1 text-[15px] font-semibold text-[var(--ink-900)]">
-                                {filteredResponsaveis.length} de {responsaveis.length} responsavel(is)
+                                {groupedResponsaveis.length} de {totalUsers} usuario(s) · {filteredResponsaveis.length} vinculo(s)
                             </h2>
                         </div>
                     </header>
 
-                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 xl:grid-cols-4">
+                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 sm:grid-cols-2 2xl:grid-cols-4">
                         <FilterSelect label="Contrato" value={contractFilter} onChange={updateContractFilter}>
                             <option value="todos">Todos os contratos</option>
                             {contracts.map((contract) => (
@@ -342,105 +379,109 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
                         </label>
                     </div>
 
-                    {filteredResponsaveis.length > 0 ? (
+                    {groupedResponsaveis.length > 0 ? (
                         <>
                         <div className="projects-wide-only overflow-x-auto">
-                            <table className="sig-table min-w-[1080px]">
+                            <table className="sig-table min-w-[980px]">
                                 <thead>
                                     <tr>
                                         <th>Usuario</th>
-                                        <th>Contrato</th>
-                                        <th>Disciplina</th>
-                                        <th>Tipo</th>
-                                        <th>Cadastrado em</th>
-                                        <th className="text-right">Acoes</th>
+                                        <th>Disciplinas</th>
+                                        <th>Contratos</th>
+                                        <th>Responsabilidades</th>
+                                        <th>Vinculos</th>
+                                        <th className="text-right">Detalhes</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredResponsaveis.map((responsavel) => (
-                                        <tr key={responsavel.id}>
-                                            <td>
-                                                <div className="flex items-center gap-3">
-                                                    <Avatar user={responsavel.user} />
-                                                    <span className="min-w-0">
-                                                        <span className="block truncate font-semibold text-[var(--ink-900)]">
-                                                            {responsavel.user?.name}
-                                                        </span>
-                                                        <span className="block truncate text-xs text-[var(--ink-500)]">
-                                                            {responsavel.user?.email}
-                                                        </span>
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span className="inline-flex items-center gap-2 text-sm text-[var(--ink-700)]">
-                                                    <ClipboardList size={14} />
-                                                    <span>
-                                                        <span className="mono text-xs">{responsavel.contract?.code}</span>
-                                                        <span className="block font-semibold">{responsavel.contract?.name}</span>
-                                                    </span>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ink-700)]">
-                                                    <span className="h-3.5 w-3.5 rounded-full border border-[var(--border)]" style={{ backgroundColor: responsavel.disciplina?.cor || '#2563eb' }} />
-                                                    {responsavel.disciplina?.sigla} - {responsavel.disciplina?.nome}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <span className={`sig-pill ${responsavel.tipo === 'aprovacao' ? 'sig-pill-amber' : 'sig-pill-blue'}`}>
-                                                    {responsavel.tipo_label}
-                                                </span>
-                                            </td>
-                                            <td>{responsavel.created_at}</td>
-                                            <td>
-                                                <div className="flex flex-wrap justify-end gap-2">
-                                                    <button
-                                                        type="button"
-                                                        className="sig-btn sig-btn-secondary sig-btn-sm"
-                                                        onClick={() => loadResponsavel(responsavel)}
-                                                    >
-                                                        Editar
-                                                    </button>
-                                                    <ConfirmActionButton
-                                                        title="Remover responsavel"
-                                                        message={`Deseja mesmo remover ${responsavel.user?.name || 'este usuario'} desta responsabilidade?`}
-                                                        confirmLabel="Remover responsavel"
-                                                        className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]"
-                                                        onConfirm={() => router.delete(route('tenant.projects.responsaveis.destroy', [tenant.slug, responsavel.id]), { preserveScroll: true })}
-                                                    >
-                                                        <Trash2 size={13} />
-                                                        Remover
-                                                    </ConfirmActionButton>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {groupedResponsaveis.map((group) => {
+                                        const expanded = expandedUserIds.includes(group.key);
+
+                                        return (
+                                            <Fragment key={group.key}>
+                                                <tr>
+                                                    <td>
+                                                        <div className="flex items-center gap-3">
+                                                            <Avatar user={group.user} />
+                                                            <span className="min-w-0">
+                                                                <span className="block truncate font-semibold text-[var(--ink-900)]">{group.user?.name}</span>
+                                                                <span className="block truncate text-xs text-[var(--ink-500)]">{group.user?.email}</span>
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div className="flex max-w-[360px] flex-wrap gap-1.5">
+                                                            {group.disciplinas.map((disciplina) => <DisciplineBadge key={disciplina.id} disciplina={disciplina} />)}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div className="grid gap-1.5 text-sm text-[var(--ink-700)]">
+                                                            {group.contracts.map((contract) => (
+                                                                <span key={contract.id} className="inline-flex items-center gap-2">
+                                                                    <ClipboardList size={14} />
+                                                                    <span><span className="mono text-xs">{contract.code}</span> · {contract.name}</span>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {group.tipos.map((responsavel) => (
+                                                                <span key={responsavel.tipo} className={`sig-pill ${responsavel.tipo === 'aprovacao' ? 'sig-pill-amber' : 'sig-pill-blue'}`}>
+                                                                    {responsavel.tipo_label}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="font-semibold text-[var(--ink-700)]">{group.responsaveis.length}</td>
+                                                    <td>
+                                                        <div className="flex justify-end">
+                                                            <button
+                                                                type="button"
+                                                                className="sig-btn sig-btn-secondary sig-btn-sm"
+                                                                aria-expanded={expanded}
+                                                                onClick={() => toggleUserDetails(group.key)}
+                                                            >
+                                                                {expanded ? 'Recolher' : 'Ver vinculos'}
+                                                                <ChevronDown size={15} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {expanded && (
+                                                    <tr>
+                                                        <td colSpan={6} className="bg-[var(--surface-muted)] !p-4">
+                                                            <ResponsibilityDetails responsaveis={group.responsaveis} tenant={tenant} onEdit={loadResponsavel} />
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </Fragment>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                         <div className="projects-compact-only">
-                            {filteredResponsaveis.map((responsavel) => {
-                                const expanded = expandedResponsavelIds.includes(responsavel.id);
+                            {groupedResponsaveis.map((group) => {
+                                const expanded = expandedUserIds.includes(group.key);
 
                                 return (
-                                    <article key={responsavel.id} className="border-b border-[var(--border)] last:border-b-0">
+                                    <article key={group.key} className="border-b border-[var(--border)] last:border-b-0">
                                         <button
                                             type="button"
                                             className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-muted)]"
                                             aria-expanded={expanded}
-                                            onClick={() => toggleResponsavelDetails(responsavel.id)}
+                                            onClick={() => toggleUserDetails(group.key)}
                                         >
                                             <span className="flex min-w-0 items-center gap-3">
-                                                <Avatar user={responsavel.user} />
+                                                <Avatar user={group.user} />
                                                 <span className="min-w-0">
-                                                    <span className="block truncate text-sm font-semibold text-[var(--ink-900)]">{responsavel.user?.name}</span>
-                                                    <span className="mt-1 block truncate text-xs text-[var(--ink-500)]">{responsavel.user?.email}</span>
-                                                    <span className="mt-2 flex flex-wrap gap-2">
-                                                        <span className={`sig-pill ${responsavel.tipo === 'aprovacao' ? 'sig-pill-amber' : 'sig-pill-blue'}`}>
-                                                            {responsavel.tipo_label}
-                                                        </span>
+                                                    <span className="block truncate text-sm font-semibold text-[var(--ink-900)]">{group.user?.name}</span>
+                                                    <span className="mt-1 block truncate text-xs text-[var(--ink-500)]">{group.user?.email}</span>
+                                                    <span className="mt-2 flex flex-wrap gap-1.5">
+                                                        {group.disciplinas.map((disciplina) => <DisciplineBadge key={disciplina.id} disciplina={disciplina} compact />)}
                                                     </span>
+                                                    <span className="mt-2 block text-xs text-[var(--ink-500)]">{group.responsaveis.length} vinculo(s)</span>
                                                 </span>
                                             </span>
                                             <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -448,30 +489,7 @@ export default function ProjectResponsaveis({ tenant, contracts, disciplinasByCo
 
                                         {expanded && (
                                             <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
-                                                <div className="grid gap-4 sm:grid-cols-3">
-                                                    <CompactInfo label="Contrato" value={`${responsavel.contract?.code || '-'} - ${responsavel.contract?.name || 'Sem contrato'}`} />
-                                                    <CompactInfo label="Disciplina" value={`${responsavel.disciplina?.sigla || '-'} - ${responsavel.disciplina?.nome || 'Sem disciplina'}`} />
-                                                    <CompactInfo label="Cadastrado em" value={responsavel.created_at} />
-                                                </div>
-                                                <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
-                                                    <button
-                                                        type="button"
-                                                        className="sig-btn sig-btn-secondary sig-btn-sm"
-                                                        onClick={() => loadResponsavel(responsavel)}
-                                                    >
-                                                        Editar
-                                                    </button>
-                                                    <ConfirmActionButton
-                                                        title="Remover responsavel"
-                                                        message={`Deseja mesmo remover ${responsavel.user?.name || 'este usuario'} desta responsabilidade?`}
-                                                        confirmLabel="Remover responsavel"
-                                                        className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]"
-                                                        onConfirm={() => router.delete(route('tenant.projects.responsaveis.destroy', [tenant.slug, responsavel.id]), { preserveScroll: true })}
-                                                    >
-                                                        <Trash2 size={13} />
-                                                        Remover
-                                                    </ConfirmActionButton>
-                                                </div>
+                                                <ResponsibilityDetails responsaveis={group.responsaveis} tenant={tenant} onEdit={loadResponsavel} />
                                             </div>
                                         )}
                                     </article>
@@ -523,6 +541,57 @@ function CompactInfo({ label, value }) {
         <div className="min-w-0">
             <div className="eyebrow">{label}</div>
             <div className="mt-1 break-words text-sm font-medium text-[var(--ink-700)]">{value || '-'}</div>
+        </div>
+    );
+}
+
+function DisciplineBadge({ disciplina, compact = false }) {
+    return (
+        <span className={`inline-flex min-w-0 items-center gap-1.5 rounded-md border border-[var(--border)] bg-white ${compact ? 'px-2 py-1 text-[11px]' : 'px-2.5 py-1.5 text-xs'} font-semibold text-[var(--ink-700)]`}>
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-[var(--border)]" style={{ backgroundColor: disciplina?.cor || '#2563eb' }} />
+            <span className="truncate">{disciplina?.sigla} - {disciplina?.nome}</span>
+        </span>
+    );
+}
+
+function ResponsibilityDetails({ responsaveis, tenant, onEdit }) {
+    return (
+        <div className="grid gap-2">
+            {responsaveis.map((responsavel) => (
+                <div key={responsavel.id} className="rounded-md border border-[var(--border)] bg-white p-3">
+                    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]">
+                        <CompactInfo label="Contrato" value={`${responsavel.contract?.code || '-'} - ${responsavel.contract?.name || 'Sem contrato'}`} />
+                        <div className="min-w-0">
+                            <div className="eyebrow">Disciplina</div>
+                            <div className="mt-1"><DisciplineBadge disciplina={responsavel.disciplina} compact /></div>
+                        </div>
+                        <div>
+                            <div className="eyebrow">Responsabilidade</div>
+                            <div className="mt-1">
+                                <span className={`sig-pill ${responsavel.tipo === 'aprovacao' ? 'sig-pill-amber' : 'sig-pill-blue'}`}>
+                                    {responsavel.tipo_label}
+                                </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-[var(--ink-500)]">{responsavel.created_at}</div>
+                        </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
+                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => onEdit(responsavel)}>
+                            Editar
+                        </button>
+                        <ConfirmActionButton
+                            title="Remover responsavel"
+                            message={`Deseja remover ${responsavel.user?.name || 'este usuario'} da disciplina ${responsavel.disciplina?.sigla || ''}?`}
+                            confirmLabel="Remover responsavel"
+                            className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]"
+                            onConfirm={() => router.delete(route('tenant.projects.responsaveis.destroy', [tenant.slug, responsavel.id]), { preserveScroll: true })}
+                        >
+                            <Trash2 size={13} />
+                            Remover
+                        </ConfirmActionButton>
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }

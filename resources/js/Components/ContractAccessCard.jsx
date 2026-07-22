@@ -57,7 +57,7 @@ function remainingDaysPillClass(date) {
     return 'sig-pill-red';
 }
 
-export default function ContractAccessCard({ tenant, contract, shortDate, canManageContracts = false, onParametrize, onAdditive, onHistory }) {
+export default function ContractAccessCard({ tenant, contract, shortDate, canManageContracts = false, onParametrize, onAdditive, onHistory, tour = false, detailUrl = null }) {
     const title = contract.obra?.nome || contract.name;
     const cliente = contract.cliente_empresa?.nome || contract.client_company_name || 'Cliente não informado';
     const construtora = contract.construtora_empresa?.nome || contract.contractor_company_name || 'Construtora não informada';
@@ -125,17 +125,17 @@ export default function ContractAccessCard({ tenant, contract, shortDate, canMan
                     <div className="flex flex-wrap justify-end gap-2">
                         {canManageContracts && (
                             <>
-                                <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={onAdditive}>
+                                <button data-tour={tour ? 'contracts-additive' : undefined} className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={onAdditive}>
                                     <FilePlus2 size={13} />
                                     Aditivo
                                 </button>
-                                <button className="sig-btn sig-btn-primary sig-btn-sm" type="button" onClick={onParametrize}>
+                                <button data-tour={tour ? 'contracts-parametrize' : undefined} className="sig-btn sig-btn-primary sig-btn-sm" type="button" onClick={onParametrize}>
                                     <Settings size={13} />
                                     Parametrizar
                                 </button>
                             </>
                         )}
-                        <Link className="sig-btn sig-btn-secondary sig-btn-sm" href={route('tenant.contracts.show', [tenant.slug, contract.id])}>
+                        <Link data-tour={tour ? 'contracts-open' : undefined} className="sig-btn sig-btn-secondary sig-btn-sm" href={detailUrl || route('tenant.contracts.show', [tenant.slug, contract.id])}>
                             Abrir
                             <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
                         </Link>

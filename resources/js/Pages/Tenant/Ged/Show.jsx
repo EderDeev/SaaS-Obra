@@ -1378,7 +1378,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                         </div>
 
                         <div className="border-b border-slate-200 px-3">
-                            <nav data-tour="ged-document-tabs" className="flex gap-5 overflow-x-auto">
+                            <nav data-tour="ged-document-tabs" className="flex flex-wrap gap-x-5">
                                 {tabs.map((tab) => {
                                     const Icon = sectionIcons[tab.key] || FileText;
                                     const active = tab.key === activeSection;

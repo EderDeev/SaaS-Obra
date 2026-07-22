@@ -3,6 +3,12 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\BoletimMedicao;
+use App\Models\ContractAdditive;
+use App\Models\GedDocument;
+use App\Models\GedEmailProcessedMessage;
+use App\Models\OrdemServico;
+use App\Models\RdoDiario;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ActivityPermissions;
@@ -49,6 +55,50 @@ class DashboardController extends Controller
         $pendingProjects = $projects->whereIn('status', ['em_analise', 'em_aprovacao']);
         $today = today();
 
+        $documents = GedDocument::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds)
+            ->with('contract:id,code,name')
+            ->latest()
+            ->get(['id', 'tenant_id', 'contract_id', 'title', 'status', 'created_at']);
+        $rdos = RdoDiario::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds)
+            ->with('contract:id,code,name')
+            ->latest('reference_date')
+            ->get(['id', 'tenant_id', 'contract_id', 'code', 'reference_date', 'status', 'created_at']);
+        $boletins = BoletimMedicao::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds)
+            ->with('contract:id,code,name')
+            ->latest('periodo')
+            ->get(['id', 'tenant_id', 'contract_id', 'codigo', 'periodo', 'status', 'created_at']);
+        $ordens = OrdemServico::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds)
+            ->with('contract:id,code,name')
+            ->latest()
+            ->get(['id', 'tenant_id', 'contract_id', 'codigo', 'titulo', 'status', 'prazo_execucao', 'created_at']);
+        $additives = ContractAdditive::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds)
+            ->with('contract:id,code,name')
+            ->latest()
+            ->limit(5)
+            ->get(['id', 'tenant_id', 'contract_id', 'sequence_number', 'type', 'title', 'created_at']);
+
+        $documentsInProgress = $documents->whereIn('status', ['uploaded', 'processing']);
+        $pendingTriage = GedEmailProcessedMessage::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('status', 'pending_triage')
+            ->whereHas('rule', fn (Builder $query): Builder => $query->whereIn('contract_id', $contractIds))
+            ->with('rule.contract:id,code,name')
+            ->latest('processed_at')
+            ->get(['id', 'tenant_id', 'rule_id', 'subject', 'processed_at', 'created_at']);
+        $rdoAwaitingReview = $rdos->whereIn('status', ['em_aprovacao', 'devolvido_construtora']);
+        $openBoletins = $boletins->where('status', 'aberto_lancamento');
+        $pendingOrders = $ordens->whereIn('status', ['em_analise', 'em_aprovacao']);
+
         $myActivities = $tenant->activities()
             ->whereIn('contract_id', $activityContractIds)
             ->where('status', '!=', 'done')
@@ -75,6 +125,13 @@ class DashboardController extends Controller
                 'openRncs' => $openRncs->count(),
                 'overdueRncs' => $openRncs->filter(fn ($rnc): bool => $rnc->prazo_resposta_acao_corretiva !== null && $rnc->prazo_resposta_acao_corretiva->isBefore($today))->count(),
                 'pendingProjects' => $pendingProjects->count(),
+                'documents' => $documents->count(),
+                'documentsInProgress' => $documentsInProgress->count(),
+                'pendingTriage' => $pendingTriage->count(),
+                'rdoAwaitingReview' => $rdoAwaitingReview->count(),
+                'openBoletins' => $openBoletins->count(),
+                'pendingOrders' => $pendingOrders->count(),
+                'additives' => $additives->count(),
                 'users' => $this->canSeeTenantTotals($user, $tenantRole) ? $tenant->memberships()->where('status', 'active')->count() : null,
             ],
             'charts' => [
@@ -101,8 +158,8 @@ class DashboardController extends Controller
                 ]),
             ],
             'myActivities' => $myActivities,
-            'attentionItems' => $this->attentionItems($tenant, $myActivities, $pendingProjects, $openRncs),
-            'recentEvents' => $this->recentEvents($tenant, $activities, $projects, $rncs),
+            'attentionItems' => $this->attentionItems($tenant, $myActivities, $pendingProjects, $openRncs, $pendingTriage, $documentsInProgress, $rdoAwaitingReview, $openBoletins, $pendingOrders),
+            'recentEvents' => $this->recentEvents($tenant, $activities, $projects, $rncs, $documents, $rdos, $boletins, $ordens, $additives),
             'recentContracts' => $contracts
                 ->with(['obra:id,nome', 'clienteEmpresa:id,nome', 'construtoraEmpresa:id,nome', 'gerenciadoraEmpresa:id,nome'])
                 ->withCount([
@@ -170,7 +227,7 @@ class DashboardController extends Controller
             ->all();
     }
 
-    private function attentionItems(Tenant $tenant, Collection $activities, Collection $projects, Collection $rncs): array
+    private function attentionItems(Tenant $tenant, Collection $activities, Collection $projects, Collection $rncs, Collection $pendingTriage, Collection $documentsInProgress, Collection $rdos, Collection $boletins, Collection $ordens): array
     {
         return collect()
             ->merge($activities->map(fn ($activity): array => [
@@ -194,12 +251,47 @@ class DashboardController extends Controller
                 'tone' => $rnc->prazo_resposta_acao_corretiva?->isPast() ? 'red' : 'amber',
                 'url' => route('tenant.qualidade.rnc.show', [$tenant, $rnc], false),
             ]))
+            ->merge($pendingTriage->take(3)->map(fn ($message): array => [
+                'type' => 'Triagem de e-mail',
+                'title' => $message->subject ?: 'E-mail sem assunto',
+                'subtitle' => $message->rule?->contract?->code.' - escolha o PDF principal',
+                'tone' => 'amber',
+                'url' => route('tenant.ged.triage', $tenant, false),
+            ]))
+            ->merge($documentsInProgress->take(3)->map(fn ($document): array => [
+                'type' => 'Documentação',
+                'title' => $document->title,
+                'subtitle' => $document->contract?->code.' - processamento de OCR',
+                'tone' => 'blue',
+                'url' => route('tenant.ged.index', $tenant, false),
+            ]))
+            ->merge($rdos->take(3)->map(fn ($rdo): array => [
+                'type' => 'RDO',
+                'title' => $rdo->code,
+                'subtitle' => $rdo->contract?->code.' - aguardando fluxo',
+                'tone' => $rdo->status === 'devolvido_construtora' ? 'red' : 'amber',
+                'url' => route('tenant.diario-obra.rdo.dashboard', $tenant, false),
+            ]))
+            ->merge($boletins->take(3)->map(fn ($boletim): array => [
+                'type' => 'Medição',
+                'title' => $boletim->codigo,
+                'subtitle' => $boletim->contract?->code.' - lançamento aberto',
+                'tone' => 'blue',
+                'url' => route('tenant.medicao.boletim-medicao.index', $tenant, false),
+            ]))
+            ->merge($ordens->take(3)->map(fn ($ordem): array => [
+                'type' => 'Ordem de serviço',
+                'title' => $ordem->codigo.' - '.$ordem->titulo,
+                'subtitle' => $ordem->contract?->code.' - aguardando '.str_replace('_', ' ', $ordem->status),
+                'tone' => 'amber',
+                'url' => route('tenant.ordem-servico.analise.index', $tenant, false),
+            ]))
             ->take(10)
             ->values()
             ->all();
     }
 
-    private function recentEvents(Tenant $tenant, Collection $activities, Collection $projects, Collection $rncs): array
+    private function recentEvents(Tenant $tenant, Collection $activities, Collection $projects, Collection $rncs, Collection $documents, Collection $rdos, Collection $boletins, Collection $ordens, Collection $additives): array
     {
         return collect()
             ->merge($activities->take(5)->map(fn ($activity): array => [
@@ -222,6 +314,41 @@ class DashboardController extends Controller
                 'subtitle' => 'Nao conformidade registrada em '.$rnc->contract?->code,
                 'created_at' => $rnc->created_at,
                 'url' => route('tenant.qualidade.rnc.show', [$tenant, $rnc], false),
+            ]))
+            ->merge($documents->take(5)->map(fn ($document): array => [
+                'type' => 'Documento',
+                'title' => $document->title,
+                'subtitle' => 'Documento recebido em '.$document->contract?->code,
+                'created_at' => $document->created_at,
+                'url' => route('tenant.ged.index', $tenant, false),
+            ]))
+            ->merge($rdos->take(5)->map(fn ($rdo): array => [
+                'type' => 'RDO',
+                'title' => $rdo->code,
+                'subtitle' => 'RDO registrado em '.$rdo->contract?->code,
+                'created_at' => $rdo->created_at,
+                'url' => route('tenant.diario-obra.rdo.dashboard', $tenant, false),
+            ]))
+            ->merge($boletins->take(5)->map(fn ($boletim): array => [
+                'type' => 'Medição',
+                'title' => $boletim->codigo,
+                'subtitle' => 'Boletim criado em '.$boletim->contract?->code,
+                'created_at' => $boletim->created_at,
+                'url' => route('tenant.medicao.boletim-medicao.index', $tenant, false),
+            ]))
+            ->merge($ordens->take(5)->map(fn ($ordem): array => [
+                'type' => 'Ordem de serviço',
+                'title' => $ordem->codigo.' - '.$ordem->titulo,
+                'subtitle' => 'OS registrada em '.$ordem->contract?->code,
+                'created_at' => $ordem->created_at,
+                'url' => route('tenant.ordem-servico.os.index', $tenant, false),
+            ]))
+            ->merge($additives->map(fn ($additive): array => [
+                'type' => 'Aditivo',
+                'title' => 'Aditivo '.$additive->sequence_number.' - '.$additive->title,
+                'subtitle' => 'Contrato '.$additive->contract?->code,
+                'created_at' => $additive->created_at,
+                'url' => route('tenant.contracts.show', [$tenant, $additive->contract_id], false),
             ]))
             ->sortByDesc('created_at')
             ->take(8)

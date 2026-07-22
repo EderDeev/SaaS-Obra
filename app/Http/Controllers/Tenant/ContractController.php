@@ -76,10 +76,17 @@ class ContractController extends Controller
                 'disciplinas' => $tenant->disciplinas()
                     ->whereIn('contract_id', $contractIds)
                     ->orderBy('nome')
-                    ->get(['id', 'tenant_id', 'contract_id', 'nome', 'sigla', 'descricao', 'cor'])
+                    ->get(['id', 'tenant_id', 'contract_id', 'nome', 'sigla', 'cor'])
                     ->groupBy('contract_id'),
                 'tiposEmpresa' => TipoEmpresa::allowedCompanyTypeOptions(),
             ],
+        ]);
+    }
+
+    public function tourPreview(Tenant $tenant): Response
+    {
+        return Inertia::render('Tenant/Contracts/TourPreview', [
+            'tenant' => $tenant,
         ]);
     }
 
@@ -229,7 +236,7 @@ class ContractController extends Controller
                 'disciplinas' => $tenant->disciplinas()
                     ->where('contract_id', $contract->id)
                     ->orderBy('nome')
-                    ->get(['id', 'tenant_id', 'contract_id', 'nome', 'sigla', 'descricao', 'cor']),
+                    ->get(['id', 'tenant_id', 'contract_id', 'nome', 'sigla', 'cor']),
                 'tiposEmpresa' => TipoEmpresa::allowedCompanyTypeOptions(),
             ],
         ]);
@@ -250,7 +257,8 @@ class ContractController extends Controller
                 'nullable',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
-                    ->where('contract_id', $contract->id)),
+                    ->where('contract_id', $contract->id)
+                    ->where('tipo', 'pai')),
             ],
             'cliente_empresa_id' => [
                 'nullable',
@@ -274,7 +282,7 @@ class ContractController extends Controller
                     ->when($gerenciadoraTipoIds->isNotEmpty(), fn ($query) => $query->whereIn('tipo_empresa_id', $gerenciadoraTipoIds))),
             ],
         ], [
-            'obra_id.exists' => 'A obra selecionada não pertence a este contrato.',
+            'obra_id.exists' => 'Selecione uma obra pai deste contrato como obra principal.',
             'cliente_empresa_id.exists' => 'A empresa cliente selecionada não pertence ao contrato ou não é do tipo cliente.',
             'construtora_empresa_id.exists' => 'A construtora selecionada não pertence ao contrato ou não é do tipo construtora.',
             'gerenciadora_empresa_id.exists' => 'A gerenciadora selecionada não pertence ao contrato ou não é do tipo gerenciadora.',

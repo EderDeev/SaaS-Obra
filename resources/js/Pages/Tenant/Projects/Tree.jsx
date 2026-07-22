@@ -1,7 +1,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ProjectTour, { startProjectTour } from '@/Components/ProjectTour';
 import { Head, Link, router } from '@inertiajs/react';
-import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Search, TriangleAlert, Upload } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Plane, Search, TriangleAlert, Upload } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 const derivativeLabels = {
     not_submitted: 'Aguardando APS',
@@ -9,6 +10,44 @@ const derivativeLabels = {
     processing: 'Processando',
     ready: 'Pronto para viewer',
     failed: 'Erro no APS',
+};
+
+const tourContract = { id: 'tour-contract-1', code: 'CT-001', name: 'Obra Jardim Central', status: 'active' };
+const tourObra = { id: 'tour-obra-1', contract_id: tourContract.id, obra_pai_id: null, codigo: '001', nome: 'Jardim Central', tipo: 'obra' };
+const tourDisciplina = { id: 'tour-disciplina-1', contract_id: tourContract.id, sigla: 'ARQ', nome: 'Arquitetura', cor: '#2563eb' };
+const tourPhase = { id: 'tour-phase-1', code: 'EXE', name: 'Projeto executivo' };
+const tourVersion = {
+    id: 'tour-version-1',
+    revision: 'R02',
+    status: 'ativo',
+    original_name: 'planta-pavimento-tipo-r02.pdf',
+    stored_name: 'CT001-001-ARQ-EXE-PRJ-001-R02.pdf',
+    derivative_status: 'ready',
+    aps_urn: 'urn:project-tour',
+    approved_at: '2026-07-10T14:30:00-03:00',
+    size_label: '2,4 MB',
+    url: null,
+};
+const tourDocument = {
+    id: 'tour-project-1',
+    contract_id: tourContract.id,
+    obra_id: tourObra.id,
+    disciplina_id: tourDisciplina.id,
+    project_phase_id: tourPhase.id,
+    document_type: 'projeto',
+    title: 'Planta do pavimento tipo',
+    code: 'CT001-001-ARQ-EXE-PRJ-001',
+    status: 'ativo',
+    approved_at: tourVersion.approved_at,
+    contract: tourContract,
+    obra: tourObra,
+    disciplina: tourDisciplina,
+    phase: tourPhase,
+    latest_version: tourVersion,
+    latest_approved_version: tourVersion,
+    open_rncs_count: 1,
+    open_rncs: [],
+    _tourData: true,
 };
 
 function contractLabel(contract) {
@@ -83,30 +122,36 @@ function OpenRncBadge({ tenant, document }) {
 }
 
 export default function ProjectTree({ tenant, contracts, obras, disciplinas, documents, documentTypes }) {
+    const [showTourData, setShowTourData] = useState(() => typeof window !== 'undefined'
+        && new URLSearchParams(window.location.search).get('tour') === 'tree');
     const [contractFilter, setContractFilter] = useState('todos');
     const [obraFilter, setObraFilter] = useState('todos');
     const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
     const [query, setQuery] = useState('');
     const [openNodes, setOpenNodes] = useState(() => new Set());
+    const visibleContracts = useMemo(() => showTourData ? [tourContract] : contracts, [showTourData, contracts]);
+    const visibleObras = useMemo(() => showTourData ? [tourObra] : obras, [showTourData, obras]);
+    const visibleDisciplinas = useMemo(() => showTourData ? [tourDisciplina] : disciplinas, [showTourData, disciplinas]);
+    const visibleDocuments = useMemo(() => showTourData ? [tourDocument] : documents, [showTourData, documents]);
 
     const obrasForFilter = useMemo(
         () => contractFilter === 'todos'
-            ? obras
-            : obras.filter((obra) => String(obra.contract_id) === String(contractFilter)),
-        [obras, contractFilter],
+            ? visibleObras
+            : visibleObras.filter((obra) => String(obra.contract_id) === String(contractFilter)),
+        [visibleObras, contractFilter],
     );
 
     const disciplinasForFilter = useMemo(
         () => contractFilter === 'todos'
-            ? disciplinas
-            : disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(contractFilter)),
-        [disciplinas, contractFilter],
+            ? visibleDisciplinas
+            : visibleDisciplinas.filter((disciplina) => String(disciplina.contract_id) === String(contractFilter)),
+        [visibleDisciplinas, contractFilter],
     );
 
     const filteredDocuments = useMemo(() => {
         const term = query.trim().toLowerCase();
 
-        return documents.filter((document) => {
+        return visibleDocuments.filter((document) => {
             if (contractFilter !== 'todos' && String(document.contract_id) !== String(contractFilter)) {
                 return false;
             }
@@ -129,10 +174,16 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
                 .toLowerCase()
                 .includes(term);
         });
-    }, [documents, contractFilter, obraFilter, disciplinaFilter, query]);
+    }, [visibleDocuments, contractFilter, obraFilter, disciplinaFilter, query]);
 
     const tree = useMemo(() => buildTree(filteredDocuments, documentTypes), [filteredDocuments, documentTypes]);
     const expandableNodeIds = useMemo(() => collectExpandableNodeIds(tree), [tree]);
+
+    useEffect(() => {
+        if (showTourData) {
+            setOpenNodes(new Set(expandableNodeIds));
+        }
+    }, [showTourData, expandableNodeIds]);
 
     const updateContractFilter = (contractId) => {
         setContractFilter(contractId);
@@ -166,7 +217,7 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
             <Head title="Visualizar projetos" />
 
             <section className="sig-content grid gap-5">
-                <header className="flex flex-wrap items-center justify-between gap-3">
+                <header data-tour="projects-overview" className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <GitBranch size={15} />
@@ -178,24 +229,30 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
                         </p>
                     </div>
 
-                    <Link href={route('tenant.projects.index', tenant.slug)} className="sig-btn sig-btn-secondary">
-                        <Upload size={15} />
-                        Submeter projeto
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={() => startProjectTour(tenant.slug)}>
+                            <Plane size={15} />
+                            Iniciar tour
+                        </button>
+                        <Link href={route('tenant.projects.index', tenant.slug)} className="sig-btn sig-btn-secondary">
+                            <Upload size={15} />
+                            Submeter projeto
+                        </Link>
+                    </div>
                 </header>
 
-                <div className="grid gap-3 md:grid-cols-4">
-                    <Metric label="Projetos aprovados" value={documents.length} />
-                    <Metric label="Contratos" value={contracts.length} />
-                    <Metric label="Obras" value={obras.length} />
-                    <Metric label="Disciplinas" value={disciplinas.length} />
+                <div data-tour="projects-metrics" className="grid gap-3 md:grid-cols-4">
+                    <Metric label="Projetos aprovados" value={visibleDocuments.length} />
+                    <Metric label="Contratos" value={visibleContracts.length} />
+                    <Metric label="Obras" value={visibleObras.length} />
+                    <Metric label="Disciplinas" value={visibleDisciplinas.length} />
                 </div>
 
-                <section className="sig-card overflow-hidden">
-                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 xl:grid-cols-4">
+                <section data-tour="projects-tree" className="sig-card overflow-hidden">
+                    <div data-tour="projects-filters" className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 xl:grid-cols-4">
                         <FilterSelect label="Contrato" value={contractFilter} onChange={updateContractFilter}>
                             <option value="todos">Todos os contratos</option>
-                            {contracts.map((contract) => (
+                            {visibleContracts.map((contract) => (
                                 <option key={contract.id} value={contract.id}>{contractLabel(contract)}</option>
                             ))}
                         </FilterSelect>
@@ -272,6 +329,11 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
                     )}
                 </section>
             </section>
+            <ProjectTour
+                section="tree"
+                detailUrl={route('tenant.projects.tour-preview', tenant.slug)}
+                onExit={() => setShowTourData(false)}
+            />
         </AuthenticatedLayout>
     );
 }
@@ -401,6 +463,7 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
     return (
         <div>
             <div
+                data-tour={document?._tourData ? 'projects-tree-project' : undefined}
                 className={`projects-tree-row group relative flex min-h-11 items-center gap-2 rounded-md pr-3 text-sm transition ${isDocument ? 'hover:bg-[var(--surface-muted)]' : 'hover:bg-[var(--primary-50)]'}`}
                 style={{ '--tree-level': level }}
             >
@@ -478,13 +541,20 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                         <span className="sig-pill sig-pill-amber">Aguardando aprovação da revisão</span>
                     )}
                     {isDocument && !revisionInProgress && version?.aps_urn && (
-                        <Link href={viewerWorkspaceUrl(tenant, version, 'view')} className="sig-btn sig-btn-primary sig-btn-sm">
+                        <Link
+                            data-tour={document?._tourData ? 'projects-open-viewer' : undefined}
+                            href={document?._tourData ? route('tenant.projects.tour-preview', tenant.slug) : viewerWorkspaceUrl(tenant, version, 'view')}
+                            className="sig-btn sig-btn-primary sig-btn-sm"
+                        >
                             <Eye size={13} />
                             Visualizar
                         </Link>
                     )}
                     {isDocument && !revisionInProgress && version?.aps_urn && (
-                        <Link href={viewerWorkspaceUrl(tenant, version, 'comments')} className="sig-btn sig-btn-secondary sig-btn-sm">
+                        <Link
+                            href={document?._tourData ? route('tenant.projects.tour-preview', tenant.slug) : viewerWorkspaceUrl(tenant, version, 'comments')}
+                            className="sig-btn sig-btn-secondary sig-btn-sm"
+                        >
                             <MessageSquare size={13} />
                             Comentários
                         </Link>

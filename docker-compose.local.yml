@@ -3,7 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_APP_NAME: ${VITE_APP_NAME:-Deming}
+        VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
     command: sh ./railway/start-app.sh
+    env_file:
+      - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -23,6 +28,16 @@ services:
       DB_PASSWORD: ${DOCKER_DB_PASSWORD:-${DB_PASSWORD:-}}
 
       QUEUE_CONNECTION: database
+
+      AUTODESK_APS_CLIENT_ID: ${AUTODESK_APS_CLIENT_ID}
+      AUTODESK_APS_CLIENT_SECRET: ${AUTODESK_APS_CLIENT_SECRET}
+      AUTODESK_APS_BUCKET_KEY: ${AUTODESK_APS_BUCKET_KEY}
+      AUTODESK_APS_REGION: ${AUTODESK_APS_REGION:-US}
+      AUTODESK_APS_STORAGE_LIMIT_BYTES: ${AUTODESK_APS_STORAGE_LIMIT_BYTES:-5368709120}
+      AUTODESK_APS_SCOPES: ${AUTODESK_APS_SCOPES:-data:read data:write data:create bucket:create bucket:read viewables:read}
+      AUTODESK_APS_VERIFY_SSL: ${AUTODESK_APS_VERIFY_SSL:-true}
+      AUTODESK_APS_CA_BUNDLE: ${AUTODESK_APS_CA_BUNDLE:-}
+      AUTODESK_APS_AUTO_PROCESS: ${AUTODESK_APS_AUTO_PROCESS:-true}
 
       GED_DOCUMENT_DISK: public
       GED_OCR_ENABLED: "true"
