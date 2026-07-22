@@ -7,6 +7,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Destructive Command Protection
+    |--------------------------------------------------------------------------
+    |
+    | Blocks db:wipe, destructive migration commands and database seeding.
+    | Railway markers keep this enabled even if APP_ENV is misconfigured.
+    |
+    */
+
+    'protect_destructive_commands' => env('APP_ENV') === 'production'
+        || filled(env('RAILWAY_ENVIRONMENT_ID'))
+        || filled(env('RAILWAY_PROJECT_ID'))
+        || filled(env('RAILWAY_SERVICE_ID'))
+        || filter_var(env('DB_PROTECT_DESTRUCTIVE', false), FILTER_VALIDATE_BOOL),
+
+    /*
+    |--------------------------------------------------------------------------
     | Default Database Connection Name
     |--------------------------------------------------------------------------
     |

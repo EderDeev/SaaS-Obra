@@ -16,6 +16,8 @@ if [ -n "${DB_URL:-}" ] || [ -n "${DATABASE_URL:-}" ]; then
     export DB_CONNECTION="${DB_CONNECTION:-pgsql}"
 fi
 
+export DB_PROTECT_DESTRUCTIVE="${DB_PROTECT_DESTRUCTIVE:-true}"
+
 php artisan config:clear
 php artisan storage:link || true
 

@@ -34,19 +34,18 @@ php artisan key:generate --show
    - Esta variavel precisa ficar no servico da aplicacao, nao apenas no servico do banco.
    - Se o banco tiver outro nome no Railway, use a referencia do proprio painel, por exemplo `${{NomeDoBanco.DATABASE_URL}}`.
    - Se preferir usar `DATABASE_URL` direto, o app tambem faz fallback para ela.
+   - Mantenha `DB_PROTECT_DESTRUCTIVE=true`. Essa trava bloqueia comandos que
+     apagam ou revertem o banco, mesmo quando executados com `--force`.
+   - Em producao, tambem ficam bloqueados `artisan test`, `artisan db` e
+     `artisan tinker`, evitando que testes ou sessoes interativas alcancem o banco.
 7. Configure `RAILPACK_PHP_ROOT_DIR=/app/public`.
 8. Garanta PHP 8.4 no build. O projeto ja exige `php: ^8.4` no `composer.json`; se precisar, adicione tambem:
 
 ```env
 RAILPACK_PHP_VERSION=8.4
 ```
-9. No primeiro deploy de teste, se quiser criar usuarios demo, use:
-
-```env
-RAILWAY_RUN_SEEDER=true
-```
-
-Depois do primeiro deploy, volte para:
+9. Mantenha o seeder desativado. A aplicacao bloqueia `db:seed` em producao,
+   inclusive com `--force`:
 
 ```env
 RAILWAY_RUN_SEEDER=false

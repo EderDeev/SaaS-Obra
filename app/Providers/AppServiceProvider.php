@@ -3,6 +3,10 @@
 namespace App\Providers;
 
 use Carbon\Carbon;
+use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Database\Console\Seeds\SeedCommand;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
@@ -25,6 +29,21 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $protectDatabase = (bool) config('database.protect_destructive_commands', false);
+
+        DB::prohibitDestructiveCommands($protectDatabase);
+        SeedCommand::prohibit($protectDatabase);
+
+        if ($protectDatabase && $this->app->runningInConsole()) {
+            Event::listen(CommandStarting::class, function (CommandStarting $event): void {
+                if (in_array($event->command, ['db', 'test', 'tinker'], true)) {
+                    throw new \RuntimeException(
+                        "O comando {$event->command} esta bloqueado neste ambiente para proteger o banco de dados."
+                    );
+                }
+            });
+        }
+
         Mail::extend('brevo', function (array $config) {
             $apiKey = trim((string) ($config['key'] ?? ''));
 

@@ -11,12 +11,11 @@ if [ -z "${DB_URL:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
 fi
 
 export DB_CONNECTION="${DB_CONNECTION:-pgsql}"
+export DB_PROTECT_DESTRUCTIVE="${DB_PROTECT_DESTRUCTIVE:-true}"
 
 php artisan config:clear
 php artisan migrate --force
 
-if [ "${RAILWAY_RUN_SEEDER:-false}" = "true" ] && [ "${RAILWAY_ALLOW_SEEDER:-false}" = "true" ]; then
-    php artisan db:seed --force
-elif [ "${RAILWAY_RUN_SEEDER:-false}" = "true" ]; then
-    echo "RAILWAY_RUN_SEEDER=true ignorado. Defina RAILWAY_ALLOW_SEEDER=true para confirmar seed em deploy."
+if [ "${RAILWAY_RUN_SEEDER:-false}" = "true" ]; then
+    echo "RAILWAY_RUN_SEEDER=true ignorado: seed e bloqueado em producao para proteger os dados."
 fi
