@@ -30,7 +30,7 @@ class ProcessProjectVersionApsJob implements ShouldQueue
             ->with(['document'])
             ->find($this->versionId);
 
-        if (! $version || $version->trashed() || $version->document?->trashed()) {
+        if (! $version || $version->trashed() || $version->document?->trashed() || $version->status === 'reprovado') {
             return;
         }
 

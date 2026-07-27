@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, usePage } from '@inertiajs/react';
-import { CheckCircle2, Cloud, Database, HardDrive, RefreshCw, Trash2, TriangleAlert } from 'lucide-react';
+import { Building2, CheckCircle2, Cloud, Database, HardDrive, RefreshCw, Trash2, TriangleAlert } from 'lucide-react';
 
 function formatBytes(bytes) {
     const value = Number(bytes || 0);
@@ -40,6 +40,21 @@ function percent(value, total) {
     return Math.min(100, Math.round((Number(value || 0) / Number(total)) * 100));
 }
 
+function precisePercent(value, total) {
+    if (!total) {
+        return 0;
+    }
+
+    return Math.min(100, (Number(value || 0) / Number(total)) * 100);
+}
+
+function formatPercent(value) {
+    return Number(value || 0).toLocaleString('pt-BR', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: value > 0 && value < 1 ? 2 : 1,
+    });
+}
+
 function fileDisplayName(version) {
     return version?.stored_name || version?.original_name || 'Arquivo sem nome';
 }
@@ -56,8 +71,10 @@ function documentLabel(version) {
 
 export default function PlatformApsIndex({ stats, liveBucket, tenantRows, recentVersions }) {
     const page = usePage();
-    const estimatedUsagePercent = percent(stats.aps_source_bytes, stats.storage_limit_bytes);
     const liveUsagePercent = percent(liveBucket.total_size, liveBucket.limit_bytes);
+    const hasLiveBucketUsage = liveBucket.configured && !liveBucket.error;
+    const displayedUsageBytes = hasLiveBucketUsage ? liveBucket.total_size : stats.aps_source_bytes;
+    const displayedUsagePercent = percent(displayedUsageBytes, stats.storage_limit_bytes);
 
     const deleteVersion = (version) => {
         router.delete(route('platform.aps.versions.destroy', version.id), {
@@ -95,8 +112,9 @@ export default function PlatformApsIndex({ stats, liveBucket, tenantRows, recent
                     </div>
                 )}
 
-                <div className="grid gap-3 lg:grid-cols-4 sm:grid-cols-2">
-                    <Metric icon={HardDrive} label="Storage estimado" value={formatBytes(stats.aps_source_bytes)} sub={`${estimatedUsagePercent}% de ${formatBytes(stats.storage_limit_bytes)}`} />
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                    <Metric icon={HardDrive} label={hasLiveBucketUsage ? 'Consumo APS' : 'Consumo estimado'} value={formatBytes(displayedUsageBytes)} sub={`${displayedUsagePercent}% de ${formatBytes(stats.storage_limit_bytes)}`} />
+                    <Metric icon={Building2} label="Tenants com consumo" value={stats.tenants_with_aps_usage} sub={`${stats.aps_versions_count} versoes enviadas`} />
                     <Metric icon={Cloud} label="Bucket APS" value={liveBucket.configured ? 'Configurado' : 'Pendente'} sub={liveBucket.bucket_key || 'Configure o .env'} />
                     <Metric icon={CheckCircle2} label="Processados" value={stats.ready_count} sub={`${stats.processing_count} na fila/processando`} />
                     <Metric icon={TriangleAlert} label="Falhas APS" value={stats.failed_count} sub={`${stats.aps_versions_count} versoes no APS`} />
@@ -158,39 +176,83 @@ export default function PlatformApsIndex({ stats, liveBucket, tenantRows, recent
                     </div>
                 </section>
 
-                <section className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                <section className="grid gap-6">
                     <div className="sig-card overflow-hidden">
-                        <header className="border-b border-[var(--border)] px-5 py-4">
-                            <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Uso por tenant</h2>
+                        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+                            <div>
+                                <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Consumo APS por tenant</h2>
+                                <p className="mt-1 text-xs text-[var(--ink-500)]">
+                                    {hasLiveBucketUsage ? 'Medicao dos objetos armazenados no bucket.' : 'Estimativa pelos arquivos enviados ao APS.'}
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {liveBucket.truncated && <span className="sig-pill sig-pill-amber">Leitura parcial</span>}
+                                {stats.unattributed_bucket_objects_count > 0 && (
+                                    <span className="sig-pill sig-pill-amber">
+                                        {formatBytes(stats.unattributed_bucket_bytes)} sem tenant
+                                    </span>
+                                )}
+                            </div>
                         </header>
                         {tenantRows.length > 0 ? (
-                            <table className="sig-table">
-                                <thead>
-                                    <tr>
-                                        <th>Tenant</th>
-                                        <th>Storage</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {tenantRows.map((tenant) => (
-                                        <tr key={tenant.id}>
-                                            <td>
-                                                <div className="font-semibold">{tenant.name}</div>
-                                                <div className="mono text-xs text-[var(--ink-500)]">{tenant.slug}</div>
-                                            </td>
-                                            <td>
-                                                <div className="font-semibold">{formatBytes(tenant.aps_source_bytes)}</div>
-                                                <div className="text-xs text-[var(--ink-500)]">{tenant.aps_versions_count} versao(oes)</div>
-                                            </td>
-                                            <td>
-                                                <span className="sig-pill sig-pill-green">{tenant.ready_count} ok</span>
-                                                {tenant.failed_count > 0 && <span className="sig-pill sig-pill-red ml-1">{tenant.failed_count} falha</span>}
-                                            </td>
+                            <div className="overflow-x-auto">
+                                <table className="sig-table min-w-[900px]">
+                                    <thead>
+                                        <tr>
+                                            <th>Tenant</th>
+                                            <th>Consumo APS</th>
+                                            <th>Participacao</th>
+                                            <th>Estimativa local</th>
+                                            <th>Processamento</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {tenantRows.map((tenant) => {
+                                            const usageBytes = hasLiveBucketUsage ? tenant.aps_bucket_bytes : tenant.aps_source_bytes;
+                                            const usageTotal = hasLiveBucketUsage ? liveBucket.total_size : stats.aps_source_bytes;
+                                            const usageShare = precisePercent(usageBytes, usageTotal);
+                                            const limitShare = precisePercent(usageBytes, stats.storage_limit_bytes);
+                                            const barWidth = usageShare > 0 ? Math.max(1, usageShare) : 0;
+
+                                            return (
+                                                <tr key={tenant.id}>
+                                                    <td>
+                                                        <div className="font-semibold">{tenant.name}</div>
+                                                        <div className="mono text-xs text-[var(--ink-500)]">{tenant.slug}</div>
+                                                        <div className="mt-1 text-xs text-[var(--ink-500)]">{tenant.project_documents_count} projeto(s)</div>
+                                                    </td>
+                                                    <td>
+                                                        <div className="mono font-semibold">{formatBytes(usageBytes)}</div>
+                                                        <div className="text-xs text-[var(--ink-500)]">
+                                                            {hasLiveBucketUsage
+                                                                ? `${tenant.aps_bucket_objects_count} objeto(s) no bucket`
+                                                                : `${tenant.aps_versions_count} versao(oes) enviada(s)`}
+                                                        </div>
+                                                    </td>
+                                                    <td className="min-w-[210px]">
+                                                        <div className="flex items-center justify-between gap-3 text-xs">
+                                                            <span className="font-semibold text-[var(--ink-700)]">{formatPercent(usageShare)}% do consumo</span>
+                                                            <span className="text-[var(--ink-500)]">{formatPercent(limitShare)}% do limite</span>
+                                                        </div>
+                                                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface-muted)]">
+                                                            <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${barWidth}%` }} />
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div className="mono font-semibold">{formatBytes(tenant.aps_source_bytes)}</div>
+                                                        <div className="text-xs text-[var(--ink-500)]">{tenant.aps_versions_count} versao(oes)</div>
+                                                    </td>
+                                                    <td>
+                                                        <span className="sig-pill sig-pill-green">{tenant.ready_count} ok</span>
+                                                        {tenant.processing_count > 0 && <span className="sig-pill sig-pill-blue ml-1">{tenant.processing_count} em curso</span>}
+                                                        {tenant.failed_count > 0 && <span className="sig-pill sig-pill-red ml-1">{tenant.failed_count} falha</span>}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         ) : (
                             <div className="p-8 text-sm text-[var(--ink-500)]">Nenhum arquivo enviado ao APS ainda.</div>
                         )}

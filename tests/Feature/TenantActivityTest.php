@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class TenantActivityTest extends TestCase
@@ -48,8 +49,9 @@ class TenantActivityTest extends TestCase
                 'contract_id' => $contract->id,
                 'assigned_to_ids' => [$engineer->id, $manager->id],
                 'title' => 'Validar RDO',
+                'category' => 'construction_diary',
+                'visibility' => 'restricted',
                 'description' => 'Conferir anexos do diário de obra.',
-                'category' => 'quality',
                 'priority' => 'high',
                 'due_date' => '2026-06-10',
             ])
@@ -63,7 +65,8 @@ class TenantActivityTest extends TestCase
             'assigned_to_id' => $engineer->id,
             'created_by_id' => $admin->id,
             'status' => 'todo',
-            'category' => 'quality',
+            'category' => 'construction_diary',
+            'visibility' => 'restricted',
             'priority' => 'high',
         ]);
         $this->assertDatabaseHas('activity_user', [
@@ -140,6 +143,14 @@ class TenantActivityTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('tenant.activities.index', $tenant))
+            ->assertForbidden();
+
+        $this->actingAs($user)
+            ->get(route('tenant.activities.metrics', $tenant))
+            ->assertForbidden();
+
+        $this->actingAs($user)
+            ->get(route('tenant.activities.tour-preview', $tenant))
             ->assertForbidden();
     }
 
@@ -286,6 +297,111 @@ class TenantActivityTest extends TestCase
             ->assertSee('\\/storage\\/avatars\\/responsavel.png', false);
     }
 
+    public function test_activity_metrics_show_productivity_and_deadline_performance(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $engineer = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $engineer->id,
+            'role' => 'engineer',
+            'status' => 'active',
+        ]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $engineer->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+
+        $onTime = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Concluida no prazo',
+            'category' => 'project',
+            'status' => 'done',
+            'priority' => 'normal',
+            'due_date' => now()->subDays(2)->toDateString(),
+            'completed_at' => now()->subDays(3),
+            'created_at' => now()->subDays(8),
+        ]);
+        $late = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Concluida atrasada',
+            'category' => 'documentation',
+            'status' => 'done',
+            'priority' => 'high',
+            'due_date' => now()->subDays(5)->toDateString(),
+            'completed_at' => now()->subDay(),
+            'created_at' => now()->subDays(10),
+        ]);
+        $overdue = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Aberta atrasada',
+            'category' => 'documentation',
+            'status' => 'in_progress',
+            'priority' => 'urgent',
+            'due_date' => now()->subDays(4)->toDateString(),
+            'created_at' => now()->subDays(12),
+        ]);
+
+        foreach ([$onTime, $late, $overdue] as $activity) {
+            $activity->assignees()->sync([$engineer->id]);
+        }
+
+        $this->actingAs($admin)
+            ->get(route('tenant.activities.metrics', [$tenant, 'period' => 'all']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Activities/Metrics')
+                ->where('summary.total', 3)
+                ->where('summary.completed', 2)
+                ->where('summary.open', 1)
+                ->where('summary.overdue_open', 1)
+                ->where('summary.on_time_rate', 50)
+                ->where('responsibles.0.id', $engineer->id)
+                ->where('responsibles.0.total', 3)
+                ->where('responsibles.0.completed', 2)
+                ->where('responsibles.0.on_time', 1)
+                ->where('responsibles.0.late', 1)
+                ->has('resolvedActivities', 2)
+                ->has('overdueActivities', 1)
+            );
+    }
+
+    public function test_activity_tour_uses_demo_board_and_metrics_without_database_records(): void
+    {
+        [$tenant, $admin] = $this->tenantWithUser('tenant_admin');
+
+        $this->actingAs($admin)
+            ->get(route('tenant.activities.tour-preview', [$tenant, 'screen' => 'detail']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Activities/Index')
+                ->where('tourMode', true)
+                ->where('tourScreen', 'detail')
+                ->where('activities.0._tourData', true)
+                ->where('activities.0.title', 'Validar medição mensal da obra')
+                ->has('activities.0.comments', 2)
+                ->has('activities.0.files', 1)
+            );
+
+        $this->actingAs($admin)
+            ->get(route('tenant.activities.tour-preview', [$tenant, 'screen' => 'metrics']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Activities/Metrics')
+                ->where('tourSection', 'metrics')
+                ->where('summary.total', 28)
+                ->where('summary.on_time_rate', 86)
+                ->has('charts.trend', 6)
+                ->has('responsibles', 2)
+            );
+    }
+
     public function test_operational_user_cannot_move_activity_from_unlinked_contract(): void
     {
         [$tenant, $engineer] = $this->tenantWithUser('engineer');
@@ -311,6 +427,115 @@ class TenantActivityTest extends TestCase
         $this->assertDatabaseHas('activities', [
             'id' => $activity->id,
             'status' => 'todo',
+        ]);
+    }
+
+    public function test_restricted_activity_is_only_visible_to_creator_and_assignees(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $assignee = User::factory()->create();
+        $contractViewer = User::factory()->create();
+
+        foreach ([$assignee, $contractViewer] as $user) {
+            $tenant->memberships()->create([
+                'user_id' => $user->id,
+                'role' => 'engineer',
+                'status' => 'active',
+            ]);
+            $contract->participants()->create([
+                'tenant_id' => $tenant->id,
+                'user_id' => $user->id,
+                'side' => 'manager',
+                'role' => 'team_member',
+                'status' => 'active',
+            ]);
+        }
+
+        $publicActivity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Atividade publica',
+            'visibility' => Activity::VISIBILITY_PUBLIC,
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+        $restrictedActivity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Atividade restrita',
+            'visibility' => Activity::VISIBILITY_RESTRICTED,
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+        $restrictedActivity->assignees()->sync([$assignee->id]);
+
+        $this->actingAs($contractViewer)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertSee($publicActivity->title)
+            ->assertDontSee($restrictedActivity->title);
+
+        $this->actingAs($assignee)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertSee($publicActivity->title)
+            ->assertSee($restrictedActivity->title);
+
+        $this->actingAs($admin)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertSee($restrictedActivity->title);
+    }
+
+    public function test_unassigned_user_cannot_access_restricted_activity_actions(): void
+    {
+        [$tenant, $creator, $contract] = $this->tenantWithUser('engineer');
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $creator->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+
+        $viewer = User::factory()->create();
+        $tenant->memberships()->create([
+            'user_id' => $viewer->id,
+            'role' => 'engineer',
+            'status' => 'active',
+        ]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $viewer->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $creator->id,
+            'title' => 'Atividade confidencial',
+            'visibility' => Activity::VISIBILITY_RESTRICTED,
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+
+        $this->actingAs($viewer)
+            ->post(route('tenant.activities.comments.store', [$tenant, $activity]), [
+                'body' => 'Tentativa de acesso.',
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($viewer)
+            ->patch(route('tenant.activities.update', [$tenant, $activity]), [
+                'status' => 'in_progress',
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('activity_comments', [
+            'activity_id' => $activity->id,
+            'user_id' => $viewer->id,
         ]);
     }
 

@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, router } from '@inertiajs/react';
 import { Check, ChevronDown, FileSpreadsheet, FileText, Filter, ListChecks, ListFilter, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -323,7 +324,7 @@ export default function ProjectMasterList({
                                     <tbody>
                                         {rows.map((document) => (
                                             <tr key={document.id}>
-                                                <td className="mono text-xs font-semibold text-[var(--primary)]">{document.code || '-'}</td>
+                                                <td className="mono text-xs font-semibold text-[var(--primary)]">{document.eap || projectEap(document, document.revision) || '-'}</td>
                                                 <td>
                                                     <div className="max-w-[220px] truncate font-semibold text-[var(--ink-900)]" title={document.title || 'Sem título'}>{document.title || 'Sem título'}</div>
                                                     <div className="text-xs text-[var(--ink-500)]">Sequencial {document.document_number || '-'}</div>
@@ -378,7 +379,7 @@ export default function ProjectMasterList({
                                 {rows.map((document) => (
                                     <article key={document.id} className="px-4 py-3">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className="mono break-all text-sm font-semibold text-[var(--primary)]">{document.code || '-'}</span>
+                                            <span className="mono break-all text-sm font-semibold text-[var(--primary)]">{document.eap || projectEap(document, document.revision) || '-'}</span>
                                             <span className="sig-pill sig-pill-blue">{document.revision || 'Sem revisão'}</span>
                                             <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
                                                 {document.status_label || document.status}

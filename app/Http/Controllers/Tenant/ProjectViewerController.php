@@ -42,6 +42,7 @@ class ProjectViewerController extends Controller
     {
         $version = $this->authorizedVersion($request, $tenant, $version);
         $contract = $version->document->contract;
+        $canViewProjects = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::VIEW, $contract);
         $canReviewProjects = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $contract);
         $workspaceMode = $this->workspaceMode($request, $version, $canReviewProjects);
         $showChecklistPanel = $workspaceMode === 'review' && $canReviewProjects;
@@ -61,25 +62,65 @@ class ProjectViewerController extends Controller
             ? $this->ensureReviewChecklist($version, $request->user()->id)
             : $version->reviewChecklist()->with('items.checkedBy:id,name,email')->first();
 
+        $reviewMarkups = $version->reviewMarkups()
+            ->with([
+                'creator:id,name,email',
+                'assignee:id,name,email,avatar_url',
+                'closer:id,name,email',
+                'replies' => fn ($query) => $query
+                    ->with('creator:id,name,email,avatar_url')
+                    ->oldest(),
+            ])
+            ->latest()
+            ->get()
+            ->each(function ($markup) use ($canReviewProjects, $request): void {
+                $markup->setAttribute(
+                    'can_resolve',
+                    $canReviewProjects || (int) $markup->assigned_to_id === (int) $request->user()->id
+                );
+            });
+
         return Inertia::render('Tenant/Projects/Viewer', [
             'tenant' => $tenant,
             'version' => $this->versionPayload($version),
             'apsConfigured' => $aps->isConfigured(),
+            'apsViewerApi' => $aps->viewerApi(),
             'canReviewProjects' => $canReviewProjects,
+            'canReplyToMarkups' => $canViewProjects || $canReviewProjects,
             'workspaceMode' => $workspaceMode,
             'projectListContext' => $request->query('origin') === 'visualizar' ? 'visualizar' : 'review',
             'showCommentsPanel' => $showCommentsPanel,
             'showChecklistPanel' => $showChecklistPanel,
             'contractUsers' => $this->contractUsers($tenant, $contract),
-            'reviewMarkups' => $version->reviewMarkups()
-                ->with([
-                    'creator:id,name,email',
-                    'assignee:id,name,email,avatar_url',
-                    'closer:id,name,email',
-                ])
-                ->latest()
-                ->get(),
+            'reviewMarkups' => $reviewMarkups,
             'reviewChecklist' => $checklist?->load('items.checkedBy:id,name,email'),
+        ]);
+    }
+
+    public function compare(
+        Request $request,
+        Tenant $tenant,
+        ProjectDocumentVersion $version,
+        ProjectDocumentVersion $baseVersion,
+        AutodeskApsService $aps,
+    ): Response {
+        $version = $this->authorizedVersion($request, $tenant, $version);
+        $baseVersion = $this->authorizedVersion($request, $tenant, $baseVersion);
+
+        abort_unless((int) $version->project_document_id === (int) $baseVersion->project_document_id, 404);
+        abort_if((int) $version->id === (int) $baseVersion->id, 422, 'Selecione duas revisoes diferentes para comparar.');
+        abort_if(
+            blank($version->aps_urn) || blank($baseVersion->aps_urn)
+            || $version->derivative_status !== 'ready' || $baseVersion->derivative_status !== 'ready',
+            409,
+            'As duas revisoes precisam estar processadas no APS para a comparacao.',
+        );
+
+        return Inertia::render('Tenant/Projects/Comparison', [
+            'tenant' => $tenant,
+            'baseVersion' => $this->versionPayload($baseVersion),
+            'currentVersion' => $this->versionPayload($version),
+            'apsViewerApi' => $aps->viewerApi(),
         ]);
     }
 
@@ -162,6 +203,7 @@ class ProjectViewerController extends Controller
         ]);
 
         abort_unless($version->document, 404);
+        abort_if($version->status === 'reprovado' || blank($version->file_path), 410, 'A visualização APS desta versão foi desativada após a reprovação.');
 
         if ($request->query('origin') === 'visualizar') {
             abort_if($this->hasPendingRevision($version), 403);
@@ -233,6 +275,7 @@ class ProjectViewerController extends Controller
                 'id' => $version->document->id,
                 'title' => $version->document->title,
                 'code' => $version->document->code,
+                'eap' => $version->document->eap($version->revision),
                 'document_type' => $version->document->document_type,
                 'status' => $version->document->status,
                 'contract' => $version->document->contract,

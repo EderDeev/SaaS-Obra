@@ -42,4 +42,17 @@ class ProjectCap
     {
         return 'CAP-'.str_pad((string) $sequence, 3, '0', STR_PAD_LEFT).'-'.$year;
     }
+
+    public static function fromProjectCode(string $documentCode, string $revision): string
+    {
+        $parts = array_values(array_filter(explode('-', $documentCode)));
+
+        if (count($parts) >= 2) {
+            $parts[count($parts) - 2] = 'CAP';
+        }
+
+        $parts[] = mb_strtoupper($revision);
+
+        return implode('-', $parts);
+    }
 }

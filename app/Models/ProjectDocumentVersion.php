@@ -99,9 +99,13 @@ class ProjectDocumentVersion extends Model
         return $this->hasOne(ProjectReviewChecklist::class, 'project_document_version_id');
     }
 
-    public function getUrlAttribute(): string
+    public function getUrlAttribute(): ?string
     {
         $path = str_replace('\\', '/', ltrim((string) $this->file_path, '/'));
+
+        if ($path === '') {
+            return null;
+        }
 
         return '/storage/'.$path;
     }
@@ -119,5 +123,10 @@ class ProjectDocumentVersion extends Model
         }
 
         return $bytes.' B';
+    }
+
+    public function getEapAttribute(): string
+    {
+        return $this->document?->eap($this->revision) ?? mb_strtoupper((string) $this->revision);
     }
 }

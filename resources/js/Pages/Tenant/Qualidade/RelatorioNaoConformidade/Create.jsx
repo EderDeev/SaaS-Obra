@@ -1,16 +1,20 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
     ArrowDown,
     ArrowLeft,
     ArrowUp,
+    Check,
+    ChevronDown,
     ClipboardX,
     ImagePlus,
     LocateFixed,
     MapPin,
     Plus,
     Trash2,
+    X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -112,7 +116,13 @@ export default function RelatorioNaoConformidadeCreate({
     const selectedPhotosRef = useRef([]);
     const form = useForm({
         obra_id: defaultObraId,
-        project_document_id: rnc?.project_document_id ?? '',
+        project_document_ids: (
+            rnc?.project_documents?.length
+                ? rnc.project_documents.map((project) => project.id)
+                : rnc?.project_document_id
+                    ? [rnc.project_document_id]
+                    : []
+        ).map(Number),
         contratante_empresa_id: rnc?.contratante_empresa_id ?? '',
         contratada_empresa_id: rnc?.contratada_empresa_id ?? '',
         opened_at: initialOpenedAt,
@@ -180,11 +190,25 @@ export default function RelatorioNaoConformidadeCreate({
         form.setData({
             ...form.data,
             obra_id: obraId,
-            project_document_id: validProjectIds.includes(Number(form.data.project_document_id)) ? form.data.project_document_id : '',
+            project_document_ids: form.data.project_document_ids
+                .map(Number)
+                .filter((projectId) => validProjectIds.includes(projectId)),
             disciplina_id: validDisciplinaIds.includes(Number(form.data.disciplina_id)) ? form.data.disciplina_id : '',
             contratante_empresa_id: validCompanyIds.includes(Number(form.data.contratante_empresa_id)) ? form.data.contratante_empresa_id : '',
             contratada_empresa_id: validCompanyIds.includes(Number(form.data.contratada_empresa_id)) ? form.data.contratada_empresa_id : '',
         });
+    };
+
+    const toggleProject = (projectId) => {
+        const normalizedId = Number(projectId);
+        const current = form.data.project_document_ids.map(Number);
+
+        form.setData(
+            'project_document_ids',
+            current.includes(normalizedId)
+                ? current.filter((id) => id !== normalizedId)
+                : [...current, normalizedId],
+        );
     };
 
     const addPhotos = async (event) => {
@@ -342,20 +366,23 @@ export default function RelatorioNaoConformidadeCreate({
                             </div>
                         )}
 
-                        <Field label="Projeto vinculado (opcional)" error={form.errors.project_document_id}>
-                            <select
-                                value={form.data.project_document_id}
-                                onChange={(event) => form.setData('project_document_id', event.target.value)}
-                            >
-                                <option value="">Sem projeto vinculado</option>
-                                {projectsForSelectedObra.map((project) => (
-                                    <option key={project.id} value={project.id}>
-                                        {project.code || 'Sem codigo'} - {project.title}
-                                        {project.latest_version?.revision ? ` (${project.latest_version.revision})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </Field>
+                        <label className="block">
+                            <span className="eyebrow mb-1 block">Projetos vinculados</span>
+                            <ProjectMultiSelect
+                                options={projectsForSelectedObra.map((project) => ({
+                                    value: String(project.id),
+                                    label: `${projectEap(project, project.latest_version) || 'Sem codigo'} - ${project.title}`,
+                                }))}
+                                selected={form.data.project_document_ids.map(String)}
+                                onToggle={toggleProject}
+                                onClear={() => form.setData('project_document_ids', [])}
+                            />
+                            {form.errors.project_document_ids && (
+                                <span className="mt-1 block text-xs text-[var(--red)]">
+                                    {form.errors.project_document_ids}
+                                </span>
+                            )}
+                        </label>
 
                         <div className="grid gap-3 md:grid-cols-2">
                             <Field label="Contratante" error={form.errors.contratante_empresa_id}>
@@ -548,10 +575,127 @@ export default function RelatorioNaoConformidadeCreate({
     );
 }
 
+function ProjectMultiSelect({ options, selected, onToggle, onClear }) {
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef(null);
+    const selectedOptions = options.filter((option) => selected.includes(option.value));
+    const summary = selectedOptions.length === 0
+        ? 'Sem projeto vinculado'
+        : selectedOptions.length === 1
+            ? selectedOptions[0].label
+            : `${selectedOptions.length} selecionados`;
+
+    useEffect(() => {
+        if (!open) return undefined;
+
+        const closeOnOutsideClick = (event) => {
+            if (!containerRef.current?.contains(event.target)) setOpen(false);
+        };
+        const closeOnEscape = (event) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+
+        document.addEventListener('pointerdown', closeOnOutsideClick);
+        document.addEventListener('keydown', closeOnEscape);
+
+        return () => {
+            document.removeEventListener('pointerdown', closeOnOutsideClick);
+            document.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [open]);
+
+    return (
+        <div ref={containerRef} className="relative min-w-0">
+            <button
+                type="button"
+                className="sig-input flex min-h-11 !w-full items-center justify-between gap-2 bg-white text-left"
+                aria-expanded={open}
+                onClick={() => setOpen((current) => !current)}
+            >
+                <span className="truncate">{summary}</span>
+                <ChevronDown
+                    size={15}
+                    className={`shrink-0 text-[var(--ink-500)] transition-transform ${open ? 'rotate-180' : ''}`}
+                />
+            </button>
+
+            {open && (
+                <div className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-white shadow-xl">
+                    <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
+                        <span className="text-xs font-semibold text-[var(--ink-700)]">
+                            {selected.length > 0 ? `${selected.length} selecionado(s)` : 'Selecione os projetos'}
+                        </span>
+                        {selected.length > 0 && (
+                            <button
+                                type="button"
+                                className="text-xs font-semibold text-[var(--primary)]"
+                                onClick={onClear}
+                            >
+                                Limpar
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto p-1">
+                        {options.length > 0 ? options.map((option) => {
+                            const checked = selected.includes(option.value);
+
+                            return (
+                                <label
+                                    key={option.value}
+                                    className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm hover:bg-[var(--surface-muted)]"
+                                >
+                                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? 'border-[var(--primary)] bg-[var(--primary)] text-white' : 'border-[var(--border-strong)] text-transparent'}`}>
+                                        <Check size={13} />
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only"
+                                        checked={checked}
+                                        onChange={() => onToggle(option.value)}
+                                    />
+                                </label>
+                            );
+                        }) : (
+                            <div className="px-3 py-5 text-center text-xs text-[var(--ink-500)]">
+                                Nenhum projeto encontrado para esta obra.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {selectedOptions.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                    {selectedOptions.map((option) => (
+                        <span
+                            key={option.value}
+                            className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-700)]"
+                        >
+                            <span className="truncate">{option.label}</span>
+                            <button
+                                type="button"
+                                className="grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--ink-500)] hover:bg-white hover:text-[var(--red)]"
+                                title={`Remover ${option.label}`}
+                                aria-label={`Remover ${option.label}`}
+                                onClick={() => onToggle(option.value)}
+                            >
+                                <X size={11} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function MapPicker({ form }) {
     const containerRef = useRef(null);
     const mapRef = useRef(null);
     const markerRef = useRef(null);
+    const markerAnimationFrameRef = useRef(null);
     const [locationStatus, setLocationStatus] = useState('');
     const [mapError, setMapError] = useState('');
 
@@ -611,7 +755,6 @@ function MapPicker({ form }) {
             });
 
             map.on('click', (event) => {
-                marker.setLngLat(event.lngLat);
                 setCoordinates(event.lngLat.lat, event.lngLat.lng);
             });
 
@@ -631,10 +774,14 @@ function MapPicker({ form }) {
 
         return () => {
             cancelled = true;
+            if (markerAnimationFrameRef.current) {
+                cancelAnimationFrame(markerAnimationFrameRef.current);
+            }
             markerRef.current?.remove();
             mapRef.current?.remove();
             markerRef.current = null;
             mapRef.current = null;
+            markerAnimationFrameRef.current = null;
         };
     }, []);
 
@@ -644,9 +791,36 @@ function MapPicker({ form }) {
         }
 
         const nextCenter = [currentLongitude, currentLatitude];
+        const currentPosition = markerRef.current.getLngLat();
+        const startedAt = performance.now();
+        const duration = 450;
 
-        markerRef.current.setLngLat(nextCenter);
-        mapRef.current.easeTo({ center: nextCenter, zoom: Math.max(mapRef.current.getZoom(), 14), duration: 500 });
+        if (markerAnimationFrameRef.current) {
+            cancelAnimationFrame(markerAnimationFrameRef.current);
+        }
+
+        const animateMarker = (timestamp) => {
+            const progress = Math.min((timestamp - startedAt) / duration, 1);
+            const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+            markerRef.current?.setLngLat([
+                currentPosition.lng + ((currentLongitude - currentPosition.lng) * easedProgress),
+                currentPosition.lat + ((currentLatitude - currentPosition.lat) * easedProgress),
+            ]);
+
+            if (progress < 1) {
+                markerAnimationFrameRef.current = requestAnimationFrame(animateMarker);
+            } else {
+                markerAnimationFrameRef.current = null;
+            }
+        };
+
+        markerAnimationFrameRef.current = requestAnimationFrame(animateMarker);
+        mapRef.current.easeTo({
+            center: nextCenter,
+            zoom: Math.max(mapRef.current.getZoom(), 14),
+            duration: 550,
+        });
     }, [form.data.latitude, form.data.longitude]);
 
     const locateUser = () => {
@@ -685,7 +859,7 @@ function MapPicker({ form }) {
                 </button>
             </div>
 
-            <div className="relative h-64 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-muted)]">
+            <div className="relative h-[276px] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-muted)]">
                 {hasMapboxToken ? (
                     <div ref={containerRef} className="h-full w-full" />
                 ) : (

@@ -1,4 +1,5 @@
 import { ClipboardList, X } from 'lucide-react';
+import { projectEap } from '@/Utils/projectEap';
 
 function formatDateTime(value) {
     if (!value) {
@@ -66,7 +67,7 @@ export default function ProjectCapModal({ document, version, capImpactLabels = {
                             {capVersion.cap_number || 'CAP sem numero'}
                         </h2>
                         <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">
-                            {document?.code || 'Sem EAP'} - {capVersion.revision || 'Sem revisao'}
+                            {projectEap(document, capVersion) || 'Sem EAP'}
                         </p>
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
@@ -77,7 +78,7 @@ export default function ProjectCapModal({ document, version, capImpactLabels = {
                 <div className="max-h-[calc(92vh-130px)] overflow-y-auto px-5 py-5">
                     <div className="grid gap-3 sm:grid-cols-4">
                         <InfoBlock label="Numero CAP" value={capVersion.cap_number} />
-                        <InfoBlock label="Projeto - EAP" value={document?.code} mono />
+                        <InfoBlock label="Projeto - EAP" value={projectEap(document, capVersion)} mono />
                         <InfoBlock label="Responsavel solicitacao" value={personName(capVersion.cap_requester || capVersion.uploader)} />
                         <InfoBlock label="Data" value={formatDateTime(capVersion.cap_requested_at || capVersion.created_at)} />
                     </div>

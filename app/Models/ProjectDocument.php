@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -35,6 +36,27 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class ProjectDocument extends Model
 {
     use SoftDeletes;
+
+    public function eap(?string $revision = null): string
+    {
+        $code = preg_replace('/-R\d+$/i', '', trim((string) $this->code));
+        $normalizedRevision = mb_strtoupper(trim((string) $revision));
+
+        return collect([$code, $normalizedRevision])
+            ->filter()
+            ->implode('-');
+    }
+
+    public function scopeLatestSubmissionFirst(Builder $query): Builder
+    {
+        return $query
+            ->orderByDesc(
+                ProjectDocumentVersion::query()
+                    ->selectRaw('max(created_at)')
+                    ->whereColumn('project_document_id', 'project_documents.id')
+            )
+            ->orderByDesc('project_documents.id');
+    }
 
     protected function casts(): array
     {
@@ -95,17 +117,22 @@ class ProjectDocument extends Model
         return $this->hasMany(ProjectDocumentVersion::class);
     }
 
-    public function rncs(): HasMany
+    public function rncs(): BelongsToMany
     {
-        return $this->hasMany(RelatorioNaoConformidade::class);
+        return $this->belongsToMany(
+            RelatorioNaoConformidade::class,
+            'rnc_project_documents',
+            'project_document_id',
+            'relatorio_nao_conformidade_id'
+        )->withTimestamps();
     }
 
-    public function openRncs(): HasMany
+    public function openRncs(): BelongsToMany
     {
         return $this->rncs()
             ->where('status', 'aberta')
             ->latest('opened_at')
-            ->latest('id');
+            ->latest('relatorio_nao_conformidades.id');
     }
 
     public function latestVersion(): HasOne
@@ -117,5 +144,11 @@ class ProjectDocument extends Model
     {
         return $this->hasOne(ProjectDocumentVersion::class)
             ->ofMany(['id' => 'max'], fn (Builder $query) => $query->where('status', 'ativo'));
+    }
+
+    public function latestCapVersion(): HasOne
+    {
+        return $this->hasOne(ProjectDocumentVersion::class)
+            ->ofMany(['id' => 'max'], fn (Builder $query) => $query->whereNotNull('cap_number'));
     }
 }

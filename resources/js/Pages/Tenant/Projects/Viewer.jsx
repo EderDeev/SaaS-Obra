@@ -1,10 +1,13 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, router } from '@inertiajs/react';
 import {
     ArrowLeft,
     CheckCircle2,
     CheckSquare,
+    ChevronDown,
+    ChevronUp,
     Download,
     Eye,
     EyeOff,
@@ -104,6 +107,20 @@ function fileDisplayName(version) {
 
 function userLabel(user) {
     return user ? `${user.name} (${user.email})` : 'Sem responsavel';
+}
+
+function formatDateTime(value) {
+    if (!value) {
+        return '-';
+    }
+
+    return new Date(value).toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 }
 
 function initials(name) {
@@ -462,7 +479,9 @@ export default function Viewer({
     tenant,
     version,
     apsConfigured,
+    apsViewerApi = 'streamingV2',
     canReviewProjects = false,
+    canReplyToMarkups = false,
     contractUsers = [],
     reviewMarkups = [],
     reviewChecklist = null,
@@ -1215,6 +1234,8 @@ export default function Viewer({
         let cancelled = false;
         let resizeObserver = null;
         let overlayEventHandler = null;
+        let initialGeometryHandler = null;
+        let initialFitTimeout = null;
         let selectionEventHandler = null;
         let objectPointerHandler = null;
         let viewerContainer = null;
@@ -1236,8 +1257,8 @@ export default function Viewer({
                 }
 
                 const options = {
-                    env: 'AutodeskProduction',
-                    api: 'derivativeV2',
+                    env: 'AutodeskProduction2',
+                    api: apsViewerApi,
                     getAccessToken: async (callback) => {
                         const response = await fetch(route('tenant.projects.viewer-token', tenant.slug), {
                             headers: { Accept: 'application/json' },
@@ -1316,14 +1337,53 @@ export default function Viewer({
                         `urn:${version.aps_urn}`,
                         (doc) => {
                             const viewable = doc.getRoot().getDefaultGeometry();
-                            Promise.resolve(viewer.loadDocumentNode(doc, viewable)).then(() => {
-                                resizeViewer();
-                                window.setTimeout(() => {
+
+                            if (!viewable) {
+                                setError('O arquivo não possui uma vista compatível com o Autodesk Viewer.');
+                                return;
+                            }
+
+                            let initialFitCompleted = false;
+                            const fitInitialView = () => {
+                                if (cancelled || initialFitCompleted) {
+                                    return;
+                                }
+
+                                initialFitCompleted = true;
+                                window.clearTimeout(initialFitTimeout);
+                                viewer.removeEventListener(
+                                    window.Autodesk.Viewing.GEOMETRY_LOADED_EVENT,
+                                    initialGeometryHandler,
+                                );
+
+                                window.requestAnimationFrame(() => {
+                                    if (cancelled) {
+                                        return;
+                                    }
+
                                     viewer.resize();
                                     viewer.fitToView();
                                     requestViewerOverlayUpdate();
-                                }, 150);
-                            });
+                                });
+                            };
+
+                            initialGeometryHandler = fitInitialView;
+                            viewer.addEventListener(
+                                window.Autodesk.Viewing.GEOMETRY_LOADED_EVENT,
+                                initialGeometryHandler,
+                            );
+
+                            Promise.resolve(viewer.loadDocumentNode(doc, viewable))
+                                .then(() => {
+                                    resizeViewer();
+
+                                    if (!initialFitCompleted) {
+                                        initialFitTimeout = window.setTimeout(fitInitialView, 3000);
+                                    }
+                                })
+                                .catch(() => {
+                                    setError('Não foi possível carregar a vista do modelo no Autodesk Viewer.');
+                                });
                         },
                         () => setError('Não foi possível carregar o modelo no Autodesk Viewer.'),
                     );
@@ -1335,8 +1395,15 @@ export default function Viewer({
             cancelled = true;
             window.removeEventListener('resize', resizeViewer);
             resizeObserver?.disconnect();
+            window.clearTimeout(initialFitTimeout);
 
             if (viewerRef.current) {
+                if (initialGeometryHandler && window.Autodesk?.Viewing) {
+                    viewerRef.current.removeEventListener(
+                        window.Autodesk.Viewing.GEOMETRY_LOADED_EVENT,
+                        initialGeometryHandler,
+                    );
+                }
                 if (overlayEventHandler && window.Autodesk?.Viewing) {
                     viewerRef.current.removeEventListener(window.Autodesk.Viewing.CAMERA_CHANGE_EVENT, overlayEventHandler);
                     viewerRef.current.removeEventListener(window.Autodesk.Viewing.GEOMETRY_LOADED_EVENT, overlayEventHandler);
@@ -1355,7 +1422,7 @@ export default function Viewer({
                 viewerRef.current = null;
             }
         };
-    }, [isReady, tenant.slug, version.aps_urn]);
+    }, [apsViewerApi, isReady, tenant.slug, version.aps_urn]);
 
     return (
         <AuthenticatedLayout>
@@ -1370,7 +1437,7 @@ export default function Viewer({
                         </div>
                         <h1 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">{version.document.title}</h1>
                         <p className="mt-1 text-sm text-[var(--ink-500)]">
-                            {version.document.code} - {displayName} - {statusLabels[currentStatus] || currentStatus}
+                            {projectEap(version.document, version)} - {displayName} - {statusLabels[currentStatus] || currentStatus}
                         </p>
                     </div>
 
@@ -1431,6 +1498,7 @@ export default function Viewer({
                                 version={version}
                                 workspaceMode={workspaceMode}
                                 canReviewProjects={canReviewProjects}
+                                canReplyToMarkups={canReplyToMarkups}
                                 contractUsers={contractUsers}
                                 markups={visibleMarkups}
                                 checklist={reviewChecklist}
@@ -1553,6 +1621,7 @@ function ProjectReviewPanel({
     version,
     workspaceMode,
     canReviewProjects,
+    canReplyToMarkups,
     contractUsers,
     markups,
     checklist,
@@ -1581,6 +1650,10 @@ function ProjectReviewPanel({
         assigned_to_id: '',
         priority: 'normal',
     });
+    const [commentFormOpen, setCommentFormOpen] = useState(false);
+    const [replyFormsOpen, setReplyFormsOpen] = useState({});
+    const [replyDrafts, setReplyDrafts] = useState({});
+    const [replySubmittingId, setReplySubmittingId] = useState(null);
     const checklistItems = checklist?.items || [];
     const checklistSignature = useMemo(
         () => checklistItems.map((item) => `${item.id}:${item.checked}:${item.notes || ''}`).join('|'),
@@ -1624,12 +1697,52 @@ function ProjectReviewPanel({
             markup_payload: markupPayload,
         }, {
             preserveScroll: true,
-            onSuccess: () => setMarkupForm({
-                title: '',
-                description: '',
-                assigned_to_id: '',
-                priority: 'normal',
-            }),
+            onSuccess: () => {
+                setMarkupForm({
+                    title: '',
+                    description: '',
+                    assigned_to_id: '',
+                    priority: 'normal',
+                });
+                setCommentFormOpen(false);
+            },
+        });
+    };
+
+    const toggleCommentForm = () => {
+        if (commentFormOpen && markupsCoreEditing) {
+            cancelCoreMarkupEdit();
+        }
+
+        setCommentFormOpen((current) => !current);
+    };
+
+    const toggleReplyForm = (markupId) => {
+        setReplyFormsOpen((current) => ({
+            ...current,
+            [markupId]: !current[markupId],
+        }));
+    };
+
+    const submitMarkupReply = (markup, resolve = false) => {
+        const body = (replyDrafts[markup.id] || '').trim();
+
+        if (!body || replySubmittingId) {
+            return;
+        }
+
+        setReplySubmittingId(markup.id);
+        router.post(route('tenant.projects.markups.replies.store', [tenant.slug, markup.id]), {
+            body,
+            resolve,
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                setReplyDrafts((current) => ({ ...current, [markup.id]: '' }));
+                setReplyFormsOpen((current) => ({ ...current, [markup.id]: false }));
+            },
+            onFinish: () => setReplySubmittingId(null),
         });
     };
 
@@ -1693,11 +1806,27 @@ function ProjectReviewPanel({
             </div>
 
             {canReviewProjects ? (
-                <form onSubmit={createMarkup} className="grid gap-3 border-b border-[var(--border)] p-4">
-                    <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                        <MessageSquarePlus size={15} />
-                        <span className="eyebrow">Novo comentário visual</span>
-                    </div>
+                <section className="border-b border-[var(--border)] p-4">
+                    <button
+                        type="button"
+                        className="sig-btn sig-btn-secondary w-full justify-between"
+                        aria-expanded={commentFormOpen}
+                        aria-controls="project-visual-comment-form"
+                        onClick={toggleCommentForm}
+                    >
+                        <span className="flex items-center gap-2">
+                            <MessageSquarePlus size={15} />
+                            Comentário visual
+                        </span>
+                        {commentFormOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    </button>
+
+                    {commentFormOpen && (
+                    <form
+                        id="project-visual-comment-form"
+                        onSubmit={createMarkup}
+                        className="mt-3 grid gap-3"
+                    >
                     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
@@ -1874,9 +2003,11 @@ function ProjectReviewPanel({
                     </div>
                     <button type="submit" className="sig-btn sig-btn-primary">
                         <MapPin size={15} />
-                        {markupsCoreEditing ? 'Salvar desenho e comentário' : 'Criar comentário'}
+                        Salvar comentário
                     </button>
-                </form>
+                    </form>
+                    )}
+                </section>
             ) : (
                 <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--ink-500)]">
                     Você está visualizando os comentários do projeto em modo leitura.
@@ -1950,12 +2081,89 @@ function ProjectReviewPanel({
                                          </span>
                                      )}
                                      <span className="flex items-center gap-1">
-                                         <UserRound size={13} />
-                                         {userLabel(markup.assignee)}
-                                    </span>
-                                </div>
+                                          <UserRound size={13} />
+                                          {userLabel(markup.assignee)}
+                                     </span>
+                                     <span>
+                                         Criado por {markup.creator?.name || 'Sistema'} em {formatDateTime(markup.created_at)}
+                                     </span>
+                                 </div>
 
-                                {canReviewProjects && (
+                                 {(markup.replies || []).length > 0 && (
+                                     <div className="mt-3 grid gap-2 border-l-2 border-[var(--primary-100)] pl-3">
+                                         <span className="eyebrow">Respostas</span>
+                                         {markup.replies.map((reply) => (
+                                             <div key={reply.id} className="rounded-lg bg-[var(--surface-muted)] px-3 py-2">
+                                                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                     <span className="font-semibold text-[var(--ink-700)]">
+                                                         {reply.creator?.name || 'Sistema'}
+                                                     </span>
+                                                     <span className="text-[var(--ink-500)]">{formatDateTime(reply.created_at)}</span>
+                                                 </div>
+                                                 <p className="mt-1 whitespace-pre-line text-sm text-[var(--ink-600)]">{reply.body}</p>
+                                                 {reply.resolves_markup && (
+                                                     <span className="sig-pill sig-pill-green mt-2">
+                                                         <CheckCircle2 size={12} />
+                                                         Definido como resolvido
+                                                     </span>
+                                                 )}
+                                             </div>
+                                         ))}
+                                     </div>
+                                 )}
+
+                                 {canReplyToMarkups && (
+                                     <div className="mt-3 border-t border-[var(--border)] pt-3">
+                                         <button
+                                             type="button"
+                                             className="sig-btn sig-btn-secondary sig-btn-sm"
+                                             aria-expanded={Boolean(replyFormsOpen[markup.id])}
+                                             onClick={() => toggleReplyForm(markup.id)}
+                                         >
+                                             <MessageSquarePlus size={13} />
+                                             Responder
+                                         </button>
+
+                                         {replyFormsOpen[markup.id] && (
+                                             <div className="mt-2 grid gap-2">
+                                                 <textarea
+                                                     value={replyDrafts[markup.id] || ''}
+                                                     onChange={(event) => setReplyDrafts((current) => ({
+                                                         ...current,
+                                                         [markup.id]: event.target.value,
+                                                     }))}
+                                                     placeholder="Registre a resposta ou a solução definida"
+                                                     rows={3}
+                                                     maxLength={5000}
+                                                     className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
+                                                 />
+                                                 <div className="flex flex-wrap justify-end gap-2">
+                                                     <button
+                                                         type="button"
+                                                         className="sig-btn sig-btn-secondary sig-btn-sm"
+                                                         disabled={!replyDrafts[markup.id]?.trim() || replySubmittingId === markup.id}
+                                                         onClick={() => submitMarkupReply(markup)}
+                                                     >
+                                                         Enviar resposta
+                                                     </button>
+                                                     {markup.can_resolve && markup.status !== 'resolved' && (
+                                                         <button
+                                                             type="button"
+                                                             className="sig-btn sig-btn-primary sig-btn-sm"
+                                                             disabled={!replyDrafts[markup.id]?.trim() || replySubmittingId === markup.id}
+                                                             onClick={() => submitMarkupReply(markup, true)}
+                                                         >
+                                                             <CheckCircle2 size={13} />
+                                                             Responder e resolver
+                                                         </button>
+                                                     )}
+                                                 </div>
+                                             </div>
+                                         )}
+                                     </div>
+                                 )}
+
+                                 {canReviewProjects && (
                                     <div className="mt-3 grid gap-2">
                                         <div className="grid grid-cols-[1fr_auto] gap-2">
                                             <span className="sig-input bg-white">

@@ -63,7 +63,7 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
     return (
         <AuthenticatedLayout>
             <Head title="RDO - Cadastros" />
-            <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
+            <div className="space-y-6 p-4 sm:p-6 lg:p-8">
                 <header>
                     <span className="eyebrow">Diário de Obra · RDO</span>
                     <h1 className="mt-2 text-3xl font-bold">Cadastros</h1>

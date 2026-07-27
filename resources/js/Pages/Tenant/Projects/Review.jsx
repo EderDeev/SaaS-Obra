@@ -1,15 +1,30 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ProjectCapModal from '@/Components/ProjectCapModal';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, router } from '@inertiajs/react';
-import { CheckCircle2, ChevronDown, Download, Eye, FileSearch, Filter, Play, Search, Send, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Download, Eye, FileSearch, Filter, Play, Search, Send, X, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 const statusClasses = {
     em_analise: 'sig-pill-blue',
     em_aprovacao: 'sig-pill-amber',
+    em_revisao: 'sig-pill-amber',
     ativo: 'sig-pill-green',
     reprovado: 'sig-pill-red',
 };
+
+function projectDisplayStatus(document) {
+    return Boolean(Number(document?.has_approved_version || 0))
+        && ['em_analise', 'em_aprovacao'].includes(document?.status)
+        ? 'em_revisao'
+        : document?.status;
+}
+
+function projectStatusLabel(document, statusLabels) {
+    const status = projectDisplayStatus(document);
+
+    return status === 'em_revisao' ? 'Em revisão' : (statusLabels[status] || status);
+}
 
 const derivativeLabels = {
     not_submitted: 'Aguardando APS',
@@ -46,6 +61,10 @@ function isApsWaiting(version) {
     return ['queued', 'processing'].includes(version?.derivative_status);
 }
 
+function isFileRemoving(version) {
+    return version?.derivative_status === 'removing';
+}
+
 function noteKey(document) {
     return `${document.id}:${document.status}`;
 }
@@ -58,6 +77,10 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
     const [analysisDocument, setAnalysisDocument] = useState(null);
     const [capDocument, setCapDocument] = useState(null);
     const [expandedDocumentIds, setExpandedDocumentIds] = useState([]);
+    const [rejectionDocument, setRejectionDocument] = useState(null);
+    const [rejectionReason, setRejectionReason] = useState('');
+    const [rejectionError, setRejectionError] = useState('');
+    const [rejecting, setRejecting] = useState(false);
 
     const filteredDocuments = useMemo(() => {
         const term = query.trim().toLowerCase();
@@ -75,7 +98,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                 return true;
             }
 
-            return `${document.title} ${document.code || ''} ${fileDisplayName(document.latest_version)} ${document.latest_version?.original_name || ''} ${document.contract?.code || ''} ${document.obra?.nome || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''} ${document.phase?.code || ''}`
+            return `${document.title} ${projectEap(document)} ${fileDisplayName(document.latest_version)} ${document.latest_version?.original_name || ''} ${document.contract?.code || ''} ${document.obra?.nome || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''} ${document.phase?.code || ''}`
                 .toLowerCase()
                 .includes(term);
         });
@@ -97,6 +120,52 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                     return next;
                 });
             },
+        });
+    };
+
+    const openRejectionModal = (document) => {
+        setRejectionDocument(document);
+        setRejectionReason(notes[noteKey(document)] || '');
+        setRejectionError('');
+    };
+
+    const closeRejectionModal = () => {
+        if (rejecting) return;
+
+        setRejectionDocument(null);
+        setRejectionReason('');
+        setRejectionError('');
+    };
+
+    const submitRejection = () => {
+        const reason = rejectionReason.trim();
+
+        if (!rejectionDocument || !reason) {
+            setRejectionError('Informe o motivo da reprovação.');
+            return;
+        }
+
+        const key = noteKey(rejectionDocument);
+        setRejectionError('');
+
+        router.patch(route('tenant.projects.review.update', [tenant.slug, rejectionDocument.id]), {
+            action: 'reprovar',
+            review_notes: reason,
+        }, {
+            preserveScroll: true,
+            onStart: () => setRejecting(true),
+            onSuccess: () => {
+                setNotes((current) => {
+                    const next = { ...current };
+                    delete next[key];
+
+                    return next;
+                });
+                setRejectionDocument(null);
+                setRejectionReason('');
+            },
+            onError: (errors) => setRejectionError(errors.review_notes || 'Não foi possível reprovar o projeto.'),
+            onFinish: () => setRejecting(false),
         });
     };
 
@@ -186,6 +255,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                         const version = document.latest_version;
                                         const actionable = ['em_analise', 'em_aprovacao'].includes(document.status);
                                         const isApprovalStep = document.status === 'em_aprovacao';
+                                        const displayStatus = projectDisplayStatus(document);
                                         const positiveLabel = isApprovalStep ? 'Aprovar para arvore' : 'Enviar para aprovacao';
                                         const placeholder = isApprovalStep ? 'Observacao da aprovacao' : 'Observacao da analise';
                                         const currentNoteKey = noteKey(document);
@@ -194,7 +264,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                             <tr key={document.id}>
                                                 <td>
                                                     <div className="font-semibold">{document.title}</div>
-                                                    <div className="mono mt-1 text-xs text-[var(--ink-500)]">{document.code || 'Sem codigo'}</div>
+                                                    <div className="mono mt-1 text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem codigo'}</div>
                                                     <div className="mt-1 text-xs text-[var(--ink-500)]">
                                                         Fase: {document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'}
                                                     </div>
@@ -223,8 +293,8 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                     <div className="text-xs text-[var(--ink-500)]">{new Date(document.created_at).toLocaleDateString('pt-BR')}</div>
                                                 </td>
                                                 <td>
-                                                    <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
-                                                        {statusLabels[document.status] || document.status}
+                                                    <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
+                                                        {projectStatusLabel(document, statusLabels)}
                                                     </span>
                                                     {document.reviewed_at && (
                                                         <div className="mt-1 text-xs text-[var(--ink-500)]">
@@ -250,7 +320,15 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                                 Baixar
                                                             </a>
                                                         )}
-                                                        {version && (
+                                                        {isFileRemoving(version) ? (
+                                                            <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                                                                Removendo da APS
+                                                            </span>
+                                                        ) : version?.status === 'reprovado' ? (
+                                                            <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                                                                Original preservado
+                                                            </span>
+                                                        ) : version?.file_path ? (
                                                             version.aps_urn ? (
                                                                  <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm">
                                                                      <Eye size={13} />
@@ -270,7 +348,11 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                                     Processar APS
                                                                 </button>
                                                             )
-                                                        )}
+                                                        ) : version ? (
+                                                            <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                                                                Arquivo removido
+                                                            </span>
+                                                        ) : null}
                                                     </div>
                                                 </td>
                                                 <td>
@@ -304,7 +386,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                                 className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
                                                             />
                                                             <div className="flex flex-wrap justify-end gap-2">
-                                                                <button type="button" onClick={() => reviewDocument(document, 'reprovar')} className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]">
+                                                                <button type="button" onClick={() => openRejectionModal(document)} className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]">
                                                                     <XCircle size={13} />
                                                                     Reprovar
                                                                 </button>
@@ -335,6 +417,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                             {filteredDocuments.map((document) => {
                                 const version = document.latest_version;
                                 const expanded = expandedDocumentIds.includes(document.id);
+                                const displayStatus = projectDisplayStatus(document);
 
                                 return (
                                     <article key={document.id} className="border-b border-[var(--border)] last:border-b-0">
@@ -348,11 +431,11 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                 <span className="flex flex-wrap items-center gap-2">
                                                     <span className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</span>
                                                     <span className="sig-pill sig-pill-blue font-semibold">{version?.revision || 'Sem revisao'}</span>
-                                                    <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
-                                                        {statusLabels[document.status] || document.status}
+                                                    <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
+                                                        {projectStatusLabel(document, statusLabels)}
                                                     </span>
                                                 </span>
-                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{document.code || 'Sem codigo'}</span>
+                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem codigo'}</span>
                                                 <span className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
                                                     <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
                                                     <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
@@ -395,6 +478,7 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                         onAnalysis={() => setAnalysisDocument(document)}
                                                         onCap={() => setCapDocument(document)}
                                                         onReview={reviewDocument}
+                                                        onReject={openRejectionModal}
                                                     />
                                                 </div>
                                             </div>
@@ -414,6 +498,20 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
 
             {analysisDocument && (
                 <AnalysisModal document={analysisDocument} onClose={() => setAnalysisDocument(null)} />
+            )}
+            {rejectionDocument && (
+                <ProjectRejectionModal
+                    document={rejectionDocument}
+                    reason={rejectionReason}
+                    error={rejectionError}
+                    processing={rejecting}
+                    onReasonChange={(value) => {
+                        setRejectionReason(value);
+                        if (value.trim()) setRejectionError('');
+                    }}
+                    onCancel={closeRejectionModal}
+                    onConfirm={submitRejection}
+                />
             )}
             {capDocument && (
                 <ProjectCapModal
@@ -445,7 +543,15 @@ function ReviewFileActions({ tenant, version }) {
                     Baixar
                 </a>
             )}
-            {version && (
+            {isFileRemoving(version) ? (
+                <span className="sig-pill bg-white text-[var(--ink-600)]">
+                    Removendo da APS
+                </span>
+            ) : version?.status === 'reprovado' ? (
+                <span className="sig-pill bg-white text-[var(--ink-600)]">
+                    Original preservado
+                </span>
+            ) : version?.file_path ? (
                 version.aps_urn ? (
                     <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm">
                         <Eye size={13} />
@@ -465,12 +571,16 @@ function ReviewFileActions({ tenant, version }) {
                         Processar APS
                     </button>
                 )
-            )}
+            ) : version ? (
+                <span className="sig-pill bg-white text-[var(--ink-600)]">
+                    Arquivo removido
+                </span>
+            ) : null}
         </div>
     );
 }
 
-function ReviewDecisionPanel({ document, version, notes, setNotes, onAnalysis, onCap, onReview }) {
+function ReviewDecisionPanel({ document, version, notes, setNotes, onAnalysis, onCap, onReview, onReject }) {
     const actionable = ['em_analise', 'em_aprovacao'].includes(document.status);
     const isApprovalStep = document.status === 'em_aprovacao';
     const positiveLabel = isApprovalStep ? 'Aprovar para arvore' : 'Enviar para aprovacao';
@@ -512,7 +622,7 @@ function ReviewDecisionPanel({ document, version, notes, setNotes, onAnalysis, o
                 className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
             />
             <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" onClick={() => onReview(document, 'reprovar')} className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]">
+                <button type="button" onClick={() => onReject(document)} className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]">
                     <XCircle size={13} />
                     Reprovar
                 </button>
@@ -521,6 +631,69 @@ function ReviewDecisionPanel({ document, version, notes, setNotes, onAnalysis, o
                     {positiveLabel}
                 </button>
             </div>
+        </div>
+    );
+}
+
+function ProjectRejectionModal({ document, reason, error, processing, onReasonChange, onCancel, onConfirm }) {
+    return (
+        <div
+            className="fixed inset-0 z-[130] flex items-center justify-center bg-[rgba(11,16,32,0.52)] px-4 py-6"
+            role="presentation"
+            onMouseDown={onCancel}
+        >
+            <section
+                className="w-full max-w-xl overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.28)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="project-rejection-title"
+                onMouseDown={(event) => event.stopPropagation()}
+            >
+                <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-[var(--red)]">
+                            <AlertTriangle size={15} />
+                            <span className="eyebrow">Confirmação</span>
+                        </div>
+                        <h2 id="project-rejection-title" className="mt-1 text-lg font-semibold text-[var(--ink-900)]">Reprovar projeto</h2>
+                        <p className="mt-1 truncate text-sm text-[var(--ink-500)]">{document.title}</p>
+                    </div>
+                    <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" aria-label="Fechar" onClick={onCancel} disabled={processing}>
+                        <X size={18} />
+                    </button>
+                </header>
+
+                <div className="px-5 py-5">
+                    <p className="mb-4 text-sm leading-6 text-[var(--ink-600)]">
+                        O usuário que submeteu esta versão receberá um e-mail com o motivo informado abaixo.
+                    </p>
+                    <label>
+                        <span className="eyebrow mb-1 block">Motivo da reprovação</span>
+                        <textarea
+                            value={reason}
+                            onChange={(event) => onReasonChange(event.target.value)}
+                            rows={5}
+                            maxLength={5000}
+                            autoFocus
+                            required
+                            className={`w-full rounded-lg border px-3 py-2 text-sm outline-none ${error ? 'border-[var(--red)]' : 'border-[var(--border)] focus:border-[var(--primary)]'}`}
+                            placeholder="Explique o que precisa ser corrigido antes de uma nova submissão."
+                        />
+                    </label>
+                    <div className="mt-1 flex items-start justify-between gap-3 text-xs">
+                        <span className="text-[var(--red)]">{error}</span>
+                        <span className="shrink-0 text-[var(--ink-400)]">{reason.length}/5000</span>
+                    </div>
+                </div>
+
+                <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onCancel} disabled={processing}>Cancelar</button>
+                    <button type="button" className="sig-btn sig-btn-primary !bg-[var(--red)]" onClick={onConfirm} disabled={processing || !reason.trim()}>
+                        <XCircle size={15} />
+                        {processing ? 'Reprovando...' : 'Reprovar e notificar'}
+                    </button>
+                </footer>
+            </section>
         </div>
     );
 }
@@ -549,7 +722,7 @@ function AnalysisModal({ document, onClose }) {
                             {document.title}
                         </h2>
                         <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">
-                            {document.code || 'Sem codigo'} · {document.contract?.code} - {document.contract?.name}
+                            {projectEap(document) || 'Sem codigo'} · {document.contract?.code} - {document.contract?.name}
                         </p>
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>

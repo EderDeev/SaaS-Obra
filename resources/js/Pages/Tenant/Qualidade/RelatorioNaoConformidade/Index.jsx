@@ -1,8 +1,9 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
+import { startRncTour } from '@/Components/RncTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Bell, CheckCircle2, ChevronDown, ClipboardCheck, ClipboardX, Download, Eye, ImagePlus, MapPin, Pencil, Plus, SearchCheck, Trash2 } from 'lucide-react';
+import { Bell, CheckCircle2, ChevronDown, ClipboardCheck, ClipboardX, Download, Eye, ImagePlus, MapPin, Pencil, Plane, Plus, SearchCheck, Trash2 } from 'lucide-react';
 
 const gravityClass = {
     Leve: 'sig-pill-blue',
@@ -183,12 +184,18 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                             {rncs.length} RNCs cadastradas em {tenant.name}
                         </p>
                     </div>
-                    {canCreateRnc && (
-                        <Link href={route('tenant.qualidade.rnc.create', tenant.slug)} className="sig-btn sig-btn-primary">
-                            <Plus size={15} />
-                            Nova RNC
-                        </Link>
-                    )}
+                    <div className="flex flex-wrap gap-2">
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={() => startRncTour(tenant.slug)}>
+                            <Plane size={15} />
+                            Iniciar tour
+                        </button>
+                        {canCreateRnc && (
+                            <Link href={route('tenant.qualidade.rnc.create', tenant.slug)} className="sig-btn sig-btn-primary">
+                                <Plus size={15} />
+                                Nova RNC
+                            </Link>
+                        )}
+                    </div>
                 </div>
 
                 {page.props.flash.success && (

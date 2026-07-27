@@ -1,8 +1,10 @@
-import ProjectCapModal from '@/Components/ProjectCapModal';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, Link } from '@inertiajs/react';
-import { ChevronDown, ClipboardList, Download, Eye, Filter, GitBranch, History, MessageSquare, Search, UserRound, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronDown, ClipboardList, Columns2, Download, Eye, FileText, Filter, GitBranch, History, MessageSquare, Search, UserRound, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+const REVISIONS_PER_PAGE = 10;
 
 const statusClasses = {
     em_analise: 'sig-pill-blue',
@@ -67,6 +69,23 @@ function viewerUrl(tenant, version, workspace = 'view') {
     return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}`;
 }
 
+function capPdfUrl(tenant, version) {
+    return route('tenant.projects.cap.pdf', [tenant.slug, version.id]);
+}
+
+function comparisonUrl(tenant, version, baseVersion) {
+    return route('tenant.projects.compare', [tenant.slug, version.id, baseVersion.id]);
+}
+
+function canCompareVersions(version, baseVersion) {
+    return Boolean(
+        version?.aps_urn
+        && baseVersion?.aps_urn
+        && version.derivative_status === 'ready'
+        && baseVersion.derivative_status === 'ready',
+    );
+}
+
 export default function ProjectRevisions({
     tenant,
     contracts,
@@ -78,9 +97,10 @@ export default function ProjectRevisions({
 }) {
     const [contractFilter, setContractFilter] = useState('todos');
     const [query, setQuery] = useState('');
-    const [capRow, setCapRow] = useState(null);
     const [historyRow, setHistoryRow] = useState(null);
     const [expandedRowIds, setExpandedRowIds] = useState([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const revisionsListRef = useRef(null);
 
     const rows = useMemo(() => documents.flatMap((document) => (
         (document.versions || []).filter((version) => version.cap_number).map((version) => ({
@@ -102,11 +122,31 @@ export default function ProjectRevisions({
                 return true;
             }
 
-            return `${version.cap_number || ''} ${document.title} ${document.code || ''} ${version.revision || ''} ${document.contract?.code || ''} ${document.obra?.nome || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''}`
+            return `${version.cap_number || ''} ${document.title} ${projectEap(document, version)} ${document.contract?.code || ''} ${document.obra?.nome || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''}`
                 .toLowerCase()
                 .includes(term);
         });
     }, [rows, contractFilter, query]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / REVISIONS_PER_PAGE));
+    const paginatedRows = useMemo(() => {
+        const start = (currentPage - 1) * REVISIONS_PER_PAGE;
+
+        return filteredRows.slice(start, start + REVISIONS_PER_PAGE);
+    }, [filteredRows, currentPage]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [contractFilter, query]);
+
+    useEffect(() => {
+        setCurrentPage((page) => Math.min(page, totalPages));
+    }, [totalPages]);
+
+    const goToPage = (pageNumber) => {
+        setCurrentPage(Math.min(Math.max(pageNumber, 1), totalPages));
+        revisionsListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     const toggleRowDetails = (rowId) => {
         setExpandedRowIds((currentIds) => currentIds.includes(rowId)
@@ -136,7 +176,7 @@ export default function ProjectRevisions({
                     </div>
                 </header>
 
-                <section className="projects-module-card sig-card overflow-hidden">
+                <section ref={revisionsListRef} className="projects-module-card sig-card scroll-mt-4 overflow-hidden">
                     <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
                         <FilterSelect label="Contrato" value={contractFilter} onChange={setContractFilter}>
                             <option value="todos">Todos os contratos</option>
@@ -174,10 +214,11 @@ export default function ProjectRevisions({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredRows.map(({ id, document, version }) => {
+                                    {paginatedRows.map(({ id, document, version }) => {
                                         const previousVersion = previousVersionFor(document, version);
                                         const latestVersion = latestVersionFor(document);
                                         const commentsCount = versionComments(version).length;
+                                        const comparisonAvailable = canCompareVersions(version, previousVersion);
 
                                         return (
                                         <tr key={id}>
@@ -187,7 +228,7 @@ export default function ProjectRevisions({
                                             </td>
                                             <td>
                                                 <div className="font-semibold">{document.title}</div>
-                                                <div className="mono mt-1 text-xs text-[var(--ink-500)]">{document.code || 'Sem EAP'}</div>
+                                                <div className="mono mt-1 text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem EAP'}</div>
                                                 <div className="mt-1 text-xs text-[var(--ink-500)]">{documentTypes[document.document_type] || document.document_type}</div>
                                             </td>
                                             <td>
@@ -240,14 +281,26 @@ export default function ProjectRevisions({
                                                         <History size={13} />
                                                         Histórico
                                                     </button>
-                                                    <button
-                                                        type="button"
+                                                    <a
+                                                        href={capPdfUrl(tenant, version)}
+                                                        target="_blank"
+                                                        rel="noreferrer"
                                                         className="sig-btn sig-btn-secondary sig-btn-sm"
-                                                        onClick={() => setCapRow({ document, version })}
                                                     >
-                                                        <Eye size={13} />
-                                                        CAP
-                                                    </button>
+                                                        <FileText size={13} />
+                                                        CAP PDF
+                                                    </a>
+                                                    {previousVersion && (comparisonAvailable ? (
+                                                        <Link href={comparisonUrl(tenant, version, previousVersion)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                            <Columns2 size={13} />
+                                                            Comparar
+                                                        </Link>
+                                                    ) : (
+                                                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" disabled title="As duas revisoes precisam estar processadas no APS">
+                                                            <Columns2 size={13} />
+                                                            Comparar
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             </td>
                                         </tr>
@@ -257,11 +310,12 @@ export default function ProjectRevisions({
                             </table>
                         </div>
                         <div className="projects-compact-only">
-                            {filteredRows.map(({ id, document, version }) => {
+                            {paginatedRows.map(({ id, document, version }) => {
                                 const previousVersion = previousVersionFor(document, version);
                                 const latestVersion = latestVersionFor(document);
                                 const commentsCount = versionComments(version).length;
                                 const expanded = expandedRowIds.includes(id);
+                                const comparisonAvailable = canCompareVersions(version, previousVersion);
 
                                 return (
                                     <article key={id} className="border-b border-[var(--border)] last:border-b-0">
@@ -279,7 +333,7 @@ export default function ProjectRevisions({
                                                         {statusLabels[version.status] || version.status}
                                                     </span>
                                                 </span>
-                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{document.code || 'Sem EAP'}</span>
+                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem EAP'}</span>
                                                 <span className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
                                                     <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
                                                     <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
@@ -303,10 +357,21 @@ export default function ProjectRevisions({
                                                         <History size={13} />
                                                         Historico
                                                     </button>
-                                                    <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => setCapRow({ document, version })}>
-                                                        <Eye size={13} />
-                                                        CAP
-                                                    </button>
+                                                    <a href={capPdfUrl(tenant, version)} target="_blank" rel="noreferrer" className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                        <FileText size={13} />
+                                                        CAP PDF
+                                                    </a>
+                                                    {previousVersion && (comparisonAvailable ? (
+                                                        <Link href={comparisonUrl(tenant, version, previousVersion)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                            <Columns2 size={13} />
+                                                            Comparar
+                                                        </Link>
+                                                    ) : (
+                                                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" disabled title="As duas revisoes precisam estar processadas no APS">
+                                                            <Columns2 size={13} />
+                                                            Comparar
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}
@@ -314,6 +379,12 @@ export default function ProjectRevisions({
                                 );
                             })}
                         </div>
+                        <RevisionsPagination
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            totalItems={filteredRows.length}
+                            onPageChange={goToPage}
+                        />
                         </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
@@ -323,14 +394,6 @@ export default function ProjectRevisions({
                 </section>
             </section>
 
-            {capRow && (
-                <ProjectCapModal
-                    document={capRow.document}
-                    version={capRow.version}
-                    capImpactLabels={capImpactLabels}
-                    onClose={() => setCapRow(null)}
-                />
-            )}
             {historyRow && (
                 <RevisionHistoryModal
                     tenant={tenant}
@@ -339,7 +402,6 @@ export default function ProjectRevisions({
                     statusLabels={statusLabels}
                     capImpactLabels={capImpactLabels}
                     canReviewProjects={canReviewProjects}
-                    onCap={(version) => setCapRow({ document: historyRow.document, version })}
                     onClose={() => setHistoryRow(null)}
                 />
             )}
@@ -372,7 +434,46 @@ function CompactInfo({ label, value }) {
     );
 }
 
-function RevisionHistoryModal({ tenant, document, currentVersion, statusLabels, capImpactLabels, canReviewProjects, onCap, onClose }) {
+function RevisionsPagination({ currentPage, totalPages, totalItems, onPageChange }) {
+    const endPage = Math.min(totalPages, Math.max(5, currentPage + 2));
+    const startPage = Math.max(1, endPage - 4);
+    const visiblePages = Array.from(
+        { length: Math.min(5, totalPages - startPage + 1) },
+        (_, index) => startPage + index,
+    );
+    const from = totalItems ? ((currentPage - 1) * REVISIONS_PER_PAGE) + 1 : 0;
+    const to = Math.min(currentPage * REVISIONS_PER_PAGE, totalItems);
+
+    return (
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-5 py-4">
+            <div className="text-sm text-[var(--ink-500)]">
+                Exibindo {from} a {to} de {totalItems} CAP(s).
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" disabled={currentPage === 1} onClick={() => onPageChange(currentPage - 1)}>
+                    Anterior
+                </button>
+                {visiblePages.map((pageNumber) => (
+                    <button
+                        key={pageNumber}
+                        type="button"
+                        className={`sig-btn sig-btn-sm !min-w-8 !px-2 ${pageNumber === currentPage ? 'sig-btn-primary' : 'sig-btn-secondary'}`}
+                        aria-current={pageNumber === currentPage ? 'page' : undefined}
+                        disabled={pageNumber === currentPage}
+                        onClick={() => onPageChange(pageNumber)}
+                    >
+                        {pageNumber}
+                    </button>
+                ))}
+                <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" disabled={currentPage === totalPages} onClick={() => onPageChange(currentPage + 1)}>
+                    Proxima
+                </button>
+            </div>
+        </footer>
+    );
+}
+
+function RevisionHistoryModal({ tenant, document, currentVersion, statusLabels, capImpactLabels, canReviewProjects, onClose }) {
     const versions = sortedVersions(document);
     const latestVersion = latestVersionFor(document);
     const previousVersion = previousVersionFor(document, currentVersion);
@@ -399,7 +500,7 @@ function RevisionHistoryModal({ tenant, document, currentVersion, statusLabels, 
                         <h2 id="project-revision-history-title" className="mt-1 truncate text-[17px] font-semibold text-[var(--ink-900)]">
                             {document.title}
                         </h2>
-                        <p className="mono mt-1 text-[12.5px] text-[var(--ink-500)]">{document.code || 'Sem EAP'}</p>
+                        <p className="mono mt-1 text-[12.5px] text-[var(--ink-500)]">{projectEap(document, currentVersion) || 'Sem EAP'}</p>
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
                         <X size={18} />
@@ -425,7 +526,6 @@ function RevisionHistoryModal({ tenant, document, currentVersion, statusLabels, 
                                 statusLabels={statusLabels}
                                 capImpactLabels={capImpactLabels}
                                 canReviewProjects={canReviewProjects}
-                                onCap={onCap}
                             />
                         ))}
                     </div>
@@ -441,12 +541,14 @@ function RevisionHistoryModal({ tenant, document, currentVersion, statusLabels, 
     );
 }
 
-function RevisionHistoryItem({ tenant, document, version, active, latest, statusLabels, capImpactLabels, canReviewProjects, onCap }) {
+function RevisionHistoryItem({ tenant, document, version, active, latest, statusLabels, capImpactLabels, canReviewProjects }) {
     const comments = versionComments(version);
     const checklistItems = version.review_checklist?.items || [];
     const checkedItems = checklistItems.filter((item) => item.checked).length;
     const impacts = Array.isArray(version.cap_impacts) ? version.cap_impacts : [];
     const canOpenViewer = version.aps_urn && (version.status === 'ativo' || canReviewProjects);
+    const previousVersion = previousVersionFor(document, version);
+    const comparisonAvailable = canCompareVersions(version, previousVersion);
 
     return (
         <article className={`rounded-xl border bg-white p-4 ${active ? 'border-[var(--primary)] shadow-sm' : 'border-[var(--border)]'}`}>
@@ -490,11 +592,22 @@ function RevisionHistoryItem({ tenant, document, version, active, latest, status
                         </a>
                     )}
                     {version.cap_number && (
-                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => onCap(version)}>
-                            <ClipboardList size={13} />
-                            CAP
-                        </button>
+                        <a href={capPdfUrl(tenant, version)} target="_blank" rel="noreferrer" className="sig-btn sig-btn-secondary sig-btn-sm">
+                            <FileText size={13} />
+                            CAP PDF
+                        </a>
                     )}
+                    {previousVersion && (comparisonAvailable ? (
+                        <Link href={comparisonUrl(tenant, version, previousVersion)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                            <Columns2 size={13} />
+                            Comparar
+                        </Link>
+                    ) : (
+                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" disabled title="As duas revisoes precisam estar processadas no APS">
+                            <Columns2 size={13} />
+                            Comparar
+                        </button>
+                    ))}
                 </div>
             </div>
 
@@ -546,6 +659,16 @@ function RevisionHistoryItem({ tenant, document, version, active, latest, status
                                 </div>
                                 {comment.description && (
                                     <p className="mt-1 line-clamp-2 text-sm text-[var(--ink-500)]">{comment.description}</p>
+                                )}
+                                {(comment.replies || []).length > 0 && (
+                                    <div className="mt-2 rounded-lg border-l-2 border-[var(--primary-100)] bg-[var(--surface-muted)] px-3 py-2">
+                                        <div className="text-xs font-semibold text-[var(--ink-700)]">
+                                            Última definição · {comment.replies.length} resposta(s)
+                                        </div>
+                                        <p className="mt-1 line-clamp-2 text-sm text-[var(--ink-500)]">
+                                            {comment.replies[comment.replies.length - 1].body}
+                                        </p>
+                                    </div>
                                 )}
                                 <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--ink-500)]">
                                     <span className="flex items-center gap-1">

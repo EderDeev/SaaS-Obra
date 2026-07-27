@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { BellRing, ClipboardList, Pencil, Plus, Search, ShieldCheck, Trash2, UserRoundCheck } from 'lucide-react';
+import { ClipboardList, Eye, HardHat, Pencil, Plus, Search, ShieldCheck, Trash2, UserRoundCheck, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 function contractLabel(contract) {
@@ -38,9 +38,9 @@ function ResponsibleActions({ tenant, responsavel, onEdit }) {
                 Editar
             </button>
             <ConfirmActionButton
-                title="Remover alerta"
-                message={`Deseja mesmo remover ${responsavel.user?.name || 'este usuario'} dos alertas de RNC?`}
-                confirmLabel="Remover alerta"
+                title="Remover responsável"
+                message={`Deseja remover ${responsavel.user?.name || 'este usuário'} das responsabilidades de RNC deste contrato?`}
+                confirmLabel="Remover responsável"
                 className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]"
                 onConfirm={() => router.delete(route('tenant.qualidade.rnc.responsaveis.destroy', [tenant.slug, responsavel.id]), { preserveScroll: true })}
             >
@@ -60,12 +60,13 @@ function MobileMeta({ label, children }) {
     );
 }
 
-export default function RncResponsaveisIndex({ tenant, contracts, usersByContract, responsaveis }) {
+export default function RncResponsaveisIndex({ tenant, contracts, usersByContract, responsibilityProfiles, responsaveis }) {
     const page = usePage();
     const firstContractId = contracts[0]?.id ?? '';
     const form = useForm({
         contract_id: firstContractId,
         user_id: usersByContract[firstContractId]?.[0]?.id ?? '',
+        responsibility_type: responsibilityProfiles[0]?.value ?? '',
     });
     const [query, setQuery] = useState('');
 
@@ -103,23 +104,24 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
         form.setData({
             contract_id: responsavel.contract?.id || '',
             user_id: responsavel.user?.id || '',
+            responsibility_type: responsavel.responsibility_type || responsibilityProfiles[0]?.value || '',
         });
         setQuery(`${responsavel.user?.name || ''} ${responsavel.user?.email || ''}`.trim());
     };
 
     return (
         <AuthenticatedLayout>
-            <Head title="RNC - Alertas" />
+            <Head title="RNC - Responsáveis" />
 
-            <section className="sig-content grid gap-6 xl:grid-cols-[430px_minmax(0,1fr)]">
+            <section className="sig-content grid gap-6 2xl:grid-cols-[400px_minmax(0,1fr)]">
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <ShieldCheck size={14} />
                         <span className="eyebrow">Relatorio Nao Conformidade</span>
                     </div>
-                    <h1 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">Alertas</h1>
+                    <h1 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">Responsáveis</h1>
                     <p className="mt-1 text-sm text-[var(--ink-500)]">
-                        Cadastre quem recebe notificacoes e alertas por email das RNCs de cada contrato. Permissoes sao gerenciadas no menu Permissoes.
+                        Defina o papel de cada usuário no fluxo de RNC do contrato. Todos os responsáveis recebem alertas no sistema e por e-mail.
                     </p>
 
                     {page.props.flash.success && (
@@ -148,7 +150,50 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                         </Field>
 
                         <div>
-                            <span className="eyebrow mb-1 block">Usuario para alerta</span>
+                            <span className="eyebrow mb-2 block">Tipo de responsabilidade</span>
+                            <div className="grid gap-2">
+                                {responsibilityProfiles.map((profile) => {
+                                    const selected = form.data.responsibility_type === profile.value;
+                                    const Icon = profile.value === 'operational'
+                                        ? ShieldCheck
+                                        : profile.value === 'contractor'
+                                            ? HardHat
+                                            : Eye;
+
+                                    return (
+                                        <button
+                                            key={profile.value}
+                                            type="button"
+                                            className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition ${
+                                                selected
+                                                    ? 'border-[var(--primary)] bg-[var(--primary-50)]'
+                                                    : 'border-[var(--border)] bg-white hover:border-[var(--ink-300)]'
+                                            }`}
+                                            onClick={() => form.setData('responsibility_type', profile.value)}
+                                        >
+                                            <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ${
+                                                selected ? 'bg-[var(--primary)] text-white' : 'bg-[var(--surface-muted)] text-[var(--ink-600)]'
+                                            }`}>
+                                                <Icon size={16} />
+                                            </span>
+                                            <span className="min-w-0">
+                                                <span className="block text-sm font-semibold text-[var(--ink-900)]">{profile.label}</span>
+                                                <span className="mt-0.5 block text-xs leading-5 text-[var(--ink-500)]">{profile.description}</span>
+                                                <span className="mt-1 block text-[11px] leading-4 text-[var(--ink-500)]">
+                                                    {profile.permissions.join(' · ')}
+                                                </span>
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {form.errors.responsibility_type && (
+                                <span className="mt-1 block text-xs text-[var(--red)]">{form.errors.responsibility_type}</span>
+                            )}
+                        </div>
+
+                        <div>
+                            <span className="eyebrow mb-1 block">Usuário responsável</span>
                             <div className="sig-input flex items-center gap-2">
                                 <Search size={15} className="text-[var(--ink-500)]" />
                                 <input
@@ -189,7 +234,7 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
 
                     <button className="sig-btn sig-btn-primary mt-5" disabled={form.processing || !form.data.contract_id || !form.data.user_id}>
                         <Plus size={15} />
-                        Salvar alerta
+                        Salvar responsável
                     </button>
                 </form>
 
@@ -197,11 +242,11 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                                <BellRing size={14} />
-                                <span className="eyebrow">Alertas RNC</span>
+                                <Users size={14} />
+                                <span className="eyebrow">Equipe responsável</span>
                             </div>
                             <h2 className="mt-1 text-[15px] font-semibold text-[var(--ink-900)]">
-                                {responsaveis.length} usuario(s) em alerta
+                                {responsaveis.length} responsável(is) cadastrado(s)
                             </h2>
                         </div>
                     </header>
@@ -233,6 +278,10 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                                             <MobileMeta label="Cadastrado em">
                                                 <span className="text-sm font-semibold text-[var(--ink-800)]">{responsavel.created_at}</span>
                                             </MobileMeta>
+
+                                            <MobileMeta label="Responsabilidade">
+                                                <span className="text-sm font-semibold text-[var(--ink-800)]">{responsavel.responsibility_label}</span>
+                                            </MobileMeta>
                                         </div>
 
                                         <div className="mt-4 flex flex-wrap gap-2">
@@ -243,11 +292,12 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                             </div>
 
                             <div className="hidden overflow-x-auto lg:block">
-                                <table className="sig-table min-w-[980px]">
+                                <table className="sig-table min-w-[820px]">
                                     <thead>
                                         <tr>
                                             <th>Usuario</th>
                                             <th>Contrato</th>
+                                            <th>Responsabilidade</th>
                                             <th>Cadastrado em</th>
                                             <th className="text-right">Acoes</th>
                                         </tr>
@@ -277,6 +327,11 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                                                         </span>
                                                     </span>
                                                 </td>
+                                                <td>
+                                                    <span className="inline-flex rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-semibold text-[var(--ink-700)]">
+                                                        {responsavel.responsibility_label}
+                                                    </span>
+                                                </td>
                                                 <td>{responsavel.created_at}</td>
                                                 <td>
                                                     <div className="flex flex-wrap justify-end gap-2">
@@ -291,7 +346,7 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                         </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
-                            Nenhum usuario cadastrado para receber alertas de RNC.
+                            Nenhum responsável cadastrado para o fluxo de RNC.
                         </div>
                     )}
                 </section>

@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RemoveRejectedProjectVersionFromApsJob;
 use App\Models\Contract;
 use App\Models\ProjectDisciplineResponsavel;
 use App\Models\ProjectDocument;
+use App\Models\ProjectDocumentVersion;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ProjectApprovedNotification;
+use App\Notifications\ProjectRejectedNotification;
 use App\Notifications\ProjectVerifiedForApprovalNotification;
 use App\Support\ProjectCap;
 use App\Support\ProjectPermissions;
@@ -39,6 +42,7 @@ class ProjectReviewController extends Controller
 
         $documents = $tenant->projectDocuments()
             ->whereIn('contract_id', $contractIds)
+            ->withExists(['versions as has_approved_version' => fn (Builder $query): Builder => $query->where('status', 'ativo')])
             ->when($this->mustRespectDisciplineResponsibles($request, $tenant), function (Builder $query) use ($request, $tenant): void {
                 $query->where(function (Builder $query) use ($request, $tenant): void {
                     $query
@@ -75,8 +79,7 @@ class ProjectReviewController extends Controller
                 'latestVersion.approver:id,name,email',
                 'latestVersion.capRequester:id,name,email',
             ])
-            ->orderByRaw("case status when 'em_analise' then 0 when 'em_aprovacao' then 1 when 'reprovado' then 2 else 3 end")
-            ->latest()
+            ->latestSubmissionFirst()
             ->get();
 
         return Inertia::render('Tenant/Projects/Review', [
@@ -116,6 +119,15 @@ class ProjectReviewController extends Controller
         ]);
 
         $approved = $data['action'] === 'aprovar';
+        $reviewNotes = trim((string) ($data['review_notes'] ?? ''));
+
+        if (! $approved && $reviewNotes === '') {
+            return back()->withErrors([
+                'review_notes' => 'Informe o motivo da reprovação do projeto.',
+            ]);
+        }
+
+        $rejectionStage = $document->status === 'em_analise' ? 'analysis' : 'approval';
         $latestVersion = $document->latestVersion()->first();
 
         if ($document->status === 'em_analise') {
@@ -123,7 +135,7 @@ class ProjectReviewController extends Controller
                 'status' => $approved ? 'em_aprovacao' : 'reprovado',
                 'reviewed_by_id' => $request->user()->id,
                 'reviewed_at' => now(),
-                'review_notes' => $data['review_notes'] ?? null,
+                'review_notes' => $reviewNotes ?: null,
             ];
 
             $document->forceFill($updates)->save();
@@ -137,14 +149,24 @@ class ProjectReviewController extends Controller
                     : 'Projeto verificado e enviado para aprovacao. Nenhum aprovador cadastrado para esta disciplina.');
             }
 
-            return back()->with('success', 'Projeto reprovado na analise. Ele continuara fora da arvore principal.');
+            $notified = $this->notifySubmitterOfRejection(
+                $document->fresh(['tenant', 'contract', 'obra', 'disciplina', 'phase', 'creator', 'latestVersion.uploader']),
+                $request->user(),
+                $reviewNotes,
+                $rejectionStage,
+            );
+            $this->scheduleRejectedVersionCleanup($latestVersion);
+
+            return back()->with('success', $notified
+                ? 'Projeto reprovado na análise. O usuário foi notificado, o arquivo original foi preservado e a cópia da APS será removida.'
+                : 'Projeto reprovado na análise. O arquivo original foi preservado e a cópia da APS será removida, mas não foi possível localizar o usuário que o submeteu.');
         }
 
         $updates = [
             'status' => $approved ? 'ativo' : 'reprovado',
             'approved_by_id' => $request->user()->id,
             'approved_at' => now(),
-            'approval_notes' => $data['review_notes'] ?? null,
+            'approval_notes' => $reviewNotes ?: null,
         ];
 
         $document->forceFill($updates)->save();
@@ -158,7 +180,17 @@ class ProjectReviewController extends Controller
                 : 'Projeto aprovado e liberado para a arvore principal. Nenhum usuario ativo vinculado ao contrato para notificar.');
         }
 
-        return back()->with('success', 'Projeto reprovado na aprovacao final. Ele continuara fora da arvore principal.');
+        $notified = $this->notifySubmitterOfRejection(
+            $document->fresh(['tenant', 'contract', 'obra', 'disciplina', 'phase', 'creator', 'latestVersion.uploader']),
+            $request->user(),
+            $reviewNotes,
+            $rejectionStage,
+        );
+        $this->scheduleRejectedVersionCleanup($latestVersion);
+
+        return back()->with('success', $notified
+            ? 'Projeto reprovado na aprovação final. O usuário foi notificado, o arquivo original foi preservado e a cópia da APS será removida.'
+            : 'Projeto reprovado na aprovação final. O arquivo original foi preservado e a cópia da APS será removida, mas não foi possível localizar o usuário que o submeteu.');
     }
 
     private function accessibleContracts(Request $request, Tenant $tenant, ?string $permission = null)
@@ -274,5 +306,29 @@ class ProjectReviewController extends Controller
         $users->each(fn (User $user) => $user->notify($notification));
 
         return $users->count();
+    }
+
+    private function notifySubmitterOfRejection(ProjectDocument $document, User $actor, string $reason, string $stage): bool
+    {
+        $submitter = $document->latestVersion?->uploader ?: $document->creator;
+
+        if (! $submitter) {
+            return false;
+        }
+
+        $submitter->notify(new ProjectRejectedNotification($document, $actor, $reason, $stage));
+
+        return true;
+    }
+
+    private function scheduleRejectedVersionCleanup(?ProjectDocumentVersion $version): void
+    {
+        if (! $version) {
+            return;
+        }
+
+        $version->forceFill(['derivative_status' => 'removing'])->save();
+
+        RemoveRejectedProjectVersionFromApsJob::dispatch($version->id)->afterResponse();
     }
 }

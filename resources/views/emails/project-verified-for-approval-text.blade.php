@@ -6,7 +6,7 @@ Ola, {{ $notifiable->name }}.
 {{ $actor->name }} verificou um projeto da sua disciplina e enviou para aprovacao final.
 
 Projeto: {{ $document->title }}
-Codigo: {{ $document->code ?: 'Sem codigo' }}
+Codigo: {{ $document->eap($document->latestVersion?->revision) ?: 'Sem codigo' }}
 Contrato: {{ $document->contract?->code }} - {{ $document->contract?->name }}
 Obra: {{ $document->obra?->codigo }} - {{ $document->obra?->nome }}
 Disciplina: {{ $document->disciplina?->sigla }} - {{ $document->disciplina?->nome }}

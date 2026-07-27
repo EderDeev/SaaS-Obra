@@ -64,7 +64,7 @@ const tutorials = [
         group: 'Configuração inicial',
         title: 'Configurando o tenant',
         icon: Building2,
-        path: 'Super Admin > Tenants',
+        path: 'Plataforma > Tenants',
         summary: 'Crie o ambiente da empresa gerenciadora e defina o primeiro usuário responsável.',
         audience: 'Super Admin da plataforma',
         prerequisites: [
@@ -76,7 +76,7 @@ const tutorials = [
             ['Crie o tenant', 'Informe nome, identificador do tenant, CNPJ, plano e situação inicial.'],
             ['Defina o owner', 'Informe nome e e-mail do owner. O sistema gera a senha provisória e envia as instruções de acesso.'],
             ['Valide o primeiro acesso', 'O owner utiliza o link recebido e cria sua senha definitiva antes de acessar os módulos.'],
-            ['Revise plano e situação', 'No painel Super Admin, mantenha plano e situação atualizados conforme o atendimento da empresa.'],
+            ['Revise plano e situação', 'Na administração de tenants, mantenha plano e situação atualizados conforme o atendimento da empresa.'],
         ],
         screenshots: [
             screenshot('login', 'Primeiro acesso ao Deming', 'O owner recebe o endereço de acesso e utiliza as credenciais provisórias recebidas por e-mail.'),

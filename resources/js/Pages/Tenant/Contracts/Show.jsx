@@ -248,7 +248,7 @@ export default function ContractShow({
                 </section>
 
                 <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-                    <div className="grid content-start gap-5">
+                    <div data-tour="contract-detail-modules" className="grid content-start gap-5">
                         <ModulePanel
                             title="Atividades"
                             subtitle="Acompanhamento das tarefas recentes deste contrato"
@@ -306,7 +306,7 @@ export default function ContractShow({
                     <aside className="grid content-start gap-5">
                         <div data-tour="contract-detail-data"><ContractDetails contract={contract} cliente={cliente} construtora={construtora} location={location} /></div>
                         <div data-tour="contract-detail-additives"><AdditiveSummaryCard contract={contract} additives={additives} onHistory={() => setShowAdditiveHistory(true)} /></div>
-                        <TeamCard participants={contract.participants || []} />
+                        <div data-tour="contract-detail-team"><TeamCard participants={contract.participants || []} /></div>
                     </aside>
                 </section>
             </section>

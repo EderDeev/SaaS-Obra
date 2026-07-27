@@ -10,6 +10,10 @@ use Illuminate\Support\Collection;
 
 class RncPermissions
 {
+    public const RESPONSIBILITY_OPERATIONAL = 'operational';
+    public const RESPONSIBILITY_CONTRACTOR = 'contractor';
+    public const RESPONSIBILITY_MONITORING = 'monitoring';
+
     public const CREATE = 'create_rnc';
     public const NOTIFY = 'notify_rnc';
     public const CORRECTIVE_ACTION = 'corrective_action_rnc';
@@ -24,14 +28,43 @@ class RncPermissions
     public const LABELS = [
         self::CREATE => 'Criar RNC',
         self::NOTIFY => 'Notificar RNC',
-        self::CORRECTIVE_ACTION => 'Ação corretiva RNC',
+        self::CORRECTIVE_ACTION => 'Enviar ação corretiva',
         self::EDIT => 'Editar RNC',
         self::DELETE => 'Excluir RNC',
         self::REVIEW => 'Analisar RNC',
         self::EVIDENCE => 'Evidenciar RNC',
         self::VIEW => 'Visualizar RNC',
         self::DASHBOARD => 'Dashboard RNC',
-        self::RESPONSIBLES => 'Alertas RNC',
+        self::RESPONSIBLES => 'Gerenciar responsáveis RNC',
+    ];
+
+    public const RESPONSIBILITY_PROFILES = [
+        self::RESPONSIBILITY_OPERATIONAL => [
+            'label' => 'Responsável Operacional',
+            'description' => 'Cria, notifica, analisa e evidencia RNCs.',
+            'permissions' => [
+                self::CREATE,
+                self::NOTIFY,
+                self::REVIEW,
+                self::EVIDENCE,
+                self::VIEW,
+            ],
+        ],
+        self::RESPONSIBILITY_CONTRACTOR => [
+            'label' => 'Responsável da Construtora',
+            'description' => 'Visualiza RNCs e envia as ações corretivas.',
+            'permissions' => [
+                self::CORRECTIVE_ACTION,
+                self::VIEW,
+            ],
+        ],
+        self::RESPONSIBILITY_MONITORING => [
+            'label' => 'Responsável de Acompanhamento',
+            'description' => 'Acompanha e visualiza as RNCs.',
+            'permissions' => [
+                self::VIEW,
+            ],
+        ],
     ];
 
     public static function all(): array
@@ -42,6 +75,40 @@ class RncPermissions
     public static function labels(): array
     {
         return self::LABELS;
+    }
+
+    public static function responsibilityProfiles(): array
+    {
+        return self::RESPONSIBILITY_PROFILES;
+    }
+
+    public static function responsibilityTypes(): array
+    {
+        return array_keys(self::RESPONSIBILITY_PROFILES);
+    }
+
+    public static function permissionsForResponsibility(string $type): array
+    {
+        return self::RESPONSIBILITY_PROFILES[$type]['permissions'] ?? [];
+    }
+
+    public static function responsibilityTypeForPermissions(array $permissions): string
+    {
+        $permissions = self::normalize($permissions);
+
+        if (array_intersect($permissions, [self::CREATE, self::NOTIFY, self::REVIEW])) {
+            return self::RESPONSIBILITY_OPERATIONAL;
+        }
+
+        if (in_array(self::CORRECTIVE_ACTION, $permissions, true)) {
+            return self::RESPONSIBILITY_CONTRACTOR;
+        }
+
+        if (in_array(self::EVIDENCE, $permissions, true)) {
+            return self::RESPONSIBILITY_OPERATIONAL;
+        }
+
+        return self::RESPONSIBILITY_MONITORING;
     }
 
     public static function normalize(array $permissions): array

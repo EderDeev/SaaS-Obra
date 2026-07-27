@@ -7,7 +7,7 @@ Olá, {{ $notifiable->name }}.
 
 Comentário: {{ $markup->title }}
 Projeto: {{ $markup->document?->title }}
-EAP: {{ $markup->document?->code ?: 'Sem código' }}
+EAP: {{ $markup->version?->eap ?: 'Sem código' }}
 Revisão: {{ $markup->version?->revision ?: 'Sem revisão' }}
 Contrato: {{ $markup->contract?->code }} - {{ $markup->contract?->name }}
 Prioridade: {{ $priorityLabel }}

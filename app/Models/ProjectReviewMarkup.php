@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
@@ -72,5 +73,10 @@ class ProjectReviewMarkup extends Model
     public function closer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by_id');
+    }
+
+    public function replies(): HasMany
+    {
+        return $this->hasMany(ProjectReviewMarkupReply::class, 'project_review_markup_id');
     }
 }

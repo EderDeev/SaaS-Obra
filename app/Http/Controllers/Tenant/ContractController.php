@@ -44,8 +44,11 @@ class ContractController extends Controller
             ->withCount([
                 'participants',
                 'contractAdditives',
-                'activities as open_activities_count' => fn (Builder $query): Builder => $query->where('status', '!=', 'done'),
+                'activities as open_activities_count' => fn (Builder $query): Builder => $query
+                    ->visibleTo($request->user())
+                    ->where('status', '!=', 'done'),
                 'activities as overdue_activities_count' => fn (Builder $query): Builder => $query
+                    ->visibleTo($request->user())
                     ->where('status', '!=', 'done')
                     ->whereDate('due_date', '<', today()),
                 'relatorioNaoConformidades as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta'),
@@ -177,8 +180,11 @@ class ContractController extends Controller
             'latestAdditive',
         ])->loadCount([
             'contractAdditives',
-            'activities as open_activities_count' => fn (Builder $query): Builder => $query->where('status', '!=', 'done'),
+            'activities as open_activities_count' => fn (Builder $query): Builder => $query
+                ->visibleTo($request->user())
+                ->where('status', '!=', 'done'),
             'activities as overdue_activities_count' => fn (Builder $query): Builder => $query
+                ->visibleTo($request->user())
                 ->where('status', '!=', 'done')
                 ->whereDate('due_date', '<', today()),
             'relatorioNaoConformidades as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta'),
@@ -190,10 +196,11 @@ class ContractController extends Controller
             'tenant' => $tenant,
             'contract' => $contract,
             'recentActivities' => $contract->activities()
+                ->visibleTo($request->user())
                 ->with('assignees:id,name,avatar_url')
                 ->latest()
                 ->limit(5)
-                ->get(['id', 'contract_id', 'title', 'category', 'status', 'priority', 'due_date', 'created_at']),
+                ->get(['id', 'contract_id', 'created_by_id', 'assigned_to_id', 'title', 'category', 'visibility', 'status', 'priority', 'due_date', 'created_at']),
             'recentRncs' => $contract->relatorioNaoConformidades()
                 ->with('disciplina:id,nome,sigla')
                 ->latest()

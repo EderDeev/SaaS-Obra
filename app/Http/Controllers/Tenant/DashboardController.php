@@ -36,9 +36,10 @@ class DashboardController extends Controller
 
         $activities = $tenant->activities()
             ->whereIn('contract_id', $activityContractIds)
+            ->visibleTo($user)
             ->with('contract:id,code,name')
             ->latest()
-            ->get(['id', 'tenant_id', 'contract_id', 'title', 'category', 'status', 'priority', 'due_date', 'created_at']);
+            ->get(['id', 'tenant_id', 'contract_id', 'created_by_id', 'assigned_to_id', 'title', 'category', 'visibility', 'status', 'priority', 'due_date', 'created_at']);
         $projects = $tenant->projectDocuments()
             ->whereIn('contract_id', $projectContractIds)
             ->with(['contract:id,code,name', 'disciplina:id,nome,sigla'])
@@ -101,6 +102,7 @@ class DashboardController extends Controller
 
         $myActivities = $tenant->activities()
             ->whereIn('contract_id', $activityContractIds)
+            ->visibleTo($user)
             ->where('status', '!=', 'done')
             ->where(function (Builder $query) use ($user): void {
                 $query
@@ -111,7 +113,7 @@ class DashboardController extends Controller
             ->orderByRaw('case when due_date is null then 1 else 0 end')
             ->orderBy('due_date')
             ->limit(6)
-            ->get(['id', 'tenant_id', 'contract_id', 'title', 'category', 'status', 'priority', 'due_date']);
+            ->get(['id', 'tenant_id', 'contract_id', 'created_by_id', 'assigned_to_id', 'title', 'category', 'visibility', 'status', 'priority', 'due_date']);
 
         return Inertia::render('Tenant/Dashboard', [
             'tenant' => $tenant,
@@ -144,6 +146,15 @@ class DashboardController extends Controller
                 'activitiesByCategory' => $this->statusChart($activities->countBy(fn ($activity): string => $activity->category ?: 'project'), [
                     'project' => 'Projeto',
                     'quality' => 'Qualidade',
+                    'budget' => 'Orçamento',
+                    'measurement' => 'Medição',
+                    'documentation' => 'Documentação',
+                    'service_order' => 'Ordem de Serviço',
+                    'construction_diary' => 'Diário de Obra',
+                    'contract' => 'Contrato',
+                    'administrative' => 'Administrativo',
+                    'field' => 'Campo',
+                    'client' => 'Cliente',
                 ]),
                 'projectsByStatus' => $this->statusChart($projects->countBy('status'), [
                     'em_analise' => 'Em analise',
@@ -163,7 +174,9 @@ class DashboardController extends Controller
             'recentContracts' => $contracts
                 ->with(['obra:id,nome', 'clienteEmpresa:id,nome', 'construtoraEmpresa:id,nome', 'gerenciadoraEmpresa:id,nome'])
                 ->withCount([
-                    'activities as open_activities_count' => fn (Builder $query): Builder => $query->where('status', '!=', 'done'),
+                    'activities as open_activities_count' => fn (Builder $query): Builder => $query
+                        ->visibleTo($user)
+                        ->where('status', '!=', 'done'),
                     'relatorioNaoConformidades as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta'),
                     'projectDocuments as pending_projects_count' => fn (Builder $query): Builder => $query->whereIn('status', ['em_analise', 'em_aprovacao']),
                 ])

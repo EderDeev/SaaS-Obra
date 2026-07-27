@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectReviewChecklistItem;
 use App\Models\ProjectReviewMarkup;
+use App\Models\ProjectReviewMarkupReply;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ProjectReviewMarkupCreatedNotification;
@@ -13,6 +14,7 @@ use App\Support\ProjectPermissions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -103,6 +105,51 @@ class ProjectReviewWorkspaceController extends Controller
         return back()->with('success', 'Comentário visual atualizado.');
     }
 
+    public function storeMarkupReply(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): RedirectResponse
+    {
+        $markup = $this->authorizedMarkupForComment($request, $tenant, $markup);
+
+        $data = $request->validate([
+            'body' => ['required', 'string', 'max:5000'],
+            'resolve' => ['sometimes', 'boolean'],
+        ]);
+
+        $resolve = (bool) ($data['resolve'] ?? false);
+
+        if ($resolve) {
+            $canResolve = ProjectPermissions::can(
+                $request->user(),
+                $tenant,
+                ProjectPermissions::REVIEW,
+                $markup->version->document->contract
+            ) || (int) $markup->assigned_to_id === (int) $request->user()->id;
+
+            abort_unless($canResolve, 403);
+        }
+
+        DB::transaction(function () use ($request, $tenant, $markup, $data, $resolve): void {
+            ProjectReviewMarkupReply::create([
+                'tenant_id' => $tenant->id,
+                'project_review_markup_id' => $markup->id,
+                'created_by_id' => $request->user()->id,
+                'body' => trim($data['body']),
+                'resolves_markup' => $resolve,
+            ]);
+
+            if ($resolve) {
+                $markup->forceFill([
+                    'status' => 'resolved',
+                    'closed_by_id' => $request->user()->id,
+                    'closed_at' => now(),
+                ])->save();
+            }
+        });
+
+        return back()->with('success', $resolve
+            ? 'Resposta registrada e comentário resolvido.'
+            : 'Resposta registrada no comentário.');
+    }
+
     public function destroyMarkup(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): RedirectResponse
     {
         $this->authorizedMarkupForReview($request, $tenant, $markup);
@@ -155,6 +202,22 @@ class ProjectReviewWorkspaceController extends Controller
         $markup->load('version.document.contract');
         abort_unless($markup->version?->document, 404);
         abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $markup->version->document->contract), 403);
+
+        return $markup;
+    }
+
+    private function authorizedMarkupForComment(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): ProjectReviewMarkup
+    {
+        abort_unless((int) $markup->tenant_id === (int) $tenant->id, 404);
+
+        $markup->load('version.document.contract');
+        abort_unless($markup->version?->document, 404);
+
+        $contract = $markup->version->document->contract;
+        $canView = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::VIEW, $contract);
+        $canReview = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $contract);
+
+        abort_unless($canView || $canReview, 403);
 
         return $markup;
     }

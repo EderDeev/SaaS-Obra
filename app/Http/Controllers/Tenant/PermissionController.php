@@ -223,6 +223,7 @@ class PermissionController extends Controller
             'tenant_id' => $tenant->id,
             'created_by_id' => $link->created_by_id ?? $request->user()->id,
             'status' => 'active',
+            'responsibility_type' => RncPermissions::responsibilityTypeForPermissions($permissions),
             'permissions' => $permissions,
         ]);
         $link->save();

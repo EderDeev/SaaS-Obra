@@ -7,24 +7,29 @@ use App\Models\Empresa;
 use App\Models\Obra;
 use App\Models\ProjectDisciplineResponsavel;
 use App\Models\ProjectDocument;
+use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectPhase;
 use App\Models\ProjectReviewChecklistItem;
 use App\Models\ProjectReviewMarkup;
 use App\Models\Tenant;
 use App\Models\TipoEmpresa;
 use App\Models\User;
+use App\Jobs\RemoveRejectedProjectVersionFromApsJob;
 use App\Jobs\ProcessProjectVersionApsJob;
 use App\Notifications\ProjectApprovedNotification;
+use App\Notifications\ProjectRejectedNotification;
 use App\Notifications\ProjectReviewMarkupCreatedNotification;
 use App\Notifications\ProjectSubmittedForReviewNotification;
 use App\Notifications\ProjectVerifiedForApprovalNotification;
 use App\Support\ProjectPermissions;
+use App\Services\AutodeskApsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Mockery;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -57,6 +62,95 @@ class TenantProjectTest extends TestCase
         $this->actingAs($user)
             ->get(route('tenant.projects.index', $tenant))
             ->assertForbidden();
+    }
+
+    public function test_submit_and_review_lists_are_ordered_by_latest_submission(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $disciplina = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Arquitetura',
+            'sigla' => 'ARQ',
+            'cor' => '#2563eb',
+        ]);
+        $obra = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Bloco A',
+            'codigo' => '001',
+            'tipo' => 'pai',
+        ]);
+        $phase = $this->projectPhase('PB');
+
+        $olderSubmission = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'disciplina_id' => $disciplina->id,
+            'project_phase_id' => $phase->id,
+            'created_by_id' => $user->id,
+            'title' => 'Envio antigo',
+            'code' => '001-001-ARQ-PB-PRJ-001',
+            'document_number' => '001',
+            'document_type' => 'projeto',
+            'status' => 'em_analise',
+        ]);
+        $olderVersion = $olderSubmission->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'em_analise',
+            'original_name' => 'antigo.pdf',
+            'stored_name' => 'antigo.pdf',
+            'file_path' => 'projects/antigo.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 100,
+            'derivative_status' => 'not_submitted',
+        ]);
+        $olderVersion->forceFill([
+            'created_at' => now()->subDays(2),
+            'updated_at' => now()->subDays(2),
+        ])->saveQuietly();
+
+        $newerSubmission = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'disciplina_id' => $disciplina->id,
+            'project_phase_id' => $phase->id,
+            'created_by_id' => $user->id,
+            'title' => 'Envio recente',
+            'code' => '001-001-ARQ-PB-PRJ-002',
+            'document_number' => '002',
+            'document_type' => 'projeto',
+            'status' => 'em_aprovacao',
+        ]);
+        $newerVersion = $newerSubmission->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'em_aprovacao',
+            'original_name' => 'recente.pdf',
+            'stored_name' => 'recente.pdf',
+            'file_path' => 'projects/recente.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 100,
+            'derivative_status' => 'not_submitted',
+        ]);
+        $newerVersion->forceFill([
+            'created_at' => now()->subHour(),
+            'updated_at' => now()->subHour(),
+        ])->saveQuietly();
+
+        foreach (['tenant.projects.index', 'tenant.projects.review.index'] as $routeName) {
+            $this->actingAs($user)
+                ->get(route($routeName, $tenant))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('documents.0.id', $newerSubmission->id)
+                    ->where('documents.1.id', $olderSubmission->id));
+        }
     }
 
     public function test_user_can_upload_project_document(): void
@@ -214,6 +308,10 @@ class TenantProjectTest extends TestCase
             ])
             ->assertRedirect();
 
+        $approvedDocument = ProjectDocument::with('latestVersion')->firstOrFail();
+        $approvedDocument->forceFill(['status' => 'ativo'])->save();
+        $approvedDocument->latestVersion->forceFill(['status' => 'ativo'])->save();
+
         $this->actingAs($user)
             ->from(route('tenant.projects.index', $tenant))
             ->post(route('tenant.projects.store', $tenant), [
@@ -237,14 +335,85 @@ class TenantProjectTest extends TestCase
         $document = ProjectDocument::with('versions')->firstOrFail();
 
         $this->assertDatabaseCount('project_documents', 1);
+        $this->assertSame('em_analise', $document->status);
         $this->assertSame('Projeto Arquitetonico', $document->title);
         $this->assertSame('001-001-ARQ-PB-PRJ-001', $document->code);
         $this->assertSame(['R00', 'R01'], $document->versions->pluck('revision')->all());
         $this->assertSame(['001-001-ARQ-PB-PRJ-001-R00.pdf', '001-001-ARQ-PB-PRJ-001-R01.pdf'], $document->versions->pluck('stored_name')->all());
         $this->assertSame('Alteracao de layout e compatibilizacao com estrutura.', $document->versions->last()->revision_change_summary);
-        $this->assertSame('CAP-001-'.now()->year, $document->versions->last()->cap_number);
+        $this->assertSame('001-001-ARQ-PB-CAP-001-R01', $document->versions->last()->cap_number);
         $this->assertSame('Compatibilizacao com estrutura.', $document->versions->last()->cap_reason);
         $this->assertSame(['custo', 'prazo'], $document->versions->last()->cap_impacts);
+    }
+
+    public function test_rejected_project_resubmission_creates_revision_without_cap(): void
+    {
+        Storage::fake('public');
+
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $disciplina = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Arquitetura',
+            'sigla' => 'ARQ',
+            'cor' => '#2563eb',
+        ]);
+        $obra = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Bloco A',
+            'codigo' => '001',
+            'tipo' => 'pai',
+        ]);
+        $phase = $this->projectPhase('PB');
+        $payload = [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'disciplina_id' => $disciplina->id,
+            'project_phase_id' => $phase->id,
+            'title' => 'Projeto Arquitetônico',
+            'document_type' => 'projeto',
+            'document_number' => '001',
+        ];
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.store', $tenant), [
+                ...$payload,
+                'file' => UploadedFile::fake()->create('planta-r00.pdf', 120, 'application/pdf'),
+            ])
+            ->assertRedirect();
+
+        $document = ProjectDocument::with('latestVersion')->firstOrFail();
+        $document->forceFill(['status' => 'reprovado', 'review_notes' => 'Corrigir cotas.'])->save();
+        $document->latestVersion->forceFill(['status' => 'reprovado', 'review_notes' => 'Corrigir cotas.'])->save();
+
+        $this->actingAs($user)
+            ->from(route('tenant.projects.index', $tenant))
+            ->post(route('tenant.projects.store', $tenant), [
+                ...$payload,
+                'file' => UploadedFile::fake()->create('planta-r01.pdf', 120, 'application/pdf'),
+            ])
+            ->assertRedirect(route('tenant.projects.index', $tenant))
+            ->assertSessionHasErrors('revision_change_summary');
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.store', $tenant), [
+                ...$payload,
+                'revision_change_summary' => 'Cotas corrigidas conforme o motivo da reprovação.',
+                'file' => UploadedFile::fake()->create('planta-r01.pdf', 120, 'application/pdf'),
+            ])
+            ->assertRedirect();
+
+        $document->refresh()->load('versions');
+        $newVersion = $document->versions->last();
+
+        $this->assertSame(['R00', 'R01'], $document->versions->pluck('revision')->all());
+        $this->assertSame('em_analise', $document->status);
+        $this->assertSame('Cotas corrigidas conforme o motivo da reprovação.', $newVersion->revision_change_summary);
+        $this->assertNull($newVersion->cap_number);
+        $this->assertNull($newVersion->cap_reason);
+        $this->assertNull($newVersion->cap_description);
+        $this->assertNull($newVersion->cap_impacts);
     }
 
     public function test_revised_projects_page_lists_versions_with_cap(): void
@@ -278,7 +447,20 @@ class TenantProjectTest extends TestCase
             'document_type' => 'projeto',
             'status' => 'em_analise',
         ]);
-        $document->versions()->create([
+        $baseVersion = $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'ativo',
+            'original_name' => 'projeto-r00.pdf',
+            'stored_name' => '001-001-ARQ-PB-PRJ-001-R00.pdf',
+            'file_path' => 'tenant-1/projects/projeto-r00.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+            'aps_urn' => 'urn-base-version',
+            'derivative_status' => 'ready',
+        ]);
+        $currentVersion = $document->versions()->create([
             'tenant_id' => $tenant->id,
             'uploaded_by_id' => $user->id,
             'cap_requested_by_id' => $user->id,
@@ -296,7 +478,8 @@ class TenantProjectTest extends TestCase
             'file_path' => 'tenant-1/projects/projeto-r01.pdf',
             'mime_type' => 'application/pdf',
             'file_size' => 123,
-            'derivative_status' => 'not_submitted',
+            'aps_urn' => 'urn-current-version',
+            'derivative_status' => 'ready',
         ]);
 
         $this->actingAs($user)
@@ -304,6 +487,28 @@ class TenantProjectTest extends TestCase
             ->assertOk()
             ->assertSee('Tenant\/Projects\/Revisions', false)
             ->assertSee('CAP-001-'.now()->year);
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Index')
+                ->where('documents.0.latest_cap_version.id', $currentVersion->id)
+                ->where('documents.0.latest_cap_version.cap_number', 'CAP-001-'.now()->year));
+
+        $pdfResponse = $this->actingAs($user)
+            ->get(route('tenant.projects.cap.pdf', [$tenant, $currentVersion]));
+
+        $pdfResponse->assertOk();
+        $this->assertStringStartsWith('application/pdf', (string) $pdfResponse->headers->get('content-type'));
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.compare', [$tenant, $currentVersion, $baseVersion]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Comparison')
+                ->where('baseVersion.id', $baseVersion->id)
+                ->where('currentVersion.id', $currentVersion->id));
     }
 
     public function test_project_tree_lists_only_approved_documents(): void
@@ -565,6 +770,137 @@ class TenantProjectTest extends TestCase
         $this->assertNotNull($document->refresh()->approved_at);
     }
 
+    public function test_project_rejection_requires_reason_and_notifies_latest_version_uploader(): void
+    {
+        Notification::fake();
+        Queue::fake();
+
+        [$tenant, $reviewer, $contract] = $this->tenantScenario('tenant_admin');
+        $creator = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $creator->id,
+            'title' => 'Projeto estrutural para revisão',
+            'code' => 'CT001-001-EST-PE-PRJ-001',
+            'document_type' => 'projeto',
+            'status' => 'em_analise',
+        ]);
+        $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $submitter->id,
+            'revision' => 'R01',
+            'status' => 'em_analise',
+            'original_name' => 'estrutura-r01.pdf',
+            'stored_name' => 'estrutura-r01.pdf',
+            'file_path' => 'projects/estrutura-r01.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 1024,
+        ]);
+
+        $this->actingAs($reviewer)
+            ->patch(route('tenant.projects.review.update', [$tenant, $document]), [
+                'action' => 'reprovar',
+                'review_notes' => '   ',
+            ])
+            ->assertSessionHasErrors('review_notes');
+
+        $this->assertSame('em_analise', $document->fresh()->status);
+        Notification::assertNothingSent();
+
+        $reason = 'Compatibilizar os pilares com a arquitetura e reenviar a revisão.';
+
+        $this->actingAs($reviewer)
+            ->patch(route('tenant.projects.review.update', [$tenant, $document]), [
+                'action' => 'reprovar',
+                'review_notes' => $reason,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('project_documents', [
+            'id' => $document->id,
+            'status' => 'reprovado',
+            'reviewed_by_id' => $reviewer->id,
+            'review_notes' => $reason,
+        ]);
+        $this->assertDatabaseHas('project_document_versions', [
+            'project_document_id' => $document->id,
+            'status' => 'reprovado',
+            'review_notes' => $reason,
+        ]);
+
+        Notification::assertSentTo($submitter, ProjectRejectedNotification::class, function ($notification, array $channels) use ($submitter, $reason): bool {
+            $mail = $notification->toMail($submitter);
+
+            return in_array('database', $channels, true)
+                && in_array('mail', $channels, true)
+                && $mail->subject === 'Projeto reprovado: Projeto estrutural para revisão'
+                && data_get($mail->viewData, 'reason') === $reason
+                && data_get($mail->viewData, 'stageLabel') === 'Análise técnica';
+        });
+        Notification::assertNotSentTo($creator, ProjectRejectedNotification::class);
+        Queue::assertPushed(RemoveRejectedProjectVersionFromApsJob::class);
+        $this->assertSame('removing', $document->latestVersion()->first()->derivative_status);
+    }
+
+    public function test_rejected_project_cleanup_removes_aps_but_preserves_local_file_and_history(): void
+    {
+        Storage::fake('public');
+
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto rejeitado',
+            'document_type' => 'projeto',
+            'status' => 'reprovado',
+            'review_notes' => 'Corrigir interferências.',
+        ]);
+        $version = $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'reprovado',
+            'original_name' => 'projeto-rejeitado.rvt',
+            'stored_name' => 'CT001-001-ARQ-PE-PRJ-001-R00.rvt',
+            'file_path' => 'projects/projeto-rejeitado.rvt',
+            'mime_type' => 'application/octet-stream',
+            'file_size' => 2048,
+            'aps_object_id' => 'urn:adsk.objects:os.object:bucket/projeto-rejeitado.rvt',
+            'aps_urn' => 'aps-urn',
+            'derivative_status' => 'removing',
+        ]);
+        Storage::disk('public')->put($version->file_path, 'arquivo');
+
+        $aps = Mockery::mock(AutodeskApsService::class);
+        $aps->shouldReceive('deleteVersionFromAps')
+            ->once()
+            ->with(Mockery::on(fn ($candidate): bool => $candidate->is($version)))
+            ->andReturn($version);
+
+        (new RemoveRejectedProjectVersionFromApsJob($version->id))->handle($aps);
+
+        Storage::disk('public')->assertExists('projects/projeto-rejeitado.rvt');
+        $this->assertDatabaseHas('project_document_versions', [
+            'id' => $version->id,
+            'status' => 'reprovado',
+            'file_path' => 'projects/projeto-rejeitado.rvt',
+            'file_size' => 2048,
+            'aps_object_id' => null,
+            'aps_urn' => null,
+            'derivative_status' => 'removed',
+        ]);
+        $this->assertDatabaseHas('project_documents', [
+            'id' => $document->id,
+            'status' => 'reprovado',
+            'review_notes' => 'Corrigir interferências.',
+        ]);
+        $this->assertSame('/storage/projects/projeto-rejeitado.rvt', $version->fresh()->url);
+    }
+
     public function test_tenant_admin_can_manage_project_discipline_responsibles(): void
     {
         [$tenant, $admin, $contract] = $this->tenantScenario('tenant_admin');
@@ -766,6 +1102,25 @@ class TenantProjectTest extends TestCase
             'document_type' => 'projeto',
             'status' => 'em_analise',
         ]);
+        $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $reviewer->id,
+            'revision' => 'R01',
+            'status' => 'em_analise',
+            'cap_number' => '001-001-ARQ-PB-CAP-001-R01',
+            'cap_sequence' => 1,
+            'cap_year' => now()->year,
+            'cap_requested_at' => now(),
+            'cap_reason' => 'Compatibilizacao aprovada.',
+            'cap_description' => 'Projeto revisado conforme interferencias.',
+            'cap_impacts' => ['compatibilidade'],
+            'original_name' => 'projeto-r01.pdf',
+            'stored_name' => '001-001-ARQ-PB-PRJ-001-R01.pdf',
+            'file_path' => 'tenant-1/projects/projeto-r01.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+            'derivative_status' => 'ready',
+        ]);
         ProjectDisciplineResponsavel::create([
             'tenant_id' => $tenant->id,
             'contract_id' => $contract->id,
@@ -825,8 +1180,14 @@ class TenantProjectTest extends TestCase
         $this->assertNotNull($document->refresh()->approved_at);
 
         foreach ([$reviewer, $approver, $observer] as $user) {
-            Notification::assertSentTo($user, ProjectApprovedNotification::class, function ($notification, array $channels): bool {
-                return in_array('database', $channels, true) && in_array('mail', $channels, true);
+            Notification::assertSentTo($user, ProjectApprovedNotification::class, function ($notification, array $channels) use ($user): bool {
+                $payload = $notification->toArray($user);
+
+                return in_array('database', $channels, true)
+                    && in_array('mail', $channels, true)
+                    && $payload['title'] === 'Revisao de projeto aprovada'
+                    && $payload['revision'] === 'R01'
+                    && $payload['cap_number'] === '001-001-ARQ-PB-CAP-001-R01';
             });
         }
         Notification::assertNotSentTo($platformAdmin, ProjectApprovedNotification::class);
@@ -997,6 +1358,49 @@ class TenantProjectTest extends TestCase
         Notification::assertSentTo($assignee, ProjectReviewMarkupCreatedNotification::class, function ($notification, array $channels): bool {
             return in_array('database', $channels, true) && in_array('mail', $channels, true);
         });
+
+        $this->actingAs($assignee)
+            ->post(route('tenant.projects.markups.replies.store', [$tenant, $markup]), [
+                'body' => 'Ajuste executado conforme o apontamento.',
+                'resolve' => false,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('project_review_markup_replies', [
+            'tenant_id' => $tenant->id,
+            'project_review_markup_id' => $markup->id,
+            'created_by_id' => $assignee->id,
+            'body' => 'Ajuste executado conforme o apontamento.',
+            'resolves_markup' => false,
+        ]);
+
+        $this->actingAs($assignee)
+            ->post(route('tenant.projects.markups.replies.store', [$tenant, $markup]), [
+                'body' => 'Solução conferida e definida.',
+                'resolve' => true,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('project_review_markup_replies', [
+            'project_review_markup_id' => $markup->id,
+            'created_by_id' => $assignee->id,
+            'body' => 'Solução conferida e definida.',
+            'resolves_markup' => true,
+        ]);
+        $this->assertDatabaseHas('project_review_markups', [
+            'id' => $markup->id,
+            'status' => 'resolved',
+            'closed_by_id' => $assignee->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.viewer', [$tenant, $version]).'?workspace=comments')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canReplyToMarkups', true)
+                ->has('reviewMarkups.0.replies', 2)
+                ->where('reviewMarkups.0.can_resolve', true)
+            );
 
         $item = ProjectReviewChecklistItem::firstOrFail();
 

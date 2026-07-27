@@ -1,11 +1,12 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArchiveX, CheckCircle2, ChevronDown, Download, Eye, FileUp, Filter, FolderOpen, MessageSquare, Search, Send, Trash2, TriangleAlert, UploadCloud, X } from 'lucide-react';
-import { useMemo, useRef } from 'react';
-import { useState } from 'react';
+import { ArchiveX, CheckCircle2, ChevronDown, Download, Eye, FileDown, FileUp, Filter, FolderOpen, MessageSquare, Search, Send, Trash2, TriangleAlert, UploadCloud, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const PROJECT_SEQUENCE_LENGTH = 3;
+const PROJECTS_PER_PAGE = 20;
 
 function contractLabel(contract) {
     return `${contract.code} - ${contract.name}`;
@@ -32,6 +33,16 @@ function normalizeDocumentNumber(value) {
     const digits = String(value || '').replace(/\D+/g, '').slice(0, PROJECT_SEQUENCE_LENGTH);
 
     return digits ? digits.padStart(PROJECT_SEQUENCE_LENGTH, '0') : '';
+}
+
+function buildCapNumber(documentCode, revision) {
+    const parts = String(documentCode || '').split('-').filter(Boolean);
+
+    if (parts.length >= 2) {
+        parts[parts.length - 2] = 'CAP';
+    }
+
+    return [...parts, revision].filter(Boolean).join('-');
 }
 
 function nextRevisionLabel(revision) {
@@ -106,6 +117,10 @@ function viewerWorkspaceUrl(tenant, version, workspace = 'view') {
     return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}`;
 }
 
+function capPdfUrl(tenant, version) {
+    return route('tenant.projects.cap.pdf', [tenant.slug, version.id]);
+}
+
 const derivativeLabels = {
     not_submitted: 'Aguardando APS',
     queued: 'Na fila APS',
@@ -119,10 +134,28 @@ const MAX_PROJECT_FILE_SIZE = 50 * 1024 * 1024;
 const statusClasses = {
     em_analise: 'sig-pill-blue',
     em_aprovacao: 'sig-pill-amber',
+    em_revisao: 'sig-pill-amber',
     ativo: 'sig-pill-green',
     inativo: 'sig-pill-red',
     reprovado: 'sig-pill-red',
 };
+
+function isRevisionInProgress(document) {
+    return Boolean(Number(document?.has_approved_version || 0))
+        && ['em_analise', 'em_aprovacao'].includes(document?.status);
+}
+
+function projectDisplayStatus(document, manuallyInactive = isManuallyInactiveDocument(document)) {
+    if (manuallyInactive) {
+        return 'inativo';
+    }
+
+    return isRevisionInProgress(document) ? 'em_revisao' : document?.status;
+}
+
+function projectStatusLabel(status, statusLabels) {
+    return status === 'em_revisao' ? 'Em revisão' : (statusLabels[status] || status);
+}
 
 export default function ProjectsIndex({
     tenant,
@@ -163,11 +196,13 @@ export default function ProjectsIndex({
     const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
     const [statusFilter, setStatusFilter] = useState('todos');
     const [query, setQuery] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
     const [inactivateDocument, setInactivateDocument] = useState(null);
     const [expandedDocumentIds, setExpandedDocumentIds] = useState([]);
     const confirmedSubmitRef = useRef(false);
+    const projectsListRef = useRef(null);
     const form = useForm({
         contract_id: defaultContractId,
         obra_id: defaultObraId,
@@ -230,10 +265,13 @@ export default function ProjectsIndex({
         [documents, form.data.code, form.data.document_type, selectedContract, selectedObra, selectedDisciplina, documentTypeCodes, normalizedSequential],
     );
     const isRevision = Boolean(existingDocumentForEap);
+    const requiresCap = isRevision && Boolean(Number(existingDocumentForEap?.has_approved_version || 0));
+    const requiresCorrectionSummary = isRevision && !requiresCap;
     const revisionPreview = existingDocumentForEap
         ? nextRevisionLabel(existingDocumentForEap.latest_version?.revision)
         : 'R00';
     const fullEapPreview = [form.data.code, revisionPreview].filter(Boolean).join('-');
+    const capNumberPreview = buildCapNumber(form.data.code, revisionPreview);
     const submissionTitle = existingDocumentForEap?.title || form.data.title;
 
     const disciplinasForForm = useMemo(
@@ -296,11 +334,33 @@ export default function ProjectsIndex({
                 return true;
             }
 
-            return `${document.title} ${document.code || ''} ${fileDisplayName(document.latest_version)} ${document.latest_version?.original_name || ''} ${document.obra?.nome || ''} ${document.obra?.codigo || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''} ${document.phase?.code || ''}`
+            return `${document.title} ${projectEap(document)} ${fileDisplayName(document.latest_version)} ${document.latest_version?.original_name || ''} ${document.obra?.nome || ''} ${document.obra?.codigo || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''} ${document.phase?.code || ''}`
                 .toLowerCase()
                 .includes(term);
         });
     }, [documents, contractFilter, obraFilter, disciplinaFilter, statusFilter, query]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / PROJECTS_PER_PAGE));
+    const paginatedDocuments = useMemo(() => {
+        const start = (currentPage - 1) * PROJECTS_PER_PAGE;
+
+        return filteredDocuments.slice(start, start + PROJECTS_PER_PAGE);
+    }, [filteredDocuments, currentPage]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [contractFilter, obraFilter, disciplinaFilter, statusFilter, query]);
+
+    useEffect(() => {
+        setCurrentPage((pageNumber) => Math.min(pageNumber, totalPages));
+    }, [totalPages]);
+
+    const goToPage = (pageNumber) => {
+        const nextPage = Math.min(Math.max(pageNumber, 1), totalPages);
+
+        setCurrentPage(nextPage);
+        projectsListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     const updateContract = (contractId) => {
         const nextContract = contracts.find((contract) => String(contract.id) === String(contractId)) ?? null;
@@ -458,15 +518,19 @@ export default function ProjectsIndex({
             errors.document_type = 'Selecione o tipo de documento.';
         }
 
-        if (isRevision && !form.data.cap_reason.trim()) {
+        if (requiresCorrectionSummary && !form.data.revision_change_summary.trim()) {
+            errors.revision_change_summary = 'Descreva as correções realizadas para esta nova revisão.';
+        }
+
+        if (requiresCap && !form.data.cap_reason.trim()) {
             errors.cap_reason = 'Informe o motivo da alteracao desta revisao.';
         }
 
-        if (isRevision && !form.data.cap_description.trim()) {
+        if (requiresCap && !form.data.cap_description.trim()) {
             errors.cap_description = 'Descreva o que foi alterado nesta revisao.';
         }
 
-        if (isRevision && !form.data.cap_impacts.length) {
+        if (requiresCap && !form.data.cap_impacts.length) {
             errors.cap_impacts = 'Selecione ao menos um impacto da alteracao.';
         }
 
@@ -590,12 +654,12 @@ export default function ProjectsIndex({
             <section className="sig-content grid gap-6">
                 {submitPanelOpen && (
                     <div
-                        className="fixed inset-0 z-[110] flex justify-end bg-[rgba(11,16,32,0.42)]"
+                        className="fixed inset-0 z-[110] grid place-items-center overflow-y-auto bg-[rgba(11,16,32,0.42)] p-4 sm:p-6"
                         role="presentation"
                         onMouseDown={() => setSubmitPanelOpen(false)}
                     >
                         <form
-                            className="h-full w-full max-w-[500px] overflow-y-auto border-l border-[var(--border)] bg-white p-5 shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                            className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-[760px] overflow-y-auto rounded-lg border border-[var(--border)] bg-white p-5 shadow-[0_24px_80px_rgba(11,16,32,0.24)] sm:max-h-[calc(100vh-3rem)] sm:p-6"
                             onSubmit={submit}
                             noValidate
                             onMouseDown={(event) => event.stopPropagation()}
@@ -633,7 +697,7 @@ export default function ProjectsIndex({
                         </div>
                     )}
 
-                    <div className="mt-5 grid gap-3">
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
                         <Field label="Contrato" error={form.errors.contract_id}>
                             <select value={form.data.contract_id} onChange={(event) => updateContract(event.target.value)} required>
                                 <option value="">Selecione o contrato</option>
@@ -678,7 +742,19 @@ export default function ProjectsIndex({
                             </select>
                         </Field>
 
-                        <Field label="Titulo" error={form.errors.title}>
+                        <Field label="Tipo de documento" error={form.errors.document_type}>
+                            <select value={form.data.document_type} onChange={(event) => updateDocumentType(event.target.value)} required>
+                                {Object.entries(documentTypes).map(([value, label]) => (
+                                    <option key={value} value={value}>{label}</option>
+                                ))}
+                            </select>
+                        </Field>
+
+                        <Field
+                            label="Titulo"
+                            error={form.errors.title}
+                            hint={isRevision ? 'Revisões mantêm o título do projeto anterior.' : null}
+                        >
                             <input
                                 value={submissionTitle}
                                 onChange={(event) => !isRevision && form.setData('title', event.target.value)}
@@ -686,14 +762,9 @@ export default function ProjectsIndex({
                                 readOnly={isRevision}
                                 required={!isRevision}
                             />
-                            {isRevision && (
-                                <span className="mt-1 block text-xs text-[var(--ink-500)]">
-                                    Revisões mantêm o título do projeto anterior.
-                                </span>
-                            )}
                         </Field>
 
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
                             <Field label="Sequencial" error={form.errors.document_number}>
                                 <input
                                     value={form.data.document_number}
@@ -711,30 +782,36 @@ export default function ProjectsIndex({
                             </Field>
                         </div>
 
-                        <Field label="Tipo de documento" error={form.errors.document_type}>
-                            <select value={form.data.document_type} onChange={(event) => updateDocumentType(event.target.value)} required>
-                                {Object.entries(documentTypes).map(([value, label]) => (
-                                    <option key={value} value={value}>{label}</option>
-                                ))}
-                            </select>
-                        </Field>
+                        <div className="sm:col-span-2">
+                            <EapPreview fullEap={fullEapPreview} />
+                        </div>
 
-                        <EapPreview fullEap={fullEapPreview} />
-
-                        {isRevision && (
-                            <CapFields
-                                capReason={form.data.cap_reason}
-                                capDescription={form.data.cap_description}
-                                capImpacts={form.data.cap_impacts}
-                                capImpactLabels={capImpactLabels}
-                                errors={form.errors}
-                                onReasonChange={(value) => form.setData('cap_reason', value)}
-                                onDescriptionChange={(value) => form.setData('cap_description', value)}
-                                onImpactToggle={toggleCapImpact}
-                            />
+                        {requiresCap && (
+                            <div className="sm:col-span-2">
+                                <CapFields
+                                    capReason={form.data.cap_reason}
+                                    capDescription={form.data.cap_description}
+                                    capImpacts={form.data.cap_impacts}
+                                    capImpactLabels={capImpactLabels}
+                                    errors={form.errors}
+                                    onReasonChange={(value) => form.setData('cap_reason', value)}
+                                    onDescriptionChange={(value) => form.setData('cap_description', value)}
+                                    onImpactToggle={toggleCapImpact}
+                                />
+                            </div>
                         )}
 
-                        <div>
+                        {requiresCorrectionSummary && (
+                            <div className="sm:col-span-2">
+                                <RevisionCorrectionFields
+                                    value={form.data.revision_change_summary}
+                                    error={form.errors.revision_change_summary}
+                                    onChange={(value) => form.setData('revision_change_summary', value)}
+                                />
+                            </div>
+                        )}
+
+                        <div className="sm:col-span-2">
                             <span className="eyebrow mb-1 block">Arquivo</span>
                             <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-4 py-6 text-center hover:bg-white">
                                 <UploadCloud size={28} className="text-[var(--primary)]" />
@@ -756,13 +833,15 @@ export default function ProjectsIndex({
                         </div>
                     </div>
 
-                    <button
-                        className="sig-btn sig-btn-primary mt-5"
-                        disabled={!canTrySubmit}
-                    >
-                        <Send size={15} />
-                        Revisar e confirmar
-                    </button>
+                    <div className="mt-5 flex justify-end">
+                        <button
+                            className="sig-btn sig-btn-primary"
+                            disabled={!canTrySubmit}
+                        >
+                            <Send size={15} />
+                            Revisar e confirmar
+                        </button>
+                    </div>
                         </form>
                     </div>
                 )}
@@ -778,7 +857,7 @@ export default function ProjectsIndex({
                     </div>
                 )}
 
-                <section className="projects-list-card sig-card overflow-hidden">
+                <section ref={projectsListRef} className="projects-list-card sig-card overflow-hidden">
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
@@ -864,12 +943,12 @@ export default function ProjectsIndex({
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredDocuments.map((document) => {
+                                {paginatedDocuments.map((document) => {
                                     const version = document.latest_version;
                                     const treeActive = isTreeActiveDocument(document);
                                     const inactive = isInactiveDocument(document);
                                     const manuallyInactive = isManuallyInactiveDocument(document);
-                                    const displayStatus = manuallyInactive ? 'inativo' : document.status;
+                                    const displayStatus = projectDisplayStatus(document, manuallyInactive);
 
                                     return (
                                         <tr key={document.id}>
@@ -878,7 +957,7 @@ export default function ProjectsIndex({
                                                  <div className="mt-1 text-xs text-[var(--ink-500)]">
                                                      Fase: {document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'}
                                                  </div>
-                                                 <div className="mono mt-1 text-xs text-[var(--ink-500)]">{document.code || 'Sem codigo'} · {documentTypes[document.document_type] || document.document_type}</div>
+                                                 <div className="mono mt-1 text-xs text-[var(--ink-500)]">{projectEap(document) || 'Sem codigo'} · {documentTypes[document.document_type] || document.document_type}</div>
                                                  {Number(document.open_rncs_count || 0) > 0 && (
                                                      <div className="mt-2">
                                                          <OpenRncBadge tenant={tenant} document={document} />
@@ -902,7 +981,7 @@ export default function ProjectsIndex({
                                             <td className="font-semibold">{version?.revision}</td>
                                             <td>
                                                 <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
-                                                    {statusLabels[displayStatus] || displayStatus}
+                                                    {projectStatusLabel(displayStatus, statusLabels)}
                                                 </span>
                                                 {inactive && document.inactive_at && (
                                                     <div className="mt-1 text-xs text-[var(--ink-500)]">
@@ -968,6 +1047,16 @@ export default function ProjectsIndex({
                                                             Baixar
                                                         </a>
                                                     )}
+                                                    {document.latest_cap_version?.cap_number && (
+                                                        <a
+                                                            href={capPdfUrl(tenant, document.latest_cap_version)}
+                                                            download={`${document.latest_cap_version.cap_number}.pdf`}
+                                                            className="sig-btn sig-btn-secondary sig-btn-sm"
+                                                        >
+                                                            <FileDown size={13} />
+                                                            Baixar CAP
+                                                        </a>
+                                                    )}
                                                     {canDeleteProjects && treeActive && (
                                                         <button
                                                             type="button"
@@ -999,12 +1088,12 @@ export default function ProjectsIndex({
                         </div>
 
                         <div className="projects-responsive-list">
-                            {filteredDocuments.map((document) => {
+                            {paginatedDocuments.map((document) => {
                                 const version = document.latest_version;
                                 const treeActive = isTreeActiveDocument(document);
                                 const inactive = isInactiveDocument(document);
                                 const manuallyInactive = isManuallyInactiveDocument(document);
-                                const displayStatus = manuallyInactive ? 'inativo' : document.status;
+                                const displayStatus = projectDisplayStatus(document, manuallyInactive);
                                 const expanded = expandedDocumentIds.includes(document.id);
 
                                 return (
@@ -1019,12 +1108,12 @@ export default function ProjectsIndex({
                                                 <div className="flex flex-wrap items-center gap-2">
                                                     <h3 className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</h3>
                                                     <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
-                                                        {statusLabels[displayStatus] || displayStatus}
+                                                        {projectStatusLabel(displayStatus, statusLabels)}
                                                     </span>
                                                 </div>
 
                                                 <div className="mono mt-1 break-all text-xs text-[var(--ink-500)]">
-                                                    {document.code || 'Sem codigo'} - {version?.revision || 'Sem revisao'}
+                                                    {projectEap(document, version) || 'Sem codigo'}
                                                 </div>
 
                                                 <div className="mt-3 grid gap-x-4 gap-y-2 text-xs text-[var(--ink-500)] sm:grid-cols-2 lg:grid-cols-4">
@@ -1038,9 +1127,19 @@ export default function ProjectsIndex({
                                             <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
                                         </button>
 
-                                        {Number(document.open_rncs_count || 0) > 0 && (
-                                            <div className="px-5 pb-4">
+                                        {(Number(document.open_rncs_count || 0) > 0 || document.latest_cap_version?.cap_number) && (
+                                            <div className="flex flex-wrap items-center justify-end gap-2 px-5 pb-4">
                                                 <OpenRncBadge tenant={tenant} document={document} />
+                                                {document.latest_cap_version?.cap_number && (
+                                                    <a
+                                                        href={capPdfUrl(tenant, document.latest_cap_version)}
+                                                        download={`${document.latest_cap_version.cap_number}.pdf`}
+                                                        className="sig-btn sig-btn-secondary sig-btn-sm"
+                                                    >
+                                                        <FileDown size={13} />
+                                                        Baixar CAP
+                                                    </a>
+                                                )}
                                             </div>
                                         )}
 
@@ -1080,6 +1179,13 @@ export default function ProjectsIndex({
                                 );
                             })}
                         </div>
+                        <ProjectsPagination
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            totalItems={filteredDocuments.length}
+                            pageSize={PROJECTS_PER_PAGE}
+                            onPageChange={goToPage}
+                        />
                         </>
                     ) : (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
@@ -1100,11 +1206,14 @@ export default function ProjectsIndex({
                     documentTypeLabel={selectedDocumentTypeLabel}
                     eap={fullEapPreview}
                     existingDocument={existingDocumentForEap}
+                    requiresCap={requiresCap}
                     revision={revisionPreview}
+                    revisionChangeSummary={form.data.revision_change_summary}
                     capReason={form.data.cap_reason}
                     capDescription={form.data.cap_description}
                     capImpacts={form.data.cap_impacts}
                     capImpactLabels={capImpactLabels}
+                    capNumber={capNumberPreview}
                     processing={form.processing}
                     onClose={() => setConfirmOpen(false)}
                     onConfirm={confirmSubmit}
@@ -1210,6 +1319,32 @@ function CapFields({
     );
 }
 
+function RevisionCorrectionFields({ value, error, onChange }) {
+    return (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+            <div>
+                <span className="eyebrow block">Nova revisão</span>
+                <h3 className="mt-1 text-sm font-semibold text-[var(--ink-900)]">Correções realizadas</h3>
+                <p className="mt-1 text-xs leading-5 text-[var(--ink-500)]">
+                    Esta revisão ainda não possui uma versão aprovada e, por isso, não exige CAP.
+                </p>
+            </div>
+            <div className="mt-4">
+                <Field label="Resposta à reprovação" error={error}>
+                    <textarea
+                        value={value}
+                        onChange={(event) => onChange(event.target.value)}
+                        placeholder="Descreva as correções realizadas antes do novo envio"
+                        rows={4}
+                        required
+                        className="min-h-24 resize-y"
+                    />
+                </Field>
+            </div>
+        </div>
+    );
+}
+
 function ConfirmProjectSubmitModal({
     title,
     fileName,
@@ -1220,11 +1355,14 @@ function ConfirmProjectSubmitModal({
     documentTypeLabel,
     eap,
     existingDocument,
+    requiresCap,
     revision,
+    revisionChangeSummary,
     capReason,
     capDescription,
     capImpacts,
     capImpactLabels,
+    capNumber,
     processing,
     onClose,
     onConfirm,
@@ -1236,7 +1374,7 @@ function ConfirmProjectSubmitModal({
             onClick={onClose}
         >
             <section
-                className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)] sm:max-h-[calc(100dvh-3rem)]"
+                className="flex min-w-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)] sm:max-h-[calc(100dvh-3rem)]"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="confirm-project-submit-title"
@@ -1251,7 +1389,7 @@ function ConfirmProjectSubmitModal({
                         <h2 id="confirm-project-submit-title" className="mt-1 text-[17px] font-semibold text-[var(--ink-900)]">
                             Conferir dados do projeto
                         </h2>
-                        <p className="mt-1 text-[13px] text-[var(--ink-500)]">
+                        <p className="mt-1 break-words text-[13px] text-[var(--ink-500)] [overflow-wrap:anywhere]">
                             {existingDocument ? `Este envio sera registrado como revisao ${revision} do mesmo sequencial.` : `Este envio criara um novo projeto na revisao ${revision}.`}
                         </p>
                     </div>
@@ -1260,7 +1398,7 @@ function ConfirmProjectSubmitModal({
                     </button>
                 </header>
 
-                <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
+                <div className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-x-hidden overflow-y-auto px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
                     <ConfirmInfo label="Titulo" value={title} />
                     <ConfirmInfo label="Arquivo" value={fileName} />
                     <ConfirmInfo label="Contrato" value={contractLabel} />
@@ -1271,15 +1409,20 @@ function ConfirmProjectSubmitModal({
                     <div className="sm:col-span-2">
                         <ConfirmInfo label="EAP da revisao" value={eap} mono />
                     </div>
-                    {existingDocument && (
+                    {requiresCap && (
                         <div className="grid gap-3 sm:col-span-2">
-                            <ConfirmInfo label="Numero CAP" value="Gerado automaticamente" />
+                            <ConfirmInfo label="Número CAP" value={capNumber} mono />
                             <ConfirmInfo label="Motivo da alteracao" value={capReason} />
                             <ConfirmInfo label="Descricao da alteracao" value={capDescription} />
                             <ConfirmInfo
                                 label="Impactos"
                                 value={(capImpacts || []).map((impact) => capImpactLabels[impact] || impact).join(', ')}
                             />
+                        </div>
+                    )}
+                    {existingDocument && !requiresCap && (
+                        <div className="sm:col-span-2">
+                            <ConfirmInfo label="Correções realizadas" value={revisionChangeSummary} />
                         </div>
                     )}
                 </div>
@@ -1342,7 +1485,7 @@ function InactivateProjectModal({
 
                 <div className="grid gap-4 px-5 py-5">
                     <ConfirmInfo label="Projeto" value={document.title} />
-                    <ConfirmInfo label="EAP" value={document.code} mono />
+                    <ConfirmInfo label="EAP" value={projectEap(document)} mono />
                     <label>
                         <span className="eyebrow mb-1 block">Motivo da decisao</span>
                         <textarea
@@ -1372,22 +1515,72 @@ function InactivateProjectModal({
 
 function ConfirmInfo({ label, value, mono = false }) {
     return (
-        <div className="rounded-lg border border-[var(--border)] bg-white p-3">
+        <div className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-white p-3">
             <div className="eyebrow">{label}</div>
-            <div className={`mt-1 text-sm font-semibold text-[var(--ink-900)] ${mono ? 'mono break-all' : ''}`}>
+            <div className={`mt-1 min-w-0 max-w-full whitespace-pre-wrap break-words text-sm font-semibold text-[var(--ink-900)] [overflow-wrap:anywhere] ${mono ? 'mono break-all' : ''}`}>
                 {value || 'Nao informado'}
             </div>
         </div>
     );
 }
 
-function Field({ label, error, children }) {
+function Field({ label, error, hint = null, children }) {
     return (
         <label>
             <span className="eyebrow mb-1 block">{label}</span>
             <span className="sig-input">{children}</span>
+            {hint && <span className="mt-1 block text-xs text-[var(--ink-500)]">{hint}</span>}
             {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
         </label>
+    );
+}
+
+function ProjectsPagination({ currentPage, totalPages, totalItems, pageSize, onPageChange }) {
+    const endPage = Math.min(totalPages, Math.max(5, currentPage + 2));
+    const startPage = Math.max(1, endPage - 4);
+    const visiblePages = Array.from(
+        { length: Math.min(5, totalPages - startPage + 1) },
+        (_, index) => startPage + index,
+    );
+    const from = totalItems ? ((currentPage - 1) * pageSize) + 1 : 0;
+    const to = Math.min(currentPage * pageSize, totalItems);
+
+    return (
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-5 py-4">
+            <div className="text-sm text-[var(--ink-500)]">
+                Exibindo {from} a {to} de {totalItems} projeto(s).
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    className="sig-btn sig-btn-secondary sig-btn-sm"
+                    disabled={currentPage === 1}
+                    onClick={() => onPageChange(currentPage - 1)}
+                >
+                    Anterior
+                </button>
+                {visiblePages.map((pageNumber) => (
+                    <button
+                        key={pageNumber}
+                        type="button"
+                        className={`sig-btn sig-btn-sm !min-w-8 !px-2 ${pageNumber === currentPage ? 'sig-btn-primary' : 'sig-btn-secondary'}`}
+                        aria-current={pageNumber === currentPage ? 'page' : undefined}
+                        disabled={pageNumber === currentPage}
+                        onClick={() => onPageChange(pageNumber)}
+                    >
+                        {pageNumber}
+                    </button>
+                ))}
+                <button
+                    type="button"
+                    className="sig-btn sig-btn-primary sig-btn-sm"
+                    disabled={currentPage === totalPages}
+                    onClick={() => onPageChange(currentPage + 1)}
+                >
+                    Próxima
+                </button>
+            </div>
+        </footer>
     );
 }
 

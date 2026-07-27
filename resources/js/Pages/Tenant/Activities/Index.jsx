@@ -1,17 +1,23 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
+import ActivityTour, { startActivityTour } from '@/Components/ActivityTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
+    BarChart3,
     Calendar,
     CheckCircle2,
     Circle,
+    CircleHelp,
     Clock3,
     Download,
     Flag,
+    Globe2,
     KanbanSquare,
+    LockKeyhole,
     MessageSquare,
     Paperclip,
     Pencil,
+    Plane,
     Plus,
     Search,
     Send,
@@ -42,6 +48,20 @@ const priorityMeta = {
 const categoryMeta = {
     project: { label: 'Projeto', className: 'sig-pill-blue' },
     quality: { label: 'Qualidade', className: 'sig-pill-green' },
+    budget: { label: 'Orçamento', className: 'sig-pill-amber' },
+    measurement: { label: 'Medição', className: 'sig-pill-blue' },
+    documentation: { label: 'Documentação', className: 'sig-pill-green' },
+    service_order: { label: 'Ordem de Serviço', className: 'sig-pill-amber' },
+    construction_diary: { label: 'Diário de Obra', className: 'sig-pill-green' },
+    contract: { label: 'Contrato', className: 'sig-pill-blue' },
+    administrative: { label: 'Administrativo', className: '' },
+    field: { label: 'Campo', className: 'sig-pill-green' },
+    client: { label: 'Cliente', className: 'sig-pill-blue' },
+};
+
+const visibilityMeta = {
+    public: { label: 'Pública', icon: Globe2, className: 'sig-pill-blue' },
+    restricted: { label: 'Restrita', icon: LockKeyhole, className: 'sig-pill-amber' },
 };
 
 const shortDate = (date) => {
@@ -151,30 +171,49 @@ export default function ActivitiesIndex({
     assigneesByContract,
     priorities,
     categories,
+    visibilities,
     canCreateActivities,
     canEditActivities,
     canDeleteActivities,
+    tourMode = false,
+    tourScreen = null,
 }) {
     const page = usePage();
     const [query, setQuery] = useState('');
     const [contractFilter, setContractFilter] = useState('todos');
     const [categoryFilter, setCategoryFilter] = useState('todos');
-    const [showCreate, setShowCreate] = useState(false);
+    const [showCreate, setShowCreate] = useState(tourMode && tourScreen === 'create');
     const [draggedActivityId, setDraggedActivityId] = useState(null);
-    const [selectedActivityId, setSelectedActivityId] = useState(null);
+    const [selectedActivityId, setSelectedActivityId] = useState(
+        tourMode && tourScreen === 'detail' ? activities[0]?.id ?? null : null,
+    );
+    const [tourFlowStatus, setTourFlowStatus] = useState(
+        tourMode && tourScreen === 'flow' ? 'todo' : null,
+    );
     const [assigneeQuery, setAssigneeQuery] = useState('');
     const defaultContractId = contracts[0]?.id ? String(contracts[0].id) : '';
+    const tourAssigneeIds = tourMode
+        ? (assigneesByContract[defaultContractId] || []).map((user) => user.id)
+        : [];
     const form = useForm({
         contract_id: defaultContractId,
-        assigned_to_ids: [],
-        title: '',
-        description: '',
-        category: 'project',
-        priority: 'normal',
-        due_date: '',
+        assigned_to_ids: tourAssigneeIds,
+        title: tourMode ? 'Validar medição mensal da obra' : '',
+        description: tourMode
+            ? 'Conferir os quantitativos executados, validar a memória de cálculo e registrar as pendências antes do fechamento da medição.'
+            : '',
+        category: tourMode ? 'measurement' : 'project',
+        visibility: tourMode ? 'restricted' : 'public',
+        priority: tourMode ? 'high' : 'normal',
+        due_date: tourMode ? activities[0]?.due_date || '' : '',
     });
 
-    const selectedActivity = activities.find((activity) => activity.id === selectedActivityId);
+    const activitiesForBoard = useMemo(() => activities.map((activity) => (
+        tourMode && tourScreen === 'flow' && activity._tourData
+            ? { ...activity, status: tourFlowStatus || 'todo' }
+            : activity
+    )), [activities, tourFlowStatus, tourMode, tourScreen]);
+    const selectedActivity = activitiesForBoard.find((activity) => activity.id === selectedActivityId);
     const assigneesForSelectedContract = assigneesByContract[String(form.data.contract_id)] || [];
     const filteredAssigneesForSelectedContract = useMemo(() => {
         const q = assigneeQuery.trim().toLowerCase();
@@ -195,7 +234,7 @@ export default function ActivitiesIndex({
     const filteredActivities = useMemo(() => {
         const q = query.trim().toLowerCase();
 
-        return activities.filter((activity) => {
+        return activitiesForBoard.filter((activity) => {
             if (contractFilter !== 'todos' && String(activity.contract_id) !== String(contractFilter)) {
                 return false;
             }
@@ -218,10 +257,30 @@ export default function ActivitiesIndex({
                 ...activityAssignees(activity).map((user) => user.name),
             ].filter(Boolean).join(' ').toLowerCase().includes(q);
         });
-    }, [activities, categories, categoryFilter, contractFilter, query]);
+    }, [activitiesForBoard, categories, categoryFilter, contractFilter, query]);
+
+    useEffect(() => {
+        if (!tourMode || tourScreen !== 'flow') {
+            return undefined;
+        }
+
+        const updateFlowStatus = (event) => {
+            if (statusColumns.some((column) => column.value === event.detail)) {
+                setTourFlowStatus(event.detail);
+            }
+        };
+
+        window.addEventListener('activities:tour-flow-status', updateFlowStatus);
+
+        return () => window.removeEventListener('activities:tour-flow-status', updateFlowStatus);
+    }, [tourMode, tourScreen]);
 
     const submit = (event) => {
         event.preventDefault();
+
+        if (tourMode) {
+            return;
+        }
 
         form.post(route('tenant.activities.store', tenant.slug), {
             preserveScroll: true,
@@ -232,6 +291,7 @@ export default function ActivitiesIndex({
                     title: '',
                     description: '',
                     category: 'project',
+                    visibility: 'public',
                     priority: 'normal',
                     due_date: '',
                 });
@@ -259,6 +319,10 @@ export default function ActivitiesIndex({
     };
 
     const moveActivity = (status) => {
+        if (tourMode) {
+            return;
+        }
+
         if (!canEditActivities) {
             return;
         }
@@ -287,20 +351,40 @@ export default function ActivitiesIndex({
             <Head title="Atividades" />
 
             <section className="sig-content fade-in">
-                <div className="flex flex-wrap items-end gap-6">
+                <div data-tour="activities-overview" className="flex flex-wrap items-end gap-6">
                     <div className="min-w-0 flex-1">
                         <div className="eyebrow">Workspace · Atividades</div>
                         <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Atividades</h1>
                     </div>
-                    {canCreateActivities && (
-                        <button className="sig-btn sig-btn-primary" type="button" onClick={() => setShowCreate((value) => !value)}>
-                            <Plus size={15} />
-                            Nova atividade
-                        </button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {!tourMode && (
+                            <button className="sig-btn sig-btn-secondary" type="button" onClick={() => startActivityTour(tenant.slug)}>
+                                <Plane size={15} />
+                                Iniciar tour
+                            </button>
+                        )}
+                        <Link
+                            href={tourMode ? '#' : route('tenant.activities.metrics', tenant.slug)}
+                            className="sig-btn sig-btn-secondary"
+                            onClick={(event) => tourMode && event.preventDefault()}
+                        >
+                            <BarChart3 size={15} />
+                            Métricas
+                        </Link>
+                        {canCreateActivities && (
+                            <button
+                                className="sig-btn sig-btn-primary"
+                                type="button"
+                                onClick={() => !tourMode && setShowCreate(true)}
+                            >
+                                <Plus size={15} />
+                                Nova atividade
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                <div className="mt-6 flex flex-wrap items-center gap-3">
+                <div data-tour="activities-filters" className="mt-6 flex flex-wrap items-center gap-3">
                     <label className="sig-input min-w-[240px] max-w-[360px] flex-1">
                         <Search size={15} />
                         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por título, contrato ou responsável" />
@@ -336,7 +420,27 @@ export default function ActivitiesIndex({
                 )}
 
                 {showCreate && canCreateActivities && (
-                    <form className="sig-card mt-5 grid max-w-full grid-cols-1 gap-4 overflow-hidden p-5 md:grid-cols-2 xl:grid-cols-4" onSubmit={submit}>
+                    <div
+                        data-tour="activities-create-modal"
+                        className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-[rgba(11,16,32,0.45)] px-4 py-6"
+                        onMouseDown={() => !tourMode && setShowCreate(false)}
+                    >
+                        <section
+                            className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-[0_24px_80px_rgba(11,16,32,0.25)]"
+                            onMouseDown={(event) => event.stopPropagation()}
+                        >
+                            <header data-tour="activities-create-header" className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
+                                <div>
+                                    <div className="eyebrow">Nova atividade</div>
+                                    <h2 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">Criar atividade</h2>
+                                    <p className="mt-1 text-[13px] text-[var(--ink-500)]">Defina o contrato, os responsáveis e quem poderá visualizar o card.</p>
+                                </div>
+                                <button className="sig-btn sig-btn-ghost !min-h-9 !px-2" type="button" onClick={() => !tourMode && setShowCreate(false)} title="Fechar">
+                                    <X size={18} />
+                                </button>
+                            </header>
+                            <form className="grid max-h-[calc(100vh-150px)] grid-cols-1 gap-4 overflow-y-auto p-6 md:grid-cols-2 xl:grid-cols-4" onSubmit={submit}>
+                        <div data-tour="activities-create-fields" className="grid gap-4 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-4">
                         <Field label="Título" error={form.errors.title}>
                             <input value={form.data.title} onChange={(event) => form.setData('title', event.target.value)} required placeholder="Ex: Validar diário de obra" />
                         </Field>
@@ -368,7 +472,16 @@ export default function ActivitiesIndex({
                         <Field label="Prazo" error={form.errors.due_date}>
                             <input value={form.data.due_date} onChange={(event) => form.setData('due_date', event.target.value)} type="date" />
                         </Field>
-                        <div className="md:col-span-2 xl:col-span-4">
+                        </div>
+                        <div data-tour="activities-create-visibility" className="md:col-span-2 xl:col-span-4">
+                            <VisibilitySelector
+                                value={form.data.visibility}
+                                onChange={(value) => form.setData('visibility', value)}
+                                error={form.errors.visibility}
+                                options={visibilities}
+                            />
+                        </div>
+                        <div data-tour="activities-create-assignees" className="md:col-span-2 xl:col-span-4">
                             <div className="min-w-0">
                                 <span className="eyebrow mb-1 block">Responsáveis</span>
                                 <div className="rounded-lg border border-[var(--border)] bg-white p-3">
@@ -442,18 +555,20 @@ export default function ActivitiesIndex({
                             </Field>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 md:col-span-2 xl:col-span-4">
-                            <button className="sig-btn sig-btn-primary" disabled={form.processing}>
+                            <button data-tour="activities-create-action" className="sig-btn sig-btn-primary" disabled={form.processing}>
                                 <Plus size={15} />
                                 Criar atividade
                             </button>
-                            <button className="sig-btn sig-btn-secondary" type="button" onClick={() => setShowCreate(false)}>
+                            <button className="sig-btn sig-btn-secondary" type="button" onClick={() => !tourMode && setShowCreate(false)}>
                                 Cancelar
                             </button>
                         </div>
-                    </form>
+                            </form>
+                        </section>
+                    </div>
                 )}
 
-                <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-4 lg:grid-cols-2">
+                <div data-tour="activities-board" className="mt-6 grid min-w-0 gap-4 xl:grid-cols-4 lg:grid-cols-2">
                     {statusColumns.map((column) => {
                         const Icon = column.icon;
                         const columnActivities = filteredActivities.filter((activity) => activity.status === column.value);
@@ -461,6 +576,7 @@ export default function ActivitiesIndex({
                         return (
                             <section
                                 key={column.value}
+                                data-tour={`activities-column-${column.value}`}
                                 className="min-w-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3"
                                 onDragOver={(event) => event.preventDefault()}
                                 onDrop={() => canEditActivities && moveActivity(column.value)}
@@ -489,6 +605,9 @@ export default function ActivitiesIndex({
                                             canEditActivities={canEditActivities}
                                             onDragStart={() => canEditActivities && setDraggedActivityId(activity.id)}
                                             onDragEnd={() => setDraggedActivityId(null)}
+                                            tourTarget={activity._tourData
+                                                ? (tourScreen === 'flow' ? 'activities-flow-card' : 'activities-card')
+                                                : undefined}
                                         />
                                     ))}
 
@@ -511,18 +630,24 @@ export default function ActivitiesIndex({
                     assigneesByContract={assigneesByContract}
                     priorities={priorities}
                     categories={categories}
+                    visibilities={visibilities}
                     canEditActivities={canEditActivities}
                     canDeleteActivities={canDeleteActivities}
-                    onClose={() => setSelectedActivityId(null)}
+                    onClose={() => !tourMode && setSelectedActivityId(null)}
+                    tourMode={tourMode}
                 />
             )}
+
+            {tourMode && <ActivityTour section={tourScreen} tenantSlug={tenant.slug} />}
         </AuthenticatedLayout>
     );
 }
 
-function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragStart, onDragEnd }) {
+function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragStart, onDragEnd, tourTarget }) {
     const priority = priorityMeta[activity.priority] || priorityMeta.normal;
     const category = categoryMeta[activity.category || 'project'] || categoryMeta.project;
+    const visibility = visibilityMeta[activity.visibility || 'public'] || visibilityMeta.public;
+    const VisibilityIcon = visibility.icon;
     const due = dueInfo(activity.due_date, activity.status);
     const dueDate = shortDate(activity.due_date);
     const contractName = activity.contract?.obra?.nome || activity.contract?.name;
@@ -530,6 +655,7 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
 
     return (
         <article
+            data-tour={tourTarget}
             draggable={canEditActivities}
             onClick={onClick}
             onDragStart={onDragStart}
@@ -545,6 +671,10 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
                     <span className={`sig-pill ${priority.className}`}>
                         <span className="sig-pill-dot" />
                         {priority.label}
+                    </span>
+                    <span className={`sig-pill ${visibility.className}`}>
+                        <VisibilityIcon size={12} />
+                        {visibility.label}
                     </span>
                 </span>
                 <span className={`sig-pill min-w-0 ${due.className}`}>
@@ -606,7 +736,7 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
     );
 }
 
-function ActivityModal({ activity, tenant, assigneesByContract, priorities, categories, canEditActivities, canDeleteActivities, onClose }) {
+function ActivityModal({ activity, tenant, assigneesByContract, priorities, categories, visibilities, canEditActivities, canDeleteActivities, onClose, tourMode = false }) {
     const commentForm = useForm({ body: '' });
     const fileForm = useForm({ file: null });
     const [editing, setEditing] = useState(false);
@@ -614,12 +744,15 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
         title: activity.title || '',
         description: activity.description || '',
         category: activity.category || 'project',
+        visibility: activity.visibility || 'public',
         priority: activity.priority || 'normal',
         due_date: activity.due_date ? String(activity.due_date).slice(0, 10) : '',
         assigned_to_ids: activityAssignees(activity).map((user) => user.id),
     });
     const priority = priorityMeta[activity.priority] || priorityMeta.normal;
     const category = categoryMeta[activity.category || 'project'] || categoryMeta.project;
+    const visibility = visibilityMeta[activity.visibility || 'public'] || visibilityMeta.public;
+    const VisibilityIcon = visibility.icon;
     const due = dueInfo(activity.due_date, activity.status);
     const assignees = activityAssignees(activity);
     const contractName = activity.contract?.obra?.nome || activity.contract?.name;
@@ -636,6 +769,10 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
     const submitEdit = (event) => {
         event.preventDefault();
 
+        if (tourMode) {
+            return;
+        }
+
         editForm.patch(route('tenant.activities.update', [tenant.slug, activity.id]), {
             preserveScroll: true,
             onSuccess: () => setEditing(false),
@@ -643,6 +780,10 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
     };
 
     const deleteActivity = () => {
+        if (tourMode) {
+            return;
+        }
+
         router.delete(route('tenant.activities.destroy', [tenant.slug, activity.id]), {
             preserveScroll: true,
             onSuccess: onClose,
@@ -652,6 +793,10 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
     const submitComment = (event) => {
         event.preventDefault();
 
+        if (tourMode) {
+            return;
+        }
+
         commentForm.post(route('tenant.activities.comments.store', [tenant.slug, activity.id]), {
             preserveScroll: true,
             onSuccess: () => commentForm.reset(),
@@ -660,6 +805,10 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
 
     const submitFile = (event) => {
         event.preventDefault();
+
+        if (tourMode) {
+            return;
+        }
 
         if (!fileForm.data.file) {
             return;
@@ -674,12 +823,13 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
 
     return (
         <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-[rgba(11,16,32,0.45)] px-4 py-6" onMouseDown={onClose}>
-            <section className="w-full max-w-5xl rounded-xl bg-white shadow-[0_24px_80px_rgba(11,16,32,0.25)]" onMouseDown={(event) => event.stopPropagation()}>
-                <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
+            <section data-tour="activities-detail-modal" className="w-full max-w-5xl rounded-xl bg-white shadow-[0_24px_80px_rgba(11,16,32,0.25)]" onMouseDown={(event) => event.stopPropagation()}>
+                <header data-tour="activities-detail-header" className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
                     <div className="min-w-0">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <div data-tour="activities-detail-status" className="mb-2 flex flex-wrap items-center gap-2">
                             <span className={`sig-pill ${category.className}`}><Tag size={12} />{category.label}</span>
                             <span className={`sig-pill ${priority.className}`}><span className="sig-pill-dot" />{priority.label}</span>
+                            <span className={`sig-pill ${visibility.className}`}><VisibilityIcon size={12} />{visibility.label}</span>
                             <span className={`sig-pill ${due.className}`}><Clock3 size={12} />{due.label}</span>
                             <span className="mono text-[12px] text-[var(--ink-500)]">{activity.contract?.code}</span>
                         </div>
@@ -734,6 +884,12 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                                 <input value={editForm.data.due_date} onChange={(event) => editForm.setData('due_date', event.target.value)} type="date" />
                             </Field>
                         </div>
+                        <VisibilitySelector
+                            value={editForm.data.visibility}
+                            onChange={(value) => editForm.setData('visibility', value)}
+                            error={editForm.errors.visibility}
+                            options={visibilities}
+                        />
                         <div>
                             <span className="eyebrow mb-1 block">Responsáveis</span>
                             <div className="grid max-h-48 gap-2 overflow-y-auto rounded-lg border border-[var(--border)] bg-white p-3 sm:grid-cols-2">
@@ -775,7 +931,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
 
                 <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.8fr)]">
                     <div className="grid content-start gap-5">
-                        <section>
+                        <section data-tour="activities-detail-comments">
                             <h3 className="text-[14px] font-semibold text-[var(--ink-900)]">Descrição</h3>
                             <p className="mt-2 whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-[13px] leading-6 text-[var(--ink-700)]">
                                 {activity.description || 'Sem descrição.'}
@@ -831,7 +987,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                     </div>
 
                     <aside className="grid content-start gap-5">
-                        <section className="sig-card p-4">
+                        <section data-tour="activities-detail-responsibles" className="sig-card p-4">
                             <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[var(--ink-900)]">
                                 <Users size={15} />
                                 Responsáveis
@@ -851,7 +1007,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                             </div>
                         </section>
 
-                        <section className="sig-card p-4">
+                        <section data-tour="activities-detail-files" className="sig-card p-4">
                             <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[var(--ink-900)]">
                                 <Paperclip size={15} />
                                 Arquivos
@@ -890,6 +1046,58 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                     </aside>
                 </div>
             </section>
+        </div>
+    );
+}
+
+function VisibilitySelector({ value, onChange, error, options }) {
+    const descriptions = {
+        public: 'Todos os usuários do contrato com acesso às atividades podem visualizar este card.',
+        restricted: 'Somente o criador e os responsáveis vinculados à atividade podem visualizar este card.',
+    };
+
+    return (
+        <div className="min-w-0">
+            <div className="mb-2 flex items-center gap-1.5">
+                <span className="eyebrow">Visibilidade do card</span>
+                <span
+                    className="inline-flex text-[var(--ink-400)]"
+                    title="A visibilidade controla quem poderá encontrar e abrir esta atividade."
+                    aria-label="Ajuda sobre a visibilidade da atividade"
+                >
+                    <CircleHelp size={14} />
+                </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+                {Object.entries(options || { public: 'Pública', restricted: 'Restrita' }).map(([option, label]) => {
+                    const meta = visibilityMeta[option] || visibilityMeta.public;
+                    const Icon = meta.icon;
+                    const selected = value === option;
+
+                    return (
+                        <button
+                            key={option}
+                            type="button"
+                            className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 text-left transition ${
+                                selected
+                                    ? 'border-[var(--primary)] bg-[var(--primary-50)] ring-1 ring-[var(--primary-100)]'
+                                    : 'border-[var(--border)] bg-white hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]'
+                            }`}
+                            onClick={() => onChange(option)}
+                            aria-pressed={selected}
+                        >
+                            <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${selected ? 'bg-[var(--primary)] text-white' : 'bg-[var(--surface-muted)] text-[var(--ink-600)]'}`}>
+                                <Icon size={16} />
+                            </span>
+                            <span className="min-w-0">
+                                <span className="block text-[13px] font-semibold text-[var(--ink-900)]">{label}</span>
+                                <span className="mt-1 block text-[11.5px] leading-4 text-[var(--ink-500)]">{descriptions[option]}</span>
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+            {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
         </div>
     );
 }

@@ -32,7 +32,7 @@
                                 </tr>
                                 <tr>
                                     <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Codigo</td>
-                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">{{ $document->code ?: 'Sem codigo' }}</td>
+                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">{{ $document->eap($document->latestVersion?->revision) ?: 'Sem codigo' }}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Contrato</td>

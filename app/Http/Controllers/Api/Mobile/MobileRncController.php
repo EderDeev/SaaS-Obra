@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -71,6 +72,12 @@ class MobileRncController extends Controller
             'local_uuid' => ['required', 'string', 'max:120'],
             'obra_id' => ['required', Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
             'project_document_id' => ['nullable', Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
+            'project_document_ids' => ['nullable', 'array', 'max:50'],
+            'project_document_ids.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
             'contratante_empresa_id' => ['required', Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
             'contratada_empresa_id' => ['required', Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
             'opened_at' => ['required', 'date'],
@@ -110,7 +117,13 @@ class MobileRncController extends Controller
 
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
-        $projectDocument = $this->projectDocumentForRnc($tenant, $data['project_document_id'] ?? null, $contract, $obra);
+        $projectDocuments = $this->projectDocumentsForRnc(
+            $tenant,
+            $data['project_document_ids'] ?? [$data['project_document_id'] ?? null],
+            $contract,
+            $obra
+        );
+        $projectDocument = $projectDocuments->first();
         $disciplina = $this->disciplinaForContract($tenant, (int) $data['disciplina_id'], $contract);
 
         if (! $contratante || ! $contratada) {
@@ -127,7 +140,7 @@ class MobileRncController extends Controller
 
         $sequenceYear = Carbon::parse($data['opened_at'])->year;
 
-        $rnc = DB::transaction(function () use ($tenant, $contract, $obra, $projectDocument, $disciplina, $contratante, $contratada, $user, $data, $sequenceYear): RelatorioNaoConformidade {
+        $rnc = DB::transaction(function () use ($tenant, $contract, $obra, $projectDocument, $projectDocuments, $disciplina, $contratante, $contratada, $user, $data, $sequenceYear): RelatorioNaoConformidade {
             Tenant::query()->whereKey($tenant->id)->lockForUpdate()->firstOrFail();
 
             $lastSequence = $tenant->relatorioNaoConformidades()
@@ -137,7 +150,7 @@ class MobileRncController extends Controller
                 ->lockForUpdate()
                 ->value('sequence_number');
 
-            return $tenant->relatorioNaoConformidades()->create([
+            $rnc = $tenant->relatorioNaoConformidades()->create([
                 'mobile_local_uuid' => $data['local_uuid'],
                 'sequence_number' => ((int) $lastSequence) + 1,
                 'sequence_year' => $sequenceYear,
@@ -159,6 +172,10 @@ class MobileRncController extends Controller
                 'prazo_resposta_acao_corretiva' => $data['prazo_resposta_acao_corretiva'],
                 'status' => 'aberta',
             ]);
+
+            $rnc->projectDocuments()->sync($projectDocuments->pluck('id')->all());
+
+            return $rnc;
         });
 
         $comments = collect($request->input('photo_comments', []));
@@ -203,19 +220,38 @@ class MobileRncController extends Controller
             ->first();
     }
 
-    private function projectDocumentForRnc(Tenant $tenant, mixed $projectDocumentId, Contract $contract, Obra $obra): ?ProjectDocument
+    /**
+     * @return Collection<int, ProjectDocument>
+     */
+    private function projectDocumentsForRnc(Tenant $tenant, mixed $projectDocumentIds, Contract $contract, Obra $obra): Collection
     {
-        if (blank($projectDocumentId)) {
-            return null;
+        $ids = collect(is_array($projectDocumentIds) ? $projectDocumentIds : [$projectDocumentIds])
+            ->filter(fn ($id): bool => filled($id))
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return collect();
         }
 
-        return $tenant->projectDocuments()
-            ->whereKey($projectDocumentId)
+        $projects = $tenant->projectDocuments()
+            ->whereIn('id', $ids)
             ->where('contract_id', $contract->id)
             ->where(function (Builder $query) use ($obra): void {
                 $query->whereNull('obra_id')->orWhere('obra_id', $obra->id);
             })
-            ->first();
+            ->get()
+            ->sortBy(fn (ProjectDocument $project): int => $ids->search($project->id))
+            ->values();
+
+        if ($projects->count() !== $ids->count()) {
+            throw ValidationException::withMessages([
+                'project_document_ids' => 'Selecione apenas projetos vinculados a mesma obra e ao mesmo contrato da RNC.',
+            ]);
+        }
+
+        return $projects;
     }
 
     private function storeRncPhotoUpload(UploadedFile $photo, Tenant $tenant, RelatorioNaoConformidade $rnc): array

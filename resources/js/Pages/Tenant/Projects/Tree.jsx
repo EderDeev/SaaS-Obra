@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ProjectTour, { startProjectTour } from '@/Components/ProjectTour';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, router } from '@inertiajs/react';
 import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Plane, Search, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -122,8 +123,15 @@ function OpenRncBadge({ tenant, document }) {
 }
 
 export default function ProjectTree({ tenant, contracts, obras, disciplinas, documents, documentTypes }) {
-    const [showTourData, setShowTourData] = useState(() => typeof window !== 'undefined'
-        && new URLSearchParams(window.location.search).get('tour') === 'tree');
+    const [showTourData, setShowTourData] = useState(() => {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+
+        return window.sessionStorage.getItem('projects:tour-active') === '1'
+            && window.sessionStorage.getItem('projects:tour-section') === 'tree'
+            && window.sessionStorage.getItem('projects:tour-navigating') === '1';
+    });
     const [contractFilter, setContractFilter] = useState('todos');
     const [obraFilter, setObraFilter] = useState('todos');
     const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
@@ -170,7 +178,7 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
 
             const version = document.latest_approved_version || document.latest_version;
 
-            return `${document.title} ${document.code || ''} ${fileDisplayName(version)} ${version?.original_name || ''} ${document.contract?.code || ''} ${document.obra?.codigo || ''} ${document.obra?.nome || ''} ${document.disciplina?.sigla || ''} ${document.disciplina?.nome || ''} ${document.phase?.code || ''} ${document.phase?.name || ''}`
+            return `${document.title} ${projectEap(document, version)} ${fileDisplayName(version)} ${version?.original_name || ''} ${document.contract?.code || ''} ${document.obra?.codigo || ''} ${document.obra?.nome || ''} ${document.disciplina?.sigla || ''} ${document.disciplina?.nome || ''} ${document.phase?.code || ''} ${document.phase?.name || ''}`
                 .toLowerCase()
                 .includes(term);
         });
@@ -410,7 +418,7 @@ function buildTree(documents, documentTypes) {
             id: `document:${document.id}`,
             type: 'document',
             label: document.title,
-            description: document.code || 'Sem codigo',
+            description: projectEap(document, document.latest_approved_version || document.latest_version) || 'Sem codigo',
             document,
         });
     });

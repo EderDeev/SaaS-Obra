@@ -14,69 +14,81 @@ const stepsBySection = {
         {
             target: '[data-tour="contracts-overview"]',
             title: 'Contratos',
-            content: 'Aqui voce acessa os contratos do tenant. Cada contrato concentra os dados principais, vinculos e os modulos de acompanhamento.',
+            content: 'Aqui você acessa os contratos do tenant. Cada contrato concentra os dados principais, vínculos e os módulos de acompanhamento.',
             placement: 'bottom',
         },
         {
             target: '[data-tour="contracts-filters"]',
             title: 'Filtros',
-            content: 'Use os filtros de status, local, empresas e pendencias para encontrar rapidamente o contrato que precisa acompanhar. A busca tambem localiza por codigo, obra ou empresa.',
+            content: 'Use os filtros de status, local, empresas e pendências para encontrar rapidamente o contrato que precisa acompanhar. A busca também localiza por código, obra ou empresa.',
             placement: 'bottom',
         },
         {
             target: '[data-tour="contracts-list"]',
-            title: 'Portfolio de contratos',
-            content: 'Os cards mostram vigencia, valor, empresas vinculadas e os principais pontos de atencao. Voce pode alternar entre cards e tabela.',
+            title: 'Portfólio de contratos',
+            content: 'Os cards mostram vigência, valor, empresas vinculadas e os principais pontos de atenção. Você pode alternar entre cards e tabela.',
             placement: 'top',
         },
         {
             target: '[data-tour="contracts-parametrize"]',
-            title: 'Parametrizacao',
-            content: 'Use Parametrizar para cadastrar e vincular empresas, obras e disciplinas. O vinculo final define a obra principal, cliente, construtora e gerenciadora do contrato.',
+            title: 'Parametrização',
+            content: 'Use Parametrizar para cadastrar e vincular empresas, obras e disciplinas. O vínculo final define a obra principal, cliente, construtora e gerenciadora do contrato.',
             placement: 'top',
         },
         {
             target: '[data-tour="contracts-additive"]',
             title: 'Aditivos',
-            content: 'Em Aditivo voce registra custo, prazo ou ambos, com titulo, motivacao e documento de suporte. O historico preserva o contrato base e cada alteracao posterior.',
+            content: 'Em Aditivo você registra custo, prazo ou ambos, com título, motivação e documento de suporte. O histórico preserva o contrato base e cada alteração posterior.',
             placement: 'top',
         },
         {
             target: '[data-tour="contracts-open"]',
             title: 'Abrir contrato',
-            content: 'Agora vamos abrir este contrato para ver os indicadores, dados detalhados e o historico de aditivos.',
+            content: 'Agora vamos abrir este contrato para ver os indicadores, dados detalhados e o histórico de aditivos.',
             placement: 'top',
         },
     ],
     detail: [
         {
             target: '[data-tour="contract-detail-header"]',
-            title: 'Visao do contrato',
-            content: 'O cabecalho reune o codigo, as empresas, o local e a vigencia. A etiqueta de prazo muda de cor conforme os dias restantes para o encerramento.',
+            title: 'Visão do contrato',
+            content: 'O cabeçalho reúne o código, as empresas, o local e a vigência. A etiqueta de prazo muda de cor conforme os dias restantes para o encerramento.',
             placement: 'bottom',
         },
         {
             target: '[data-tour="contract-detail-actions"]',
-            title: 'Acoes do contrato',
-            content: 'Por aqui voce parametriza os vinculos, registra um aditivo e acessa os fluxos de atividades, projetos e RNCs quando tiver permissao.',
+            title: 'Ações do contrato',
+            content: 'Por aqui você parametriza os vínculos, registra um aditivo e acessa os fluxos de atividades, projetos e RNCs quando tiver permissão.',
             placement: 'bottom',
         },
         {
             target: '[data-tour="contract-detail-metrics"]',
             title: 'Indicadores',
-            content: 'Estes indicadores resumem atividades, atrasos, RNCs e projetos para facilitar a leitura das pendencias do contrato.',
+            content: 'Estes indicadores resumem atividades, atrasos, RNCs e projetos para facilitar a leitura das pendências do contrato.',
             placement: 'bottom',
+        },
+        {
+            target: '[data-tour="contract-detail-modules"]',
+            title: 'Resumo dos módulos',
+            content: 'Acompanhe os registros mais recentes de Atividades, Projetos e RNCs sem sair do contrato. Em Ver módulo você acessa a listagem completa de cada área.',
+            placement: 'top',
         },
         {
             target: '[data-tour="contract-detail-data"]',
             title: 'Dados do contrato',
-            content: 'Aqui ficam os dados cadastrais, empresas vinculadas, local, valor contratado e a vigencia atualizada pelos aditivos de prazo.',
+            content: 'Aqui ficam os dados cadastrais, empresas vinculadas, local, valor contratado e a vigência atualizada pelos aditivos de prazo.',
             placement: 'left',
         },
         {
             target: '[data-tour="contract-detail-additives"]',
-            title: 'Historico de aditivos',
-            content: 'O card de aditivos mostra a ultima alteracao. Use Historico para consultar o contrato base, os valores e prazos iniciais, alem de todos os aditivos registrados.',
+            title: 'Histórico de aditivos',
+            content: 'O card de aditivos mostra a última alteração. Use Histórico para consultar o contrato base, os valores e prazos iniciais, além de todos os aditivos registrados.',
+            placement: 'left',
+        },
+        {
+            target: '[data-tour="contract-detail-team"]',
+            title: 'Equipe no contrato',
+            content: 'Aqui você confere os usuários vinculados ao contrato, o lado que representam e a função de cada participante na equipe.',
             placement: 'left',
         },
     ],
@@ -207,11 +219,6 @@ export default function ContractTour({ section, detailUrl = null, onExit = null 
         if (data.type === EVENTS.STEP_AFTER) {
             const nextStep = data.index + (data.action === ACTIONS.PREV ? -1 : 1);
 
-            if (section === 'contracts' && data.action !== ACTIONS.PREV && nextStep === steps.length - 1) {
-                finishSection();
-                return;
-            }
-
             if (nextStep >= steps.length) finishSection();
             else if (nextStep >= 0) setStoredStep(nextStep);
             return;
@@ -224,20 +231,21 @@ export default function ContractTour({ section, detailUrl = null, onExit = null 
         const cancelOnClose = (event) => {
             if (event.target.closest('[aria-label="Fechar tour"]')) clearTour();
         };
-        const openContractWhenReady = () => {
-            if (document.querySelector('[aria-label="Continuar"]')) finishSection();
-        };
-        const observer = section === 'contracts' ? new MutationObserver(openContractWhenReady) : null;
+        const openContractOnAdvance = (event) => {
+            const button = event.target.closest('button');
+            const dialogTitle = button?.closest('[role="alertdialog"]')?.querySelector('h4')?.textContent?.trim();
+            if (section !== 'contracts' || button?.textContent?.trim() !== 'Avançar' || dialogTitle !== 'Abrir contrato') return;
 
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            finishSection();
+        };
         document.addEventListener('click', cancelOnClose, true);
-        if (observer) {
-            observer.observe(document.body, { childList: true, subtree: true });
-            openContractWhenReady();
-        }
+        document.addEventListener('click', openContractOnAdvance, true);
 
         return () => {
             document.removeEventListener('click', cancelOnClose, true);
-            observer?.disconnect();
+            document.removeEventListener('click', openContractOnAdvance, true);
         };
     }, [detailUrl, run, section]);
 
@@ -275,7 +283,7 @@ export default function ContractTour({ section, detailUrl = null, onExit = null 
             locale={{
                 back: 'Voltar',
                 close: 'Fechar tour',
-                last: section === 'detail' ? 'Terminar tour' : 'Continuar',
+                last: section === 'detail' ? 'Terminar tour' : 'Avançar',
                 next: 'Avançar',
                 skip: 'Fechar tour',
             }}

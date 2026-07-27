@@ -12,7 +12,6 @@
         }
         h1, h2, h3, p { margin: 0; }
         .header {
-            border-bottom: 2px solid #0b5fff;
             padding-bottom: 14px;
         }
         .title {
@@ -41,8 +40,7 @@
             width: 44%;
         }
         .logo-panel {
-            border: 1px solid #e3e7ef;
-            padding: 7px;
+            padding: 7px 0;
         }
         .logo-panel-right {
             text-align: right;
@@ -59,7 +57,6 @@
             width: 144px;
         }
         .logo-placeholder {
-            border: 1px dashed #cfd6e3;
             color: #5b6479;
             font-size: 10px;
             font-weight: 700;
@@ -72,7 +69,6 @@
             margin-top: 18px;
         }
         .section-title {
-            border-bottom: 1px solid #d8dde7;
             color: #0b1020;
             font-size: 13px;
             font-weight: 700;
@@ -89,11 +85,19 @@
             display: table-row;
         }
         .cell {
-            border: 1px solid #e3e7ef;
             display: table-cell;
-            padding: 8px;
+            padding: 8px 10px 8px 0;
             vertical-align: top;
             width: 25%;
+        }
+        .cell-third {
+            width: 33.333%;
+        }
+        .grid-three {
+            margin-top: 0;
+        }
+        .grid-three .cell {
+            width: 33.333%;
         }
         .label {
             color: #5b6479;
@@ -122,12 +126,13 @@
         .badge-red { background: #fde7eb; color: #c8364a; }
         .badge-amber { background: #fdf3d6; color: #b58105; }
         .text-box {
-            border: 1px solid #e3e7ef;
-            margin-top: 10px;
-            padding: 10px;
+            margin-top: 14px;
+            padding: 0;
         }
         .text-box + .text-box {
-            margin-top: 8px;
+            border-top: 1px solid #d8dde7;
+            margin-top: 12px;
+            padding-top: 12px;
         }
         .text-box h3 {
             color: #5b6479;
@@ -180,7 +185,6 @@
         }
         .flow-table th {
             background: #f6f8fb;
-            border: 1px solid #d8dde7;
             color: #5b6479;
             font-size: 8.5px;
             letter-spacing: 0.04em;
@@ -189,7 +193,6 @@
             text-transform: uppercase;
         }
         .flow-table td {
-            border: 1px solid #e3e7ef;
             padding: 7px;
             vertical-align: top;
         }
@@ -205,6 +208,9 @@
             $graveBadgeClass = $rnc->gravidade === 'Leve'
                 ? 'badge-blue'
                 : (in_array($rnc->gravidade, ['Media', 'Média', 'MÃ©dia'], true) ? 'badge-amber' : 'badge-red');
+            $linkedProjects = $rnc->projectDocuments->isNotEmpty()
+                ? $rnc->projectDocuments
+                : collect($rnc->projectDocument ? [$rnc->projectDocument] : []);
         @endphp
         <table class="document-header">
             <tr>
@@ -224,9 +230,12 @@
                     <p class="subtitle">
                         {{ $tenant->name }} &middot; RNC {{ $rnc->formatted_number }}
                     </p>
-                    @if ($rnc->projectDocument)
+                    @if ($linkedProjects->isNotEmpty())
                         <p class="subtitle">
-                            Projeto vinculado: {{ $rnc->projectDocument->code ?: 'Sem codigo' }} - {{ $rnc->projectDocument->title }}
+                            Projetos vinculados:
+                            @foreach ($linkedProjects as $project)
+                                {{ $project->eap($project->latestVersion?->revision) ?: 'Sem codigo' }} - {{ $project->title }}@if (! $loop->last) &middot; @endif
+                            @endforeach
                         </p>
                     @endif
                 </td>
@@ -259,46 +268,44 @@
                     <span class="value">{{ $rnc->opened_at?->format('d/m/Y') }}</span>
                 </div>
                 <div class="cell">
-                    <span class="label">Prazo para resposta de a&ccedil;&atilde;o corretiva</span>
-                    <span class="value">{{ $rnc->prazo_resposta_acao_corretiva?->format('d/m/Y') }}</span>
+                    <span class="label">Criado por</span>
+                    <span class="value">{{ $rnc->creator?->name ?: '-' }}</span>
                 </div>
             </div>
             <div class="row">
                 <div class="cell">
                     <span class="label">Contratante</span>
-                    <span class="value">{{ $rnc->contratante?->sigla ?: $rnc->contratante?->nome }}</span>
+                    <span class="value">{{ $rnc->contratante?->nome ?: '-' }}</span>
                 </div>
                 <div class="cell">
                     <span class="label">Contratada</span>
-                    <span class="value">{{ $rnc->contratada?->sigla ?: $rnc->contratada?->nome }}</span>
+                    <span class="value">{{ $rnc->contratada?->nome ?: '-' }}</span>
                 </div>
                 <div class="cell">
                     <span class="label">Local</span>
                     <span class="value">{{ $rnc->contract?->city ?: '-' }}{{ $rnc->contract?->state ? ' / '.$rnc->contract->state : '' }}</span>
                 </div>
                 <div class="cell">
-                    <span class="label">Coordenadas</span>
-                    <span class="value">{{ $rnc->latitude && $rnc->longitude ? $rnc->latitude.', '.$rnc->longitude : '-' }}</span>
-                </div>
-            </div>
-            <div class="row">
-                <div class="cell">
                     <span class="label">Disciplina</span>
                     <span class="badge badge-blue">
                         {{ $rnc->disciplina?->sigla ? $rnc->disciplina->sigla.' - '.$rnc->disciplina->nome : ($rnc->disciplina?->nome ?: $rnc->natureza) }}
                     </span>
                 </div>
-                <div class="cell">
+            </div>
+        </div>
+        <div class="grid grid-three">
+            <div class="row">
+                <div class="cell cell-third">
                     <span class="label">Gravidade</span>
                     <span class="badge {{ $graveBadgeClass }}">{{ $rnc->gravidade }}</span>
                 </div>
-                <div class="cell">
-                    <span class="label">Status</span>
-                    <span class="value">{{ $rnc->status }}</span>
+                <div class="cell cell-third">
+                    <span class="label">Latitude</span>
+                    <span class="value">{{ $rnc->latitude ?: '-' }}</span>
                 </div>
-                <div class="cell">
-                    <span class="label">Criado por</span>
-                    <span class="value">{{ $rnc->creator?->name ?: '-' }}</span>
+                <div class="cell cell-third">
+                    <span class="label">Longitude</span>
+                    <span class="value">{{ $rnc->longitude ?: '-' }}</span>
                 </div>
             </div>
         </div>

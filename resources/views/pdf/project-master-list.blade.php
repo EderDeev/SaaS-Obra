@@ -257,7 +257,7 @@
                     };
                 @endphp
                 <tr>
-                    <td class="code">{{ $document['code'] ?: '-' }}</td>
+                    <td class="code">{{ $document['eap'] ?: '-' }}</td>
                     <td>
                         <div class="primary">{{ $document['title'] ?: 'Sem título' }}</div>
                         <div class="muted">{{ $document['file_name'] ?: 'Sem arquivo' }}</div>

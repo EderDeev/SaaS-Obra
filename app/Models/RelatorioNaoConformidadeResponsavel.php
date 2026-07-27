@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['tenant_id', 'contract_id', 'user_id', 'created_by_id', 'status', 'permissions'])]
+#[Fillable(['tenant_id', 'contract_id', 'user_id', 'created_by_id', 'status', 'responsibility_type', 'permissions'])]
 class RelatorioNaoConformidadeResponsavel extends Model
 {
     use SoftDeletes;

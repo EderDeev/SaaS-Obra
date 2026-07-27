@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import OverviewTour from '@/Components/OverviewTour';
 import { Head, Link } from '@inertiajs/react';
 import {
     Activity,
@@ -78,13 +79,14 @@ export default function TenantDashboard({
             <Head title={`Visão geral - ${tenant.name}`} />
 
             <section className="sig-content fade-in">
-                <header className="flex flex-wrap items-end gap-5">
+                <header data-tour="overview-header" className="flex flex-wrap items-end gap-5">
                     <div className="min-w-0 flex-1">
                         <div className="eyebrow">Workspace · Visão geral</div>
                         <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">{tenant.name}</h1>
                         <p className="mt-1 text-sm text-[var(--ink-500)]">{role || 'Participante'} · acompanhamento consolidado</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                        <OverviewTour />
                         {capabilities.createActivity && (
                             <Link href={route('tenant.activities.index', tenant.slug)} className="sig-btn sig-btn-secondary">
                                 <Plus size={15} />
@@ -106,14 +108,14 @@ export default function TenantDashboard({
                     </div>
                 </header>
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div data-tour="overview-metrics" className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <Metric icon={ClipboardList} label="Contratos ativos" value={stats.activeContracts} sub={`${stats.contracts} contrato(s) acessível(is)`} />
                     <Metric icon={ListTodo} label="Atividades abertas" value={stats.openActivities} sub={`${stats.overdueActivities} em atraso · ${stats.activitiesDueToday} vencem hoje`} accent={stats.overdueActivities > 0 ? 'red' : 'blue'} />
                     <Metric icon={FileWarning} label="RNCs abertas" value={stats.openRncs} sub={`${stats.overdueRncs} com resposta em atraso`} accent={stats.overdueRncs > 0 ? 'red' : 'amber'} />
                     <Metric icon={FolderOpen} label="Projetos pendentes" value={stats.pendingProjects} sub="Em análise ou aprovação" accent={stats.pendingProjects > 0 ? 'amber' : 'green'} />
                 </div>
 
-                <section className="mt-6">
+                <section data-tour="overview-operation" className="mt-6">
                     <div className="mb-3">
                         <h2 className="text-[16px] font-semibold text-[var(--ink-900)]">Operação do contrato</h2>
                         <p className="text-sm text-[var(--ink-500)]">Fluxos que passaram a integrar o workspace.</p>
@@ -126,7 +128,7 @@ export default function TenantDashboard({
                     </div>
                 </section>
 
-                <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+                <section data-tour="overview-monitoring" className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
                     <div className="grid gap-5">
                         <Panel title="Pontos de atenção" subtitle="Pendências que pedem acompanhamento agora." icon={AlertTriangle}>
                             {attentionItems.length > 0 ? (
@@ -204,7 +206,7 @@ export default function TenantDashboard({
                     </aside>
                 </section>
 
-                <section className="mt-6">
+                <section data-tour="overview-contracts" className="mt-6">
                     <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
                         <div>
                             <h2 className="text-[16px] font-semibold text-[var(--ink-900)]">Contratos recentes</h2>

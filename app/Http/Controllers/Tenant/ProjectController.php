@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -79,6 +80,7 @@ class ProjectController extends Controller
         $documents = $tenant->projectDocuments()
             ->whereIn('contract_id', $contractIds)
             ->withCount(['rncs as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta')])
+            ->withExists(['versions as has_approved_version' => fn (Builder $query): Builder => $query->where('status', 'ativo')])
             ->with([
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
@@ -94,8 +96,9 @@ class ProjectController extends Controller
                 'latestVersion.reviewer:id,name,email',
                 'latestVersion.approver:id,name,email',
                 'latestVersion.capRequester:id,name,email',
+                'latestCapVersion',
             ])
-            ->latest()
+            ->latestSubmissionFirst()
             ->get();
 
         $disciplinas = $tenant->disciplinas()
@@ -176,6 +179,9 @@ class ProjectController extends Controller
                             ->with([
                                 'creator:id,name,email',
                                 'assignee:id,name,email',
+                                'replies' => fn ($query) => $query
+                                    ->with('creator:id,name,email')
+                                    ->oldest(),
                             ])
                             ->latest(),
                         'reviewChecklist.items.checkedBy:id,name,email',
@@ -200,6 +206,50 @@ class ProjectController extends Controller
             'capImpactLabels' => ProjectCap::IMPACT_LABELS,
             'canReviewProjects' => ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW),
         ]);
+    }
+
+    public function capPdf(
+        Request $request,
+        Tenant $tenant,
+        ProjectDocumentVersion $version,
+        ProjectMasterListExportService $exportService,
+    ) {
+        abort_unless((int) $version->tenant_id === (int) $tenant->id, 404);
+        abort_if(blank($version->cap_number), 404);
+
+        $version->load([
+            'uploader:id,name,email',
+            'reviewer:id,name,email',
+            'approver:id,name,email',
+            'capRequester:id,name,email',
+            'document.contract:id,tenant_id,code,name,obra_id,cliente_empresa_id,construtora_empresa_id,fiscalizadora_empresa_id',
+            'document.obra:id,nome,codigo',
+            'document.disciplina:id,nome,sigla,cor',
+            'document.phase:id,name,code',
+        ]);
+
+        abort_unless($version->document, 404);
+        abort_unless(
+            ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::VIEW, $version->document->contract)
+            || ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $version->document->contract),
+            403,
+        );
+
+        $branding = $exportService->branding($tenant, collect([$version->document->contract_id]));
+        $fileName = Str::slug($version->cap_number).'.pdf';
+        $response = Pdf::loadView('pdf.project-cap', [
+            'tenant' => $tenant,
+            'document' => $version->document,
+            'version' => $version,
+            'branding' => $branding,
+            'impactLabels' => ProjectCap::IMPACT_LABELS,
+            'documentTypeLabels' => self::DOCUMENT_TYPES,
+            'generatedAt' => now(),
+        ])->setPaper('a4')->stream($fileName);
+
+        $response->headers->set('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0');
+
+        return $response;
     }
 
     public function tree(Request $request, Tenant $tenant): Response
@@ -275,8 +325,12 @@ class ProjectController extends Controller
     {
         abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::VIEW), 403);
 
+        $screen = $request->string('screen')->toString();
+        $allowedScreens = ['viewer', 'submit', 'review', 'responsibles', 'master-list', 'revisions'];
+
         return Inertia::render('Tenant/Projects/TourPreview', [
             'tenant' => $tenant,
+            'screen' => in_array($screen, $allowedScreens, true) ? $screen : 'viewer',
         ]);
     }
 
@@ -467,24 +521,31 @@ class ProjectController extends Controller
         $extension = mb_strtolower($file->getClientOriginalExtension());
         $existingDocument = $this->findExistingDocumentForEap($tenant, $contract, $obra, $disciplina, $phase, $data['document_type'], $code, $documentNumber);
         $capImpacts = ProjectCap::normalizeImpacts($data['cap_impacts'] ?? []);
+        $requiresCap = $existingDocument?->versions()->where('status', 'ativo')->exists() ?? false;
 
         if ($existingDocument) {
-            $capErrors = [];
+            if ($requiresCap) {
+                $capErrors = [];
 
-            if (blank($data['cap_reason'] ?? null)) {
-                $capErrors['cap_reason'] = 'Informe o motivo da alteracao desta revisao.';
-            }
+                if (blank($data['cap_reason'] ?? null)) {
+                    $capErrors['cap_reason'] = 'Informe o motivo da alteracao desta revisao.';
+                }
 
-            if (blank($data['cap_description'] ?? null)) {
-                $capErrors['cap_description'] = 'Descreva o que foi alterado nesta revisao.';
-            }
+                if (blank($data['cap_description'] ?? null)) {
+                    $capErrors['cap_description'] = 'Descreva o que foi alterado nesta revisao.';
+                }
 
-            if ($capImpacts === []) {
-                $capErrors['cap_impacts'] = 'Selecione ao menos um impacto da alteracao.';
-            }
+                if ($capImpacts === []) {
+                    $capErrors['cap_impacts'] = 'Selecione ao menos um impacto da alteracao.';
+                }
 
-            if ($capErrors !== []) {
-                throw ValidationException::withMessages($capErrors);
+                if ($capErrors !== []) {
+                    throw ValidationException::withMessages($capErrors);
+                }
+            } elseif (blank($data['revision_change_summary'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'revision_change_summary' => 'Descreva as correções realizadas para esta nova revisão.',
+                ]);
             }
         } elseif (blank($data['title'] ?? null)) {
             throw ValidationException::withMessages([
@@ -502,7 +563,7 @@ class ProjectController extends Controller
         $createdRevision = 'R00';
         $isRevision = (bool) $existingDocument;
 
-        $document = DB::transaction(function () use ($tenant, $contract, $obra, $disciplina, $phase, $request, $data, $file, $extension, $code, $documentNumber, $existingDocument, $isRevision, $capImpacts, &$createdNewDocument, &$createdRevision): ProjectDocument {
+        $document = DB::transaction(function () use ($tenant, $contract, $obra, $disciplina, $phase, $request, $data, $file, $extension, $code, $documentNumber, $existingDocument, $isRevision, $requiresCap, $capImpacts, &$createdNewDocument, &$createdRevision): ProjectDocument {
             $document = $existingDocument;
 
             if ($document) {
@@ -545,12 +606,12 @@ class ProjectController extends Controller
             $path = $file->storeAs("tenant-{$tenant->id}/projects/contract-{$contract->id}/obra-{$obra->id}", $storedName, 'public');
             $capPayload = [];
 
-            if ($isRevision) {
+            if ($requiresCap) {
                 $capYear = (int) now()->year;
                 $capSequence = ProjectCap::nextSequence($tenant, $capYear);
 
                 $capPayload = [
-                    'cap_number' => ProjectCap::number($capSequence, $capYear),
+                    'cap_number' => ProjectCap::fromProjectCode($code, $createdRevision),
                     'cap_sequence' => $capSequence,
                     'cap_year' => $capYear,
                     'cap_requested_by_id' => $request->user()->id,
@@ -795,6 +856,7 @@ class ProjectController extends Controller
             'id' => $document->id,
             'title' => $document->title,
             'code' => $document->code,
+            'eap' => $document->eap($version?->revision),
             'document_number' => $document->document_number,
             'document_type' => $document->document_type,
             'document_type_label' => self::DOCUMENT_TYPES[$document->document_type] ?? $document->document_type,

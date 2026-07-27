@@ -78,6 +78,8 @@ export default function AuthenticatedLayout({ children }) {
     const navigationContracts = props.navigationContracts || [];
     const isPlatformAdmin = Boolean(user?.is_platform_admin);
     const userCan = props.userPermissions?.can || {};
+    const projectTourScreen = route().current('tenant.projects.tour-preview') ? props.screen : null;
+    const rncTourScreen = route().current('tenant.qualidade.rnc.tour-preview') ? props.screen : null;
     const canManageTenantUsers = Boolean(userCan.view_users);
     const canManagePermissions = ['tenant_owner', 'tenant_admin'].includes(tenantRole);
     const rncCan = props.rncPermissions?.can || {};
@@ -203,21 +205,22 @@ export default function AuthenticatedLayout({ children }) {
                         || route().current('tenant.qualidade.rnc.show')
                         || route().current('tenant.qualidade.rnc.acao-corretiva.*')
                         || route().current('tenant.qualidade.rnc.analisar-proposta.*')
-                        || route().current('tenant.qualidade.rnc.evidencias.*'),
+                        || route().current('tenant.qualidade.rnc.evidencias.*')
+                        || ['create', 'notify', 'corrective-action', 'review', 'evidence', 'final-pdf'].includes(rncTourScreen),
                 },
             ] : []),
             ...(rncCan.dashboard_rnc ? [
                 {
                     label: 'Dashboard',
                     href: route('tenant.qualidade.rnc.dashboard', tenant.slug),
-                    active: route().current('tenant.qualidade.rnc.dashboard'),
+                    active: route().current('tenant.qualidade.rnc.dashboard') || rncTourScreen === 'dashboard',
                 },
             ] : []),
             ...(rncCan.responsibles_rnc ? [
                 {
-                    label: 'Alertas',
+                    label: 'Responsáveis',
                     href: route('tenant.qualidade.rnc.responsaveis.index', tenant.slug),
-                    active: route().current('tenant.qualidade.rnc.responsaveis.*'),
+                    active: route().current('tenant.qualidade.rnc.responsaveis.*') || rncTourScreen === 'responsibles',
                 },
             ] : []),
         ]
@@ -359,31 +362,32 @@ export default function AuthenticatedLayout({ children }) {
             ...(projectCan.view_projects ? [{
                 label: 'Visualizar projetos',
                 href: route('tenant.projects.visualizar.index', tenant.slug),
-                active: route().current('tenant.projects.visualizar.*') || route().current('tenant.projects.viewer'),
-            }, {
-                label: 'Projetos revisados',
-                href: route('tenant.projects.revisions.index', tenant.slug),
-                active: route().current('tenant.projects.revisions.*'),
+                active: route().current('tenant.projects.visualizar.*') || route().current('tenant.projects.viewer') || projectTourScreen === 'viewer',
             }] : []),
             ...(projectCan.upload_project ? [{
                 label: 'Submeter projeto',
                 href: route('tenant.projects.index', tenant.slug),
-                active: route().current('tenant.projects.index'),
+                active: route().current('tenant.projects.index') || projectTourScreen === 'submit',
             }] : []),
             ...(projectCan.review_project ? [{
                 label: 'Analisar projeto',
                 href: route('tenant.projects.review.index', tenant.slug),
-                active: route().current('tenant.projects.review.*'),
+                active: route().current('tenant.projects.review.*') || projectTourScreen === 'review',
+            }] : []),
+            ...(projectCan.view_projects ? [{
+                label: 'Projetos revisados',
+                href: route('tenant.projects.revisions.index', tenant.slug),
+                active: route().current('tenant.projects.revisions.*') || projectTourScreen === 'revisions',
             }] : []),
             ...(projectCan.view_projects ? [{
                 label: 'Lista Mestra',
                 href: route('tenant.projects.master-list.index', tenant.slug),
-                active: route().current('tenant.projects.master-list.*'),
+                active: route().current('tenant.projects.master-list.*') || projectTourScreen === 'master-list',
             }] : []),
             ...(projectCan.manage_project_responsibles ? [{
                 label: 'Responsaveis',
                 href: route('tenant.projects.responsaveis.index', tenant.slug),
-                active: route().current('tenant.projects.responsaveis.*'),
+                active: route().current('tenant.projects.responsaveis.*') || projectTourScreen === 'responsibles',
             }] : []),
         ]
         : [];
@@ -416,7 +420,7 @@ export default function AuthenticatedLayout({ children }) {
 
     if (isPlatformAdmin) {
         navItems.push(
-            { label: 'Super Admin', icon: Gauge, href: route('platform.dashboard'), active: route().current('platform.dashboard') },
+            { label: 'Visão da Plataforma', icon: Gauge, href: route('platform.dashboard'), active: route().current('platform.dashboard') },
             { label: 'Tenants', icon: Building2, href: route('platform.tenants.index'), active: route().current('platform.tenants.*') },
             { label: 'Uso APS', icon: HardDrive, href: route('platform.aps.index'), active: route().current('platform.aps.*') },
         );
@@ -475,7 +479,7 @@ export default function AuthenticatedLayout({ children }) {
             ]
             : [
                 { label: 'Platform' },
-                { label: route().current('platform.tenants.*') ? 'Tenants' : route().current('platform.aps.*') ? 'Uso APS' : 'Super Admin' },
+                { label: route().current('platform.tenants.*') ? 'Tenants' : route().current('platform.aps.*') ? 'Uso APS' : 'Visão da Plataforma' },
             ];
 
     const mobileNavItems = [
@@ -495,7 +499,7 @@ export default function AuthenticatedLayout({ children }) {
     const navSections = [
         {
             label: isPlatformAdmin ? 'Plataforma' : null,
-            items: navItems.filter((item) => ['Super Admin', 'Tenants', 'Uso APS'].includes(item.label)),
+            items: navItems.filter((item) => ['Visão da Plataforma', 'Tenants', 'Uso APS'].includes(item.label)),
         },
         {
             label: 'Gestão',
@@ -548,7 +552,17 @@ export default function AuthenticatedLayout({ children }) {
                 <nav className="flex-1 overflow-y-auto py-2">
                     <div className="eyebrow px-5 pb-2 pt-1 text-[var(--side-fg-dim)]">Workspace</div>
                     {navSections.map((section) => (
-                        <div key={section.label || 'workspace'} className="sig-nav-section">
+                        <div
+                            key={section.label || 'workspace'}
+                            className="sig-nav-section"
+                            data-tour={route().current('tenant.dashboard') ? {
+                                'Gestão': 'overview-nav-management',
+                                'Orçamentos e medições': 'overview-nav-budgets',
+                                Campo: 'overview-nav-field',
+                                Controle: 'overview-nav-control',
+                                Administração: 'overview-nav-administration',
+                            }[section.label] : undefined}
+                        >
                             {section.label && <div className="sig-nav-section-label">{section.label}</div>}
                             {section.items.map((item) => {
                         const Icon = item.icon;
@@ -656,7 +670,7 @@ export default function AuthenticatedLayout({ children }) {
                     ))}
 
                     {parametrizacaoItems.length > 0 && (
-                        <div className="mt-2">
+                        <div className="mt-2" data-tour={route().current('tenant.dashboard') ? 'overview-nav-settings' : undefined}>
                             <button
                                 type="button"
                                 className={`sig-nav-item border-0 bg-transparent text-left ${route().current('tenant.parametrizacao.*') ? 'active' : ''}`}
@@ -692,6 +706,7 @@ export default function AuthenticatedLayout({ children }) {
                     <div ref={mobileNavRef} className="sig-mobile-nav-trigger relative lg:hidden">
                         <button
                             type="button"
+                            data-tour={route().current('tenant.dashboard') ? 'overview-mobile-menu' : undefined}
                             className="sig-btn sig-btn-primary !min-h-9 !px-3"
                             aria-haspopup="menu"
                             aria-expanded={mobileNavOpen}

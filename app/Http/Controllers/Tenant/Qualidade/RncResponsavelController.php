@@ -39,6 +39,16 @@ class RncResponsavelController extends Controller
                 'status' => $contract->status,
             ])->values(),
             'usersByContract' => $this->responsibleCandidateUsersByContract($tenant, $contracts),
+            'responsibilityProfiles' => collect(RncPermissions::responsibilityProfiles())
+                ->map(fn (array $profile, string $value): array => [
+                    'value' => $value,
+                    'label' => $profile['label'],
+                    'description' => $profile['description'],
+                    'permissions' => collect($profile['permissions'])
+                        ->map(fn (string $permission): string => RncPermissions::labels()[$permission])
+                        ->values(),
+                ])
+                ->values(),
             'responsaveis' => $tenant->relatorioNaoConformidadeResponsaveis()
                 ->where('status', 'active')
                 ->with(['user:id,name,email,avatar_url', 'contract:id,code,name,obra_id', 'contract.obra:id,nome'])
@@ -52,6 +62,9 @@ class RncResponsavelController extends Controller
                         'code' => $responsavel->contract?->code,
                         'name' => $responsavel->contract?->obra?->nome ?? $responsavel->contract?->name,
                     ],
+                    'responsibility_type' => $responsavel->responsibility_type,
+                    'responsibility_label' => RncPermissions::responsibilityProfiles()[$responsavel->responsibility_type]['label']
+                        ?? RncPermissions::responsibilityProfiles()[RncPermissions::RESPONSIBILITY_MONITORING]['label'],
                     'created_at' => $responsavel->created_at?->format('d/m/Y H:i'),
                 ])
                 ->values(),
@@ -68,11 +81,14 @@ class RncResponsavelController extends Controller
                 Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'user_id' => ['required', 'integer', 'exists:users,id'],
+            'responsibility_type' => ['required', Rule::in(RncPermissions::responsibilityTypes())],
         ], [
             'contract_id.required' => 'Selecione o contrato.',
             'contract_id.exists' => 'O contrato selecionado nao pertence a este tenant.',
             'user_id.required' => 'Selecione o usuario.',
             'user_id.exists' => 'O usuario selecionado nao existe.',
+            'responsibility_type.required' => 'Selecione o tipo de responsável.',
+            'responsibility_type.in' => 'Selecione um tipo de responsável válido.',
         ]);
 
         $contract = $tenant->contracts()->findOrFail($data['contract_id']);
@@ -98,7 +114,8 @@ class RncResponsavelController extends Controller
             'tenant_id' => $tenant->id,
             'created_by_id' => $request->user()->id,
             'status' => 'active',
-            'permissions' => RncPermissions::normalize($responsavel->permissions ?? []),
+            'responsibility_type' => $data['responsibility_type'],
+            'permissions' => RncPermissions::permissionsForResponsibility($data['responsibility_type']),
         ]);
         $responsavel->save();
 
@@ -106,7 +123,7 @@ class RncResponsavelController extends Controller
             $responsavel->restore();
         }
 
-        return back()->with('success', 'Alerta de RNC cadastrado.');
+        return back()->with('success', 'Responsável de RNC salvo com sucesso.');
     }
 
     public function destroy(Request $request, Tenant $tenant, RelatorioNaoConformidadeResponsavel $responsavel): RedirectResponse
@@ -118,7 +135,7 @@ class RncResponsavelController extends Controller
         $responsavel->update(['status' => 'inactive']);
         $responsavel->delete();
 
-        return back()->with('success', 'Usuario removido da lista de alertas.');
+        return back()->with('success', 'Responsável removido com sucesso.');
     }
 
     /**

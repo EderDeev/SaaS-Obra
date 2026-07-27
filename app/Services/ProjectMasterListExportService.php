@@ -99,7 +99,7 @@ class ProjectMasterListExportService
         $row = 10;
         foreach ($documents as $document) {
             $values = [
-                $document['code'] ?: '-',
+                $document['eap'] ?: '-',
                 $document['title'] ?: '-',
                 $document['document_number'] ?: '-',
                 $document['contract']['code'] ?: '-',

@@ -74,6 +74,28 @@ class RelatorioNaoConformidadeController extends Controller
         ]);
     }
 
+    public function tourPreview(Request $request, Tenant $tenant): InertiaResponse
+    {
+        abort_unless(RncPermissions::canAny($request->user(), $tenant, RncPermissions::VIEW), 403);
+
+        $screen = $request->string('screen')->toString();
+        $allowedScreens = [
+            'responsibles',
+            'create',
+            'notify',
+            'corrective-action',
+            'review',
+            'evidence',
+            'final-pdf',
+            'dashboard',
+        ];
+
+        return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/TourPreview', [
+            'tenant' => $tenant,
+            'screen' => in_array($screen, $allowedScreens, true) ? $screen : 'responsibles',
+        ]);
+    }
+
     public function dashboard(Request $request, Tenant $tenant): InertiaResponse
     {
         abort_unless(RncPermissions::canAny($request->user(), $tenant, RncPermissions::DASHBOARD), 403);
@@ -180,6 +202,12 @@ class RelatorioNaoConformidadeController extends Controller
                 'nullable',
                 Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
+            'project_document_ids' => ['nullable', 'array', 'max:50'],
+            'project_document_ids.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
             'contratante_empresa_id' => [
                 'required',
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
@@ -226,7 +254,14 @@ class RelatorioNaoConformidadeController extends Controller
 
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
-        $projectDocument = $this->projectDocumentForRnc($tenant, $data['project_document_id'] ?? null, $contract, $obra);
+        $projectDocuments = $this->projectDocumentsForRnc(
+            $tenant,
+            $data['project_document_ids'] ?? [$data['project_document_id'] ?? null],
+            $contract,
+            $obra,
+            array_key_exists('project_document_ids', $data) ? 'project_document_ids' : 'project_document_id'
+        );
+        $projectDocument = $projectDocuments->first();
         $disciplina = $this->disciplinaForContract($tenant, (int) $data['disciplina_id'], $contract);
 
         if (! $contratante || ! $contratada) {
@@ -242,7 +277,7 @@ class RelatorioNaoConformidadeController extends Controller
         }
 
         $sequenceYear = Carbon::parse($data['opened_at'])->year;
-        $rnc = DB::transaction(function () use ($tenant, $contract, $obra, $projectDocument, $disciplina, $contratante, $contratada, $request, $data, $sequenceYear): RelatorioNaoConformidade {
+        $rnc = DB::transaction(function () use ($tenant, $contract, $obra, $projectDocument, $projectDocuments, $disciplina, $contratante, $contratada, $request, $data, $sequenceYear): RelatorioNaoConformidade {
             Tenant::query()
                 ->whereKey($tenant->id)
                 ->lockForUpdate()
@@ -256,7 +291,7 @@ class RelatorioNaoConformidadeController extends Controller
                 ->value('sequence_number');
             $nextSequence = ((int) $lastSequence) + 1;
 
-            return $tenant->relatorioNaoConformidades()->create([
+            $rnc = $tenant->relatorioNaoConformidades()->create([
                 'sequence_number' => $nextSequence,
                 'sequence_year' => $sequenceYear,
                 'contract_id' => $contract->id,
@@ -277,6 +312,10 @@ class RelatorioNaoConformidadeController extends Controller
                 'prazo_resposta_acao_corretiva' => $data['prazo_resposta_acao_corretiva'],
                 'status' => 'aberta',
             ]);
+
+            $rnc->projectDocuments()->sync($projectDocuments->pluck('id')->all());
+
+            return $rnc;
         });
 
         $comments = collect($request->input('photo_comments', []));
@@ -315,7 +354,14 @@ class RelatorioNaoConformidadeController extends Controller
 
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
-        $projectDocument = $this->projectDocumentForRnc($tenant, $data['project_document_id'] ?? null, $contract, $obra);
+        $projectDocuments = $this->projectDocumentsForRnc(
+            $tenant,
+            $data['project_document_ids'] ?? [$data['project_document_id'] ?? null],
+            $contract,
+            $obra,
+            array_key_exists('project_document_ids', $data) ? 'project_document_ids' : 'project_document_id'
+        );
+        $projectDocument = $projectDocuments->first();
         $disciplina = $this->disciplinaForContract($tenant, (int) $data['disciplina_id'], $contract);
 
         if (! $contratante || ! $contratada) {
@@ -330,23 +376,27 @@ class RelatorioNaoConformidadeController extends Controller
             ]);
         }
 
-        $rnc->update([
-            'contract_id' => $contract->id,
-            'obra_id' => $obra->id,
-            'project_document_id' => $projectDocument?->id,
-            'disciplina_id' => $disciplina->id,
-            'contratante_empresa_id' => $contratante->id,
-            'contratada_empresa_id' => $contratada->id,
-            'opened_at' => $data['opened_at'],
-            'latitude' => $data['latitude'] ?? null,
-            'longitude' => $data['longitude'] ?? null,
-            'natureza' => $disciplina->nome,
-            'gravidade' => $data['gravidade'],
-            'descricao_problema' => $data['descricao_problema'],
-            'observacao' => $data['observacao'] ?? null,
-            'acoes_corretivas_recomendadas' => $data['acoes_corretivas_recomendadas'],
-            'prazo_resposta_acao_corretiva' => $data['prazo_resposta_acao_corretiva'],
-        ]);
+        DB::transaction(function () use ($rnc, $contract, $obra, $projectDocument, $projectDocuments, $disciplina, $contratante, $contratada, $data): void {
+            $rnc->update([
+                'contract_id' => $contract->id,
+                'obra_id' => $obra->id,
+                'project_document_id' => $projectDocument?->id,
+                'disciplina_id' => $disciplina->id,
+                'contratante_empresa_id' => $contratante->id,
+                'contratada_empresa_id' => $contratada->id,
+                'opened_at' => $data['opened_at'],
+                'latitude' => $data['latitude'] ?? null,
+                'longitude' => $data['longitude'] ?? null,
+                'natureza' => $disciplina->nome,
+                'gravidade' => $data['gravidade'],
+                'descricao_problema' => $data['descricao_problema'],
+                'observacao' => $data['observacao'] ?? null,
+                'acoes_corretivas_recomendadas' => $data['acoes_corretivas_recomendadas'],
+                'prazo_resposta_acao_corretiva' => $data['prazo_resposta_acao_corretiva'],
+            ]);
+
+            $rnc->projectDocuments()->sync($projectDocuments->pluck('id')->all());
+        });
 
         $this->syncRncPhotos($request, $tenant, $rnc);
 
@@ -384,11 +434,7 @@ class RelatorioNaoConformidadeController extends Controller
             'canRasterizePdfImages' => $canRasterizePdfImages,
         ])->setPaper('a4');
 
-        $fileName = sprintf(
-            'rnc-%s-%s.pdf',
-            $rnc->contract?->code ? str($rnc->contract->code)->slug()->toString() : 'contrato',
-            str($rnc->formatted_number)->slug()->toString(),
-        );
+        $fileName = "RNC-{$rnc->formatted_number}.pdf";
 
         $response = $pdf->stream($fileName);
         $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -552,6 +598,12 @@ class RelatorioNaoConformidadeController extends Controller
             ],
             'project_document_id' => [
                 'nullable',
+                Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
+            'project_document_ids' => ['nullable', 'array', 'max:50'],
+            'project_document_ids.*' => [
+                'integer',
+                'distinct',
                 Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'contratante_empresa_id' => [
@@ -1053,25 +1105,42 @@ class RelatorioNaoConformidadeController extends Controller
             ->first();
     }
 
-    private function projectDocumentForRnc(Tenant $tenant, mixed $projectDocumentId, Contract $contract, Obra $obra): ?ProjectDocument
+    /**
+     * @return Collection<int, ProjectDocument>
+     */
+    private function projectDocumentsForRnc(
+        Tenant $tenant,
+        mixed $projectDocumentIds,
+        Contract $contract,
+        Obra $obra,
+        string $errorKey = 'project_document_ids'
+    ): Collection
     {
-        if (blank($projectDocumentId)) {
-            return null;
+        $ids = collect(is_array($projectDocumentIds) ? $projectDocumentIds : [$projectDocumentIds])
+            ->filter(fn ($id): bool => filled($id))
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return collect();
         }
 
-        $projectDocument = $tenant->projectDocuments()
-            ->whereKey($projectDocumentId)
+        $projectDocuments = $tenant->projectDocuments()
+            ->whereIn('id', $ids)
             ->where('contract_id', $contract->id)
             ->where('obra_id', $obra->id)
-            ->first();
+            ->get()
+            ->sortBy(fn (ProjectDocument $project): int => $ids->search($project->id))
+            ->values();
 
-        if (! $projectDocument) {
+        if ($projectDocuments->count() !== $ids->count()) {
             throw ValidationException::withMessages([
-                'project_document_id' => 'Selecione um projeto vinculado a mesma obra e ao mesmo contrato da RNC.',
+                $errorKey => 'Selecione apenas projetos vinculados a mesma obra e ao mesmo contrato da RNC.',
             ]);
         }
 
-        return $projectDocument;
+        return $projectDocuments;
     }
 
     /**
@@ -1099,6 +1168,19 @@ class RelatorioNaoConformidadeController extends Controller
             'contract:id,tenant_id,code,name,total_value,currency,starts_at,ends_at,city,state',
             'obra:id,tenant_id,contract_id,nome,codigo,tipo',
             'projectDocument:id,tenant_id,contract_id,obra_id,title,code,document_number,status',
+            'projectDocument.latestVersion' => fn ($query) => $query->select([
+                'project_document_versions.id',
+                'project_document_versions.project_document_id',
+                'project_document_versions.revision',
+                'project_document_versions.status',
+            ]),
+            'projectDocuments:id,tenant_id,contract_id,obra_id,title,code,document_number,status',
+            'projectDocuments.latestVersion' => fn ($query) => $query->select([
+                'project_document_versions.id',
+                'project_document_versions.project_document_id',
+                'project_document_versions.revision',
+                'project_document_versions.status',
+            ]),
             'disciplina:id,tenant_id,contract_id,nome,sigla,cor',
             'contratante:id,nome,cnpj,sigla,logo_path',
             'contratada:id,nome,cnpj,sigla,logo_path',

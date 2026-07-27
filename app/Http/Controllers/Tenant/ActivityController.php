@@ -12,6 +12,7 @@ use App\Notifications\ActivityCommentedNotification;
 use App\Notifications\ActivityFileUploadedNotification;
 use App\Notifications\ActivityStatusChangedNotification;
 use App\Support\ActivityPermissions;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,11 +26,32 @@ class ActivityController extends Controller
 {
     private const STATUSES = ['todo', 'in_progress', 'review', 'done'];
 
+    private const STATUS_LABELS = [
+        'todo' => 'A fazer',
+        'in_progress' => 'Em andamento',
+        'review' => 'Em revisão',
+        'done' => 'Concluídas',
+    ];
+
     private const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 
     private const CATEGORIES = [
         'project' => 'Projeto',
         'quality' => 'Qualidade',
+        'budget' => 'Orçamento',
+        'measurement' => 'Medição',
+        'documentation' => 'Documentação',
+        'service_order' => 'Ordem de Serviço',
+        'construction_diary' => 'Diário de Obra',
+        'contract' => 'Contrato',
+        'administrative' => 'Administrativo',
+        'field' => 'Campo',
+        'client' => 'Cliente',
+    ];
+
+    private const VISIBILITIES = [
+        Activity::VISIBILITY_PUBLIC => 'Pública',
+        Activity::VISIBILITY_RESTRICTED => 'Restrita',
     ];
 
     public function index(Request $request, Tenant $tenant): Response
@@ -45,6 +67,7 @@ class ActivityController extends Controller
 
         $activities = $tenant->activities()
             ->whereIn('contract_id', $contractIds)
+            ->visibleTo($request->user())
             ->where(function (Builder $query): void {
                 $query
                     ->where('status', '!=', 'done')
@@ -77,10 +100,172 @@ class ActivityController extends Controller
             'statuses' => self::STATUSES,
             'priorities' => self::PRIORITIES,
             'categories' => self::CATEGORIES,
+            'visibilities' => self::VISIBILITIES,
             'canCreateActivities' => $contracts->contains(fn (Contract $contract): bool => ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::CREATE, $contract)),
             'canEditActivities' => ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::EDIT),
             'canDeleteActivities' => ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::DELETE),
         ]);
+    }
+
+    public function metrics(Request $request, Tenant $tenant): Response
+    {
+        abort_unless(ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::VIEW), 403);
+
+        $filters = $request->validate([
+            'period' => ['nullable', Rule::in(['30', '90', '180', '365', 'all'])],
+            'contract_id' => ['nullable', 'integer'],
+            'category' => ['nullable', Rule::in(array_keys(self::CATEGORIES))],
+            'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
+        ]);
+
+        $period = $filters['period'] ?? '180';
+        $contracts = $this->accessibleContracts($request, $tenant, ActivityPermissions::VIEW)
+            ->with('obra:id,nome')
+            ->orderBy('code')
+            ->get();
+        $contractIds = $contracts->pluck('id')->map(fn ($id): int => (int) $id);
+        $contractId = ! empty($filters['contract_id']) ? (int) $filters['contract_id'] : null;
+        $assigneeId = ! empty($filters['assignee_id']) ? (int) $filters['assignee_id'] : null;
+
+        if ($contractId !== null) {
+            abort_unless($contractIds->contains($contractId), 403);
+        }
+
+        $activities = $tenant->activities()
+            ->whereIn('contract_id', $contractIds)
+            ->visibleTo($request->user())
+            ->when($period !== 'all', fn (Builder $query): Builder => $query->where(
+                'created_at',
+                '>=',
+                CarbonImmutable::now()->subDays((int) $period)->startOfDay(),
+            ))
+            ->when($contractId, fn (Builder $query): Builder => $query->where('contract_id', $contractId))
+            ->when(
+                $filters['category'] ?? null,
+                fn (Builder $query, string $category): Builder => $query->where('category', $category),
+            )
+            ->when($assigneeId, function (Builder $query, int $userId): Builder {
+                return $query->where(function (Builder $query) use ($userId): void {
+                    $query
+                        ->where('assigned_to_id', $userId)
+                        ->orWhereHas('assignees', fn (Builder $query): Builder => $query->where('users.id', $userId));
+                });
+            })
+            ->with([
+                'contract:id,code,name,obra_id',
+                'contract.obra:id,nome',
+                'assignee:id,name,email,avatar_url',
+                'assignees:id,name,email,avatar_url',
+            ])
+            ->get([
+                'id',
+                'tenant_id',
+                'contract_id',
+                'assigned_to_id',
+                'created_by_id',
+                'title',
+                'category',
+                'status',
+                'priority',
+                'due_date',
+                'completed_at',
+                'created_at',
+            ]);
+
+        $completed = $activities->filter(
+            fn (Activity $activity): bool => $activity->status === 'done' && $activity->completed_at !== null,
+        );
+        $completedWithDeadline = $completed->filter(fn (Activity $activity): bool => $activity->due_date !== null);
+        $completedOnTime = $completedWithDeadline->filter(fn (Activity $activity): bool => $this->wasCompletedOnTime($activity));
+        $completedLate = $completedWithDeadline->reject(fn (Activity $activity): bool => $this->wasCompletedOnTime($activity));
+        $open = $activities->where('status', '!=', 'done');
+        $openOverdue = $open->filter(fn (Activity $activity): bool => $this->isOverdue($activity));
+        $total = $activities->count();
+        $averageResolutionDays = $completed->isEmpty()
+            ? 0
+            : round($completed->average(fn (Activity $activity): float => max(
+                0,
+                $activity->created_at->diffInMinutes($activity->completed_at) / 1440,
+            )), 1);
+
+        $assignees = collect($this->assignableUsersByContract($tenant, $contracts))
+            ->flatten(1)
+            ->unique('id')
+            ->sortBy('name')
+            ->values();
+
+        return Inertia::render('Tenant/Activities/Metrics', [
+            'tenant' => $tenant,
+            'filters' => [
+                'period' => $period,
+                'contract_id' => $contractId,
+                'category' => $filters['category'] ?? null,
+                'assignee_id' => $assigneeId,
+            ],
+            'filterOptions' => [
+                'contracts' => $contracts->map(fn (Contract $contract): array => [
+                    'id' => $contract->id,
+                    'code' => $contract->code,
+                    'name' => $contract->obra?->nome ?? $contract->name,
+                ])->values(),
+                'categories' => self::CATEGORIES,
+                'assignees' => $assignees,
+            ],
+            'summary' => [
+                'total' => $total,
+                'completed' => $completed->count(),
+                'open' => $open->count(),
+                'overdue_open' => $openOverdue->count(),
+                'completion_rate' => $total > 0 ? round(($completed->count() / $total) * 100) : 0,
+                'on_time_rate' => $completedWithDeadline->isNotEmpty()
+                    ? round(($completedOnTime->count() / $completedWithDeadline->count()) * 100)
+                    : 0,
+                'average_resolution_days' => $averageResolutionDays,
+            ],
+            'charts' => [
+                'statuses' => collect(self::STATUS_LABELS)
+                    ->map(fn (string $label, string $key): array => [
+                        'key' => $key,
+                        'name' => $label,
+                        'value' => $activities->where('status', $key)->count(),
+                    ])
+                    ->values(),
+                'deadlines' => [
+                    ['key' => 'on_time', 'name' => 'Concluídas no prazo', 'value' => $completedOnTime->count()],
+                    ['key' => 'late', 'name' => 'Concluídas com atraso', 'value' => $completedLate->count()],
+                    ['key' => 'overdue_open', 'name' => 'Abertas em atraso', 'value' => $openOverdue->count()],
+                    ['key' => 'without_due_date', 'name' => 'Concluídas sem prazo', 'value' => $completed->whereNull('due_date')->count()],
+                ],
+                'categories' => $this->categoryMetrics($activities),
+                'trend' => $this->activityTrend($activities),
+            ],
+            'responsibles' => $this->responsibleMetrics($activities),
+            'resolvedActivities' => $completed
+                ->sortByDesc('completed_at')
+                ->take(12)
+                ->map(fn (Activity $activity): array => $this->resolvedActivityData($activity))
+                ->values(),
+            'overdueActivities' => $openOverdue
+                ->sortBy('due_date')
+                ->take(10)
+                ->map(fn (Activity $activity): array => $this->overdueActivityData($activity))
+                ->values(),
+        ]);
+    }
+
+    public function tourPreview(Request $request, Tenant $tenant): Response
+    {
+        abort_unless(ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::VIEW), 403);
+
+        $screen = $request->string('screen')->toString();
+        $allowedScreens = ['create', 'board', 'detail', 'flow', 'metrics'];
+        $screen = in_array($screen, $allowedScreens, true) ? $screen : 'create';
+
+        if ($screen === 'metrics') {
+            return Inertia::render('Tenant/Activities/Metrics', $this->activityTourMetricsProps($tenant));
+        }
+
+        return Inertia::render('Tenant/Activities/Index', $this->activityTourBoardProps($tenant, $screen));
     }
 
     public function store(Request $request, Tenant $tenant): RedirectResponse
@@ -97,6 +282,7 @@ class ActivityController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'category' => ['nullable', Rule::in(array_keys(self::CATEGORIES))],
+            'visibility' => ['sometimes', Rule::in(array_keys(self::VISIBILITIES))],
             'priority' => ['required', Rule::in(self::PRIORITIES)],
             'due_date' => ['nullable', 'date'],
         ]);
@@ -129,6 +315,7 @@ class ActivityController extends Controller
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
             'category' => $data['category'] ?? 'project',
+            'visibility' => $data['visibility'] ?? Activity::VISIBILITY_PUBLIC,
             'status' => 'todo',
             'priority' => $data['priority'],
             'due_date' => $data['due_date'] ?? null,
@@ -151,6 +338,7 @@ class ActivityController extends Controller
         $contract = $activity->contract()->firstOrFail();
 
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
+        abort_unless($activity->isVisibleTo($request->user()), 403);
         abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::EDIT, $contract), 403);
 
         if (! $request->has('title')) {
@@ -161,6 +349,7 @@ class ActivityController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'category' => ['nullable', Rule::in(array_keys(self::CATEGORIES))],
+            'visibility' => ['sometimes', Rule::in(array_keys(self::VISIBILITIES))],
             'priority' => ['required', Rule::in(self::PRIORITIES)],
             'due_date' => ['nullable', 'date'],
             'assigned_to_ids' => ['nullable', 'array'],
@@ -188,6 +377,7 @@ class ActivityController extends Controller
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
             'category' => $data['category'] ?? $activity->category ?? 'project',
+            'visibility' => $data['visibility'] ?? $activity->visibility,
             'priority' => $data['priority'],
             'due_date' => $data['due_date'] ?? null,
         ]);
@@ -203,6 +393,7 @@ class ActivityController extends Controller
         $contract = $activity->contract()->firstOrFail();
 
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
+        abort_unless($activity->isVisibleTo($request->user()), 403);
         abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::DELETE, $contract), 403);
 
         $activity->delete();
@@ -334,6 +525,7 @@ class ActivityController extends Controller
 
         abort_unless($this->canAccessContract($user, $tenant, $contract), 403);
         abort_unless(ActivityPermissions::can($user, $tenant, ActivityPermissions::VIEW, $contract), 403);
+        abort_unless($activity->isVisibleTo($user), 403);
     }
 
     /**
@@ -391,6 +583,432 @@ class ActivityController extends Controller
         }
 
         return now();
+    }
+
+    private function wasCompletedOnTime(Activity $activity): bool
+    {
+        return $activity->due_date !== null
+            && $activity->completed_at !== null
+            && $activity->completed_at->lte($activity->due_date->copy()->endOfDay());
+    }
+
+    private function isOverdue(Activity $activity): bool
+    {
+        return $activity->status !== 'done'
+            && $activity->due_date !== null
+            && $activity->due_date->lt(now()->startOfDay());
+    }
+
+    /**
+     * @param  Collection<int, Activity>  $activities
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function categoryMetrics(Collection $activities): Collection
+    {
+        return collect(self::CATEGORIES)
+            ->map(function (string $label, string $key) use ($activities): array {
+                $categoryActivities = $activities->filter(
+                    fn (Activity $activity): bool => ($activity->category ?: 'project') === $key,
+                );
+
+                return [
+                    'key' => $key,
+                    'label' => $label,
+                    'total' => $categoryActivities->count(),
+                    'completed' => $categoryActivities->where('status', 'done')->count(),
+                ];
+            })
+            ->filter(fn (array $item): bool => $item['total'] > 0)
+            ->sortByDesc('total')
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, Activity>  $activities
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function activityTrend(Collection $activities): Collection
+    {
+        $created = $activities
+            ->groupBy(fn (Activity $activity): string => $activity->created_at->format('Y-m'))
+            ->map->count();
+        $completed = $activities
+            ->filter(fn (Activity $activity): bool => $activity->completed_at !== null)
+            ->groupBy(fn (Activity $activity): string => $activity->completed_at->format('Y-m'))
+            ->map->count();
+
+        return $created->keys()
+            ->merge($completed->keys())
+            ->unique()
+            ->sort()
+            ->map(fn (string $month): array => [
+                'key' => $month,
+                'label' => CarbonImmutable::createFromFormat('Y-m', $month)->format('m/Y'),
+                'created' => (int) ($created[$month] ?? 0),
+                'completed' => (int) ($completed[$month] ?? 0),
+            ])
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, Activity>  $activities
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function responsibleMetrics(Collection $activities): Collection
+    {
+        $metrics = [];
+
+        foreach ($activities as $activity) {
+            $responsibles = $activity->assignees->isNotEmpty()
+                ? $activity->assignees
+                : collect([$activity->assignee])->filter();
+
+            if ($responsibles->isEmpty()) {
+                $responsibles = collect([(object) [
+                    'id' => null,
+                    'name' => 'Sem responsável',
+                    'email' => null,
+                    'avatar_url' => null,
+                ]]);
+            }
+
+            foreach ($responsibles->unique('id') as $responsible) {
+                $key = $responsible->id ? (string) $responsible->id : 'unassigned';
+                $metrics[$key] ??= [
+                    'id' => $responsible->id,
+                    'name' => $responsible->name,
+                    'email' => $responsible->email,
+                    'avatar_url' => $responsible->avatar_url,
+                    'total' => 0,
+                    'completed' => 0,
+                    'open' => 0,
+                    'overdue_open' => 0,
+                    'on_time' => 0,
+                    'late' => 0,
+                ];
+
+                $metrics[$key]['total']++;
+
+                if ($activity->status === 'done') {
+                    $metrics[$key]['completed']++;
+
+                    if ($activity->due_date !== null) {
+                        $metrics[$key][$this->wasCompletedOnTime($activity) ? 'on_time' : 'late']++;
+                    }
+                } else {
+                    $metrics[$key]['open']++;
+
+                    if ($this->isOverdue($activity)) {
+                        $metrics[$key]['overdue_open']++;
+                    }
+                }
+            }
+        }
+
+        return collect($metrics)
+            ->map(function (array $item): array {
+                $item['completion_rate'] = $item['total'] > 0
+                    ? round(($item['completed'] / $item['total']) * 100)
+                    : 0;
+                $withDeadline = $item['on_time'] + $item['late'];
+                $item['on_time_rate'] = $withDeadline > 0
+                    ? round(($item['on_time'] / $withDeadline) * 100)
+                    : null;
+
+                return $item;
+            })
+            ->sortByDesc('total')
+            ->values();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolvedActivityData(Activity $activity): array
+    {
+        return [
+            'id' => $activity->id,
+            'title' => $activity->title,
+            'contract' => $this->activityContractLabel($activity),
+            'responsibles' => $this->activityResponsibleNames($activity),
+            'due_date' => $activity->due_date?->toDateString(),
+            'completed_at' => $activity->completed_at?->toIso8601String(),
+            'result' => $activity->due_date === null
+                ? 'without_due_date'
+                : ($this->wasCompletedOnTime($activity) ? 'on_time' : 'late'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function overdueActivityData(Activity $activity): array
+    {
+        return [
+            'id' => $activity->id,
+            'title' => $activity->title,
+            'contract' => $this->activityContractLabel($activity),
+            'responsibles' => $this->activityResponsibleNames($activity),
+            'due_date' => $activity->due_date?->toDateString(),
+            'days_overdue' => $activity->due_date
+                ? $activity->due_date->startOfDay()->diffInDays(now()->startOfDay())
+                : 0,
+        ];
+    }
+
+    private function activityContractLabel(Activity $activity): string
+    {
+        $name = $activity->contract?->obra?->nome ?? $activity->contract?->name;
+
+        return trim(collect([$activity->contract?->code, $name])->filter()->implode(' · '));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function activityResponsibleNames(Activity $activity): array
+    {
+        return ($activity->assignees->isNotEmpty()
+            ? $activity->assignees
+            : collect([$activity->assignee])->filter())
+            ->pluck('name')
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function activityTourBoardProps(Tenant $tenant, string $screen): array
+    {
+        $contractId = -101;
+        $responsibles = [
+            [
+                'id' => -201,
+                'name' => 'Marina Costa',
+                'email' => 'marina.costa@empresa.com',
+                'avatar_url' => null,
+            ],
+            [
+                'id' => -202,
+                'name' => 'Carlos Mendes',
+                'email' => 'carlos.mendes@empresa.com',
+                'avatar_url' => null,
+            ],
+        ];
+        $contract = [
+            'id' => $contractId,
+            'code' => 'CT-001',
+            'name' => 'Jardim Central',
+            'obra_id' => -301,
+            'obra' => ['id' => -301, 'nome' => 'Jardim Central'],
+        ];
+        $activity = [
+            'id' => -401,
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contractId,
+            'assigned_to_id' => $responsibles[0]['id'],
+            'created_by_id' => -203,
+            'title' => 'Validar medição mensal da obra',
+            'description' => 'Conferir os quantitativos executados, validar a memória de cálculo e registrar as pendências antes do fechamento da medição.',
+            'category' => 'measurement',
+            'visibility' => Activity::VISIBILITY_RESTRICTED,
+            'status' => 'todo',
+            'priority' => 'high',
+            'due_date' => CarbonImmutable::now()->addDays(5)->toDateString(),
+            'completed_at' => null,
+            'position' => 1,
+            'created_at' => CarbonImmutable::now()->subDays(3)->toIso8601String(),
+            'contract' => $contract,
+            'assignee' => $responsibles[0],
+            'assignees' => $responsibles,
+            'creator' => [
+                'id' => -203,
+                'name' => 'Ana Ribeiro',
+                'email' => 'ana.ribeiro@empresa.com',
+                'avatar_url' => null,
+            ],
+            'comments' => [
+                [
+                    'id' => -501,
+                    'body' => 'Os quantitativos do pavimento térreo foram conferidos. Falta validar a memória da drenagem.',
+                    'created_at' => CarbonImmutable::now()->subDay()->toIso8601String(),
+                    'user' => $responsibles[0],
+                ],
+                [
+                    'id' => -502,
+                    'body' => 'Memória de cálculo atualizada e anexada para a revisão final.',
+                    'created_at' => CarbonImmutable::now()->subHours(5)->toIso8601String(),
+                    'user' => $responsibles[1],
+                ],
+            ],
+            'files' => [
+                [
+                    'id' => -601,
+                    'name' => 'memoria-medicao-julho.xlsx',
+                    'url' => '#',
+                    'size' => 184320,
+                    'created_at' => CarbonImmutable::now()->subHours(5)->toIso8601String(),
+                    'user' => $responsibles[1],
+                ],
+            ],
+            '_tourData' => true,
+        ];
+
+        return [
+            'tenant' => $tenant,
+            'contracts' => [[
+                'id' => $contractId,
+                'code' => $contract['code'],
+                'name' => $contract['name'],
+                'status' => 'active',
+            ]],
+            'activities' => $screen === 'create' ? [] : [$activity],
+            'assigneesByContract' => [(string) $contractId => $responsibles],
+            'statuses' => self::STATUSES,
+            'priorities' => self::PRIORITIES,
+            'categories' => self::CATEGORIES,
+            'visibilities' => self::VISIBILITIES,
+            'canCreateActivities' => true,
+            'canEditActivities' => true,
+            'canDeleteActivities' => true,
+            'tourMode' => true,
+            'tourScreen' => $screen,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function activityTourMetricsProps(Tenant $tenant): array
+    {
+        $responsible = [
+            'id' => -201,
+            'name' => 'Marina Costa',
+            'email' => 'marina.costa@empresa.com',
+            'avatar_url' => null,
+        ];
+        $contract = ['id' => -101, 'code' => 'CT-001', 'name' => 'Jardim Central'];
+
+        return [
+            'tenant' => $tenant,
+            'filters' => [
+                'period' => '180',
+                'contract_id' => null,
+                'category' => null,
+                'assignee_id' => null,
+            ],
+            'filterOptions' => [
+                'contracts' => [$contract],
+                'categories' => self::CATEGORIES,
+                'assignees' => [
+                    $responsible,
+                    [
+                        'id' => -202,
+                        'name' => 'Carlos Mendes',
+                        'email' => 'carlos.mendes@empresa.com',
+                        'avatar_url' => null,
+                    ],
+                ],
+            ],
+            'summary' => [
+                'total' => 28,
+                'completed' => 21,
+                'open' => 7,
+                'overdue_open' => 2,
+                'completion_rate' => 75,
+                'on_time_rate' => 86,
+                'average_resolution_days' => 4.2,
+            ],
+            'charts' => [
+                'statuses' => [
+                    ['key' => 'todo', 'name' => 'A fazer', 'value' => 3],
+                    ['key' => 'in_progress', 'name' => 'Em andamento', 'value' => 2],
+                    ['key' => 'review', 'name' => 'Em revisão', 'value' => 2],
+                    ['key' => 'done', 'name' => 'Concluídas', 'value' => 21],
+                ],
+                'deadlines' => [
+                    ['key' => 'on_time', 'name' => 'Concluídas no prazo', 'value' => 18],
+                    ['key' => 'late', 'name' => 'Concluídas com atraso', 'value' => 3],
+                    ['key' => 'overdue_open', 'name' => 'Abertas em atraso', 'value' => 2],
+                    ['key' => 'without_due_date', 'name' => 'Concluídas sem prazo', 'value' => 0],
+                ],
+                'categories' => [
+                    ['key' => 'measurement', 'label' => 'Medição', 'total' => 9, 'completed' => 7],
+                    ['key' => 'documentation', 'label' => 'Documentação', 'total' => 7, 'completed' => 6],
+                    ['key' => 'project', 'label' => 'Projeto', 'total' => 6, 'completed' => 4],
+                    ['key' => 'field', 'label' => 'Campo', 'total' => 4, 'completed' => 3],
+                    ['key' => 'administrative', 'label' => 'Administrativo', 'total' => 2, 'completed' => 1],
+                ],
+                'trend' => [
+                    ['key' => '2026-02', 'label' => '02/2026', 'created' => 3, 'completed' => 2],
+                    ['key' => '2026-03', 'label' => '03/2026', 'created' => 5, 'completed' => 4],
+                    ['key' => '2026-04', 'label' => '04/2026', 'created' => 4, 'completed' => 4],
+                    ['key' => '2026-05', 'label' => '05/2026', 'created' => 6, 'completed' => 5],
+                    ['key' => '2026-06', 'label' => '06/2026', 'created' => 5, 'completed' => 3],
+                    ['key' => '2026-07', 'label' => '07/2026', 'created' => 5, 'completed' => 3],
+                ],
+            ],
+            'responsibles' => [
+                [
+                    ...$responsible,
+                    'total' => 12,
+                    'completed' => 10,
+                    'open' => 2,
+                    'overdue_open' => 1,
+                    'on_time' => 9,
+                    'late' => 1,
+                    'completion_rate' => 83,
+                    'on_time_rate' => 90,
+                ],
+                [
+                    'id' => -202,
+                    'name' => 'Carlos Mendes',
+                    'email' => 'carlos.mendes@empresa.com',
+                    'avatar_url' => null,
+                    'total' => 10,
+                    'completed' => 8,
+                    'open' => 2,
+                    'overdue_open' => 0,
+                    'on_time' => 7,
+                    'late' => 1,
+                    'completion_rate' => 80,
+                    'on_time_rate' => 88,
+                ],
+            ],
+            'resolvedActivities' => [
+                [
+                    'id' => -401,
+                    'title' => 'Validar medição mensal da obra',
+                    'contract' => 'CT-001 · Jardim Central',
+                    'responsibles' => ['Marina Costa', 'Carlos Mendes'],
+                    'due_date' => CarbonImmutable::now()->subDay()->toDateString(),
+                    'completed_at' => CarbonImmutable::now()->subDays(2)->toIso8601String(),
+                    'result' => 'on_time',
+                ],
+                [
+                    'id' => -402,
+                    'title' => 'Revisar relatório de documentação',
+                    'contract' => 'CT-001 · Jardim Central',
+                    'responsibles' => ['Carlos Mendes'],
+                    'due_date' => CarbonImmutable::now()->subDays(6)->toDateString(),
+                    'completed_at' => CarbonImmutable::now()->subDays(4)->toIso8601String(),
+                    'result' => 'late',
+                ],
+            ],
+            'overdueActivities' => [
+                [
+                    'id' => -403,
+                    'title' => 'Consolidar pendências do diário de obra',
+                    'contract' => 'CT-001 · Jardim Central',
+                    'responsibles' => ['Marina Costa'],
+                    'due_date' => CarbonImmutable::now()->subDays(3)->toDateString(),
+                    'days_overdue' => 3,
+                ],
+            ],
+            'tourSection' => 'metrics',
+        ];
     }
 
     private function notifyStatusChanged(Activity $activity, User $actor, string $oldStatus, string $newStatus): void

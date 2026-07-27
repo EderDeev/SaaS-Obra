@@ -50,6 +50,21 @@ class TenantRncTest extends TestCase
             ->assertSee('Tenant\/Qualidade\/RelatorioNaoConformidade\/Dashboard', false);
     }
 
+    public function test_tenant_user_can_access_rnc_tour_preview(): void
+    {
+        [$tenant, $user] = $this->tenantScenario();
+
+        $this->actingAs($user)
+            ->get(route('tenant.qualidade.rnc.tour-preview', [
+                'tenant' => $tenant,
+                'screen' => 'corrective-action',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Qualidade/RelatorioNaoConformidade/TourPreview')
+                ->where('screen', 'corrective-action'));
+    }
+
     public function test_non_owner_needs_rnc_permission_to_view_listing(): void
     {
         [$tenant, $owner, $contract] = $this->tenantScenario();
@@ -262,6 +277,62 @@ class TenantRncTest extends TestCase
                 ->where('documents.0.open_rncs_count', 0));
     }
 
+    public function test_rnc_can_be_linked_to_multiple_projects(): void
+    {
+        [$tenant, $user, $contract, $obra, $contratante, $contratada, $disciplina] = $this->tenantScenario();
+        $projects = collect([
+            ['code' => 'CT001-OBR001-ARQ-PB-PRJ-001', 'title' => 'Projeto arquitetonico'],
+            ['code' => 'CT001-OBR001-EST-PB-PRJ-002', 'title' => 'Projeto estrutural'],
+        ])->map(fn (array $attributes): ProjectDocument => ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'created_by_id' => $user->id,
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+            'approved_at' => now(),
+            ...$attributes,
+        ]));
+
+        $this->actingAs($user)
+            ->post(route('tenant.qualidade.rnc.store', $tenant), [
+                'obra_id' => $obra->id,
+                'project_document_ids' => $projects->pluck('id')->all(),
+                'contratante_empresa_id' => $contratante->id,
+                'contratada_empresa_id' => $contratada->id,
+                'opened_at' => '2026-05-16',
+                'disciplina_id' => $disciplina->id,
+                'gravidade' => 'Leve',
+                'descricao_problema' => 'Problema comum aos dois projetos.',
+                'acoes_corretivas_recomendadas' => 'Compatibilizar os projetos.',
+                'prazo_resposta_acao_corretiva' => '2026-05-20',
+            ])
+            ->assertRedirect(route('tenant.qualidade.rnc.index', $tenant));
+
+        $rnc = RelatorioNaoConformidade::query()->firstOrFail();
+
+        $this->assertSame($projects->first()->id, $rnc->project_document_id);
+        $this->assertEqualsCanonicalizing(
+            $projects->pluck('id')->all(),
+            $rnc->projectDocuments()->pluck('project_documents.id')->all()
+        );
+
+        foreach ($projects as $project) {
+            $this->assertSame(1, $project->openRncs()->count());
+            $this->assertDatabaseHas('rnc_project_documents', [
+                'relatorio_nao_conformidade_id' => $rnc->id,
+                'project_document_id' => $project->id,
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get(route('tenant.qualidade.rnc.show', [$tenant, $rnc]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Qualidade/RelatorioNaoConformidade/Show')
+                ->has('rnc.project_documents', 2));
+    }
+
     public function test_rnc_number_is_sequential_by_tenant_and_year(): void
     {
         [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
@@ -307,6 +378,7 @@ class TenantRncTest extends TestCase
             ->assertHeader('content-type', 'application/pdf');
 
         $this->assertStringStartsWith('inline;', (string) $response->headers->get('content-disposition'));
+        $this->assertStringContainsString('RNC-001-2026.pdf', (string) $response->headers->get('content-disposition'));
     }
 
     public function test_tenant_user_can_open_rnc_preview(): void
@@ -347,6 +419,7 @@ class TenantRncTest extends TestCase
             ->post(route('tenant.qualidade.rnc.responsaveis.store', $tenant), [
                 'contract_id' => $contract->id,
                 'user_id' => $responsible->id,
+                'responsibility_type' => RncPermissions::RESPONSIBILITY_CONTRACTOR,
             ])
             ->assertRedirect();
 
@@ -357,7 +430,31 @@ class TenantRncTest extends TestCase
         ])->firstOrFail();
 
         $this->assertSame('active', $link->status);
-        $this->assertSame([], $link->permissions);
+        $this->assertSame(RncPermissions::RESPONSIBILITY_CONTRACTOR, $link->responsibility_type);
+        $this->assertSame([
+            RncPermissions::CORRECTIVE_ACTION,
+            RncPermissions::VIEW,
+        ], $link->permissions);
+    }
+
+    public function test_rnc_responsibility_profiles_have_fixed_permissions(): void
+    {
+        $this->assertSame([
+            RncPermissions::CREATE,
+            RncPermissions::NOTIFY,
+            RncPermissions::REVIEW,
+            RncPermissions::EVIDENCE,
+            RncPermissions::VIEW,
+        ], RncPermissions::permissionsForResponsibility(RncPermissions::RESPONSIBILITY_OPERATIONAL));
+
+        $this->assertSame([
+            RncPermissions::CORRECTIVE_ACTION,
+            RncPermissions::VIEW,
+        ], RncPermissions::permissionsForResponsibility(RncPermissions::RESPONSIBILITY_CONTRACTOR));
+
+        $this->assertSame([
+            RncPermissions::VIEW,
+        ], RncPermissions::permissionsForResponsibility(RncPermissions::RESPONSIBILITY_MONITORING));
     }
 
     public function test_tenant_admin_can_remove_rnc_responsible_user(): void
@@ -415,6 +512,8 @@ class TenantRncTest extends TestCase
             'user_id' => $responsible->id,
             'created_by_id' => $user->id,
             'status' => 'active',
+            'responsibility_type' => RncPermissions::RESPONSIBILITY_MONITORING,
+            'permissions' => RncPermissions::permissionsForResponsibility(RncPermissions::RESPONSIBILITY_MONITORING),
         ]);
 
         $this->actingAs($user)

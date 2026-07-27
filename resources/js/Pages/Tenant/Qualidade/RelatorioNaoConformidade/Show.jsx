@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { rncDisciplinaLabel } from '@/Support/rnc';
+import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { ArrowLeft, ClipboardX, Download, ImagePlus, MapPin, Pencil } from 'lucide-react';
 
@@ -40,6 +41,16 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
     const approvedAction = rnc.acoes_corretivas?.find((action) => action.status === 'approved');
     const latestEvidence = rnc.evidencias?.[0];
     const canEditRnc = rnc.user_permissions?.includes('edit_rnc');
+    const linkedProjects = rnc.project_documents?.length
+        ? rnc.project_documents
+        : rnc.project_document
+            ? [rnc.project_document]
+            : [];
+    const linkedProjectsLabel = linkedProjects.length
+        ? linkedProjects
+            .map((project) => `${projectEap(project, project.latest_version) || 'Sem codigo'} - ${project.title}`)
+            .join(' | ')
+        : 'Sem projeto vinculado';
     const proposalReview = latestAction
         ? {
               pending: {
@@ -181,8 +192,8 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                             <Meta label="Contrato" value={`${rnc.contract?.code || ''} - ${rnc.contract?.name || ''}`} />
                             <Meta label="Obra" value={`${rnc.obra?.codigo || ''} - ${rnc.obra?.nome || ''}`} />
                             <Meta
-                                label="Projeto vinculado"
-                                value={rnc.project_document ? `${rnc.project_document.code || 'Sem codigo'} - ${rnc.project_document.title}` : 'Sem projeto vinculado'}
+                                label="Projetos vinculados"
+                                value={linkedProjectsLabel}
                             />
                             <Meta label="Data abertura" value={shortDate(rnc.opened_at)} />
                             <Meta label="Prazo resposta acao corretiva" value={shortDate(rnc.prazo_resposta_acao_corretiva)} />

@@ -39,6 +39,19 @@ class AutodeskApsService
         return $this->region();
     }
 
+    public function viewerApi(): string
+    {
+        $configuredApi = trim((string) config('services.autodesk_aps.viewer_api'));
+
+        if ($configuredApi !== '') {
+            return $configuredApi;
+        }
+
+        return in_array($this->region(), ['EU', 'EMEA'], true)
+            ? 'streamingV2_EU'
+            : 'streamingV2';
+    }
+
     /**
      * @return array{bucket: array<string, mixed>|null, objects: array<int, array<string, mixed>>, object_count: int, total_size: int, truncated: bool}
      */
