@@ -11,19 +11,26 @@ import {
     FolderKanban,
     HardHat,
     Paperclip,
+    Pencil,
     Plus,
     Search,
     Send,
     UserRound,
     X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const formatCurrency = (value) =>
     new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL',
         minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value || 0));
+
+const formatPercentage = (value) =>
+    new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 0,
         maximumFractionDigits: 2,
     }).format(Number(value || 0));
 
@@ -81,6 +88,21 @@ function initials(name = '') {
         .toUpperCase() || '?';
 }
 
+const orderFormDefaults = (contractId = '') => ({
+    contract_id: contractId,
+    obra_id: '',
+    project_document_ids: [],
+    gerenciadora_empresa_id: '',
+    construtora_empresa_id: '',
+    titulo: '',
+    descricao: '',
+    prazo_execucao: '',
+    custo_previsto: '',
+    custo_observacao: '',
+    item_ids: [],
+    documentos: [],
+});
+
 export default function OrdemServicoIndex({
     selectedContractId,
     contracts = [],
@@ -91,35 +113,34 @@ export default function OrdemServicoIndex({
     const tenant = page.props.currentTenant;
     const currentUser = page.props.auth?.user;
     const [showForm, setShowForm] = useState(false);
+    const [editingOrder, setEditingOrder] = useState(null);
     const [itemSearch, setItemSearch] = useState('');
+    const [debouncedItemSearch, setDebouncedItemSearch] = useState('');
     const [planilhaFilter, setPlanilhaFilter] = useState('todas');
-    const [expandedOrderId, setExpandedOrderId] = useState(null);
-
-    const form = useForm({
-        contract_id: selectedContractId || '',
-        obra_id: '',
-        project_document_ids: [],
-        gerenciadora_empresa_id: '',
-        construtora_empresa_id: '',
-        titulo: '',
-        descricao: '',
-        prazo_execucao: '',
-        custo_previsto: '',
-        custo_observacao: '',
-        item_ids: [],
-        documentos: [],
+    const [itemResults, setItemResults] = useState([]);
+    const [itemPlanilhas, setItemPlanilhas] = useState([]);
+    const [itemPage, setItemPage] = useState(1);
+    const [itemMeta, setItemMeta] = useState({
+        current_page: 1,
+        last_page: 1,
+        per_page: 50,
+        total: 0,
+        from: null,
+        to: null,
     });
+    const [itemsLoading, setItemsLoading] = useState(false);
+    const [itemsLoadError, setItemsLoadError] = useState('');
+    const [selectedItemMap, setSelectedItemMap] = useState({});
+    const [expandedOrderId, setExpandedOrderId] = useState(null);
+    const [analysisOrder, setAnalysisOrder] = useState(null);
+    const [analysisSubmitting, setAnalysisSubmitting] = useState(false);
+
+    const form = useForm(orderFormDefaults(selectedContractId || ''));
 
     const selectedContract = contracts.find((contract) => Number(contract.id) === Number(form.data.contract_id));
     const obras = options.obras || [];
     const projects = options.projects || [];
-    const items = options.items || [];
     const empresas = options.empresas || [];
-
-    const planilhaOptions = useMemo(() => {
-        return [...new Set(items.map((item) => item.planilha).filter(Boolean))]
-            .sort((a, b) => Number(a) - Number(b));
-    }, [items]);
 
     const empresaMatchesTipo = (empresa, tipo) => {
         const haystack = `${empresa.tipo_slug || ''} ${empresa.tipo_nome || ''}`.toLowerCase();
@@ -141,25 +162,7 @@ export default function OrdemServicoIndex({
     });
     const selectedProjects = projects.filter((project) => form.data.project_document_ids.includes(project.id));
 
-    const filteredItems = useMemo(() => {
-        const search = itemSearch.trim().toLowerCase();
-
-        return items.filter((item) => {
-                if (planilhaFilter !== 'todas' && String(item.planilha) !== String(planilhaFilter)) {
-                    return false;
-                }
-
-                if (!search) {
-                    return true;
-                }
-
-                return [item.item, item.codigo, item.descricao]
-                    .filter(Boolean)
-                    .some((value) => String(value).toLowerCase().includes(search));
-            });
-    }, [items, itemSearch, planilhaFilter]);
-
-    const selectedItems = items.filter((item) => form.data.item_ids.includes(item.id));
+    const selectedItems = Object.values(selectedItemMap);
     const estimatedTotalP0 = selectedItems.reduce(
         (total, item) => total + Number(item.valor_total_p0 ?? item.valor_total ?? 0),
         0
@@ -169,12 +172,201 @@ export default function OrdemServicoIndex({
         0
     );
 
-    const changeContract = (contractId) => {
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            setDebouncedItemSearch(itemSearch.trim());
+            setItemPage(1);
+        }, 300);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [itemSearch]);
+
+    useEffect(() => {
+        if (!showForm || !form.data.contract_id) {
+            return undefined;
+        }
+
+        const controller = new AbortController();
+        const params = new URLSearchParams({
+            contract_id: String(form.data.contract_id),
+            page: String(itemPage),
+        });
+
+        if (debouncedItemSearch) {
+            params.set('search', debouncedItemSearch);
+        }
+
+        if (planilhaFilter !== 'todas') {
+            params.set('planilha', planilhaFilter);
+        }
+
+        setItemsLoading(true);
+        setItemsLoadError('');
+
+        fetch(`${route('tenant.ordem-servico.os.items', tenant.slug)}?${params.toString()}`, {
+            headers: {
+                Accept: 'application/json',
+            },
+            signal: controller.signal,
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error('Não foi possível carregar os itens do contrato.');
+                }
+
+                return response.json();
+            })
+            .then((payload) => {
+                setItemResults(payload.data || []);
+                setItemMeta(payload.meta || {});
+                setItemPlanilhas(payload.filters?.planilhas || []);
+            })
+            .catch((error) => {
+                if (error.name !== 'AbortError') {
+                    setItemsLoadError(error.message);
+                    setItemResults([]);
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) {
+                    setItemsLoading(false);
+                }
+            });
+
+        return () => controller.abort();
+    }, [
+        showForm,
+        form.data.contract_id,
+        itemPage,
+        debouncedItemSearch,
+        planilhaFilter,
+        tenant.slug,
+    ]);
+
+    const changeContract = (contractId, keepFormOpen = false) => {
+        if (keepFormOpen) {
+            setItemSearch('');
+            setDebouncedItemSearch('');
+            setPlanilhaFilter('todas');
+            setItemPage(1);
+            setSelectedItemMap({});
+            form.setData({
+                ...form.data,
+                contract_id: contractId,
+                obra_id: '',
+                project_document_ids: [],
+                gerenciadora_empresa_id: '',
+                construtora_empresa_id: '',
+                item_ids: [],
+            });
+        }
+
         router.get(
             route('tenant.ordem-servico.os.index', tenant.slug),
             { contract_id: contractId },
-            { preserveScroll: true, preserveState: false }
+            { preserveScroll: true, preserveState: keepFormOpen }
         );
+    };
+
+    useEffect(() => {
+        if (!showForm) {
+            return undefined;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape' && !form.processing) {
+                setShowForm(false);
+                setEditingOrder(null);
+                form.clearErrors();
+            }
+        };
+
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [showForm, form.processing]);
+
+    useEffect(() => {
+        if (!analysisOrder) {
+            return undefined;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape' && !analysisSubmitting) {
+                setAnalysisOrder(null);
+            }
+        };
+
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [analysisOrder, analysisSubmitting]);
+
+    const resetItemSelector = () => {
+        setItemSearch('');
+        setDebouncedItemSearch('');
+        setPlanilhaFilter('todas');
+        setItemPage(1);
+        setSelectedItemMap({});
+    };
+
+    const closeForm = () => {
+        if (form.processing) {
+            return;
+        }
+
+        setShowForm(false);
+        setEditingOrder(null);
+        form.clearErrors();
+    };
+
+    const openCreateForm = () => {
+        setEditingOrder(null);
+        resetItemSelector();
+        form.clearErrors();
+        form.setData(orderFormDefaults(selectedContractId || ''));
+        setShowForm(true);
+    };
+
+    const openEditForm = (ordem) => {
+        const orderItems = (ordem.itens || []).map((item) => ({
+            ...item,
+            id: item.medicao_item_id,
+            planilha: String(item.item || '').split('.')[0] || null,
+        }));
+
+        setEditingOrder(ordem);
+        setItemSearch('');
+        setDebouncedItemSearch('');
+        setPlanilhaFilter('todas');
+        setItemPage(1);
+        setSelectedItemMap(Object.fromEntries(orderItems.map((item) => [item.id, item])));
+        form.clearErrors();
+        form.setData({
+            contract_id: ordem.contract?.id || selectedContractId || '',
+            obra_id: ordem.obra?.id || '',
+            project_document_ids: (ordem.projects || []).map((project) => project.id),
+            gerenciadora_empresa_id: ordem.gerenciadora_empresa?.id || '',
+            construtora_empresa_id: ordem.construtora_empresa?.id || '',
+            titulo: ordem.titulo || '',
+            descricao: ordem.descricao || '',
+            prazo_execucao: ordem.prazo_execucao || '',
+            custo_previsto: formatCurrency(ordem.custo_previsto || 0),
+            custo_observacao: ordem.custo_observacao || '',
+            item_ids: orderItems.map((item) => item.id),
+            documentos: [],
+        });
+        setShowForm(true);
     };
 
     const toggleId = (field, id) => {
@@ -186,29 +378,64 @@ export default function OrdemServicoIndex({
         form.setData(field, next);
     };
 
+    const toggleItem = (item) => {
+        const checked = form.data.item_ids.includes(item.id);
+        const nextIds = checked
+            ? form.data.item_ids.filter((id) => id !== item.id)
+            : [...form.data.item_ids, item.id];
+
+        form.setData('item_ids', nextIds);
+        setSelectedItemMap((current) => {
+            const next = { ...current };
+
+            if (checked) {
+                delete next[item.id];
+            } else {
+                next[item.id] = item;
+            }
+
+            return next;
+        });
+    };
+
     const submit = (event) => {
         event.preventDefault();
 
-        form.post(route('tenant.ordem-servico.os.store', tenant.slug), {
+        const isEditing = Boolean(editingOrder);
+        const target = isEditing
+            ? route('tenant.ordem-servico.os.update', [tenant.slug, editingOrder.id])
+            : route('tenant.ordem-servico.os.store', tenant.slug);
+
+        form.transform((data) => isEditing ? { ...data, _method: 'patch' } : data);
+        form.post(target, {
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => {
                 setShowForm(false);
-                setItemSearch('');
-                setPlanilhaFilter('todas');
-                form.reset();
-                form.setData('contract_id', selectedContractId || '');
+                setEditingOrder(null);
+                resetItemSelector();
+                form.setData(orderFormDefaults(selectedContractId || ''));
             },
+            onFinish: () => form.transform((data) => data),
         });
     };
 
     const submitForAnalysis = (ordem) => {
-        if (!window.confirm(`Enviar a OS ${ordem.codigo} para análise dos fiscais da obra?`)) {
+        setAnalysisOrder(ordem);
+    };
+
+    const confirmSubmitForAnalysis = () => {
+        if (!analysisOrder || analysisSubmitting) {
             return;
         }
 
-        router.patch(route('tenant.ordem-servico.os.submit-analysis', [tenant.slug, ordem.id]), {}, {
+        setAnalysisSubmitting(true);
+        router.patch(route('tenant.ordem-servico.os.submit-analysis', [tenant.slug, analysisOrder.id]), {}, {
             preserveScroll: true,
+            onFinish: () => {
+                setAnalysisSubmitting(false);
+                setAnalysisOrder(null);
+            },
         });
     };
 
@@ -229,11 +456,11 @@ export default function OrdemServicoIndex({
 
                     <button
                         type="button"
-                        onClick={() => setShowForm((value) => !value)}
+                        onClick={openCreateForm}
                         className="sig-btn sig-btn-primary"
                     >
-                        {showForm ? <X size={16} /> : <Plus size={16} />}
-                        {showForm ? 'Fechar cadastro' : 'Nova OS'}
+                        <Plus size={16} />
+                        Nova OS
                     </button>
                 </section>
 
@@ -246,6 +473,78 @@ export default function OrdemServicoIndex({
                 {Object.values(page.props.errors || {}).length > 0 && (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
                         {Object.values(page.props.errors)[0]}
+                    </div>
+                )}
+
+                {analysisOrder && (
+                    <div
+                        className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.52)] p-4 backdrop-blur-[1px]"
+                        role="presentation"
+                        onMouseDown={(event) => {
+                            if (event.target === event.currentTarget && !analysisSubmitting) {
+                                setAnalysisOrder(null);
+                            }
+                        }}
+                    >
+                        <section
+                            className="w-full max-w-lg overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="submit-analysis-title"
+                            onMouseDown={(event) => event.stopPropagation()}
+                        >
+                            <header className="flex items-start gap-4 border-b border-[var(--border)] px-5 py-5">
+                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--primary-50)] text-[var(--primary)]">
+                                    <Send size={20} />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <span className="eyebrow">Ordem de serviço</span>
+                                    <h2 id="submit-analysis-title" className="mt-1 text-lg font-bold text-[var(--ink-900)]">
+                                        Enviar para análise?
+                                    </h2>
+                                    <p className="mt-2 text-sm leading-6 text-[var(--ink-500)]">
+                                        A OS <strong className="text-[var(--ink-900)]">{analysisOrder.codigo}</strong> será
+                                        encaminhada aos fiscais responsáveis pela obra.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--ink-500)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
+                                    aria-label="Fechar confirmação de envio"
+                                    disabled={analysisSubmitting}
+                                    onClick={() => setAnalysisOrder(null)}
+                                >
+                                    <X size={18} />
+                                </button>
+                            </header>
+
+                            <div className="px-5 py-4">
+                                <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-5 text-blue-800">
+                                    Após o envio, a OS deixará de ser um rascunho e não poderá ser editada enquanto estiver em análise.
+                                </div>
+                            </div>
+
+                            <footer className="flex flex-wrap justify-end gap-2 bg-[var(--surface-muted)] px-5 py-4">
+                                <button
+                                    type="button"
+                                    className="sig-btn sig-btn-secondary"
+                                    disabled={analysisSubmitting}
+                                    onClick={() => setAnalysisOrder(null)}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    className="sig-btn sig-btn-primary"
+                                    disabled={analysisSubmitting}
+                                    onClick={confirmSubmitForAnalysis}
+                                    autoFocus
+                                >
+                                    <Send size={16} />
+                                    {analysisSubmitting ? 'Enviando...' : 'Confirmar envio'}
+                                </button>
+                            </footer>
+                        </section>
                     </div>
                 )}
 
@@ -275,27 +574,62 @@ export default function OrdemServicoIndex({
                 </section>
 
                 {showForm && (
-                    <form onSubmit={submit} className="sig-card overflow-hidden">
-                        <header className="border-b border-[var(--border)] px-5 py-4">
-                            <div className="flex items-center gap-3">
+                    <div
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3 sm:p-6"
+                        role="presentation"
+                        onMouseDown={(event) => {
+                            if (event.target === event.currentTarget && !form.processing) {
+                                closeForm();
+                            }
+                        }}
+                    >
+                    <form
+                        onSubmit={submit}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="create-service-order-title"
+                        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-2xl sm:max-h-[calc(100dvh-3rem)]"
+                    >
+                        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--border)] bg-white px-5 py-4">
+                            <div className="flex min-w-0 items-center gap-3">
                                 <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
                                     <HardHat size={20} />
                                 </span>
-                                <div>
-                                    <h2 className="text-lg font-bold text-[var(--ink-900)]">Criar ordem de serviço</h2>
+                                <div className="min-w-0">
+                                    <h2 id="create-service-order-title" className="text-lg font-bold text-[var(--ink-900)]">
+                                        {editingOrder ? `Editar ${editingOrder.codigo}` : 'Criar ordem de serviço'}
+                                    </h2>
                                     <p className="text-sm text-[var(--ink-500)]">
-                                        O usuário logado será registrado automaticamente como solicitante.
+                                        {editingOrder
+                                            ? 'A edição está disponível enquanto a OS permanecer em rascunho.'
+                                            : 'O usuário logado será registrado automaticamente como solicitante.'}
                                     </p>
                                 </div>
                             </div>
+                            <button
+                                type="button"
+                                onClick={closeForm}
+                                disabled={form.processing}
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--ink-500)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label="Fechar formulário da ordem de serviço"
+                            >
+                                <X size={20} />
+                            </button>
                         </header>
 
-                        <div className="grid gap-5 p-5">
+                        <div className="grid flex-1 gap-5 overflow-y-auto p-5">
+                            {Object.values(form.errors).length > 0 && (
+                                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                                    Revise os campos destacados antes de salvar a OS.
+                                </div>
+                            )}
+
                             <div className="grid gap-4 lg:grid-cols-3">
                                 <Field label="Contrato" error={form.errors.contract_id}>
                                     <select
                                         value={form.data.contract_id}
-                                        onChange={(event) => changeContract(event.target.value)}
+                                        onChange={(event) => changeContract(event.target.value, true)}
                                         className="sig-input"
                                     >
                                         {contracts.map((contract) => (
@@ -443,33 +777,59 @@ export default function OrdemServicoIndex({
                                 title="Itens utilizados"
                                 icon={FolderKanban}
                                 search={itemSearch}
-                                setSearch={setItemSearch}
+                                setSearch={(value) => setItemSearch(value)}
                                 placeholder="Buscar por item, código ou descrição"
                                 count={selectedItems.length}
                                 extraControls={(
                                     <select
                                         value={planilhaFilter}
-                                        onChange={(event) => setPlanilhaFilter(event.target.value)}
+                                        onChange={(event) => {
+                                            setPlanilhaFilter(event.target.value);
+                                            setItemPage(1);
+                                        }}
                                         className="sig-input w-full sm:w-48"
                                     >
                                         <option value="todas">Todas as planilhas</option>
-                                        {planilhaOptions.map((planilha) => (
+                                        {itemPlanilhas.map((planilha) => (
                                             <option key={planilha} value={planilha}>Planilha {planilha}</option>
                                         ))}
                                     </select>
                                 )}
                             >
+                                {selectedItems.length > 0 && (
+                                    <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto rounded-lg border border-emerald-200 bg-emerald-50 p-2">
+                                        {selectedItems.map((item) => (
+                                            <button
+                                                key={item.id}
+                                                type="button"
+                                                onClick={() => toggleItem(item)}
+                                                className="flex max-w-full items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-1 text-xs font-semibold text-emerald-800 transition hover:border-emerald-400"
+                                                title="Remover item selecionado"
+                                            >
+                                                <span className="truncate">{item.item} - {item.codigo || '-'}</span>
+                                                <X size={13} className="shrink-0" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
                                 <div className="max-h-80 divide-y divide-[var(--border)] overflow-auto rounded-lg border border-[var(--border)]">
-                                    {filteredItems.length === 0 ? (
+                                    {itemsLoading ? (
+                                        <p className="p-6 text-center text-sm font-semibold text-[var(--ink-500)]">
+                                            Carregando itens...
+                                        </p>
+                                    ) : itemsLoadError ? (
+                                        <p className="p-6 text-center text-sm font-semibold text-red-600">{itemsLoadError}</p>
+                                    ) : itemResults.length === 0 ? (
                                         <p className="p-4 text-sm text-[var(--ink-500)]">Nenhum item encontrado.</p>
-                                    ) : filteredItems.map((item) => {
+                                    ) : itemResults.map((item) => {
                                         const checked = form.data.item_ids.includes(item.id);
 
                                         return (
                                             <button
                                                 key={item.id}
                                                 type="button"
-                                                onClick={() => toggleId('item_ids', item.id)}
+                                                onClick={() => toggleItem(item)}
                                                 className={`grid w-full gap-2 p-3 text-left transition hover:bg-[var(--primary-50)] ${
                                                     checked ? 'bg-emerald-50' : 'bg-white'
                                                 }`}
@@ -478,7 +838,7 @@ export default function OrdemServicoIndex({
                                                     <input
                                                         type="checkbox"
                                                         checked={checked}
-                                                        onChange={() => toggleId('item_ids', item.id)}
+                                                        onChange={() => toggleItem(item)}
                                                         onClick={(event) => event.stopPropagation()}
                                                         className="mt-1"
                                                     />
@@ -509,6 +869,34 @@ export default function OrdemServicoIndex({
                                         );
                                     })}
                                 </div>
+                                <div className="flex flex-col gap-2 text-xs text-[var(--ink-500)] sm:flex-row sm:items-center sm:justify-between">
+                                    <span>
+                                        {itemMeta.total > 0
+                                            ? `Exibindo ${itemMeta.from}-${itemMeta.to} de ${itemMeta.total} itens`
+                                            : 'Nenhum item disponível'}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setItemPage((current) => Math.max(1, current - 1))}
+                                            disabled={itemsLoading || itemMeta.current_page <= 1}
+                                            className="sig-btn sig-btn-secondary min-h-9 px-3 py-1.5 text-xs"
+                                        >
+                                            Anterior
+                                        </button>
+                                        <span className="min-w-20 text-center font-semibold text-[var(--ink-700)]">
+                                            {itemMeta.current_page || 1} de {itemMeta.last_page || 1}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setItemPage((current) => Math.min(itemMeta.last_page || 1, current + 1))}
+                                            disabled={itemsLoading || itemMeta.current_page >= itemMeta.last_page}
+                                            className="sig-btn sig-btn-secondary min-h-9 px-3 py-1.5 text-xs"
+                                        >
+                                            Próxima
+                                        </button>
+                                    </div>
+                                </div>
                                 <div className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs sm:grid-cols-2">
                                     <p className="font-semibold text-[var(--ink-500)]">
                                         Total inicial P0:
@@ -522,7 +910,7 @@ export default function OrdemServicoIndex({
                             </SelectionPanel>
 
                             <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-                                <Field label="Documentos para execução" error={form.errors.documentos}>
+                                <Field label={editingOrder ? 'Adicionar documentos' : 'Documentos para execução'} error={form.errors.documentos}>
                                     <input
                                         type="file"
                                         multiple
@@ -530,7 +918,9 @@ export default function OrdemServicoIndex({
                                         className="sig-input file:mr-4 file:rounded-md file:border-0 file:bg-[var(--primary-50)] file:px-3 file:py-2 file:text-sm file:font-bold file:text-[var(--primary)]"
                                     />
                                     <span className="text-xs text-[var(--ink-500)]">
-                                        Anexe memoriais, projetos, permissões ou documentos complementares.
+                                        {editingOrder
+                                            ? `${editingOrder.documentos_count || 0} documento(s) existente(s) serão preservados. Você pode anexar novos arquivos.`
+                                            : 'Anexe memoriais, projetos, permissões ou documentos complementares.'}
                                     </span>
                                 </Field>
 
@@ -545,16 +935,19 @@ export default function OrdemServicoIndex({
                             </div>
                         </div>
 
-                        <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-[var(--border)] px-5 py-4">
-                            <button type="button" onClick={() => setShowForm(false)} className="sig-btn sig-btn-secondary">
+                        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-[var(--border)] bg-white px-5 py-4">
+                            <button type="button" onClick={closeForm} disabled={form.processing} className="sig-btn sig-btn-secondary">
                                 Cancelar
                             </button>
                             <button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary">
-                                <Plus size={16} />
-                                {form.processing ? 'Criando...' : 'Criar OS'}
+                                {editingOrder ? <Pencil size={16} /> : <Plus size={16} />}
+                                {form.processing
+                                    ? (editingOrder ? 'Salvando...' : 'Criando...')
+                                    : (editingOrder ? 'Salvar alterações' : 'Criar OS')}
                             </button>
                         </footer>
                     </form>
+                    </div>
                 )}
 
                 <section className="sig-card overflow-hidden">
@@ -661,7 +1054,7 @@ export default function OrdemServicoIndex({
                                             {ordem.itens.map((item) => (
                                                 <span
                                                     key={item.id}
-                                                    className="grid gap-2 rounded-md bg-slate-100 px-3 py-2 text-xs text-[var(--ink-600)] sm:grid-cols-[minmax(0,1fr)_120px_120px]"
+                                                    className="grid gap-2 rounded-md bg-slate-100 px-3 py-2 text-xs text-[var(--ink-600)] sm:grid-cols-[minmax(0,1fr)_112px_112px_120px]"
                                                     title={item.descricao}
                                                 >
                                                     <div className="min-w-0">
@@ -681,6 +1074,22 @@ export default function OrdemServicoIndex({
                                                         <strong className="mt-1 block whitespace-nowrap text-emerald-700">
                                                             {formatCurrency(item.valor_reajustado)}
                                                         </strong>
+                                                    </div>
+                                                    <div>
+                                                        <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--ink-500)]">Medido</span>
+                                                        <div className="mt-1 flex items-center gap-2">
+                                                            <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
+                                                                <span
+                                                                    className="block h-full rounded-full bg-[var(--primary)]"
+                                                                    style={{
+                                                                        width: `${Math.max(0, Math.min(100, Number(item.percentual_medido || 0)))}%`,
+                                                                    }}
+                                                                />
+                                                            </span>
+                                                            <strong className="whitespace-nowrap text-[var(--primary)]">
+                                                                {formatPercentage(item.percentual_medido)}%
+                                                            </strong>
+                                                        </div>
                                                     </div>
                                                 </span>
                                             ))}
@@ -705,14 +1114,24 @@ export default function OrdemServicoIndex({
                                         </div>
 
                                         {ordem.status === 'rascunho' && (
-                                            <button
-                                                type="button"
-                                                onClick={() => submitForAnalysis(ordem)}
-                                                className="sig-btn sig-btn-primary justify-center"
-                                            >
-                                                <Send size={16} />
-                                                Enviar para análise
-                                            </button>
+                                            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openEditForm(ordem)}
+                                                    className="sig-btn sig-btn-secondary justify-center"
+                                                >
+                                                    <Pencil size={16} />
+                                                    Editar
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => submitForAnalysis(ordem)}
+                                                    className="sig-btn sig-btn-primary justify-center"
+                                                >
+                                                    <Send size={16} />
+                                                    Enviar para análise
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
                                     </div>

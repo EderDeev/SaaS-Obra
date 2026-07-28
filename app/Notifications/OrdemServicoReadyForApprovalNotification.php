@@ -45,12 +45,27 @@ class OrdemServicoReadyForApprovalNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
+        $url = route('tenant.ordem-servico.analise.index', $this->ordemServico->tenant);
+        $systemUrl = route('tenant.dashboard', $this->ordemServico->tenant);
+        $viewData = [
+            'ordem' => $this->ordemServico,
+            'actor' => $this->actor,
+            'notifiable' => $notifiable,
+            'headline' => 'OS aguardando aprovação',
+            'bodyText' => "{$this->actor->name} concluiu a análise e encaminhou esta ordem de serviço para sua aprovação.",
+            'statusLabel' => 'Em aprovação',
+            'tone' => 'primary',
+            'actionLabel' => 'Avaliar aprovação',
+            'url' => $url,
+            'systemUrl' => $systemUrl,
+            'highlightTitle' => 'Decisão necessária',
+            'highlightBody' => 'Confira a análise registrada e decida pela aprovação ou recusa da ordem de serviço.',
+            'observation' => $this->ordemServico->analysis_observation,
+        ];
+
         return (new MailMessage)
             ->subject("OS aguardando aprovação: {$this->ordemServico->codigo}")
-            ->greeting("Olá, {$notifiable->name}.")
-            ->line("A OS {$this->ordemServico->codigo} foi analisada e aguarda sua aprovação.")
-            ->line("Título: {$this->ordemServico->titulo}")
-            ->line("Contrato: {$this->ordemServico->contract?->code} - {$this->ordemServico->contract?->name}")
-            ->action('Acessar aprovação da OS', route('tenant.ordem-servico.analise.index', $this->ordemServico->tenant));
+            ->view('emails.ordem-servico-flow', $viewData)
+            ->text('emails.ordem-servico-flow-text', $viewData);
     }
 }

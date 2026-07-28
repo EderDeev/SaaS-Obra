@@ -1,9 +1,10 @@
+import { startRdoTour } from '@/Components/RdoTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Info } from 'lucide-react';
+import { Info, Plane } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 
 function formatLocalDate(date) {
@@ -147,9 +148,14 @@ export default function RdaIndex({
                             Registro Diário de Atividades para apontamentos de campo. Ele herda a parametrização do RDO e serve como insumo operacional para o RDO oficial.
                         </p>
                     </div>
-                    <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                        <strong>{summary.month_label}</strong>
-                        <span className="ml-2 text-blue-700">· {summary.days_in_month} dias no período</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={() => startRdoTour(currentTenant.slug)}>
+                            <Plane size={17} /> Iniciar tour
+                        </button>
+                        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                            <strong>{summary.month_label}</strong>
+                            <span className="ml-2 text-blue-700">· {summary.days_in_month} dias no período</span>
+                        </div>
                     </div>
                 </div>
 

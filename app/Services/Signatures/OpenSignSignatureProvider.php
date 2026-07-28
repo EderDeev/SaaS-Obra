@@ -3,6 +3,7 @@
 namespace App\Services\Signatures;
 
 use App\Models\RdoSignatureRequest;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -117,11 +118,15 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
         RdoSignatureRequest $request,
         array $fallbackSigners,
     ): array {
-        $response = Http::withHeaders(['x-api-token' => $apiKey])
-            ->acceptJson()
-            ->timeout(30)
-            ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
-            ->get($baseUrl.'/signinglinks/'.rawurlencode($documentId));
+        try {
+            $response = Http::withHeaders(['x-api-token' => $apiKey])
+                ->acceptJson()
+                ->timeout(30)
+                ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
+                ->get($baseUrl.'/signinglinks/'.rawurlencode($documentId));
+        } catch (ConnectionException) {
+            return $fallbackSigners;
+        }
 
         if ($response->failed()) {
             return $fallbackSigners;
@@ -296,14 +301,18 @@ HTML;
 
         $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
 
-        $response = Http::acceptJson()
-            ->asJson()
-            ->withHeaders(['X-Parse-Application-Id' => 'opensign'])
-            ->timeout(30)
-            ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
-            ->post($origin.'/api/app/functions/getDocument', [
-                'docId' => $documentId,
-            ]);
+        try {
+            $response = Http::acceptJson()
+                ->asJson()
+                ->withHeaders(['X-Parse-Application-Id' => 'opensign'])
+                ->timeout(30)
+                ->withOptions(['verify' => (bool) config('signatures.opensign.verify_ssl')])
+                ->post($origin.'/api/app/functions/getDocument', [
+                    'docId' => $documentId,
+                ]);
+        } catch (ConnectionException) {
+            return [];
+        }
 
         return $response->successful() ? ($response->json() ?? []) : [];
     }

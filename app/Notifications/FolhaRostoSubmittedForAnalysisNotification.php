@@ -50,7 +50,9 @@ class FolhaRostoSubmittedForAnalysisNotification extends Notification
             ->subject("FR aguardando análise: {$this->folhaRosto->codigo}")
             ->greeting("Olá, {$notifiable->name}.")
             ->line("A Folha de Rosto {$this->folhaRosto->codigo} foi enviada para análise {$this->etapaLabel()}.")
-            ->line("OS: {$this->folhaRosto->ordemServico?->codigo} - {$this->folhaRosto->ordemServico?->titulo}")
+            ->line($this->folhaRosto->ordemServico
+                ? "OS: {$this->folhaRosto->ordemServico->codigo} - {$this->folhaRosto->ordemServico->titulo}"
+                : 'Origem: medição simples, sem Ordem de Serviço')
             ->line("Contrato: {$this->folhaRosto->contract?->code} - {$this->folhaRosto->contract?->name}")
             ->line("Obra: ".($this->folhaRosto->obra?->nome ?? 'Não informada'))
             ->action('Acessar análise do pleito', route('tenant.medicao.analisar-pleito.index', $this->folhaRosto->tenant))

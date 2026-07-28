@@ -117,7 +117,7 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <ShieldCheck size={14} />
-                        <span className="eyebrow">Relatorio Nao Conformidade</span>
+                        <span className="eyebrow">Relatório de Não Conformidade</span>
                     </div>
                     <h1 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">Responsáveis</h1>
                     <p className="mt-1 text-sm text-[var(--ink-500)]">

@@ -1,5 +1,5 @@
 import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { AlertCircle, ArrowLeft, Boxes, Check, ChevronDown, ChevronRight, Layers3, PackagePlus, Pencil, Plus, Search, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Boxes, Check, ChevronDown, ChevronRight, Download, Layers3, PackagePlus, Pencil, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import OrcamentoShell from '../Partials/OrcamentoShell';
 
@@ -36,6 +36,7 @@ export default function ShowComposicao({
             title={compositionTitle(composicao)}
             subtitle="Detalhamento da composicao, bases por UF e itens analiticos vinculados."
             showNav={false}
+            showHeader={false}
         >
             {page.props.flash?.success && (
                 <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
@@ -43,12 +44,7 @@ export default function ShowComposicao({
                 </div>
             )}
 
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.composicoes.index', tenant.slug)}>
-                    <ArrowLeft size={15} />
-                    Voltar para composicoes
-                </Link>
-            </div>
+            <CompositionDetailHeader composicao={composicao} detail={detail} tenant={tenant} />
 
             <AnaliticoDetail composicao={composicao} detail={detail} tenant={tenant} />
 
@@ -128,10 +124,74 @@ export default function ShowComposicao({
     );
 }
 
+function CompositionDetailHeader({ composicao, detail, tenant }) {
+    const code = detail?.codigo ?? composicao.codigo;
+    const description = detail?.descricao ?? composicao.descricao;
+    const base = String(detail?.modelo ?? composicao.modelo ?? 'SINAPI').toUpperCase();
+    const isOfficial = composicao.scope !== 'tenant';
+    const isSicro3 = base === 'SICRO3';
+    const baseLabel = isSicro3 ? 'SICRO 3' : base;
+
+    return (
+        <header className="mb-5">
+            <nav className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-400)]">
+                <Link className="transition hover:text-[var(--primary)]" href={route('tenant.orcamentos.index', tenant.slug)}>
+                    Orçamentos
+                </Link>
+                <span className="text-[var(--border-strong)]">/</span>
+                <Link className="transition hover:text-[var(--primary)]" href={route('tenant.orcamentos.composicoes.index', tenant.slug)}>
+                    Composições
+                </Link>
+                <span className="text-[var(--border-strong)]">/</span>
+                <span className="font-mono text-[var(--ink-600)]">{code}</span>
+            </nav>
+
+            <div className="mt-3 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 max-w-5xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-md bg-blue-50 px-2.5 py-1 font-mono text-[23px] font-semibold leading-[1.3] text-blue-700">
+                            {code}
+                        </span>
+                        <span
+                            className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
+                                isOfficial
+                                    ? (isSicro3 ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700')
+                                    : 'bg-violet-50 text-violet-700'
+                            }`}
+                        >
+                            {isOfficial ? `Oficial · ${baseLabel}` : `Própria · ${baseLabel}`}
+                        </span>
+                    </div>
+                    <h1 className="mt-2 max-w-5xl break-words text-[23px] font-semibold leading-[1.3] text-[var(--ink-900)]">
+                        {description || '-'}
+                    </h1>
+                    <p className="mt-1.5 text-sm leading-6 text-[var(--ink-500)]">
+                        {isSicro3
+                            ? 'Detalhamento da composição, produção da equipe e itens analíticos por categoria.'
+                            : 'Detalhamento da composição, bases por UF e itens analíticos vinculados.'}
+                    </p>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.composicoes.index', tenant.slug)}>
+                        <ArrowLeft size={15} />
+                        Voltar
+                    </Link>
+                    <button className="sig-btn sig-btn-secondary" type="button" onClick={() => window.print()}>
+                        <Download size={15} />
+                        Exportar
+                    </button>
+                </div>
+            </div>
+        </header>
+    );
+}
+
 function AnaliticoDetail({ composicao, detail, tenant }) {
     const states = detail?.states ?? [];
     const initialState = states.find((state) => state.uf === composicao.uf)?.uf ?? states[0]?.uf ?? null;
     const [openState, setOpenState] = useState(initialState);
+    const [costReference, setCostReference] = useState('onerado');
     const isSicro3 = String(detail?.modelo ?? composicao.modelo ?? '').toUpperCase() === 'SICRO3';
     const itemPriceDecimals = isSicro3 ? 4 : 2;
 
@@ -149,59 +209,60 @@ function AnaliticoDetail({ composicao, detail, tenant }) {
     }
 
     return (
-        <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
-            <header className="border-b border-[var(--border)] bg-white px-5 py-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">
-                    Detalhamento de composicoes com precos por UF
+        <section>
+            <div className="mb-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <InfoTile label="Data de referência" value={detail?.data ?? firstReferenceLabel(composicao)} mono />
+                <InfoTile label="Tipo" value={detail?.tipo ?? composicao.tipo_composicao} />
+                <InfoTile label="Unidade" value={detail?.unidade ?? composicao.unidade} mono />
+                <InfoTile label="Bases por UF" value={states.length} mono />
+            </div>
+
+            <div className="mb-3 flex flex-col gap-3 px-1 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-400)]">
+                    Preços e itens analíticos por UF
                 </p>
-                <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="min-w-0">
-                        <h1 className="text-3xl font-semibold text-[var(--primary)]">
-                            {compositionTitle({
-                                codigo: detail?.codigo ?? composicao.codigo,
-                                descricao: detail?.descricao ?? composicao.descricao,
-                            })}
-                        </h1>
-                    </div>
-                    <div className="grid gap-2 text-xs sm:grid-cols-3 lg:min-w-[520px]">
-                        <InfoTile label="Data" value={detail?.data ?? firstReferenceLabel(composicao)} />
-                        <InfoTile label="Tipo" value={detail?.tipo ?? composicao.tipo_composicao} />
-                        <InfoTile label="Unidade" value={detail?.unidade ?? composicao.unidade} />
-                    </div>
-                </div>
-            </header>
+                <label className="flex items-center gap-2 text-xs text-[var(--ink-400)]">
+                    <span>Referência de custo</span>
+                    <select
+                        className="h-9 rounded-lg border border-[var(--border)] bg-white px-3 pr-8 text-xs font-medium text-[var(--ink-800)] shadow-[var(--shadow-sm)]"
+                        value={costReference}
+                        onChange={(event) => setCostReference(event.target.value)}
+                    >
+                        <option value="onerado">Não desonerado</option>
+                        <option value="desonerado">Desonerado</option>
+                    </select>
+                </label>
+            </div>
 
             {states.length === 0 ? (
-                <div className="p-8 text-center text-sm text-[var(--ink-500)]">
-                    Nenhum detalhamento analitico encontrado para esta composicao na data selecionada.
+                <div className="rounded-lg border border-[var(--border)] bg-white p-8 text-center text-sm text-[var(--ink-500)] shadow-[var(--shadow-sm)]">
+                    Nenhum detalhamento analítico encontrado para esta composição na data selecionada.
                 </div>
             ) : (
-                <div className="divide-y divide-[var(--border)]">
+                <div className="space-y-3">
                     {states.map((state) => {
                         const isOpen = openState === state.uf;
 
                         return (
-                            <article key={state.uf} className="bg-white">
+                            <article key={state.uf} className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
                                 <button
-                                    className={`grid w-full gap-3 px-5 py-4 text-left transition hover:bg-[var(--primary-50)]/60 lg:grid-cols-[170px_1fr_1fr_auto] lg:items-center ${
-                                        isOpen ? 'bg-[var(--primary-50)]/50' : ''
-                                    }`}
+                                    className="grid w-full gap-4 px-5 py-4 text-left transition hover:bg-[var(--surface-muted)] md:grid-cols-[minmax(150px,1.35fr)_minmax(150px,1fr)_minmax(150px,1fr)_auto] md:items-center"
                                     type="button"
                                     onClick={() => setOpenState(isOpen ? null : state.uf)}
                                 >
                                     <div className="flex items-center gap-3">
-                                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[var(--primary)] shadow-[var(--shadow-sm)]">
-                                            {isOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                                        <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center ${isOpen ? 'text-blue-600' : 'text-[var(--ink-400)]'}`}>
+                                            {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                                         </span>
                                         <div>
-                                            <p className="text-sm font-bold text-[var(--ink-900)]">{state.estado_label}</p>
-                                            <p className="text-xs font-semibold text-[var(--ink-400)]">{state.uf}</p>
+                                            <p className="text-sm font-semibold text-[var(--ink-900)]">{state.estado_label}</p>
+                                            <p className="mt-0.5 font-mono text-[11px] text-[var(--ink-400)]">{state.uf}</p>
                                         </div>
                                     </div>
-                                    <StateValue label="Valor Nao Desonerado" value={state.effective_preco_onerado} />
-                                    <StateValue label="Valor Desonerado" value={state.effective_preco_desonerado} />
-                                    <div className="flex flex-col items-start gap-1 lg:items-end">
-                                        <span className="inline-flex min-h-8 items-center justify-center rounded-full bg-white px-3 text-xs font-bold text-[var(--ink-500)] shadow-[var(--shadow-sm)]">
+                                    <StateValue active={costReference === 'onerado'} label="Valor não desonerado" value={state.effective_preco_onerado} />
+                                    <StateValue active={costReference === 'desonerado'} label="Valor desonerado" value={state.effective_preco_desonerado} />
+                                    <div className="flex flex-wrap items-center gap-2 md:justify-self-end">
+                                        <span className="font-mono text-xs text-[var(--ink-500)]">
                                             {state.items_count} itens
                                         </span>
                                         <StateQualityNote state={state} />
@@ -209,7 +270,13 @@ function AnaliticoDetail({ composicao, detail, tenant }) {
                                 </button>
 
                                 {isOpen && (
-                                    <AnaliticoItems state={state} tenant={tenant} priceDecimals={itemPriceDecimals} />
+                                    <AnaliticoItems
+                                        costReference={costReference}
+                                        state={state}
+                                        tenant={tenant}
+                                        priceDecimals={itemPriceDecimals}
+                                        unit={detail?.unidade ?? composicao.unidade}
+                                    />
                                 )}
                             </article>
                         );
@@ -231,69 +298,104 @@ function Sicro3AnaliticoDetail({ composicao, detail, openState, setOpenState, st
         );
     }
 
+    const activeState = states.find((state) => state.uf === openState) ?? states[0];
+    const stateComposicao = {
+        ...composicao,
+        codigo: detail?.codigo ?? composicao.codigo,
+        descricao: detail?.descricao ?? composicao.descricao,
+        tipo_composicao: detail?.tipo ?? composicao.tipo_composicao,
+        unidade: detail?.unidade ?? composicao.unidade,
+        uf: activeState.uf,
+        estado_label: activeState.estado_label,
+        base_references: [{ data: activeState.data ?? detail?.data ?? firstReferenceLabel(composicao) }],
+        producao_equipe: activeState.producao_equipe ?? composicao.producao_equipe,
+        fator_influencia_chuvas: activeState.fator_influencia_chuvas ?? composicao.fator_influencia_chuvas,
+        preco_onerado: activeState.effective_preco_onerado,
+        preco_desonerado: activeState.effective_preco_desonerado,
+        sicro3_summary: activeState.sicro3_summary,
+    };
+    const stateName = activeState.estado_label ?? activeState.uf ?? '-';
+
     return (
-        <div className="space-y-4">
-            {states.map((state) => {
-                const isOpen = states.length === 1 || openState === state.uf;
-                const stateComposicao = {
-                    ...composicao,
-                    codigo: detail?.codigo ?? composicao.codigo,
-                    descricao: detail?.descricao ?? composicao.descricao,
-                    tipo_composicao: detail?.tipo ?? composicao.tipo_composicao,
-                    unidade: detail?.unidade ?? composicao.unidade,
-                    uf: state.uf,
-                    estado_label: state.estado_label,
-                    base_references: [{ data: state.data ?? detail?.data ?? firstReferenceLabel(composicao) }],
-                    producao_equipe: state.producao_equipe ?? composicao.producao_equipe,
-                    fator_influencia_chuvas: state.fator_influencia_chuvas ?? composicao.fator_influencia_chuvas,
-                    preco_onerado: state.effective_preco_onerado,
-                    preco_desonerado: state.effective_preco_desonerado,
-                    sicro3_summary: state.sicro3_summary,
-                };
+        <section className="space-y-5">
+            {states.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-400)]">
+                        Estado
+                    </span>
+                    {states.map((state) => (
+                        <button
+                            key={state.uf}
+                            className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                                activeState.uf === state.uf
+                                    ? 'border-blue-600 bg-blue-600 text-white'
+                                    : 'border-[var(--border)] bg-white text-[var(--ink-600)] hover:border-blue-300 hover:text-blue-700'
+                            }`}
+                            type="button"
+                            onClick={() => setOpenState(state.uf)}
+                        >
+                            {state.estado_label} · {state.uf}
+                        </button>
+                    ))}
+                </div>
+            )}
 
-                return (
-                    <article key={state.uf} className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
-                        {states.length > 1 && (
-                            <button
-                                className={`flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-[var(--primary-50)]/60 ${
-                                    isOpen ? 'bg-[var(--primary-50)]/50' : ''
-                                }`}
-                                type="button"
-                                onClick={() => setOpenState(isOpen ? null : state.uf)}
-                            >
-                                <span className="flex items-center gap-3">
-                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[var(--primary)] shadow-[var(--shadow-sm)]">
-                                        {isOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-                                    </span>
-                                    <span>
-                                        <span className="block text-sm font-bold text-[var(--ink-900)]">{state.estado_label}</span>
-                                        <span className="block text-xs font-semibold text-[var(--ink-400)]">{state.uf}</span>
-                                    </span>
-                                </span>
-                                <span className="text-xs font-bold text-[var(--ink-500)]">{state.items_count} itens</span>
-                            </button>
-                        )}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <InfoTile label="Data de referência" value={activeState.data ?? detail?.data ?? firstReferenceLabel(composicao)} mono />
+                <InfoTile label="Unidade" value={detail?.unidade ?? composicao.unidade} mono />
+                <InfoTile label="Produção da equipe" value={formatOptionalNumber(stateComposicao.producao_equipe, 4)} mono />
+                <InfoTile label="Fator de influência da chuva · FIC" value={formatOptionalNumber(stateComposicao.fator_influencia_chuvas, 4)} mono />
+            </div>
 
-                        {isOpen && (
-                            <Sicro3OwnCompositionItemsTable
-                                composicao={stateComposicao}
-                                items={state.items ?? []}
-                                readOnly
-                                tenant={tenant}
-                            />
-                        )}
-                    </article>
-                );
-            })}
+            <Sicro3CostBanner
+                dark={false}
+                label={`Custo unitário · ${stateName}`}
+                reference="Não desonerado"
+                value={stateComposicao.preco_onerado}
+            />
+
+            <Sicro3OwnCompositionItemsTable
+                composicao={stateComposicao}
+                items={activeState.items ?? []}
+                readOnly
+                tenant={tenant}
+            />
+
+            <Sicro3CostBanner
+                dark
+                label={`Custo unitário · ${stateName}`}
+                reference="Desonerado"
+                value={stateComposicao.preco_desonerado}
+            />
+        </section>
+    );
+}
+
+function Sicro3CostBanner({ dark = false, label, reference, value }) {
+    return (
+        <div
+            className={`flex flex-wrap items-center justify-between gap-4 rounded-lg px-5 py-4 shadow-[var(--shadow-sm)] ${
+                dark
+                    ? 'bg-slate-900 text-white'
+                    : 'border border-[var(--border)] bg-white text-[var(--ink-900)]'
+            }`}
+        >
+            <div>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.08em] ${dark ? 'text-slate-400' : 'text-[var(--ink-400)]'}`}>
+                    {label}
+                </p>
+                <p className={`mt-1 text-sm font-medium ${dark ? 'text-slate-200' : 'text-[var(--ink-700)]'}`}>{reference}</p>
+            </div>
+            <p className="font-mono text-[22px] font-semibold leading-none">{formatCurrency(value)}</p>
         </div>
     );
 }
 
-function InfoTile({ label, value }) {
+function InfoTile({ label, mono = false, value }) {
     return (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink-400)]">{label}</span>
-            <p className="mt-1 break-words text-sm font-bold text-[var(--ink-900)]">{value || '-'}</p>
+        <div className="flex min-h-[66px] flex-col justify-center rounded-lg border border-[var(--border)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[var(--ink-400)]">{label}</span>
+            <p className={`mt-1 break-words text-sm font-semibold text-[var(--ink-900)] ${mono ? 'font-mono' : ''}`}>{value ?? '-'}</p>
         </div>
     );
 }
@@ -305,11 +407,11 @@ function compositionTitle(composicao) {
     return [code, description].filter(Boolean).join(' - ') || '-';
 }
 
-function StateValue({ label, value }) {
+function StateValue({ active = false, label, value }) {
     return (
-        <div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink-400)]">{label}</span>
-            <p className="mt-1 font-mono text-sm font-bold text-[var(--ink-900)]">{formatCurrency(value)}</p>
+        <div className={active ? '' : 'opacity-70'}>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-400)]">{label}</span>
+            <p className={`mt-1 font-mono text-sm ${active ? 'font-semibold text-[var(--ink-900)]' : 'font-medium text-[var(--ink-600)]'}`}>{formatCurrency(value)}</p>
         </div>
     );
 }
@@ -323,9 +425,9 @@ function StateQualityNote({ state }) {
     }
 
     return (
-        <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-semibold">
+        <div className="flex flex-wrap items-center gap-1 text-[10px] font-semibold">
             {isCalculated && (
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
+                <span className="rounded-md bg-indigo-50 px-2 py-1 text-indigo-600">
                     Calculado
                 </span>
             )}
@@ -339,7 +441,7 @@ function StateQualityNote({ state }) {
     );
 }
 
-function AnaliticoItems({ state, tenant, priceDecimals = 2 }) {
+function AnaliticoItems({ costReference = 'onerado', state, tenant, priceDecimals = 2, unit }) {
     if (!state.items?.length) {
         return (
             <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-6 text-sm text-[var(--ink-500)]">
@@ -349,8 +451,8 @@ function AnaliticoItems({ state, tenant, priceDecimals = 2 }) {
     }
 
     return (
-        <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] p-3 sm:p-5">
-            <div className="hidden overflow-hidden rounded-lg border border-[var(--border)] bg-white xl:block">
+        <div className="border-t border-[var(--border)] bg-white">
+            <div className="hidden overflow-x-auto xl:block">
                 <table className="w-full table-fixed border-collapse text-left text-xs">
                     <colgroup>
                         <col className="w-[4%]" />
@@ -364,7 +466,7 @@ function AnaliticoItems({ state, tenant, priceDecimals = 2 }) {
                         <col className="w-[7%]" />
                         <col className="w-[7%]" />
                     </colgroup>
-                    <thead className="bg-[var(--ink-900)] text-white">
+                    <thead className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[var(--ink-400)]">
                         <tr>
                             <TableHead></TableHead>
                             <TableHead>Codigo</TableHead>
@@ -382,13 +484,17 @@ function AnaliticoItems({ state, tenant, priceDecimals = 2 }) {
                         {state.items.map((item) => (
                             <tr
                                 key={item.id}
-                                className={`${item.item_type === 'composicao' ? 'bg-emerald-50/80' : 'bg-amber-50/70'} hover:bg-[var(--primary-50)]`}
+                                className={`${item.item_type === 'composicao' ? 'bg-emerald-50/55' : 'bg-amber-50/45'} transition hover:brightness-[0.985]`}
                             >
-                                <td className="px-3 py-3 font-mono font-bold text-[var(--primary)]">{item.marker}</td>
-                                <td className="px-3 py-3 font-mono font-bold text-[var(--primary)]">
+                                <td className="px-3 py-3">
+                                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-md font-mono text-[11px] font-semibold ${item.item_type === 'composicao' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        {item.marker}
+                                    </span>
+                                </td>
+                                <td className="px-3 py-3 font-mono font-medium text-blue-600">
                                     <CompositionCodeLink item={item} tenant={tenant} />
                                 </td>
-                                <td className="px-3 py-3 font-semibold leading-5 text-[var(--ink-800)]">{item.descricao}</td>
+                                <td className="px-3 py-3 font-medium leading-5 text-[var(--ink-800)]">{item.descricao}</td>
                                 <td className="px-3 py-3 text-[var(--ink-600)]">
                                     <div className="flex flex-col gap-1">
                                         <span>{item.tipo || item.item_type_label}</span>
@@ -396,18 +502,33 @@ function AnaliticoItems({ state, tenant, priceDecimals = 2 }) {
                                     </div>
                                 </td>
                                 <td className="px-3 py-3 font-semibold text-[var(--ink-700)]">{item.unidade || '-'}</td>
-                                <td className="px-3 py-3 text-right font-mono">{formatCurrency(item.preco_unitario_onerado, priceDecimals)}</td>
-                                <td className="px-3 py-3 text-right font-mono">{formatCurrency(item.preco_unitario_desonerado, priceDecimals)}</td>
-                                <td className="px-3 py-3 text-right font-mono">{formatNumber(item.coeficiente, 6)}</td>
-                                <td className="px-3 py-3 text-right font-mono font-semibold">{formatCurrency(item.preco_onerado, priceDecimals)}</td>
-                                <td className="px-3 py-3 text-right font-mono font-semibold">{formatCurrency(item.preco_desonerado, priceDecimals)}</td>
+                                <td className={`px-3 py-3 text-right font-mono ${costReference === 'onerado' ? 'font-medium text-[var(--ink-900)]' : 'text-[var(--ink-500)]'}`}>{formatCurrency(item.preco_unitario_onerado, priceDecimals)}</td>
+                                <td className={`px-3 py-3 text-right font-mono ${costReference === 'desonerado' ? 'font-medium text-[var(--ink-900)]' : 'text-[var(--ink-500)]'}`}>{formatCurrency(item.preco_unitario_desonerado, priceDecimals)}</td>
+                                <td className="px-3 py-3 text-right font-mono text-[var(--ink-400)]">{formatNumber(item.coeficiente, 6)}</td>
+                                <td className={`px-3 py-3 text-right font-mono ${costReference === 'onerado' ? 'font-semibold text-[var(--ink-900)]' : 'text-[var(--ink-500)]'}`}>{formatCurrency(item.preco_onerado, priceDecimals)}</td>
+                                <td className={`px-3 py-3 text-right font-mono ${costReference === 'desonerado' ? 'font-semibold text-[var(--ink-900)]' : 'text-[var(--ink-500)]'}`}>{formatCurrency(item.preco_desonerado, priceDecimals)}</td>
                             </tr>
                         ))}
                     </tbody>
+                    <tfoot className="border-t border-[var(--border)] bg-white">
+                        <tr>
+                            <td className="px-3 py-3" colSpan={8}>
+                                <span className="pl-[calc(12%+12px)] text-xs font-semibold text-[var(--ink-700)]">
+                                    Total da composição por {unit || '-'}
+                                </span>
+                            </td>
+                            <td className={`px-3 py-3 text-right font-mono text-[13px] ${costReference === 'onerado' ? 'font-semibold text-[var(--ink-900)]' : 'text-[var(--ink-500)]'}`}>
+                                {formatCurrency(state.effective_preco_onerado, priceDecimals)}
+                            </td>
+                            <td className={`px-3 py-3 text-right font-mono text-[13px] ${costReference === 'desonerado' ? 'font-semibold text-[var(--ink-900)]' : 'text-[var(--ink-500)]'}`}>
+                                {formatCurrency(state.effective_preco_desonerado, priceDecimals)}
+                            </td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
 
-            <div className="grid gap-3 xl:hidden">
+            <div className="grid gap-3 p-3 xl:hidden">
                 {state.items.map((item) => (
                     <article
                         key={item.id}
@@ -458,7 +579,7 @@ function ItemPriceWarning({ item }) {
 }
 
 function TableHead({ children, className = '' }) {
-    return <th className={`px-3 py-3 text-[11px] font-bold uppercase ${className}`}>{children}</th>;
+    return <th className={`px-3 py-3 text-[10px] font-semibold uppercase tracking-[0.06em] ${className}`}>{children}</th>;
 }
 
 function CompositionCodeLink({ item, tenant }) {
@@ -1116,12 +1237,12 @@ function CompositionItemsTable({ composicao, items, tenant }) {
 }
 
 const SICRO3_ANALYTIC_SECTIONS = [
-    { key: 'equipamentos', code: 'A', label: 'EQUIPAMENTOS', columns: 'equipment' },
-    { key: 'mao_de_obra', code: 'B', label: 'MAO-DE-OBRA', columns: 'labor' },
-    { key: 'material', code: 'C', label: 'MATERIAL', columns: 'material' },
-    { key: 'atividades_auxiliares', code: 'D', label: 'ATIVIDADES AUXILIARES', columns: 'activity' },
-    { key: 'tempo_fixo', code: 'E', label: 'TEMPO FIXO', columns: 'fixed' },
-    { key: 'momento_transporte', code: 'F', label: 'MOMENTO DE TRANSPORTE', columns: 'transport' },
+    { key: 'equipamentos', code: 'A', label: 'EQUIPAMENTOS', columns: 'equipment', badgeClass: 'bg-indigo-50 text-indigo-700', minWidth: 'min-w-[1060px]' },
+    { key: 'mao_de_obra', code: 'B', label: 'MÃO-DE-OBRA', columns: 'labor', badgeClass: 'bg-blue-50 text-blue-700', minWidth: 'min-w-[900px]' },
+    { key: 'material', code: 'C', label: 'MATERIAL', columns: 'material', badgeClass: 'bg-emerald-50 text-emerald-700', minWidth: 'min-w-[850px]' },
+    { key: 'atividades_auxiliares', code: 'D', label: 'ATIVIDADES AUXILIARES', columns: 'activity', badgeClass: 'bg-amber-50 text-amber-700', minWidth: 'min-w-[850px]' },
+    { key: 'tempo_fixo', code: 'E', label: 'TEMPO FIXO', columns: 'fixed', badgeClass: 'bg-pink-50 text-pink-700', minWidth: 'min-w-[960px]' },
+    { key: 'momento_transporte', code: 'F', label: 'MOMENTO DE TRANSPORTE', columns: 'transport', badgeClass: 'bg-orange-50 text-orange-700', minWidth: 'min-w-[1080px]' },
 ];
 
 function Sicro3OwnCompositionItemsTable({
@@ -1138,74 +1259,27 @@ function Sicro3OwnCompositionItemsTable({
     tenant,
 }) {
     const sicro3Summary = composicao.sicro3_summary ?? {};
-    const totalOnerado = Number(sicro3Summary.preco_onerado ?? composicao.preco_onerado ?? items.reduce((sum, item) => sum + Number(item.preco_onerado ?? 0), 0));
-    const totalDesonerado = Number(sicro3Summary.preco_desonerado ?? composicao.preco_desonerado ?? items.reduce((sum, item) => sum + Number(item.preco_desonerado ?? 0), 0));
 
     return (
-        <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
-            <div className="border-b border-[var(--border)]">
-                <div className="bg-[var(--primary)] px-3 py-2 text-xs font-bold text-white">
-                    {compositionTitle(composicao)}
-                </div>
-                <div className="overflow-x-auto">
-                    <div className="min-w-[960px]">
-                        <div className="grid grid-cols-4 bg-[#2f2f2f] text-[10px] font-bold uppercase text-white">
-                            <div className="px-2 py-2">Data</div>
-                            <div className="px-2 py-2 text-center">Unidade</div>
-                            <div className="px-2 py-2 text-center">Producao da equipe</div>
-                            <div className="px-2 py-2 text-right">Fator de influencia da chuva - FIC</div>
-                        </div>
-                        <div className="grid grid-cols-4 border-b border-[var(--border)] bg-white text-[10px] font-semibold text-[var(--ink-900)]">
-                            <div className="px-2 py-2">{firstReferenceLabel(composicao)}</div>
-                            <div className="px-2 py-2 text-center">{composicao.unidade || '-'}</div>
-                            <div className="px-2 py-2 text-center">{formatOptionalNumber(composicao.producao_equipe, 4)}</div>
-                            <div className="px-2 py-2 text-right">{formatOptionalNumber(composicao.fator_influencia_chuvas, 4)}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div className="overflow-x-auto">
-                <div className="min-w-[1280px]">
-                    <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-3 text-xs font-bold text-[var(--ink-900)]">
-                        <span>{composicao.estado_label ?? composicao.uf} - Nao Desonerado</span>
-                        <span>{formatCurrency(totalOnerado)}</span>
-                    </div>
-
-                    {SICRO3_ANALYTIC_SECTIONS.map((section) => (
-                        <Sicro3AnalyticSection
-                            key={section.key}
-                            composicao={composicao}
-                            editingCoefficient={editingCoefficient}
-                            editingId={editingId}
-                            items={items.filter((item) => item.sicro3_section === section.key)}
-                            onCancelEdit={onCancelEdit}
-                            onEditCoefficientChange={onEditCoefficientChange}
-                            onSaveEdit={onSaveEdit}
-                            onStartEdit={onStartEdit}
-                            processingId={processingId}
-                            readOnly={readOnly}
-                            section={section}
-                            summary={sicro3Summary}
-                            tenant={tenant}
-                        />
-                    ))}
-
-                    <div className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--surface-muted)] px-3 py-4 text-xs font-bold text-[var(--ink-900)]">
-                        <span>{composicao.estado_label ?? composicao.uf} - Desonerado</span>
-                        <span>{formatCurrency(totalDesonerado)}</span>
-                    </div>
-                </div>
-            </div>
-        </section>
-    );
-}
-
-function Sicro3HeaderCell({ label, value }) {
-    return (
-        <div className="bg-white px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">{label}</p>
-            <p className="mt-2 font-semibold text-[var(--ink-900)]">{value || '-'}</p>
+        <div className="space-y-5">
+            {SICRO3_ANALYTIC_SECTIONS.map((section) => (
+                <Sicro3AnalyticSection
+                    key={section.key}
+                    composicao={composicao}
+                    editingCoefficient={editingCoefficient}
+                    editingId={editingId}
+                    items={items.filter((item) => item.sicro3_section === section.key)}
+                    onCancelEdit={onCancelEdit}
+                    onEditCoefficientChange={onEditCoefficientChange}
+                    onSaveEdit={onSaveEdit}
+                    onStartEdit={onStartEdit}
+                    processingId={processingId}
+                    readOnly={readOnly}
+                    section={section}
+                    summary={sicro3Summary}
+                    tenant={tenant}
+                />
+            ))}
         </div>
     );
 }
@@ -1233,17 +1307,23 @@ function Sicro3AnalyticSection({
     const columnCount = sicro3ColumnCount(section, readOnly);
 
     return (
-        <div className="border-b border-[var(--border)]">
-            <div className="grid grid-cols-[42px_1fr] bg-[#2f2f2f] text-[10px] font-bold uppercase text-white">
-                <div className="px-2 py-2">{section.code}</div>
-                <div className="px-2 py-2">{section.label}</div>
+        <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-3.5">
+                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md font-mono text-xs font-semibold ${section.badgeClass}`}>
+                    {section.code}
+                </span>
+                <h3 className="text-[13px] font-semibold tracking-[0.04em] text-[var(--ink-900)]">{section.label}</h3>
+                <span className="ml-auto font-mono text-[11px] text-slate-300">
+                    {items.length} {items.length === 1 ? 'item' : 'itens'}
+                </span>
             </div>
-            <table className="w-full table-fixed border-collapse text-left text-[10px]">
-                <Sicro3SectionHead readOnly={readOnly} section={section} />
-                <tbody className="divide-y divide-[var(--border)] bg-white">
+            <div className="overflow-x-auto">
+                <table className={`w-full table-fixed border-collapse text-left text-xs ${section.minWidth}`}>
+                    <Sicro3SectionHead readOnly={readOnly} section={section} />
+                    <tbody className="divide-y divide-slate-100 bg-white">
                     {items.length === 0 ? (
                         <tr>
-                            <td className="px-2 py-3 text-center text-[var(--ink-400)]" colSpan={columnCount}>
+                            <td className="px-5 py-5 text-center text-[var(--ink-400)]" colSpan={columnCount}>
                                 Nenhum item nesta categoria.
                             </td>
                         </tr>
@@ -1273,50 +1353,53 @@ function Sicro3AnalyticSection({
                             />
                         );
                     })}
-                    <tr className="bg-white font-bold text-[var(--ink-700)]">
-                        <td className="px-2 py-2 text-right" colSpan={columnCount - 1}>
-                            {isTransportSection ? 'Custo unitario total de transporte' : `Total ${section.label.toLowerCase()}`}
+                    <tr className="bg-slate-50/80 font-semibold text-[var(--ink-900)]">
+                        <td className="px-5 py-3 text-left" colSpan={columnCount - 1}>
+                            {isTransportSection ? 'Custo unitário total de transporte' : `Total ${section.label.toLocaleLowerCase('pt-BR')}`}
                         </td>
-                        <td className="px-2 py-2 text-right">{isTransportSection ? '-' : formatCurrency(subtotalOnerado, 4)}</td>
+                        <td className="px-5 py-3 text-right font-mono">{formatCurrency(isTransportSection ? 0 : subtotalOnerado, 4)}</td>
                     </tr>
                     {section.key === 'mao_de_obra' ? (
                         <>
-                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo horario total de execucao" value={summary?.custo_horario_execucao_onerado} />
-                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo unitario de execucao" value={summary?.custo_unitario_execucao_onerado} />
-                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo do Fator de Influencia da Chuva - FIC" value={summary?.custo_fic_onerado} />
+                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo horário total de execução" value={summary?.custo_horario_execucao_onerado} />
+                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo unitário de execução" value={summary?.custo_unitario_execucao_onerado} />
+                            <Sicro3SummaryRow colSpan={columnCount - 1} label="Custo do Fator de Influência da Chuva · FIC" value={summary?.custo_fic_onerado} />
                         </>
                     ) : null}
-                </tbody>
-            </table>
-        </div>
+                    </tbody>
+                </table>
+            </div>
+        </section>
     );
 }
 
 function Sicro3SummaryRow({ colSpan, label, value }) {
     return (
         <tr className="bg-white text-[var(--ink-700)]">
-            <td className="px-2 py-2 text-right font-semibold" colSpan={colSpan}>
+            <td className="px-5 py-3 text-left font-medium" colSpan={colSpan}>
                 {label}
             </td>
-            <td className="px-2 py-2 text-right font-bold">{formatCurrency(value ?? 0, 4)}</td>
+            <td className="px-5 py-3 text-right font-mono font-medium">{formatCurrency(value ?? 0, 4)}</td>
         </tr>
     );
 }
 
 function Sicro3SectionHead({ readOnly = false, section }) {
+    const headClass = 'bg-slate-50 text-[10px] font-semibold uppercase tracking-[0.07em] text-[var(--ink-400)]';
+
     if (section.columns === 'equipment') {
         return (
-            <thead className="bg-[#2f2f2f] text-white">
+            <thead className={headClass}>
                 <tr>
-                    <th className="w-[7%] px-2 py-2">CODIGO</th>
-                    <th className="w-[33%] px-2 py-2">DESCRICAO</th>
-                    <th className="w-[8%] px-2 py-2 text-right">QUANTIDADE</th>
-                    <th className="w-[8%] px-2 py-2 text-right">UTIL. OPERATIVA</th>
-                    <th className="w-[8%] px-2 py-2 text-right">UTIL. IMPRODUTIVA</th>
-                    <th className="w-[10%] px-2 py-2 text-right">CUSTO OPERATIVO</th>
-                    <th className="w-[10%] px-2 py-2 text-right">CUSTO IMPRODUTIVO</th>
-                    <th className="w-[12%] px-2 py-2 text-right">CUSTO HORARIO</th>
-                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                    <th className="w-[7%] px-5 py-2.5">Código</th>
+                    <th className="w-[33%] px-5 py-2.5">Descrição</th>
+                    <th className="w-[8%] px-5 py-2.5 text-right">Qtd.</th>
+                    <th className="w-[8%] px-5 py-2.5 text-right">Util. oper.</th>
+                    <th className="w-[8%] px-5 py-2.5 text-right">Util. improd.</th>
+                    <th className="w-[10%] px-5 py-2.5 text-right">Custo oper.</th>
+                    <th className="w-[10%] px-5 py-2.5 text-right">Custo improd.</th>
+                    <th className="w-[12%] px-5 py-2.5 text-right">Custo horário</th>
+                    {!readOnly && <th className="w-[8%] px-5 py-2.5 text-right">Ações</th>}
                 </tr>
             </thead>
         );
@@ -1324,15 +1407,15 @@ function Sicro3SectionHead({ readOnly = false, section }) {
 
     if (section.columns === 'labor') {
         return (
-            <thead className="bg-[#2f2f2f] text-white">
+            <thead className={headClass}>
                 <tr>
-                    <th className="w-[7%] px-2 py-2">CODIGO</th>
-                    <th className="w-[43%] px-2 py-2">DESCRICAO</th>
-                    <th className="w-[10%] px-2 py-2 text-right">QUANTIDADE</th>
-                    <th className="w-[8%] px-2 py-2">UNIDADE</th>
-                    <th className="w-[16%] px-2 py-2 text-right">CUSTO HORARIO</th>
-                    <th className="w-[16%] px-2 py-2 text-right">CUSTO HORARIO TOTAL</th>
-                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                    <th className="w-[7%] px-5 py-2.5">Código</th>
+                    <th className="w-[43%] px-5 py-2.5">Descrição</th>
+                    <th className="w-[10%] px-5 py-2.5 text-right">Qtd.</th>
+                    <th className="w-[8%] px-5 py-2.5">Unidade</th>
+                    <th className="w-[16%] px-5 py-2.5 text-right">Custo horário</th>
+                    <th className="w-[16%] px-5 py-2.5 text-right">Custo horário total</th>
+                    {!readOnly && <th className="w-[8%] px-5 py-2.5 text-right">Ações</th>}
                 </tr>
             </thead>
         );
@@ -1340,16 +1423,16 @@ function Sicro3SectionHead({ readOnly = false, section }) {
 
     if (section.columns === 'fixed') {
         return (
-            <thead className="bg-[#2f2f2f] text-white">
+            <thead className={headClass}>
                 <tr>
-                    <th className="w-[7%] px-2 py-2">CODIGO</th>
-                    <th className="w-[43%] px-2 py-2">DESCRICAO</th>
-                    <th className="w-[9%] px-2 py-2">CODIGO</th>
-                    <th className="w-[9%] px-2 py-2 text-right">QUANTIDADE</th>
-                    <th className="w-[8%] px-2 py-2">UNIDADE</th>
-                    <th className="w-[12%] px-2 py-2 text-right">PRECO UNITARIO</th>
-                    <th className="w-[12%] px-2 py-2 text-right">CUSTO UNITARIO</th>
-                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                    <th className="w-[7%] px-5 py-2.5">Código</th>
+                    <th className="w-[43%] px-5 py-2.5">Descrição</th>
+                    <th className="w-[9%] px-5 py-2.5">Cód. insumo</th>
+                    <th className="w-[9%] px-5 py-2.5 text-right">Qtd.</th>
+                    <th className="w-[8%] px-5 py-2.5">Unidade</th>
+                    <th className="w-[12%] px-5 py-2.5 text-right">Preço unitário</th>
+                    <th className="w-[12%] px-5 py-2.5 text-right">Custo unitário</th>
+                    {!readOnly && <th className="w-[8%] px-5 py-2.5 text-right">Ações</th>}
                 </tr>
             </thead>
         );
@@ -1357,33 +1440,33 @@ function Sicro3SectionHead({ readOnly = false, section }) {
 
     if (section.columns === 'transport') {
         return (
-            <thead className="bg-[#2f2f2f] text-white">
+            <thead className={headClass}>
                 <tr>
-                    <th className="w-[7%] px-2 py-2">CODIGO</th>
-                    <th className="w-[38%] px-2 py-2">DESCRICAO</th>
-                    <th className="w-[9%] px-2 py-2 text-right">QUANTIDADE</th>
-                    <th className="w-[7%] px-2 py-2">UNIDADE</th>
-                    <th className="w-[9%] px-2 py-2 text-right">LN</th>
-                    <th className="w-[9%] px-2 py-2 text-right">RP</th>
-                    <th className="w-[9%] px-2 py-2 text-right">P</th>
-                    <th className="w-[9%] px-2 py-2 text-right">FE</th>
-                    <th className="w-[12%] px-2 py-2 text-right">CUSTO UNITARIO</th>
-                    {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                    <th className="w-[7%] px-5 py-2.5">Código</th>
+                    <th className="w-[38%] px-5 py-2.5">Descrição</th>
+                    <th className="w-[9%] px-5 py-2.5 text-right">Qtd.</th>
+                    <th className="w-[7%] px-5 py-2.5">Unidade</th>
+                    <th className="w-[9%] px-5 py-2.5 text-right">LN</th>
+                    <th className="w-[9%] px-5 py-2.5 text-right">RP</th>
+                    <th className="w-[9%] px-5 py-2.5 text-right">P</th>
+                    <th className="w-[9%] px-5 py-2.5 text-right">FE</th>
+                    <th className="w-[12%] px-5 py-2.5 text-right">Custo unitário</th>
+                    {!readOnly && <th className="w-[8%] px-5 py-2.5 text-right">Ações</th>}
                 </tr>
             </thead>
         );
     }
 
     return (
-        <thead className="bg-[#2f2f2f] text-white">
+        <thead className={headClass}>
             <tr>
-                <th className="w-[7%] px-2 py-2">CODIGO</th>
-                <th className="w-[43%] px-2 py-2">DESCRICAO</th>
-                <th className="w-[9%] px-2 py-2 text-right">QUANTIDADE</th>
-                <th className="w-[8%] px-2 py-2">UNIDADE</th>
-                <th className="w-[16%] px-2 py-2 text-right">PRECO UNITARIO</th>
-                <th className="w-[16%] px-2 py-2 text-right">{section.columns === 'activity' ? 'CUSTO HORARIO' : 'CUSTO UNITARIO'}</th>
-                {!readOnly && <th className="w-[8%] px-2 py-2 text-right">ACOES</th>}
+                <th className="w-[7%] px-5 py-2.5">Código</th>
+                <th className="w-[43%] px-5 py-2.5">Descrição</th>
+                <th className="w-[9%] px-5 py-2.5 text-right">Qtd.</th>
+                <th className="w-[8%] px-5 py-2.5">Unidade</th>
+                <th className="w-[16%] px-5 py-2.5 text-right">Preço unitário</th>
+                <th className="w-[16%] px-5 py-2.5 text-right">{section.columns === 'activity' ? 'Custo horário' : 'Custo unitário'}</th>
+                {!readOnly && <th className="w-[8%] px-5 py-2.5 text-right">Ações</th>}
             </tr>
         </thead>
     );
@@ -1416,7 +1499,7 @@ function Sicro3SectionRow({
     );
     const rowClass = isEditing ? 'bg-indigo-50/60' : 'hover:bg-[var(--primary-50)]/40';
     const actionsCell = !readOnly && (
-        <td className="px-2 py-1.5 text-right">
+        <td className="px-5 py-3 text-right">
             <Sicro3RowActions
                 composicao={composicao}
                 isEditing={isEditing}
@@ -1439,14 +1522,14 @@ function Sicro3SectionRow({
 
         return (
             <tr className={rowClass}>
-                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
-                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{item.descricao}</td>
-                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
-                <td className="px-2 py-1.5 text-right">{formatNumber(operationalUse, 2)}</td>
-                <td className="px-2 py-1.5 text-right">{formatNumber(idleUse, 2)}</td>
-                <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
-                <td className="px-2 py-1.5 text-right">{formatCurrency(idleCost, 4)}</td>
-                <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+                <td className="px-5 py-3 font-mono font-medium text-blue-600"><CompositionCodeLink item={item} tenant={tenant} /></td>
+                <td className="px-5 py-3 font-medium leading-5 text-[var(--ink-800)]">{item.descricao}</td>
+                <td className="px-5 py-3 text-right font-mono text-[var(--ink-600)]">{quantityCell}</td>
+                <td className="px-5 py-3 text-right font-mono text-[var(--ink-600)]">{formatNumber(operationalUse, 2)}</td>
+                <td className="px-5 py-3 text-right font-mono text-[var(--ink-600)]">{formatNumber(idleUse, 2)}</td>
+                <td className="px-5 py-3 text-right font-mono">{formatCurrency(unitOnerado, 4)}</td>
+                <td className="px-5 py-3 text-right font-mono">{formatCurrency(idleCost, 4)}</td>
+                <td className="px-5 py-3 text-right font-mono font-medium">{formatCurrency(totalOnerado, 4)}</td>
                 {actionsCell}
             </tr>
         );
@@ -1455,12 +1538,12 @@ function Sicro3SectionRow({
     if (section.columns === 'labor') {
         return (
             <tr className={rowClass}>
-                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
-                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{item.descricao}</td>
-                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
-                <td className="px-2 py-1.5">{item.unidade}</td>
-                <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
-                <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+                <td className="px-5 py-3 font-mono font-medium text-blue-600"><CompositionCodeLink item={item} tenant={tenant} /></td>
+                <td className="px-5 py-3 font-medium leading-5 text-[var(--ink-800)]">{item.descricao}</td>
+                <td className="px-5 py-3 text-right font-mono text-[var(--ink-600)]">{quantityCell}</td>
+                <td className="px-5 py-3 font-mono text-[var(--ink-600)]">{item.unidade}</td>
+                <td className="px-5 py-3 text-right font-mono">{formatCurrency(unitOnerado, 4)}</td>
+                <td className="px-5 py-3 text-right font-mono font-medium">{formatCurrency(totalOnerado, 4)}</td>
                 {actionsCell}
             </tr>
         );
@@ -1469,13 +1552,13 @@ function Sicro3SectionRow({
     if (section.columns === 'fixed') {
         return (
             <tr className={rowClass}>
-                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]">{item.sicro3_referenced_item_code || item.codigo}</td>
-                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{sicro3ReferenceDescription(item)}</td>
-                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
-                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
-                <td className="px-2 py-1.5">{item.unidade}</td>
-                <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
-                <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+                <td className="px-5 py-3 font-mono font-medium text-blue-600">{item.sicro3_referenced_item_code || item.codigo}</td>
+                <td className="px-5 py-3 font-medium leading-5 text-[var(--ink-800)]">{sicro3ReferenceDescription(item)}</td>
+                <td className="px-5 py-3 font-mono font-medium text-blue-600"><CompositionCodeLink item={item} tenant={tenant} /></td>
+                <td className="px-5 py-3 text-right font-mono text-[var(--ink-600)]">{quantityCell}</td>
+                <td className="px-5 py-3 font-mono text-[var(--ink-600)]">{item.unidade}</td>
+                <td className="px-5 py-3 text-right font-mono">{formatCurrency(unitOnerado, 4)}</td>
+                <td className="px-5 py-3 text-right font-mono font-medium">{formatCurrency(totalOnerado, 4)}</td>
                 {actionsCell}
             </tr>
         );
@@ -1484,15 +1567,15 @@ function Sicro3SectionRow({
     if (section.columns === 'transport') {
         return (
             <tr className={rowClass}>
-                <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]">{item.sicro3_referenced_item_code || item.codigo}</td>
-                <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{sicro3ReferenceDescription(item)}</td>
-                <td className="px-2 py-1.5 text-right">{quantityCell}</td>
-                <td className="px-2 py-1.5">{item.unidade}</td>
-                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_ln_code || '-'}</td>
-                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_rp_code || '-'}</td>
-                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_p_code || '-'}</td>
-                <td className="px-2 py-1.5 text-right">{item.sicro3_transport_fe_code || '-'}</td>
-                <td className="px-2 py-1.5 text-right font-bold">-</td>
+                <td className="px-5 py-3 font-mono font-medium text-blue-600">{item.sicro3_referenced_item_code || item.codigo}</td>
+                <td className="px-5 py-3 font-medium leading-5 text-[var(--ink-800)]">{sicro3ReferenceDescription(item)}</td>
+                <td className="px-5 py-3 text-right font-mono text-[var(--ink-600)]">{quantityCell}</td>
+                <td className="px-5 py-3 font-mono text-[var(--ink-600)]">{item.unidade}</td>
+                <Sicro3TransportCode value={item.sicro3_transport_ln_code} />
+                <Sicro3TransportCode value={item.sicro3_transport_rp_code} />
+                <Sicro3TransportCode value={item.sicro3_transport_p_code} />
+                <Sicro3TransportCode value={item.sicro3_transport_fe_code} />
+                <td className="px-5 py-3 text-right font-mono text-slate-300">-</td>
                 {actionsCell}
             </tr>
         );
@@ -1500,14 +1583,22 @@ function Sicro3SectionRow({
 
     return (
         <tr className={rowClass}>
-            <td className="px-2 py-1.5 font-mono font-bold text-[var(--primary)]"><CompositionCodeLink item={item} tenant={tenant} /></td>
-            <td className="px-2 py-1.5 font-medium text-[var(--ink-800)]">{item.descricao}</td>
-            <td className="px-2 py-1.5 text-right">{quantityCell}</td>
-            <td className="px-2 py-1.5">{item.unidade}</td>
-            <td className="px-2 py-1.5 text-right">{formatCurrency(unitOnerado, 4)}</td>
-            <td className="px-2 py-1.5 text-right font-bold">{formatCurrency(totalOnerado, 4)}</td>
+            <td className="px-5 py-3 font-mono font-medium text-blue-600"><CompositionCodeLink item={item} tenant={tenant} /></td>
+            <td className="px-5 py-3 font-medium leading-5 text-[var(--ink-800)]">{item.descricao}</td>
+            <td className="px-5 py-3 text-right font-mono text-[var(--ink-600)]">{quantityCell}</td>
+            <td className="px-5 py-3 font-mono text-[var(--ink-600)]">{item.unidade}</td>
+            <td className="px-5 py-3 text-right font-mono">{formatCurrency(unitOnerado, 4)}</td>
+            <td className="px-5 py-3 text-right font-mono font-medium">{formatCurrency(totalOnerado, 4)}</td>
             {actionsCell}
         </tr>
+    );
+}
+
+function Sicro3TransportCode({ value }) {
+    return (
+        <td className={`px-5 py-3 text-right font-mono ${value ? 'font-medium text-blue-600' : 'text-slate-300'}`}>
+            {value || '-'}
+        </td>
     );
 }
 

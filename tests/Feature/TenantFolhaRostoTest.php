@@ -38,6 +38,7 @@ class TenantFolhaRostoTest extends TestCase
             'code' => '011/2021-NGTM',
             'name' => 'Contrato BM',
             'status' => 'active',
+            'measurement_mode' => 'controlled',
         ]);
         $construtoraTipo = TipoEmpresa::query()->firstOrCreate(['nome' => 'construtora']);
         $construtora = $contract->empresas()->create([
@@ -92,7 +93,7 @@ class TenantFolhaRostoTest extends TestCase
 
         $boletim = $tenant->boletinsMedicao()->firstOrFail();
 
-        $this->assertSame('BM-0001', $boletim->codigo);
+        $this->assertSame('BM-001', $boletim->codigo);
         $this->assertSame('aberto_lancamento', $boletim->status);
 
         $this->actingAs($user)
@@ -102,6 +103,7 @@ class TenantFolhaRostoTest extends TestCase
                 'comentario' => 'Pleito vinculado ao boletim.',
                 'itens' => [[
                     'ordem_servico_item_id' => $ordemItem->id,
+                    'medicao_item_id' => $medicaoItem->id,
                     'quantidade_pleiteada' => 2,
                 ]],
                 'memoria_calculo' => UploadedFile::fake()->create(
@@ -154,6 +156,7 @@ class TenantFolhaRostoTest extends TestCase
                 'comentario' => 'Pleito bloqueado por congelamento.',
                 'itens' => [[
                     'ordem_servico_item_id' => $ordemItem->id,
+                    'medicao_item_id' => $medicaoItem->id,
                     'quantidade_pleiteada' => 1,
                 ]],
                 'memoria_calculo' => UploadedFile::fake()->create(
@@ -183,6 +186,7 @@ class TenantFolhaRostoTest extends TestCase
                 'comentario' => 'Pleito liberado apos reabertura.',
                 'itens' => [[
                     'ordem_servico_item_id' => $ordemItem->id,
+                    'medicao_item_id' => $medicaoItem->id,
                     'quantidade_pleiteada' => 1,
                 ]],
                 'memoria_calculo' => UploadedFile::fake()->create(
@@ -216,6 +220,7 @@ class TenantFolhaRostoTest extends TestCase
             'code' => 'CT-001',
             'name' => 'Contrato Teste',
             'status' => 'active',
+            'measurement_mode' => 'controlled',
         ]);
         $construtoraTipo = TipoEmpresa::query()->firstOrCreate(['nome' => 'construtora']);
         $construtora = $contract->empresas()->create([
@@ -262,7 +267,7 @@ class TenantFolhaRostoTest extends TestCase
         $boletim = $tenant->boletinsMedicao()->create([
             'contract_id' => $contract->id,
             'created_by_id' => $user->id,
-            'codigo' => 'BM-0001',
+            'codigo' => 'BM-001',
             'sequencial' => 1,
             'periodo' => '2027-01-01',
             'tipo' => 'normal',
@@ -274,6 +279,7 @@ class TenantFolhaRostoTest extends TestCase
             'construtora_empresa_id' => $construtora->id,
             'itens' => [[
                 'ordem_servico_item_id' => $ordemItem->id,
+                'medicao_item_id' => $medicaoItem->id,
                 'quantidade_pleiteada' => 2,
             ]],
         ];
@@ -303,5 +309,48 @@ class TenantFolhaRostoTest extends TestCase
             ->get(route('tenant.medicao.folha-rosto.memoria.download', [$tenant, $folha]))
             ->assertOk()
             ->assertDownload('memoria-calculo.zip');
+    }
+
+    public function test_boletim_sequence_restarts_for_each_contract(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'empresa-bm-por-contrato',
+            'name' => 'Empresa BM por contrato',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $user = User::factory()->create();
+        $tenant->memberships()->create([
+            'user_id' => $user->id,
+            'role' => 'tenant_owner',
+            'status' => 'active',
+        ]);
+        $contracts = collect([
+            ['code' => '2026', 'name' => 'Contrato 2026'],
+            ['code' => '2027', 'name' => 'Contrato 2027'],
+        ])->map(fn (array $attributes) => $tenant->contracts()->create([
+            ...$attributes,
+            'status' => 'active',
+            'measurement_mode' => 'simple',
+        ]));
+
+        foreach ($contracts as $contract) {
+            $this->actingAs($user)
+                ->post(route('tenant.medicao.boletim-medicao.store', $tenant), [
+                    'contract_id' => $contract->id,
+                    'periodo_referencia' => '01/27',
+                    'tipo' => 'normal',
+                ])
+                ->assertRedirect();
+        }
+
+        foreach ($contracts as $contract) {
+            $this->assertDatabaseHas('boletins_medicao', [
+                'tenant_id' => $tenant->id,
+                'contract_id' => $contract->id,
+                'codigo' => 'BM-001',
+                'sequencial' => 1,
+            ]);
+        }
     }
 }

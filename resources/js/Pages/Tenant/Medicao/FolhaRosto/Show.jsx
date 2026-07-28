@@ -75,7 +75,15 @@ function AnalysisRequirementBadges({ item }) {
     );
 }
 
-export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos = [], construtoras = [] }) {
+export default function FolhaRostoShow({
+    ordem,
+    measurementMode = 'controlled',
+    storeUrl = null,
+    obras = [],
+    boletim = null,
+    boletinsAbertos = [],
+    construtoras = [],
+}) {
     const page = usePage();
     const tenant = page.props.currentTenant;
     const [showForm, setShowForm] = useState(false);
@@ -89,6 +97,7 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
         memoria_calculo: null,
         boletim_medicao_id: boletim?.status === 'aberto_lancamento' ? boletim.id : '',
         construtora_empresa_id: '',
+        obra_id: measurementMode === 'simple' ? (ordem.obra?.id || '') : '',
         itens: [],
     });
 
@@ -99,10 +108,10 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
 
     const editingQuantities = useMemo(
         () => Object.fromEntries((editingFolha?.itens || []).map((item) => [
-            item.ordem_servico_item_id,
+            measurementMode === 'controlled' ? item.ordem_servico_item_id : item.medicao_item_id,
             Number(item.quantidade_pleiteada || 0),
         ])),
-        [editingFolha]
+        [editingFolha, measurementMode]
     );
     const availableForItem = (item) =>
         Number(item.quantidade_disponivel || 0) + Number(editingQuantities[item.id] || 0);
@@ -152,7 +161,8 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
         }
 
         const itens = selectedItems.map((item) => ({
-            ordem_servico_item_id: item.id,
+            ordem_servico_item_id: item.ordem_servico_item_id,
+            medicao_item_id: item.medicao_item_id,
             quantidade_pleiteada: Number(quantities[item.id]),
             precisa_analise_topografica: Boolean(analysisFlags[item.id]?.topografia),
             precisa_analise_qualidade: Boolean(analysisFlags[item.id]?.qualidade),
@@ -172,6 +182,7 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
                     ...data,
                     boletim_medicao_id: boletim?.status === 'aberto_lancamento' ? boletim.id : '',
                     construtora_empresa_id: '',
+                    obra_id: measurementMode === 'simple' ? (ordem.obra?.id || '') : '',
                 }));
                 setQuantities({});
                 setAnalysisFlags({});
@@ -183,7 +194,7 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
         if (editingFolha) {
             form.post(route('tenant.medicao.folha-rosto.update', [tenant.slug, editingFolha.id]), options);
         } else {
-            form.post(route('tenant.medicao.folha-rosto.store', [tenant.slug, ordem.id]), options);
+            form.post(storeUrl || route('tenant.medicao.folha-rosto.store', [tenant.slug, ordem.id]), options);
         }
     };
 
@@ -191,11 +202,11 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
         event.stopPropagation();
         setEditingFolha(folha);
         setQuantities(Object.fromEntries(folha.itens.map((item) => [
-            item.ordem_servico_item_id,
+            measurementMode === 'controlled' ? item.ordem_servico_item_id : item.medicao_item_id,
             String(item.quantidade_pleiteada),
         ])));
         setAnalysisFlags(Object.fromEntries(folha.itens.map((item) => [
-            item.ordem_servico_item_id,
+            measurementMode === 'controlled' ? item.ordem_servico_item_id : item.medicao_item_id,
             {
                 topografia: Boolean(item.precisa_analise_topografica),
                 qualidade: Boolean(item.precisa_analise_qualidade),
@@ -206,6 +217,7 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
             memoria_calculo: null,
             boletim_medicao_id: folha.boletim?.id || '',
             construtora_empresa_id: folha.construtora?.id || '',
+            obra_id: measurementMode === 'simple' ? (folha.obra?.id || '') : '',
             itens: [],
         });
         setShowForm(true);
@@ -244,7 +256,8 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
                         <p className="mono mt-4 text-sm font-bold text-[var(--primary)]">{ordem.codigo}</p>
                         <h1 className="mt-1 text-3xl font-bold text-[var(--ink-900)]">{ordem.titulo}</h1>
                         <p className="mt-2 text-sm text-[var(--ink-500)]">
-                            {ordem.obra?.codigo} - {ordem.obra?.nome} · {ordem.contract?.code} - {ordem.contract?.name}
+                            {measurementMode === 'controlled' && ordem.obra ? `${ordem.obra.codigo} - ${ordem.obra.nome} · ` : ''}
+                            {ordem.contract?.code} - {ordem.contract?.name}
                         </p>
                     </div>
 
@@ -261,8 +274,15 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
                                     setQuantities({});
                                     setAnalysisFlags({});
                                     form.reset();
-                                    form.setData('boletim_medicao_id', boletim?.status === 'aberto_lancamento' ? boletim.id : '');
-                                    setShowForm(true);
+                                    form.setData({
+                                        comentario: '',
+                                        memoria_calculo: null,
+                                        boletim_medicao_id: boletim?.status === 'aberto_lancamento' ? boletim.id : '',
+                                        construtora_empresa_id: '',
+                                        obra_id: measurementMode === 'simple' ? (ordem.obra?.id || '') : '',
+                                        itens: [],
+                                    });
+                                setShowForm(true);
                                 }
                             }}
                             className="sig-btn sig-btn-primary"
@@ -313,7 +333,24 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
                         </header>
 
                         <div className="grid gap-4 p-4">
-                            <div className="grid gap-4 lg:grid-cols-2">
+                            <div className={`grid gap-4 ${measurementMode === 'simple' ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+                                {measurementMode === 'simple' && (
+                                    <label className="grid gap-1.5 text-sm">
+                                        <span className="font-bold uppercase tracking-wide text-[var(--ink-500)]">Obra</span>
+                                        <select
+                                            value={form.data.obra_id || ''}
+                                            onChange={(event) => form.setData('obra_id', event.target.value)}
+                                            className="sig-input"
+                                        >
+                                            <option value="">Selecione a obra</option>
+                                            {obras.map((obra) => (
+                                                <option key={obra.id} value={obra.id}>
+                                                    {obra.codigo} - {obra.nome}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                )}
                                 <label className="grid gap-1.5 text-sm">
                                     <span className="font-bold uppercase tracking-wide text-[var(--ink-500)]">BM aberto para lançamento</span>
                                     <select
@@ -506,7 +543,7 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
                             </div>
                             <button
                                 type="submit"
-                                disabled={form.processing || hasQuantityOverBalance || hasQuantityPrecisionError || selectedItems.length === 0 || !form.data.boletim_medicao_id || !form.data.construtora_empresa_id || !form.data.comentario.trim() || (!editingFolha && !form.data.memoria_calculo)}
+                                disabled={form.processing || hasQuantityOverBalance || hasQuantityPrecisionError || selectedItems.length === 0 || !form.data.boletim_medicao_id || !form.data.construtora_empresa_id || (measurementMode === 'simple' && !form.data.obra_id) || !form.data.comentario.trim() || (!editingFolha && !form.data.memoria_calculo)}
                                 className="sig-btn sig-btn-primary disabled:opacity-50"
                             >
                                 <Send size={16} />
@@ -519,7 +556,9 @@ export default function FolhaRostoShow({ ordem, boletim = null, boletinsAbertos 
                 <section className="grid gap-3">
                     <div>
                         <h2 className="text-xl font-bold text-[var(--ink-900)]">Folhas de Rosto criadas</h2>
-                        <p className="text-sm text-[var(--ink-500)]">{ordem.folhas_rosto.length} registro(s) nesta OS.</p>
+                        <p className="text-sm text-[var(--ink-500)]">
+                            {ordem.folhas_rosto.length} registro(s) {measurementMode === 'simple' ? 'neste contrato.' : 'nesta OS.'}
+                        </p>
                     </div>
 
                     {ordem.folhas_rosto.length === 0 ? (

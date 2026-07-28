@@ -14,6 +14,7 @@ import {
     FolderKanban,
     History,
     ImagePlus,
+    Info,
     Layers,
     MapPin,
     Plus,
@@ -771,6 +772,7 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
         { id: 'obras', label: 'Obras', icon: MapPin },
         { id: 'disciplinas', label: 'Disciplinas', icon: Layers },
         { id: 'vinculos', label: 'Vínculos', icon: Settings },
+        { id: 'medicao', label: 'Medição', icon: ClipboardCheck },
     ];
 
     return (
@@ -780,7 +782,7 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
                     <div>
                         <span className="eyebrow">Parametrização do contrato</span>
                         <h2 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">{contract.code}</h2>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">Crie e vincule empresas, obras e disciplinas deste contrato.</p>
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">Cadastre empresas, obras e disciplinas, defina vínculos e configure o fluxo de medição.</p>
                     </div>
                     <button className="sig-btn sig-btn-ghost" type="button" onClick={onClose} aria-label="Fechar">
                         <X size={18} />
@@ -806,6 +808,7 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
                     {tab === 'empresas' && <EmpresaQuickTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
                     {tab === 'obras' && <ObraQuickTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
                     {tab === 'disciplinas' && <DisciplinaQuickTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
+                    {tab === 'medicao' && <ContractMeasurementTab tenant={tenant} contract={contract} />}
                 </div>
             </div>
         </div>
@@ -833,13 +836,20 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
         gerenciadora_empresa_id: contract.fiscalizadora_empresa_id ? String(contract.fiscalizadora_empresa_id) : '',
     });
 
-    const submit = (event) => {
-        event.preventDefault();
+    const saveLinks = () => {
         setSaved(false);
         form.patch(route('tenant.contracts.parametrizacao.update', [tenant.slug, contract.id]), {
             preserveScroll: true,
-            onSuccess: () => setSaved(true),
+            onSuccess: () => {
+                setSaved(true);
+            },
         });
+    };
+
+    const submit = (event) => {
+        event.preventDefault();
+
+        saveLinks();
     };
 
     const updateLink = (field, value) => {
@@ -877,6 +887,166 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
                     </span>
                 )}
             </div>
+        </form>
+    );
+}
+
+function ContractMeasurementTab({ tenant, contract }) {
+    const locked = Boolean(contract.measurement_mode);
+    const [saved, setSaved] = useState(false);
+    const [showConfirmation, setShowConfirmation] = useState(false);
+    const form = useForm({
+        measurement_mode: contract.measurement_mode || '',
+    });
+    const options = [
+        {
+            value: 'controlled',
+            title: 'Medição controlada',
+            badge: 'Maior controle',
+            description: 'Exige uma OS aprovada. A Folha de Rosto permite pleitear somente os itens vinculados àquela OS.',
+        },
+        {
+            value: 'simple',
+            title: 'Medição simples',
+            badge: 'Maior agilidade',
+            description: 'Dispensa OS. A Folha de Rosto é aberta pelo contrato e pode utilizar qualquer item de medição com saldo disponível.',
+        },
+    ];
+    const selectedOption = options.find((option) => option.value === form.data.measurement_mode);
+
+    const saveMeasurementMode = () => {
+        setSaved(false);
+        form.patch(route('tenant.contracts.parametrizacao.update', [tenant.slug, contract.id]), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setSaved(true);
+                setShowConfirmation(false);
+            },
+        });
+    };
+
+    const submit = (event) => {
+        event.preventDefault();
+
+        if (!locked && form.data.measurement_mode) {
+            setShowConfirmation(true);
+        }
+    };
+
+    return (
+        <form className="grid gap-5" onSubmit={submit}>
+            <header>
+                <span className="eyebrow">Configuração da medição</span>
+                <h3 className="mt-1 text-lg font-semibold text-[var(--ink-900)]">Escolha como o contrato será medido</h3>
+                <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--ink-500)]">
+                    Defina se os pleitos dependerão de uma Ordem de Serviço aprovada.
+                </p>
+            </header>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+                {options.map((option) => {
+                    const selected = form.data.measurement_mode === option.value;
+
+                    return (
+                        <label
+                            key={option.value}
+                            className={`relative flex gap-3 rounded-lg border p-5 transition-colors ${
+                                selected
+                                    ? 'border-blue-500 bg-blue-50/70'
+                                    : 'border-[var(--border)] bg-white hover:border-blue-300'
+                            } ${locked ? 'cursor-default' : 'cursor-pointer'}`}
+                        >
+                            <input
+                                type="radio"
+                                name="measurement_mode"
+                                value={option.value}
+                                checked={selected}
+                                disabled={locked}
+                                onChange={(event) => {
+                                    setSaved(false);
+                                    form.setData('measurement_mode', event.target.value);
+                                }}
+                                className="mt-1 border-slate-300 text-[var(--primary)] focus:ring-[var(--primary)]"
+                            />
+                            <span className="min-w-0">
+                                <span className="flex flex-wrap items-center gap-2">
+                                    <strong className="text-base text-[var(--ink-900)]">{option.title}</strong>
+                                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-[var(--ink-600)]">
+                                        {option.badge}
+                                    </span>
+                                </span>
+                                <span className="mt-2 block text-sm leading-6 text-[var(--ink-600)]">{option.description}</span>
+                            </span>
+                        </label>
+                    );
+                })}
+            </div>
+
+            <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                <Info className="mt-0.5 shrink-0" size={17} />
+                <p className="leading-6">
+                    Em ambos os modelos, a quantidade medida respeita o saldo disponível de cada item.
+                </p>
+            </div>
+
+            <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
+                locked
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : 'border-amber-200 bg-amber-50 text-amber-900'
+            }`}>
+                {locked ? <CheckCircle2 className="mt-0.5 shrink-0" size={17} /> : <AlertTriangle className="mt-0.5 shrink-0" size={17} />}
+                <p className="leading-6">
+                    {locked
+                        ? <>Este contrato utiliza <strong>{contract.measurement_mode === 'simple' ? 'Medição simples' : 'Medição controlada'}</strong>. A configuração está bloqueada para preservar o histórico e a consistência das medições.</>
+                        : <><strong>Atenção:</strong> depois da confirmação, o tipo de medição não poderá ser alterado neste contrato. Revise o fluxo com a equipe antes de salvar.</>}
+                </p>
+            </div>
+
+            {form.errors.measurement_mode && (
+                <p className="text-xs font-semibold text-red-600">{form.errors.measurement_mode}</p>
+            )}
+
+            {!locked && (
+                <div className="flex flex-wrap items-center gap-3">
+                    <button className="sig-btn sig-btn-primary" disabled={form.processing || !form.data.measurement_mode}>
+                        <Save size={14} />
+                        Salvar tipo de medição
+                    </button>
+                    {saved && (
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--green)]" role="status">
+                            <CheckCircle2 size={16} />
+                            Tipo de medição definido com sucesso.
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {showConfirmation && selectedOption && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4">
+                    <div className="sig-card w-full max-w-lg overflow-hidden">
+                        <header className="border-b border-[var(--border)] px-5 py-4">
+                            <span className="eyebrow">Confirmação permanente</span>
+                            <h3 className="mt-1 text-lg font-semibold text-[var(--ink-900)]">Usar {selectedOption.title.toLowerCase()}?</h3>
+                        </header>
+                        <div className="grid gap-3 px-5 py-4">
+                            <p className="text-sm leading-6 text-[var(--ink-600)]">{selectedOption.description}</p>
+                            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+                                <AlertTriangle className="mt-0.5 shrink-0" size={16} />
+                                <p>Esta decisão não poderá ser alterada depois de salva.</p>
+                            </div>
+                        </div>
+                        <footer className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
+                            <button type="button" className="sig-btn sig-btn-secondary" onClick={() => setShowConfirmation(false)}>
+                                Voltar
+                            </button>
+                            <button type="button" className="sig-btn sig-btn-primary" disabled={form.processing} onClick={saveMeasurementMode}>
+                                <Save size={14} />
+                                Confirmar tipo
+                            </button>
+                        </footer>
+                    </div>
+                </div>
+            )}
         </form>
     );
 }

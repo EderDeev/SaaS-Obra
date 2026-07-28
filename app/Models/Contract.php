@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'starts_at',
     'ends_at',
     'status',
+    'measurement_mode',
     'base_document_path',
     'base_document_original_name',
     'base_document_mime_type',
@@ -121,6 +122,11 @@ class Contract extends Model
     public function boletinsMedicao(): HasMany
     {
         return $this->hasMany(BoletimMedicao::class);
+    }
+
+    public function folhasRosto(): HasMany
+    {
+        return $this->hasMany(FolhaRosto::class);
     }
 
     public function ordemServicos(): HasMany

@@ -9,12 +9,14 @@ use App\Models\MedicaoItem;
 use App\Models\Obra;
 use App\Models\OrdemServico;
 use App\Models\OrdemServicoAnalise;
+use App\Models\OrdemServicoItem;
 use App\Models\OrdemServicoObraResponsavel;
 use App\Models\ProjectDocument;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\OrdemServicoApprovalDecisionNotification;
 use App\Notifications\OrdemServicoReadyForApprovalNotification;
+use App\Notifications\OrdemServicoReturnedForCorrectionNotification;
 use App\Notifications\OrdemServicoSubmittedForReviewNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -54,7 +56,9 @@ class OrdemServicoController extends Controller
                 'gerenciadoraEmpresa:id,nome,sigla,tipo_empresa_id',
                 'construtoraEmpresa:id,nome,sigla,tipo_empresa_id',
                 'creator:id,name,email,avatar_url',
-                'itens.medicaoItem:id,item,codigo,descricao,unidade,valor_com_bdi,valor_total',
+                'itens',
+                'itens.medicaoItem' => fn ($query) => $this->withMeasuredQuantity($query
+                    ->select('id', 'item', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_com_bdi', 'valor_total')),
                 'itens.medicaoItem.reajusteIndice.indice.competencias',
                 'responsaveis.user:id,name,email,avatar_url',
                 'documentos:id,ordem_servico_id,nome_original,size',
@@ -73,97 +77,93 @@ class OrdemServicoController extends Controller
             'options' => [
                 'obras' => $this->obraOptions($tenant, $selectedContractId),
                 'projects' => $this->projectOptions($tenant, $selectedContractId),
-                'items' => $this->itemOptions($tenant, $selectedContractId),
                 'empresas' => $this->empresaOptions($tenant, $selectedContractId),
+            ],
+        ]);
+    }
+
+    public function items(Request $request, Tenant $tenant): JsonResponse
+    {
+        $validated = $request->validate([
+            'contract_id' => ['required', 'integer'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'planilha' => ['nullable', 'string', 'max:30'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $contractId = (int) $validated['contract_id'];
+
+        abort_unless(
+            $tenant->contracts()->whereKey($contractId)->exists(),
+            404
+        );
+
+        $baseQuery = MedicaoItem::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contractId)
+            ->where('item_type', '!=', 'etapa')
+            ->whereNotNull('codigo')
+            ->where('codigo', '!=', '');
+
+        $planilhas = (clone $baseQuery)
+            ->selectRaw("split_part(item, '.', 1) as planilha")
+            ->whereNotNull('item')
+            ->where('item', '!=', '')
+            ->distinct()
+            ->orderBy('planilha')
+            ->pluck('planilha')
+            ->filter()
+            ->values();
+
+        $search = trim((string) ($validated['search'] ?? ''));
+        $planilha = trim((string) ($validated['planilha'] ?? ''));
+
+        $paginator = $baseQuery
+            ->with('reajusteIndice.indice.competencias')
+            ->when($search !== '', function ($query) use ($search): void {
+                $term = '%'.$search.'%';
+
+                $query->where(function ($nested) use ($term): void {
+                    $nested->where('item', 'ilike', $term)
+                        ->orWhere('codigo', 'ilike', $term)
+                        ->orWhere('descricao', 'ilike', $term);
+                });
+            })
+            ->when($planilha !== '' && $planilha !== 'todas', function ($query) use ($planilha): void {
+                $query->where(function ($nested) use ($planilha): void {
+                    $nested->where('item', $planilha)
+                        ->orWhere('item', 'like', $planilha.'.%');
+                });
+            })
+            ->orderByRaw("string_to_array(item, '.')::int[]")
+            ->paginate(
+                perPage: 50,
+                columns: ['id', 'contract_id', 'item', 'item_type', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_com_bdi', 'valor_total']
+            )
+            ->withQueryString();
+
+        return response()->json([
+            'data' => $paginator->getCollection()
+                ->map(fn (MedicaoItem $item): array => $this->serializeItemOption($item))
+                ->values(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ],
+            'filters' => [
+                'planilhas' => $planilhas,
             ],
         ]);
     }
 
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
-        $validated = $request->validate([
-            'contract_id' => ['required', Rule::exists('contracts', 'id')->where('tenant_id', $tenant->id)],
-            'obra_id' => ['required', Rule::exists('obras', 'id')->where('tenant_id', $tenant->id)],
-            'project_document_id' => ['nullable', Rule::exists('project_documents', 'id')->where('tenant_id', $tenant->id)],
-            'project_document_ids' => ['nullable', 'array'],
-            'project_document_ids.*' => ['integer', Rule::exists('project_documents', 'id')->where('tenant_id', $tenant->id)],
-            'gerenciadora_empresa_id' => ['required', Rule::exists('empresas', 'id')->where('tenant_id', $tenant->id)],
-            'construtora_empresa_id' => ['required', Rule::exists('empresas', 'id')->where('tenant_id', $tenant->id)],
-            'titulo' => ['required', 'string', 'max:255'],
-            'descricao' => ['nullable', 'string'],
-            'prazo_execucao' => ['nullable', 'date'],
-            'custo_previsto' => ['nullable', 'string', 'max:50'],
-            'custo_observacao' => ['nullable', 'string'],
-            'item_ids' => ['array'],
-            'item_ids.*' => ['integer', Rule::exists('medicao_itens', 'id')->where('tenant_id', $tenant->id)],
-            'documentos' => ['array'],
-            'documentos.*' => ['file', 'max:30720'],
-        ]);
-
-        $contract = Contract::query()
-            ->where('tenant_id', $tenant->id)
-            ->findOrFail($validated['contract_id']);
-
-        $obra = Obra::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('contract_id', $contract->id)
-            ->findOrFail($validated['obra_id']);
-
-        $requestedProjectIds = collect($validated['project_document_ids'] ?? [])
-            ->when(! empty($validated['project_document_id']), fn ($collection) => $collection->push($validated['project_document_id']))
-            ->filter()
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values();
-
-        $projects = ProjectDocument::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('contract_id', $contract->id)
-            ->where('obra_id', $obra->id)
-            ->whereIn('id', $requestedProjectIds)
-            ->get(['id', 'obra_id']);
-
-        abort_if(
-            $projects->count() !== $requestedProjectIds->count(),
-            422,
-            'Um ou mais projetos selecionados nao pertencem ao contrato/obra da OS.'
-        );
-
-        foreach (['gerenciadora_empresa_id', 'construtora_empresa_id'] as $empresaField) {
-            abort_unless(
-                Empresa::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where(function ($query) use ($contract) {
-                        $query->whereNull('contract_id')
-                            ->orWhere('contract_id', $contract->id);
-                    })
-                    ->whereKey($validated[$empresaField])
-                    ->exists(),
-                422,
-                'A empresa selecionada nao pertence ao contrato.'
-            );
-        }
-
-        $requestedItemIds = collect($validated['item_ids'] ?? [])
-            ->filter()
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values();
-
-        $items = MedicaoItem::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('contract_id', $contract->id)
-            ->where('item_type', '!=', 'etapa')
-            ->whereNotNull('codigo')
-            ->where('codigo', '!=', '')
-            ->whereIn('id', $requestedItemIds)
-            ->get();
-
-        abort_if(
-            $items->count() !== $requestedItemIds->count(),
-            422,
-            'Itens de etapa/cabecalho nao podem ser vinculados a uma OS.'
-        );
+        $validated = $this->validateOrderPayload($request, $tenant);
+        [$contract, $obra, $requestedProjectIds, $items] = $this->resolveOrderSelections($tenant, $validated);
 
         DB::transaction(function () use ($request, $tenant, $contract, $obra, $validated, $items, $requestedProjectIds): void {
             [$codigo, $sequencial] = $this->nextCode($tenant, $contract, $obra);
@@ -186,30 +186,50 @@ class OrdemServicoController extends Controller
                 'status' => 'rascunho',
             ]);
 
-            $ordem->projectDocuments()->sync($requestedProjectIds->all());
-
-            foreach ($items as $item) {
-                $ordem->itens()->create([
-                    'medicao_item_id' => $item->id,
-                    'quantidade_solicitada' => $item->quantidade_prevista,
-                    'valor_previsto' => $item->valor_total,
-                ]);
-            }
-
-            foreach ($request->file('documentos', []) as $file) {
-                $path = $file->store("tenant-{$tenant->id}/ordens-servico/os-{$ordem->id}", 'public');
-
-                $ordem->documentos()->create([
-                    'uploaded_by_id' => $request->user()?->id,
-                    'nome_original' => $file->getClientOriginalName(),
-                    'path' => $path,
-                    'mime_type' => $file->getClientMimeType(),
-                    'size' => $file->getSize() ?: 0,
-                ]);
-            }
+            $this->syncOrderRelations($request, $tenant, $ordem, $requestedProjectIds, $items);
         });
 
         return back()->with('success', 'Ordem de servico criada com sucesso.');
+    }
+
+    public function update(Request $request, Tenant $tenant, OrdemServico $ordem): RedirectResponse
+    {
+        $this->ensureTenantOrdem($tenant, $ordem);
+
+        if ($ordem->status !== 'rascunho') {
+            throw ValidationException::withMessages([
+                'status' => 'Somente OS em rascunho podem ser editadas.',
+            ]);
+        }
+
+        $validated = $this->validateOrderPayload($request, $tenant);
+        [$contract, $obra, $requestedProjectIds, $items] = $this->resolveOrderSelections($tenant, $validated);
+
+        DB::transaction(function () use ($request, $tenant, $ordem, $contract, $obra, $validated, $items, $requestedProjectIds): void {
+            $codeChanged = $ordem->contract_id !== $contract->id || $ordem->obra_id !== $obra->id;
+            [$codigo, $sequencial] = $codeChanged
+                ? $this->nextCode($tenant, $contract, $obra)
+                : [$ordem->codigo, $ordem->sequencial];
+
+            $ordem->update([
+                'contract_id' => $contract->id,
+                'obra_id' => $obra->id,
+                'project_document_id' => $requestedProjectIds->first(),
+                'gerenciadora_empresa_id' => $validated['gerenciadora_empresa_id'],
+                'construtora_empresa_id' => $validated['construtora_empresa_id'],
+                'codigo' => $codigo,
+                'sequencial' => $sequencial,
+                'titulo' => $validated['titulo'],
+                'descricao' => $validated['descricao'] ?? null,
+                'prazo_execucao' => $validated['prazo_execucao'] ?? null,
+                'custo_previsto' => $this->parseDecimal($validated['custo_previsto'] ?? null) ?? $items->sum(fn (MedicaoItem $item): float => (float) $item->valor_total),
+                'custo_observacao' => $validated['custo_observacao'] ?? null,
+            ]);
+
+            $this->syncOrderRelations($request, $tenant, $ordem, $requestedProjectIds, $items);
+        });
+
+        return back()->with('success', 'Ordem de servico atualizada com sucesso.');
     }
 
     public function submitForAnalysis(Request $request, Tenant $tenant, OrdemServico $ordem): RedirectResponse
@@ -315,7 +335,9 @@ class OrdemServicoController extends Controller
             'gerenciadoraEmpresa:id,nome,sigla',
             'construtoraEmpresa:id,nome,sigla',
             'creator:id,name,email,avatar_url',
-            'itens.medicaoItem:id,item,codigo,descricao,unidade,valor_com_bdi,valor_total',
+            'itens',
+            'itens.medicaoItem' => fn ($query) => $this->withMeasuredQuantity($query
+                ->select('id', 'item', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_com_bdi', 'valor_total')),
             'itens.medicaoItem.reajusteIndice.indice.competencias',
             'documentos:id,ordem_servico_id,nome_original,size',
             'responsaveis.user:id,name,email,avatar_url',
@@ -395,11 +417,11 @@ class OrdemServicoController extends Controller
         }
 
         $validated = $request->validate([
-            'decisao' => ['required', Rule::in(['aprovar', 'recusar'])],
-            'observacao' => ['nullable', 'required_if:decisao,recusar', 'string'],
+            'decisao' => ['required', Rule::in(['aprovar'])],
+            'observacao' => ['nullable', 'string'],
         ]);
 
-        $status = $validated['decisao'] === 'aprovar' ? 'aprovada' : 'recusada';
+        $status = 'aprovada';
 
         DB::transaction(function () use ($request, $ordem, $validated, $status): void {
             $ordem->forceFill([
@@ -434,7 +456,87 @@ class OrdemServicoController extends Controller
             )));
         }
 
-        return back()->with('success', $status === 'aprovada' ? 'OS aprovada com sucesso.' : 'OS recusada. O solicitante foi notificado.');
+        return back()->with('success', 'OS aprovada com sucesso.');
+    }
+
+    public function reject(Request $request, Tenant $tenant, OrdemServico $ordem): RedirectResponse
+    {
+        $this->ensureTenantOrdem($tenant, $ordem);
+
+        if (! in_array($ordem->status, ['em_analise', 'em_aprovacao'], true)) {
+            throw ValidationException::withMessages([
+                'status' => 'Somente OS em análise ou aprovação podem ser devolvidas para correção.',
+            ]);
+        }
+
+        $stage = $ordem->status === 'em_analise' ? 'analise' : 'aprovacao';
+        $stageLabel = $stage === 'analise' ? 'análise' : 'aprovação';
+        $responsibility = $stage === 'analise' ? 'fiscal' : 'aprovador';
+
+        $this->authorizeOrdemAction($request, $tenant, $ordem, $responsibility);
+
+        $validated = $request->validate([
+            'motivo' => ['required', 'string', 'max:5000'],
+        ]);
+
+        $ordem->loadMissing([
+            'creator',
+            'submittedBy',
+            'analyzedBy',
+            'approvalDecidedBy',
+            'responsaveis.user',
+        ]);
+
+        $actor = $request->user();
+        $notifiables = $this->responsaveisDaObra($tenant, $ordem, 'fiscal')
+            ->merge($this->responsaveisDaObra($tenant, $ordem, 'aprovador'))
+            ->merge($ordem->responsaveis->pluck('user'))
+            ->push($ordem->creator)
+            ->push($ordem->submittedBy)
+            ->push($ordem->analyzedBy)
+            ->push($ordem->approvalDecidedBy)
+            ->filter()
+            ->unique('id')
+            ->values();
+
+        DB::transaction(function () use ($actor, $ordem, $stage, $validated): void {
+            $ordem->analises()->create([
+                'user_id' => $actor?->id,
+                'tipo' => $stage,
+                'decisao' => 'reprovada',
+                'observacao' => $validated['motivo'],
+            ]);
+
+            $ordem->forceFill([
+                'status' => 'rascunho',
+                'submitted_for_review_at' => null,
+                'submitted_for_review_by_id' => null,
+                'analyzed_at' => null,
+                'analyzed_by_id' => null,
+                'analysis_observation' => null,
+                'approval_decided_at' => null,
+                'approval_decided_by_id' => null,
+                'approval_observation' => null,
+            ])->save();
+        });
+
+        $ordem->refresh()->loadMissing(['tenant', 'contract', 'obra', 'creator']);
+
+        if ($actor) {
+            $notifiables->each(fn (User $user) => $user->notify(
+                new OrdemServicoReturnedForCorrectionNotification(
+                    $ordem,
+                    $actor,
+                    $stageLabel,
+                    $validated['motivo']
+                )
+            ));
+        }
+
+        return back()->with(
+            'success',
+            "OS devolvida para correção durante a {$stageLabel}. Os responsáveis foram notificados."
+        );
     }
 
     public function responsaveis(Request $request, Tenant $tenant): Response
@@ -543,6 +645,150 @@ class OrdemServicoController extends Controller
         $responsavel->delete();
 
         return back()->with('success', 'Responsável removido da obra.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateOrderPayload(Request $request, Tenant $tenant): array
+    {
+        return $request->validate([
+            'contract_id' => ['required', Rule::exists('contracts', 'id')->where('tenant_id', $tenant->id)],
+            'obra_id' => ['required', Rule::exists('obras', 'id')->where('tenant_id', $tenant->id)],
+            'project_document_id' => ['nullable', Rule::exists('project_documents', 'id')->where('tenant_id', $tenant->id)],
+            'project_document_ids' => ['nullable', 'array'],
+            'project_document_ids.*' => ['integer', Rule::exists('project_documents', 'id')->where('tenant_id', $tenant->id)],
+            'gerenciadora_empresa_id' => ['required', Rule::exists('empresas', 'id')->where('tenant_id', $tenant->id)],
+            'construtora_empresa_id' => ['required', Rule::exists('empresas', 'id')->where('tenant_id', $tenant->id)],
+            'titulo' => ['required', 'string', 'max:255'],
+            'descricao' => ['nullable', 'string'],
+            'prazo_execucao' => ['nullable', 'date'],
+            'custo_previsto' => ['nullable', 'string', 'max:50'],
+            'custo_observacao' => ['nullable', 'string'],
+            'item_ids' => ['array'],
+            'item_ids.*' => ['integer', Rule::exists('medicao_itens', 'id')->where('tenant_id', $tenant->id)],
+            'documentos' => ['array'],
+            'documentos.*' => ['file', 'max:30720'],
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array{Contract, Obra, Collection<int, int>, Collection<int, MedicaoItem>}
+     */
+    private function resolveOrderSelections(Tenant $tenant, array $validated): array
+    {
+        $contract = Contract::query()
+            ->where('tenant_id', $tenant->id)
+            ->findOrFail($validated['contract_id']);
+
+        $obra = Obra::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contract->id)
+            ->findOrFail($validated['obra_id']);
+
+        $requestedProjectIds = collect($validated['project_document_ids'] ?? [])
+            ->when(! empty($validated['project_document_id']), fn ($collection) => $collection->push($validated['project_document_id']))
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $projects = ProjectDocument::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contract->id)
+            ->where('obra_id', $obra->id)
+            ->whereIn('id', $requestedProjectIds)
+            ->get(['id', 'obra_id']);
+
+        abort_if(
+            $projects->count() !== $requestedProjectIds->count(),
+            422,
+            'Um ou mais projetos selecionados nao pertencem ao contrato/obra da OS.'
+        );
+
+        foreach (['gerenciadora_empresa_id', 'construtora_empresa_id'] as $empresaField) {
+            abort_unless(
+                Empresa::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where(function ($query) use ($contract) {
+                        $query->whereNull('contract_id')
+                            ->orWhere('contract_id', $contract->id);
+                    })
+                    ->whereKey($validated[$empresaField])
+                    ->exists(),
+                422,
+                'A empresa selecionada nao pertence ao contrato.'
+            );
+        }
+
+        $requestedItemIds = collect($validated['item_ids'] ?? [])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $items = MedicaoItem::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contract->id)
+            ->where('item_type', '!=', 'etapa')
+            ->whereNotNull('codigo')
+            ->where('codigo', '!=', '')
+            ->whereIn('id', $requestedItemIds)
+            ->get();
+
+        abort_if(
+            $items->count() !== $requestedItemIds->count(),
+            422,
+            'Itens de etapa/cabecalho nao podem ser vinculados a uma OS.'
+        );
+
+        return [$contract, $obra, $requestedProjectIds, $items];
+    }
+
+    /**
+     * @param  Collection<int, int>  $projectIds
+     * @param  Collection<int, MedicaoItem>  $items
+     */
+    private function syncOrderRelations(
+        Request $request,
+        Tenant $tenant,
+        OrdemServico $ordem,
+        Collection $projectIds,
+        Collection $items
+    ): void {
+        $ordem->projectDocuments()->sync($projectIds->all());
+
+        $itemIds = $items->pluck('id');
+        $itemsToRemove = $ordem->itens();
+
+        if ($itemIds->isNotEmpty()) {
+            $itemsToRemove->whereNotIn('medicao_item_id', $itemIds);
+        }
+
+        $itemsToRemove->delete();
+
+        foreach ($items as $item) {
+            $ordem->itens()->updateOrCreate(
+                ['medicao_item_id' => $item->id],
+                [
+                    'quantidade_solicitada' => $item->quantidade_prevista,
+                    'valor_previsto' => $item->valor_total,
+                ]
+            );
+        }
+
+        foreach ($request->file('documentos', []) as $file) {
+            $path = $file->store("tenant-{$tenant->id}/ordens-servico/os-{$ordem->id}", 'public');
+
+            $ordem->documentos()->create([
+                'uploaded_by_id' => $request->user()?->id,
+                'nome_original' => $file->getClientOriginalName(),
+                'path' => $path,
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize() ?: 0,
+            ]);
+        }
     }
 
     /**
@@ -663,6 +909,7 @@ class OrdemServicoController extends Controller
             'prazo_execucao' => $ordem->prazo_execucao?->format('Y-m-d'),
             'prazo_execucao_label' => $ordem->prazo_execucao?->format('d/m/Y'),
             'custo_previsto' => (float) $ordem->custo_previsto,
+            'custo_observacao' => $ordem->custo_observacao,
             'contract' => $ordem->contract ? [
                 'id' => $ordem->contract->id,
                 'code' => $ordem->contract->code,
@@ -705,11 +952,22 @@ class OrdemServicoController extends Controller
             ] : null,
             'itens' => $ordem->itens->map(fn ($item): array => [
                 'id' => $item->id,
+                'medicao_item_id' => $item->medicao_item_id,
                 'item' => $item->medicaoItem?->item,
                 'codigo' => $item->medicaoItem?->codigo,
                 'descricao' => $item->medicaoItem?->descricao,
+                'unidade' => $item->medicaoItem?->unidade,
+                'quantidade_solicitada' => (float) $item->quantidade_solicitada,
+                'quantidade_medida' => (float) ($item->medicaoItem?->quantidade_medida ?? 0),
+                'percentual_medido' => $this->measuredPercentage($item),
+                'valor_total' => (float) $item->valor_previsto,
+                'valor_total_p0' => (float) $item->valor_previsto,
                 'valor_previsto' => (float) $item->valor_previsto,
                 'valor_reajustado' => $this->adjustedValue(
+                    (float) $item->valor_previsto,
+                    $item->medicaoItem
+                ),
+                'valor_total_reajustado' => $this->adjustedValue(
                     (float) $item->valor_previsto,
                     $item->medicaoItem
                 ),
@@ -774,6 +1032,29 @@ class OrdemServicoController extends Controller
         );
     }
 
+    private function withMeasuredQuantity($query)
+    {
+        return $query->withSum([
+            'folhaRostoItemAnalises as quantidade_medida' => fn ($analysisQuery) => $analysisQuery
+                ->where('setor', 'medicao')
+                ->whereHas(
+                    'folhaRostoItem.folhaRosto',
+                    fn ($folhaQuery) => $folhaQuery->where('status', 'analisada')
+                ),
+        ], 'quantidade_aprovada');
+    }
+
+    private function measuredPercentage(OrdemServicoItem $item): float
+    {
+        $requested = (float) ($item->medicaoItem?->quantidade_prevista ?? 0);
+
+        if ($requested <= 0) {
+            return 0;
+        }
+
+        return round(min(100, ((float) ($item->medicaoItem?->quantidade_medida ?? 0) / $requested) * 100), 2);
+    }
+
     private function obraOptions(Tenant $tenant, ?int $contractId): array
     {
         return Obra::query()
@@ -809,36 +1090,25 @@ class OrdemServicoController extends Controller
             ->all();
     }
 
-    private function itemOptions(Tenant $tenant, ?int $contractId): array
+    private function serializeItemOption(MedicaoItem $item): array
     {
-        return MedicaoItem::query()
-            ->with('reajusteIndice.indice.competencias')
-            ->where('tenant_id', $tenant->id)
-            ->when($contractId, fn ($query) => $query->where('contract_id', $contractId))
-            ->where('item_type', '!=', 'etapa')
-            ->whereNotNull('codigo')
-            ->where('codigo', '!=', '')
-            ->orderByRaw("string_to_array(item, '.')::int[]")
-            ->get(['id', 'contract_id', 'item', 'item_type', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_com_bdi', 'valor_total'])
-            ->map(fn (MedicaoItem $item): array => [
-                'id' => $item->id,
-                'contract_id' => $item->contract_id,
-                'item' => $item->item,
-                'item_type' => $item->item_type,
-                'planilha' => explode('.', (string) $item->item)[0] ?: null,
-                'codigo' => $item->codigo,
-                'descricao' => $item->descricao,
-                'unidade' => $item->unidade,
-                'quantidade_prevista' => (float) $item->quantidade_prevista,
-                'valor_com_bdi' => (float) $item->valor_com_bdi,
-                'valor_total' => (float) $item->valor_total,
-                'valor_total_p0' => (float) $item->valor_total,
-                'valor_total_reajustado' => $this->adjustedValue((float) $item->valor_total, $item),
-                'percentual_reajuste' => $this->adjustmentPercentage($item),
-                'label' => trim("{$item->item} - {$item->codigo} - {$item->descricao}"),
-            ])
-            ->values()
-            ->all();
+        return [
+            'id' => $item->id,
+            'contract_id' => $item->contract_id,
+            'item' => $item->item,
+            'item_type' => $item->item_type,
+            'planilha' => explode('.', (string) $item->item)[0] ?: null,
+            'codigo' => $item->codigo,
+            'descricao' => $item->descricao,
+            'unidade' => $item->unidade,
+            'quantidade_prevista' => (float) $item->quantidade_prevista,
+            'valor_com_bdi' => (float) $item->valor_com_bdi,
+            'valor_total' => (float) $item->valor_total,
+            'valor_total_p0' => (float) $item->valor_total,
+            'valor_total_reajustado' => $this->adjustedValue((float) $item->valor_total, $item),
+            'percentual_reajuste' => $this->adjustmentPercentage($item),
+            'label' => trim("{$item->item} - {$item->codigo} - {$item->descricao}"),
+        ];
     }
 
     private function adjustedValue(float $baseValue, ?MedicaoItem $item): float

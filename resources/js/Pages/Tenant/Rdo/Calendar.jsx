@@ -1,9 +1,10 @@
+import { startRdoTour } from '@/Components/RdoTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ClipboardPenLine, Copy, Download, Eye, Plus, RotateCcw, Settings, X } from 'lucide-react';
+import { ClipboardPenLine, Copy, Download, Eye, Plane, Plus, RotateCcw, Settings, X } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 
 const statusTone = {
@@ -132,12 +133,17 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                         <h1 className="mt-2 text-3xl font-bold">RDO</h1>
                         <p className="mt-1 text-sm text-[var(--ink-500)]">Acompanhe, preencha e envie os registros diários pelo calendário.</p>
                     </div>
-                    <Link
-                        href={route('tenant.diario-obra.rdo.settings', currentTenant.slug)}
-                        className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 font-bold text-white"
-                    >
-                        <Settings size={17} /> Parametrizar RDO
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                        <button type="button" className="sig-btn sig-btn-secondary" onClick={() => startRdoTour(currentTenant.slug)}>
+                            <Plane size={17} /> Iniciar tour
+                        </button>
+                        <Link
+                            href={route('tenant.diario-obra.rdo.settings', currentTenant.slug)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 font-bold text-white"
+                        >
+                            <Settings size={17} /> Parametrizar RDO
+                        </Link>
+                    </div>
                 </div>
 
                 <div className="mb-4 grid gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm md:grid-cols-[1.2fr_0.7fr_0.7fr_auto]">

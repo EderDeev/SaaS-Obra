@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -101,5 +102,20 @@ class MedicaoItem extends Model
     public function ordemServicoItens(): HasMany
     {
         return $this->hasMany(OrdemServicoItem::class);
+    }
+
+    public function folhaRostoItens(): HasMany
+    {
+        return $this->hasMany(FolhaRostoItem::class);
+    }
+
+    public function folhaRostoItemAnalises(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            FolhaRostoItemAnalise::class,
+            FolhaRostoItem::class,
+            'medicao_item_id',
+            'folha_rosto_item_id'
+        );
     }
 }

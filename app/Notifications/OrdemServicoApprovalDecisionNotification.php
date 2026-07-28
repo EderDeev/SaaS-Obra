@@ -61,34 +61,37 @@ class OrdemServicoApprovalDecisionNotification extends Notification
         $label = $this->decision === 'aprovada' ? 'aprovada' : 'recusada';
         $isRequester = (int) $notifiable->id === (int) $this->ordemServico->created_by_id;
 
-        $message = (new MailMessage)
-            ->subject("OS {$label}: {$this->ordemServico->codigo}")
-            ->greeting("Olá, {$notifiable->name}.")
-            ->line("A OS {$this->ordemServico->codigo} foi {$label}.")
-            ->line("Título: {$this->ordemServico->titulo}")
-            ->line("Contrato: {$this->ordemServico->contract?->code} - {$this->ordemServico->contract?->name}");
-
-        if ($this->decision === 'aprovada' && $isRequester) {
-            $message
-                ->line('A execução do serviço está autorizada e já pode ser iniciada conforme o escopo aprovado.')
-                ->line('Obra: '.($this->ordemServico->obra?->nome ?? 'Não informada'))
-                ->line("Aprovado por: {$this->actor->name}");
-        }
-
-        if ($this->observation) {
-            $message->line("Observação: {$this->observation}");
-        }
-
         $url = $isRequester
             ? route('tenant.ordem-servico.os.index', [
                 'tenant' => $this->ordemServico->tenant,
                 'contract_id' => $this->ordemServico->contract_id,
             ])
             : route('tenant.ordem-servico.analise.index', $this->ordemServico->tenant);
+        $systemUrl = route('tenant.dashboard', $this->ordemServico->tenant);
+        $approved = $this->decision === 'aprovada';
+        $viewData = [
+            'ordem' => $this->ordemServico,
+            'actor' => $this->actor,
+            'notifiable' => $notifiable,
+            'headline' => $approved ? 'OS aprovada' : 'OS recusada',
+            'bodyText' => $approved
+                ? "{$this->actor->name} aprovou esta ordem de serviço."
+                : "{$this->actor->name} recusou esta ordem de serviço.",
+            'statusLabel' => $approved ? 'Aprovada' : 'Recusada',
+            'tone' => $approved ? 'success' : 'danger',
+            'actionLabel' => $approved && $isRequester ? 'Acessar OS liberada' : 'Acessar OS',
+            'url' => $url,
+            'systemUrl' => $systemUrl,
+            'highlightTitle' => $approved ? 'Execução autorizada' : 'Ajustes necessários',
+            'highlightBody' => $approved
+                ? 'A execução do serviço está autorizada e já pode ser iniciada conforme o escopo aprovado.'
+                : 'Consulte a observação da decisão, ajuste a ordem de serviço e acompanhe as próximas orientações no sistema.',
+            'observation' => $this->observation,
+        ];
 
-        return $message->action(
-            $this->decision === 'aprovada' && $isRequester ? 'Acessar OS liberada' : 'Acessar OS',
-            $url
-        );
+        return (new MailMessage)
+            ->subject("OS {$label}: {$this->ordemServico->codigo}")
+            ->view('emails.ordem-servico-flow', $viewData)
+            ->text('emails.ordem-servico-flow-text', $viewData);
     }
 }

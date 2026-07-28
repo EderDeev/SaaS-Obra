@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { CalendarDays, ChevronDown, ClipboardList, FileText, Plus, Settings2, X } from 'lucide-react';
+import { Building2, CalendarDays, ChevronDown, ClipboardList, FileText, Plus, Settings2, X } from 'lucide-react';
 import { useState } from 'react';
 
 const currentReference = () => {
@@ -209,6 +209,25 @@ export default function BoletimMedicaoIndex({
                             <h2 className="text-lg font-bold text-[var(--ink-900)]">Boletins abertos e históricos</h2>
                             <p className="text-sm text-[var(--ink-500)]">{boletins.length} boletim(ns) encontrado(s).</p>
                         </div>
+
+                        <label className="grid w-full gap-1.5 text-sm sm:w-auto sm:min-w-[360px]">
+                            <span className="flex items-center gap-2 text-xs font-bold uppercase text-[var(--ink-500)]">
+                                <Building2 size={14} />
+                                Contrato exibido
+                            </span>
+                            <select
+                                value={selectedContractId || ''}
+                                onChange={(event) => changeContract(event.target.value)}
+                                className="sig-input bg-white"
+                                aria-label="Contrato exibido"
+                            >
+                                {contracts.map((contract) => (
+                                    <option key={contract.id} value={contract.id}>
+                                        {contract.code} - {contract.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
                     </header>
 
                     {boletins.length === 0 ? (

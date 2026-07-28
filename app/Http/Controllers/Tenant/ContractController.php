@@ -261,6 +261,7 @@ class ContractController extends Controller
 
         $data = $request->validate([
             'obra_id' => [
+                'sometimes',
                 'nullable',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
@@ -268,6 +269,7 @@ class ContractController extends Controller
                     ->where('tipo', 'pai')),
             ],
             'cliente_empresa_id' => [
+                'sometimes',
                 'nullable',
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
@@ -275,6 +277,7 @@ class ContractController extends Controller
                     ->when($clienteTipoIds->isNotEmpty(), fn ($query) => $query->whereIn('tipo_empresa_id', $clienteTipoIds))),
             ],
             'construtora_empresa_id' => [
+                'sometimes',
                 'nullable',
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
@@ -282,28 +285,58 @@ class ContractController extends Controller
                     ->when($construtoraTipoIds->isNotEmpty(), fn ($query) => $query->whereIn('tipo_empresa_id', $construtoraTipoIds))),
             ],
             'gerenciadora_empresa_id' => [
+                'sometimes',
                 'nullable',
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
                     ->where('contract_id', $contract->id)
                     ->when($gerenciadoraTipoIds->isNotEmpty(), fn ($query) => $query->whereIn('tipo_empresa_id', $gerenciadoraTipoIds))),
             ],
+            'measurement_mode' => ['sometimes', 'required', 'string', Rule::in(['simple', 'controlled'])],
         ], [
             'obra_id.exists' => 'Selecione uma obra pai deste contrato como obra principal.',
             'cliente_empresa_id.exists' => 'A empresa cliente selecionada não pertence ao contrato ou não é do tipo cliente.',
             'construtora_empresa_id.exists' => 'A construtora selecionada não pertence ao contrato ou não é do tipo construtora.',
             'gerenciadora_empresa_id.exists' => 'A gerenciadora selecionada não pertence ao contrato ou não é do tipo gerenciadora.',
+            'measurement_mode.required' => 'Escolha o tipo de medição deste contrato.',
         ]);
 
-        $contract->update([
-            'obra_id' => $data['obra_id'] ?? null,
-            'cliente_empresa_id' => $data['cliente_empresa_id'] ?? null,
-            'construtora_empresa_id' => $data['construtora_empresa_id'] ?? null,
-            'fiscalizadora_empresa_id' => $data['gerenciadora_empresa_id'] ?? null,
-            'client_company_name' => $this->empresaNome($tenant, $data['cliente_empresa_id'] ?? null),
-            'contractor_company_name' => $this->empresaNome($tenant, $data['construtora_empresa_id'] ?? null),
-            'name' => $this->obraNome($tenant, $data['obra_id'] ?? null) ?? $contract->name,
-        ]);
+        if (
+            array_key_exists('measurement_mode', $data)
+            && $contract->measurement_mode
+            && $contract->measurement_mode !== $data['measurement_mode']
+        ) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'measurement_mode' => 'O tipo de medição não pode ser alterado depois de definido.',
+            ]);
+        }
+
+        $updates = [];
+
+        if (array_key_exists('obra_id', $data)) {
+            $updates['obra_id'] = $data['obra_id'];
+            $updates['name'] = $this->obraNome($tenant, $data['obra_id']) ?? $contract->name;
+        }
+
+        if (array_key_exists('cliente_empresa_id', $data)) {
+            $updates['cliente_empresa_id'] = $data['cliente_empresa_id'];
+            $updates['client_company_name'] = $this->empresaNome($tenant, $data['cliente_empresa_id']);
+        }
+
+        if (array_key_exists('construtora_empresa_id', $data)) {
+            $updates['construtora_empresa_id'] = $data['construtora_empresa_id'];
+            $updates['contractor_company_name'] = $this->empresaNome($tenant, $data['construtora_empresa_id']);
+        }
+
+        if (array_key_exists('gerenciadora_empresa_id', $data)) {
+            $updates['fiscalizadora_empresa_id'] = $data['gerenciadora_empresa_id'];
+        }
+
+        if (array_key_exists('measurement_mode', $data)) {
+            $updates['measurement_mode'] = $contract->measurement_mode ?: $data['measurement_mode'];
+        }
+
+        $contract->update($updates);
 
         return back()->with('success', 'Parametrização do contrato atualizada.');
     }

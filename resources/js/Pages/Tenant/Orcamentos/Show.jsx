@@ -765,16 +765,38 @@ export default function OrcamentoShow({
             tenant={tenant}
             active="orcamentos"
             title={`${orcamento.codigo} - ${orcamento.descricao}`}
-            subtitle="Monte a estrutura analitica do orcamento por etapas. Na proxima fase, cada etapa recebera composicoes e insumos."
+            subtitle="Monte a estrutura analítica do orçamento por etapas. Cada etapa recebe composições e insumos."
             showNav={false}
+            showHeader={false}
         >
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.index', tenant.slug)}>
-                    <ArrowLeft size={15} />
-                    Voltar
-                </Link>
+            <header className="budget-page-header">
+                <div className="min-w-0">
+                    <nav className="budget-breadcrumb" aria-label="Navegação estrutural">
+                        <Link href={route('tenant.orcamentos.index', tenant.slug)}>Orçamentos</Link>
+                        <span>/</span>
+                        <span>{orcamento.codigo}</span>
+                    </nav>
 
-                <div className="flex flex-wrap items-center gap-2">
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <h1 className="min-w-0 text-2xl font-semibold text-[var(--ink-900)]">
+                            {orcamento.codigo} · {orcamento.descricao}
+                        </h1>
+                        <span className={`budget-status-pill ${isClosed ? 'budget-status-closed' : 'budget-status-open'}`}>
+                            <span />
+                            {orcamento.status_label}
+                        </span>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-[var(--ink-500)]">
+                        Monte a estrutura analítica do orçamento por etapas. Cada etapa recebe composições e insumos.
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.index', tenant.slug)}>
+                        <ArrowLeft size={15} />
+                        Voltar
+                    </Link>
+
                     {canEditOrcamento && (
                         <button
                             className="sig-btn sig-btn-secondary"
@@ -782,18 +804,7 @@ export default function OrcamentoShow({
                             onClick={() => setCopyModalOpen(true)}
                         >
                             <Copy size={15} />
-                            Copiar orcamento
-                        </button>
-                    )}
-
-                    {canEditOrcamento && (
-                        <button
-                            className="sig-btn sig-btn-primary"
-                            type="button"
-                            onClick={() => setCloseConfirmOpen(true)}
-                        >
-                            <Check size={15} />
-                            Finalizar orçamento
+                            Copiar
                         </button>
                     )}
 
@@ -806,14 +817,22 @@ export default function OrcamentoShow({
                         Relatórios
                     </button>
 
-                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${isClosed ? 'bg-emerald-50 text-emerald-700' : 'bg-[var(--primary-50)] text-[var(--primary)]'}`}>
-                        {orcamento.status_label}
-                    </span>
+                    {canEditOrcamento && (
+                        <button
+                            className="sig-btn sig-btn-primary"
+                            type="button"
+                            onClick={() => setCloseConfirmOpen(true)}
+                        >
+                            <Check size={15} />
+                            Finalizar orçamento
+                        </button>
+                    )}
                 </div>
-            </div>
+            </header>
 
             {page.props.flash?.success && (
-                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                <div className="budget-success-alert">
+                    <Check size={17} />
                     {page.props.flash.success}
                 </div>
             )}
@@ -824,46 +843,47 @@ export default function OrcamentoShow({
                 </div>
             )}
 
-            <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-                <article className="sig-card p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <span className="eyebrow flex items-center gap-2">
-                                <ClipboardList size={14} />
-                                Orcamento
-                            </span>
-                            <h2 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">{orcamento.descricao}</h2>
-                            <p className="mono mt-1 text-sm font-bold text-[var(--primary)]">{orcamento.codigo}</p>
-                        </div>
-
-                        <div className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-1">
-                            <InfoLine label="Cliente" value={orcamento.cliente ?? 'Sem cliente'} />
-                            <InfoLine label="Categoria" value={orcamento.categoria} />
-                            <InfoLine label="Prazo" value={orcamento.prazo_entrega ?? 'Sem prazo'} />
-                            {isClosed ? <InfoLine label="Finalizado em" value={orcamento.closed_at ?? 'Finalizado'} /> : null}
-                        </div>
+            <section className="budget-summary-grid">
+                <article className="budget-summary-card">
+                    <span className="budget-summary-title">
+                        <ClipboardList size={14} />
+                        Orçamento
+                    </span>
+                    <h2 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">{orcamento.descricao}</h2>
+                    <p className="mono mt-1 text-sm font-medium text-[var(--primary)]">{orcamento.codigo}</p>
+                    <div className="my-4 h-px bg-[var(--border)]" />
+                    <div className="grid gap-3">
+                        <InfoLine label="Cliente" value={orcamento.cliente ?? 'Sem cliente'} />
+                        <InfoLine label="Categoria" value={orcamento.categoria} />
+                        <InfoLine label="Prazo" value={orcamento.prazo_entrega ?? 'Sem prazo'} />
+                        {isClosed ? <InfoLine label="Finalizado em" value={orcamento.closed_at ?? 'Finalizado'} /> : null}
                     </div>
                 </article>
 
-                <article className="sig-card overflow-hidden">
-                    <header className="border-b border-[var(--border)] px-5 py-4">
-                        <span className="eyebrow flex items-center gap-2">
-                            <Database size={14} />
-                            Regras de calculo
-                        </span>
-                    </header>
-                    <div className="divide-y divide-[var(--border)] text-sm">
-                        <SummaryRow
-                            label="Bases"
-                            value={(orcamento.base_references ?? []).map((reference) => (
-                                <span
-                                    key={reference.codigo}
-                                    className="inline-flex rounded-md bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-bold text-[var(--ink-600)]"
-                                >
-                                    {reference.nome} - {reference.uf} - {reference.data}
-                                </span>
-                            ))}
-                        />
+                <article className="budget-summary-card">
+                    <span className="budget-summary-title">
+                        <Database size={14} />
+                        Regras de cálculo
+                    </span>
+                    <span className="budget-summary-label mt-5">Bases de preço</span>
+                    <div className="mt-2 flex flex-col items-start gap-2">
+                        {(orcamento.base_references ?? []).map((reference) => (
+                            <span
+                                key={reference.codigo}
+                                className={`budget-base-pill ${String(reference.nome ?? '').toUpperCase().includes('SICRO') ? 'budget-base-sicro' : 'budget-base-sinapi'}`}
+                            >
+                                {reference.nome} · {reference.uf} · {reference.data}
+                            </span>
+                        ))}
+                        {(orcamento.base_references ?? []).length === 0 && (
+                            <span className="text-sm text-[var(--ink-500)]">Nenhuma base vinculada</span>
+                        )}
+                    </div>
+                </article>
+
+                <article className="budget-summary-card">
+                    <span className="budget-summary-title">Parâmetros</span>
+                    <div className="mt-5 divide-y divide-[var(--border)]">
                         <SummaryRow label="Encargos sociais" value={orcamento.encargos_sociais_label} />
                         {(orcamento.encargos_horista !== null || orcamento.encargos_mensalista !== null) && (
                             <SummaryRow
@@ -926,7 +946,7 @@ export default function OrcamentoShow({
                 </button>
             </section>
 
-            <section className="mt-5 overflow-visible rounded-md border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
+            <section className="mt-5 overflow-visible rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
                 <BudgetItemsTable
                     canManage={canEditOrcamento}
                     addingAfterEtapaId={addingAfterEtapaId}
@@ -975,14 +995,14 @@ export default function OrcamentoShow({
                     selectedInsumo={selectedInsumo}
                     showEtapaForm={showEtapaForm}
                 />
-            </section>
 
-            <section className="mt-4 grid gap-2 lg:ml-auto lg:max-w-2xl">
-                <BudgetTotalLine label="Total sem BDI" value={formatCurrency(totalSemBdi)} />
-                <BudgetTotalLine label="Total do BDI" value={formatCurrency(totalBdi)} />
-                <div className="flex items-center justify-end gap-10 border-t border-[var(--border)] px-2 py-4">
-                    <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--ink-500)]">Total</span>
-                    <strong className="mono text-3xl text-[var(--ink-900)]">{formatCurrency(totalComBdi)}</strong>
+                <div className="grid gap-0 px-2 py-2 lg:ml-auto lg:max-w-[440px]">
+                    <BudgetTotalLine label="Total sem BDI" value={formatCurrency(totalSemBdi)} />
+                    <BudgetTotalLine label="Total do BDI" value={formatCurrency(totalBdi)} />
+                    <div className="flex items-center justify-between gap-10 px-3 py-4">
+                        <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Total</span>
+                        <strong className="mono text-2xl font-semibold text-[var(--ink-900)]">{formatCurrency(totalComBdi)}</strong>
+                    </div>
                 </div>
             </section>
 
@@ -1300,20 +1320,8 @@ function EtapaRow({ canManage, etapa, level = 0, onAddComposicao, onAddEtapa, on
 
     return (
         <tr className={`budget-row-etapa ${etapa.is_hidden ? 'budget-row-hidden' : ''}`}>
-            <td className="budget-cell budget-hover-cell budget-text-center">
+            <td className="budget-cell budget-text-center">
                 <span className="budget-arrow" />
-                {canManage && (
-                    <div className="budget-action-menu">
-                        <HoverAction tone="blue" icon={ListTree} onClick={() => onAddEtapa(etapa)}>Etapa</HoverAction>
-                        <HoverAction tone="green" icon={Blocks} onClick={() => onAddComposicao(etapa)}>Composicao</HoverAction>
-                        <HoverAction tone="yellow" icon={Box} onClick={() => onAddInsumo(etapa)}>Insumo</HoverAction>
-                        <HoverAction tone="dark" icon={Pencil} onClick={() => onEditEtapa(etapa)}>Editar</HoverAction>
-                        <HoverAction tone="dark" icon={ToggleIcon} onClick={() => onToggleEtapaVisibility(etapa)}>
-                            {etapa.is_hidden ? 'Mostrar' : 'Ocultar'}
-                        </HoverAction>
-                        <HoverAction tone="red" icon={Trash2} onClick={() => onDeleteEtapa(etapa)}>Excluir</HoverAction>
-                    </div>
-                )}
             </td>
             <BudgetCell align="center" strong>{etapa.item}</BudgetCell>
             <BudgetCell />
@@ -1326,7 +1334,21 @@ function EtapaRow({ canManage, etapa, level = 0, onAddComposicao, onAddEtapa, on
             <BudgetCell align="right" />
             <BudgetCell align="right" />
             <BudgetCell align="right" />
-            <BudgetCell align="right" strong>{formatPlainMoney(etapa.valor_total)}</BudgetCell>
+            <td className="budget-cell budget-hover-cell budget-text-right budget-strong">
+                {formatPlainMoney(etapa.valor_total)}
+                {canManage && (
+                    <div className="budget-action-menu">
+                        <HoverAction tone="blue" icon={ListTree} onClick={() => onAddEtapa(etapa)}>Etapa</HoverAction>
+                        <HoverAction tone="green" icon={Blocks} onClick={() => onAddComposicao(etapa)}>Composição</HoverAction>
+                        <HoverAction tone="yellow" icon={Box} onClick={() => onAddInsumo(etapa)}>Insumo</HoverAction>
+                        <HoverAction tone="dark" icon={Pencil} onClick={() => onEditEtapa(etapa)}>Editar</HoverAction>
+                        <HoverAction tone="dark" icon={ToggleIcon} onClick={() => onToggleEtapaVisibility(etapa)}>
+                            {etapa.is_hidden ? 'Mostrar' : 'Ocultar'}
+                        </HoverAction>
+                        <HoverAction tone="red" icon={Trash2} onClick={() => onDeleteEtapa(etapa)}>Excluir</HoverAction>
+                    </div>
+                )}
+            </td>
         </tr>
     );
 }
@@ -1336,12 +1358,30 @@ function BudgetItemRow({ canManage, etapa, item, level = 1, onAddComposicao, onA
 
     return (
         <tr className={isInsumo ? 'budget-row-insumo' : 'budget-row-composicao'}>
-            <td className="budget-cell budget-hover-cell budget-text-center">
-                <span className="budget-item-kind">{isInsumo ? 'ins' : 'comp'}</span>
+            <td className="budget-cell budget-text-center" />
+            <BudgetCell align="center" strong>{item.item}</BudgetCell>
+            <BudgetCell strong>{item.codigo}</BudgetCell>
+            <BudgetCell><BudgetBankBadge bank={item.banco} /></BudgetCell>
+            <BudgetCell>
+                <span className="budget-description-wrap">
+                    <span className="budget-item-kind">{isInsumo ? 'ins' : 'comp'}</span>
+                    <strong className="budget-indent" style={{ '--budget-depth': level }}>{item.descricao}</strong>
+                </span>
+            </BudgetCell>
+            <BudgetCell>{item.unidade}</BudgetCell>
+            <BudgetCell align="right">{formatPlainMoney(item.quantidade)}</BudgetCell>
+            <BudgetCell align="right">{formatPlainMoney(item.valor_unitario)}</BudgetCell>
+            <BudgetCell align="right">
+                <span className={item.aplicar_bdi ? 'budget-bdi-active' : ''}>
+                    {formatPlainMoney(item.valor_com_bdi)}
+                </span>
+            </BudgetCell>
+            <td className="budget-cell budget-hover-cell budget-text-right budget-strong">
+                {formatPlainMoney(item.valor_total)}
                 {canManage && (
                     <div className="budget-action-menu">
                         <HoverAction tone="blue" icon={ListTree} onClick={() => onAddEtapa(etapa)}>Etapa</HoverAction>
-                        <HoverAction tone="green" icon={Blocks} onClick={() => onAddComposicao(etapa)}>Composicao</HoverAction>
+                        <HoverAction tone="green" icon={Blocks} onClick={() => onAddComposicao(etapa)}>Composição</HoverAction>
                         <HoverAction tone="yellow" icon={Box} onClick={() => onAddInsumo(etapa)}>Insumo</HoverAction>
                         <HoverAction tone="dark" icon={Pencil} onClick={() => onEditItem(item)}>Editar</HoverAction>
                         <HoverAction
@@ -1355,21 +1395,6 @@ function BudgetItemRow({ canManage, etapa, item, level = 1, onAddComposicao, onA
                     </div>
                 )}
             </td>
-            <BudgetCell align="center" strong>{item.item}</BudgetCell>
-            <BudgetCell strong>{item.codigo}</BudgetCell>
-            <BudgetCell>{item.banco}</BudgetCell>
-            <BudgetCell strong>
-                <span className="budget-indent" style={{ '--budget-depth': level }}>{item.descricao}</span>
-            </BudgetCell>
-            <BudgetCell>{item.unidade}</BudgetCell>
-            <BudgetCell align="right">{formatPlainMoney(item.quantidade)}</BudgetCell>
-            <BudgetCell align="right">{formatPlainMoney(item.valor_unitario)}</BudgetCell>
-            <BudgetCell align="right">
-                <span className={item.aplicar_bdi ? 'budget-bdi-active' : ''}>
-                    {formatPlainMoney(item.valor_com_bdi)}
-                </span>
-            </BudgetCell>
-            <BudgetCell align="right" strong>{formatPlainMoney(item.valor_total)}</BudgetCell>
         </tr>
     );
 }
@@ -1891,6 +1916,20 @@ function HeaderCell({ align = 'left', children }) {
         <th className={align === 'right' ? 'budget-text-right' : 'budget-text-left'}>
             {children}
         </th>
+    );
+}
+
+function BudgetBankBadge({ bank }) {
+    if (!bank) {
+        return null;
+    }
+
+    const isSicro = String(bank).toUpperCase().includes('SICRO');
+
+    return (
+        <span className={`budget-bank-badge ${isSicro ? 'budget-bank-sicro' : 'budget-bank-sinapi'}`}>
+            {bank}
+        </span>
     );
 }
 
@@ -2561,18 +2600,18 @@ function ErrorText({ children }) {
 
 function InfoLine({ label, value }) {
     return (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-            <span className="block text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink-400)]">{label}</span>
-            <strong className="mt-1 block text-sm text-[var(--ink-900)]">{value}</strong>
+        <div>
+            <span className="budget-summary-label">{label}</span>
+            <strong className="mt-1 block text-sm font-medium text-[var(--ink-700)]">{value}</strong>
         </div>
     );
 }
 
 function SummaryRow({ label, value }) {
     return (
-        <div className="grid gap-2 px-5 py-3 sm:grid-cols-[140px_minmax(0,1fr)]">
-            <span className="text-xs font-bold uppercase tracking-[0.06em] text-[var(--ink-500)]">{label}</span>
-            <div className="flex flex-wrap gap-2 font-semibold text-[var(--ink-800)]">{value}</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+            <span className="budget-summary-label">{label}</span>
+            <div className="flex flex-wrap justify-end gap-2 text-sm font-medium text-[var(--ink-700)]">{value}</div>
         </div>
     );
 }

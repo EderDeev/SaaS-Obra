@@ -34,6 +34,27 @@ use Inertia\Response;
 
 class RdoController extends Controller
 {
+    public function tourPreview(Request $request, Tenant $tenant): Response
+    {
+        $screen = $request->string('screen')->toString();
+        $allowedScreens = [
+            'settings',
+            'catalogs',
+            'responsibles',
+            'calendar',
+            'rda',
+            'consolidation',
+            'approval',
+            'signature',
+            'dashboard',
+        ];
+
+        return Inertia::render('Tenant/Rdo/TourPreview', [
+            'tenant' => $tenant,
+            'screen' => in_array($screen, $allowedScreens, true) ? $screen : 'settings',
+        ]);
+    }
+
     public function dashboard(Request $request, Tenant $tenant): Response
     {
         $filters = $request->validate([

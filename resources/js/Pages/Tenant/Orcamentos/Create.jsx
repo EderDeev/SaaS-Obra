@@ -1,5 +1,5 @@
 import { Link, router, useForm } from '@inertiajs/react';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, CircleAlert, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
@@ -44,10 +44,6 @@ export default function CreateOrcamento({ tenant, options = {} }) {
             ?? '',
         prazo_entrega_at: '',
         permitir_insumos_preco_zerado: false,
-        is_licitacao: false,
-        licitacao_tipo: '',
-        licitacao_abertura_at: '',
-        licitacao_processo: '',
         arredondamento: 'truncate_all_2',
         encargos_sociais: 'desonerado',
         bdi_tipo: 'unit_price',
@@ -73,20 +69,6 @@ export default function CreateOrcamento({ tenant, options = {} }) {
 
         if (!form.data.categoria) {
             errors.categoria = 'Selecione a categoria.';
-        }
-
-        if (form.data.is_licitacao) {
-            if (!form.data.licitacao_tipo) {
-                errors.licitacao_tipo = 'Informe o tipo de licitação.';
-            }
-
-            if (!form.data.licitacao_abertura_at) {
-                errors.licitacao_abertura_at = 'Informe a abertura da licitação.';
-            }
-
-            if (!form.data.licitacao_processo.trim()) {
-                errors.licitacao_processo = 'Informe o número do processo.';
-            }
         }
 
         return errors;
@@ -172,7 +154,7 @@ export default function CreateOrcamento({ tenant, options = {} }) {
                 onError: (serverErrors) => {
                     form.setError(serverErrors);
 
-                    const stepOneFields = ['codigo', 'descricao', 'cliente_empresa_id', 'categoria', 'prazo_entrega_at', 'licitacao_tipo', 'licitacao_abertura_at', 'licitacao_processo'];
+                    const stepOneFields = ['codigo', 'descricao', 'cliente_empresa_id', 'categoria', 'prazo_entrega_at'];
                     const stepTwoFields = ['arredondamento', 'encargos_sociais', 'bdi_tipo', 'bdi_percentual'];
                     const hasStepOneError = stepOneFields.some((field) => Boolean(serverErrors[field]));
                     const hasStepTwoError = stepTwoFields.some((field) => Boolean(serverErrors[field]));
@@ -207,7 +189,6 @@ export default function CreateOrcamento({ tenant, options = {} }) {
                         categories={options.categories ?? []}
                         clients={options.clients ?? []}
                         form={form}
-                        licitacaoTipos={options.licitacaoTipos ?? []}
                         onChange={updateField}
                         onNext={() => goToStep(2)}
                     />
@@ -280,7 +261,7 @@ function StepTabs({ step, onStepChange }) {
     );
 }
 
-function GeneralStep({ categories, clients, form, licitacaoTipos, onChange, onNext }) {
+function GeneralStep({ categories, clients, form, onChange, onNext }) {
     return (
         <section className="p-5">
             <div className="grid gap-4 lg:grid-cols-3">
@@ -342,7 +323,7 @@ function GeneralStep({ categories, clients, form, licitacaoTipos, onChange, onNe
                 </Field>
             </div>
 
-            <div className="mt-5 grid gap-3">
+            <div className="mt-5">
                 <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ink-700)]">
                     <input
                         checked={form.data.permitir_insumos_preco_zerado}
@@ -353,54 +334,15 @@ function GeneralStep({ categories, clients, form, licitacaoTipos, onChange, onNe
                     Permitir insumos com preço zerado
                 </label>
 
-                <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ink-700)]">
-                    <input
-                        checked={form.data.is_licitacao}
-                        className="h-4 w-4 accent-[var(--primary)]"
-                        type="checkbox"
-                        onChange={(event) => onChange('is_licitacao', event.target.checked)}
-                    />
-                    Licitação
-                </label>
+                {form.data.permitir_insumos_preco_zerado && (
+                    <div className="mt-3 flex max-w-2xl items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                        <CircleAlert className="mt-0.5 shrink-0" size={15} />
+                        <span>
+                            Os insumos sem preço poderão ser adicionados, mas o valor deverá ser preenchido manualmente no orçamento.
+                        </span>
+                    </div>
+                )}
             </div>
-
-            {form.data.is_licitacao && (
-                <div className="mt-5 grid gap-4 border-t border-[var(--border)] pt-5 lg:grid-cols-3">
-                    <Field label="Tipo de licitação" error={form.errors.licitacao_tipo}>
-                        <select
-                            className="sig-input"
-                            value={form.data.licitacao_tipo}
-                            onChange={(event) => onChange('licitacao_tipo', event.target.value)}
-                        >
-                            <option value="">Selecione</option>
-                            {licitacaoTipos.map((tipo) => (
-                                <option key={tipo.value} value={tipo.value}>
-                                    {tipo.label}
-                                </option>
-                            ))}
-                        </select>
-                    </Field>
-
-                    <Field label="Data e hora de abertura" error={form.errors.licitacao_abertura_at}>
-                        <input
-                            className="sig-input"
-                            type="datetime-local"
-                            value={form.data.licitacao_abertura_at}
-                            onChange={(event) => onChange('licitacao_abertura_at', event.target.value)}
-                        />
-                    </Field>
-
-                    <Field label="Número do processo" error={form.errors.licitacao_processo}>
-                        <input
-                            className="sig-input"
-                            placeholder="Ex: 001/2026"
-                            type="text"
-                            value={form.data.licitacao_processo}
-                            onChange={(event) => onChange('licitacao_processo', event.target.value)}
-                        />
-                    </Field>
-                </div>
-            )}
 
             <div className="mt-5 flex justify-end">
                 <button className="sig-btn sig-btn-primary" type="button" onClick={onNext}>

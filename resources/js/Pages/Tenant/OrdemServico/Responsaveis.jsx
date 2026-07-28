@@ -27,6 +27,31 @@ export default function OrdemServicoResponsaveis({
         user_id: '',
         tipo: 'fiscal',
     });
+    const groupedResponsaveis = Object.values(
+        responsaveis.reduce((groups, responsavel) => {
+            const key = `${responsavel.user?.id || 'sem-usuario'}-${responsavel.obra?.id || 'sem-obra'}`;
+
+            if (!groups[key]) {
+                groups[key] = {
+                    key,
+                    user: responsavel.user,
+                    obra: responsavel.obra,
+                    papeis: [],
+                };
+            }
+
+            groups[key].papeis.push(responsavel);
+
+            return groups;
+        }, {})
+    ).map((group) => ({
+        ...group,
+        papeis: group.papeis.sort((left, right) => {
+            const order = { fiscal: 0, aprovador: 1 };
+
+            return (order[left.tipo] ?? 99) - (order[right.tipo] ?? 99);
+        }),
+    }));
 
     const changeContract = (contractId) => {
         router.get(
@@ -160,50 +185,62 @@ export default function OrdemServicoResponsaveis({
                     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <h2 className="text-lg font-bold text-[var(--ink-900)]">Alertas e aprovações por obra</h2>
-                            <p className="text-sm text-[var(--ink-500)]">{responsaveis.length} responsável(is) ativo(s)</p>
+                            <p className="text-sm text-[var(--ink-500)]">
+                                {groupedResponsaveis.length} usuário(s) responsável(is) · {responsaveis.length} função(ões) ativa(s)
+                            </p>
                         </div>
                         <BellRing className="text-[var(--ink-400)]" size={22} />
                     </header>
 
-                    {responsaveis.length === 0 ? (
+                    {groupedResponsaveis.length === 0 ? (
                         <p className="p-8 text-center text-sm text-[var(--ink-500)]">
                             Nenhum responsável cadastrado para este contrato.
                         </p>
                     ) : (
                         <div className="divide-y divide-[var(--border)]">
-                            {responsaveis.map((responsavel) => (
-                                <article key={responsavel.id} className="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_160px_auto] lg:items-center">
+                            {groupedResponsaveis.map((group) => (
+                                <article key={group.key} className="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_minmax(260px,auto)] lg:items-center">
                                     <div className="flex min-w-0 items-center gap-3">
-                                        <Avatar user={responsavel.user} />
+                                        <Avatar user={group.user} />
                                         <div className="min-w-0">
-                                            <p className="truncate text-sm font-bold text-[var(--ink-900)]">{responsavel.user?.name}</p>
-                                            <p className="truncate text-xs text-[var(--ink-500)]">{responsavel.user?.email}</p>
+                                            <p className="truncate text-sm font-bold text-[var(--ink-900)]">{group.user?.name}</p>
+                                            <p className="truncate text-xs text-[var(--ink-500)]">{group.user?.email}</p>
                                         </div>
                                     </div>
 
                                     <div>
                                         <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Obra</span>
                                         <p className="text-sm font-bold text-[var(--ink-900)]">
-                                            {responsavel.obra?.codigo ? `${responsavel.obra.codigo} - ` : ''}{responsavel.obra?.nome}
+                                            {group.obra?.codigo ? `${group.obra.codigo} - ` : ''}{group.obra?.nome}
                                         </p>
                                     </div>
 
-                                    <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-bold ${
-                                        responsavel.tipo === 'aprovador'
-                                            ? 'bg-indigo-50 text-indigo-700'
-                                            : 'bg-amber-50 text-amber-700'
-                                    }`}>
-                                        {responsavel.tipo_label}
-                                    </span>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => remove(responsavel)}
-                                        className="sig-btn justify-center border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                                    >
-                                        <Trash2 size={16} />
-                                        Remover
-                                    </button>
+                                    <div>
+                                        <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Funções</span>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {group.papeis.map((responsavel) => (
+                                                <div
+                                                    key={responsavel.id}
+                                                    className={`inline-flex items-center gap-1 rounded-full py-1 pl-3 pr-1 text-xs font-bold ${
+                                                        responsavel.tipo === 'aprovador'
+                                                            ? 'bg-indigo-50 text-indigo-700'
+                                                            : 'bg-amber-50 text-amber-700'
+                                                    }`}
+                                                >
+                                                    <span>{responsavel.tipo_label}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => remove(responsavel)}
+                                                        className="flex h-6 w-6 items-center justify-center rounded-full transition hover:bg-red-100 hover:text-red-700"
+                                                        title={`Remover função ${responsavel.tipo_label}`}
+                                                        aria-label={`Remover função ${responsavel.tipo_label} de ${group.user?.name}`}
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </article>
                             ))}
                         </div>

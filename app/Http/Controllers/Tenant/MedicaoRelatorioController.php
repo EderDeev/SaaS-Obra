@@ -410,8 +410,8 @@ class MedicaoRelatorioController extends Controller
             ->where('status', 'analisada')
             ->with([
                 'obra:id,codigo,nome',
-                'itens.ordemServicoItem.medicaoItem.versions',
-                'itens.ordemServicoItem.medicaoItem.reajusteIndice.indice.competencias',
+                'itens.medicaoItem.versions',
+                'itens.medicaoItem.reajusteIndice.indice.competencias',
             ])
             ->orderBy('codigo')
             ->get();
@@ -429,7 +429,7 @@ class MedicaoRelatorioController extends Controller
 
                 return implode('|', [
                     $folha->obra_id ?: 'sem-obra',
-                    $item->ordem_servico_item_id ?: 'sem-item',
+                    $item->medicao_item_id ?: 'sem-item',
                 ]);
             })
             ->map(function (Collection $rows) use ($boletim): array {
@@ -439,7 +439,7 @@ class MedicaoRelatorioController extends Controller
                 /** @var FolhaRostoItem $item */
                 $item = $first['item'];
                 $ordemItem = $item->ordemServicoItem;
-                $medicaoItem = $ordemItem?->medicaoItem;
+                $medicaoItem = $item->medicaoItem;
                 $quantity = (float) $rows->sum(fn (array $row): float => (float) $row['item']->quantidade_pleiteada);
                 $valoresItem = $this->effectiveMedicaoItemValues($medicaoItem, $boletim->periodo, $ordemItem);
                 $precoUnitarioP0 = $valoresItem['preco_unitario_p0'];
@@ -481,8 +481,8 @@ class MedicaoRelatorioController extends Controller
             ->with([
                 'obra:id,codigo,nome',
                 'itens.analises' => fn ($query) => $query->where('setor', 'medicao'),
-                'itens.ordemServicoItem.medicaoItem.versions',
-                'itens.ordemServicoItem.medicaoItem.reajusteIndice.indice.competencias',
+                'itens.medicaoItem.versions',
+                'itens.medicaoItem.reajusteIndice.indice.competencias',
             ])
             ->orderBy('codigo')
             ->get();
@@ -500,7 +500,7 @@ class MedicaoRelatorioController extends Controller
 
                 return implode('|', [
                     $folha->obra_id ?: 'sem-obra',
-                    $item->ordem_servico_item_id ?: 'sem-item',
+                    $item->medicao_item_id ?: 'sem-item',
                 ]);
             })
             ->map(function (Collection $rows) use ($boletim): array {
@@ -510,7 +510,7 @@ class MedicaoRelatorioController extends Controller
                 /** @var FolhaRostoItem $item */
                 $item = $first['item'];
                 $ordemItem = $item->ordemServicoItem;
-                $medicaoItem = $ordemItem?->medicaoItem;
+                $medicaoItem = $item->medicaoItem;
                 $quantity = (float) $rows->sum(fn (array $row): float => (float) $row['item']->quantidade_pleiteada);
                 $approvedQuantity = (float) $rows->sum(function (array $row): float {
                     /** @var FolhaRostoItem $item */
@@ -594,8 +594,8 @@ class MedicaoRelatorioController extends Controller
             ->with([
                 'boletimMedicao:id,periodo',
                 'itens.analises' => fn ($query) => $query->where('setor', 'medicao'),
-                'itens.ordemServicoItem.medicaoItem.versions',
-                'itens.ordemServicoItem.medicaoItem.reajusteIndice.indice.competencias',
+                'itens.medicaoItem.versions',
+                'itens.medicaoItem.reajusteIndice.indice.competencias',
             ])
             ->get();
 
@@ -605,7 +605,7 @@ class MedicaoRelatorioController extends Controller
                 'item' => $item,
             ]))
             ->filter(fn (array $row): bool => $row['item']->analises->first()?->quantidade_aprovada !== null)
-            ->groupBy(fn (array $row): string => (string) ($row['item']->ordem_servico_item_id ?: 'sem-item'))
+            ->groupBy(fn (array $row): string => (string) ($row['item']->medicao_item_id ?: 'sem-item'))
             ->map(function (Collection $rows) use ($boletim): array {
                 $first = $rows->first();
                 /** @var FolhaRosto $folha */
@@ -613,7 +613,7 @@ class MedicaoRelatorioController extends Controller
                 /** @var FolhaRostoItem $item */
                 $item = $first['item'];
                 $ordemItem = $item->ordemServicoItem;
-                $medicaoItem = $ordemItem?->medicaoItem;
+                $medicaoItem = $item->medicaoItem;
                 $valoresItem = $this->effectiveMedicaoItemValues($medicaoItem, $boletim->periodo, $ordemItem);
                 $quantidadeTotal = $valoresItem['quantidade_total'];
                 $precoUnitarioP0 = $valoresItem['preco_unitario_p0'];
@@ -712,15 +712,15 @@ class MedicaoRelatorioController extends Controller
             ->with([
                 'boletimMedicao:id,periodo',
                 'itens.analises' => fn ($query) => $query->where('setor', 'medicao'),
-                'itens.ordemServicoItem.medicaoItem.versions',
-                'itens.ordemServicoItem.medicaoItem.reajusteIndice.indice.competencias',
+                'itens.medicaoItem.versions',
+                'itens.medicaoItem.reajusteIndice.indice.competencias',
             ])
             ->get();
 
         $qtdAnteriorPorItem = $folhasAnteriores
             ->flatMap(fn (FolhaRosto $folha): Collection => $folha->itens->map(fn (FolhaRostoItem $item): FolhaRostoItem => $item))
             ->filter(fn (FolhaRostoItem $item): bool => $item->analises->first()?->quantidade_aprovada !== null)
-            ->groupBy(fn (FolhaRostoItem $item): string => (string) ($item->ordem_servico_item_id ?: 'sem-item'))
+            ->groupBy(fn (FolhaRostoItem $item): string => (string) ($item->medicao_item_id ?: 'sem-item'))
             ->map(fn (Collection $itens): float => (float) $itens->sum(fn (FolhaRostoItem $item): float => (float) ($item->analises->first()?->quantidade_aprovada ?? 0)));
         $valorAnteriorPorItem = $folhasAnteriores
             ->flatMap(fn (FolhaRosto $folha): Collection => $folha->itens->map(fn (FolhaRostoItem $item): array => [
@@ -728,7 +728,7 @@ class MedicaoRelatorioController extends Controller
                 'item' => $item,
             ]))
             ->filter(fn (array $row): bool => $row['item']->analises->first()?->quantidade_aprovada !== null)
-            ->groupBy(fn (array $row): string => (string) ($row['item']->ordem_servico_item_id ?: 'sem-item'))
+            ->groupBy(fn (array $row): string => (string) ($row['item']->medicao_item_id ?: 'sem-item'))
             ->map(function (Collection $rows): float {
                 return (float) $rows->sum(function (array $row): float {
                     /** @var FolhaRosto $folha */
@@ -736,7 +736,7 @@ class MedicaoRelatorioController extends Controller
                     /** @var FolhaRostoItem $item */
                     $item = $row['item'];
                     $ordemItem = $item->ordemServicoItem;
-                    $medicaoItem = $ordemItem?->medicaoItem;
+                    $medicaoItem = $item->medicaoItem;
                     $valoresItem = $this->effectiveMedicaoItemValues($medicaoItem, $folha->boletimMedicao?->periodo, $ordemItem);
                     $precoUnitarioP0 = $valoresItem['preco_unitario_p0'];
                     $precoReajustado = $this->adjustedValue($precoUnitarioP0, $medicaoItem, $folha->boletimMedicao?->periodo);
@@ -752,8 +752,8 @@ class MedicaoRelatorioController extends Controller
             ->with([
                 'boletimMedicao:id,periodo',
                 'itens.analises' => fn ($query) => $query->where('setor', 'medicao'),
-                'itens.ordemServicoItem.medicaoItem.versions',
-                'itens.ordemServicoItem.medicaoItem.reajusteIndice.indice.competencias',
+                'itens.medicaoItem.versions',
+                'itens.medicaoItem.reajusteIndice.indice.competencias',
             ])
             ->orderBy('codigo')
             ->get();
@@ -774,7 +774,7 @@ class MedicaoRelatorioController extends Controller
 
                 return implode('|', [
                     $folha->id,
-                    $item->ordem_servico_item_id ?: 'sem-item',
+                    $item->medicao_item_id ?: 'sem-item',
                 ]);
             })
             ->sortKeys()
@@ -785,8 +785,8 @@ class MedicaoRelatorioController extends Controller
                 /** @var FolhaRostoItem $item */
                 $item = $first['item'];
                 $ordemItem = $item->ordemServicoItem;
-                $medicaoItem = $ordemItem?->medicaoItem;
-                $itemKey = (string) ($item->ordem_servico_item_id ?: 'sem-item');
+                $medicaoItem = $item->medicaoItem;
+                $itemKey = (string) ($item->medicao_item_id ?: 'sem-item');
                 $valoresItem = $this->effectiveMedicaoItemValues($medicaoItem, $folha->boletimMedicao?->periodo, $ordemItem);
                 $quantidadeTotal = $valoresItem['quantidade_total'];
                 $precoUnitarioP0 = $valoresItem['preco_unitario_p0'];
@@ -918,8 +918,8 @@ class MedicaoRelatorioController extends Controller
             ->where('status', 'analisada')
             ->with([
                 'itens.analises' => fn ($query) => $query->where('setor', 'medicao'),
-                'itens.ordemServicoItem.medicaoItem.versions',
-                'itens.ordemServicoItem.medicaoItem.reajusteIndice.indice.competencias',
+                'itens.medicaoItem.versions',
+                'itens.medicaoItem.reajusteIndice.indice.competencias',
             ])
             ->get();
 
@@ -933,7 +933,7 @@ class MedicaoRelatorioController extends Controller
                 /** @var FolhaRostoItem $item */
                 $item = $row['item'];
 
-                return $this->planilhaKeyFromItem($item->ordemServicoItem?->medicaoItem?->item);
+                return $this->planilhaKeyFromItem($item->medicaoItem?->item);
             })
             ->map(function (Collection $rows) use ($boletim): array {
                 $anterior = 0.0;
@@ -946,7 +946,7 @@ class MedicaoRelatorioController extends Controller
                     /** @var FolhaRostoItem $item */
                     $item = $row['item'];
                     $ordemItem = $item->ordemServicoItem;
-                    $medicaoItem = $ordemItem?->medicaoItem;
+                    $medicaoItem = $item->medicaoItem;
                     $valoresItem = $this->effectiveMedicaoItemValues($medicaoItem, $folha->boletimMedicao?->periodo ?? $boletim->periodo, $ordemItem);
                     $precoUnitarioP0 = $valoresItem['preco_unitario_p0'];
                     $precoUnitarioReajustado = $this->adjustedValue($precoUnitarioP0, $medicaoItem, $boletim->periodo);

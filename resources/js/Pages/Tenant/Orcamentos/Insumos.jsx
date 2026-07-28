@@ -1,7 +1,7 @@
 import { router, useForm, usePage } from '@inertiajs/react';
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
-import { CheckCircle2, Clock3, Building2, Database, FolderTree, Globe2, Pencil, Plus, Search, Trash2, UploadCloud, X } from 'lucide-react';
-import { cloneElement, useMemo, useState } from 'react';
+import { Building2, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, FolderTree, Globe2, Pencil, Plus, Search, Trash2, UploadCloud, X } from 'lucide-react';
+import { cloneElement, useEffect, useMemo, useState } from 'react';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
 const states = [
@@ -61,6 +61,7 @@ export default function OrcamentosInsumos({
     hasSearched = false,
     insumos = [],
     totalInsumos = 0,
+    insumoSummary = { total: 0, types: [] },
     typeOptions = [],
     typeOptionsByBank = {},
     dateOptions = [],
@@ -73,6 +74,7 @@ export default function OrcamentosInsumos({
     const insumoRows = insumos?.data ?? insumos;
     const pagination = insumos?.data ? insumos : null;
     const [activePanel, setActivePanel] = useState(null);
+    const [createModalOpen, setCreateModalOpen] = useState(false);
     const [filters, setFilters] = useState({
         search: initialFilters.search ?? '',
         bank: initialFilters.bank ?? 'SINAPI',
@@ -160,6 +162,24 @@ export default function OrcamentosInsumos({
         });
     };
 
+    const clearFilters = () => {
+        const defaults = {
+            search: '',
+            bank: 'SINAPI',
+            orderBy: 'description',
+            state: 'PA',
+            type: 'all',
+            date: '',
+            perPage: 50,
+        };
+
+        setFilters(defaults);
+        router.get(route('tenant.orcamentos.insumos.index', tenant.slug), {}, {
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
     const submitCreate = (event) => {
         event.preventDefault();
 
@@ -167,7 +187,7 @@ export default function OrcamentosInsumos({
             preserveScroll: true,
             onSuccess: () => {
                 createForm.reset();
-                setActivePanel(null);
+                setCreateModalOpen(false);
             },
         });
     };
@@ -188,7 +208,23 @@ export default function OrcamentosInsumos({
     };
 
     const togglePanel = (panel) => {
+        setCreateModalOpen(false);
         setActivePanel((current) => (current === panel ? null : panel));
+    };
+
+    const openCreateModal = () => {
+        setActivePanel(null);
+        setCreateModalOpen(true);
+    };
+
+    const closeCreateModal = () => {
+        if (createForm.processing) {
+            return;
+        }
+
+        createForm.reset();
+        createForm.clearErrors();
+        setCreateModalOpen(false);
     };
 
     return (
@@ -196,8 +232,33 @@ export default function OrcamentosInsumos({
             tenant={tenant}
             active="insumos"
             title="Insumos"
-            subtitle="Base mestre dos recursos usados nas composicoes. Cadastre itens da base propria ou importe uma base global para toda a plataforma."
+            subtitle="Consulte insumos das bases de referência por estado, tipo e data."
             showNav={false}
+            eyebrow="Orçamentos · Bases de preço"
+            actions={(
+                <>
+                    {visiblePanels.groups && (
+                        <ActionButton active={activePanel === 'groups'} icon={FolderTree} onClick={() => togglePanel('groups')}>
+                            Grupos
+                        </ActionButton>
+                    )}
+                    {visiblePanels.importTenant && (
+                        <ActionButton active={activePanel === 'importTenant'} icon={Building2} onClick={() => togglePanel('importTenant')}>
+                            Importar base própria
+                        </ActionButton>
+                    )}
+                    {visiblePanels.importGlobal && (
+                        <ActionButton active={activePanel === 'importGlobal'} icon={Globe2} onClick={() => togglePanel('importGlobal')}>
+                            Importar CSV global
+                        </ActionButton>
+                    )}
+                    {visiblePanels.create && (
+                        <ActionButton active={createModalOpen} icon={Plus} primary onClick={openCreateModal}>
+                            Novo insumo
+                        </ActionButton>
+                    )}
+                </>
+            )}
         >
             {page.props.flash?.success && (
                 <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
@@ -213,37 +274,11 @@ export default function OrcamentosInsumos({
                 <ImportResultFeedback result={page.props.flash.import_result} />
             )}
 
-            <section className="mb-5 flex flex-wrap items-center gap-2">
-                {visiblePanels.create && (
-                    <ActionButton active={activePanel === 'create'} icon={Plus} tone="blue" onClick={() => togglePanel('create')}>
-                        Criar insumo
-                    </ActionButton>
-                )}
-
-                {visiblePanels.groups && (
-                    <ActionButton active={activePanel === 'groups'} icon={FolderTree} tone="violet" onClick={() => togglePanel('groups')}>
-                        Grupos
-                    </ActionButton>
-                )}
-
-                {visiblePanels.importTenant && (
-                    <ActionButton active={activePanel === 'importTenant'} icon={Building2} tone="green" onClick={() => togglePanel('importTenant')}>
-                        Importar base propria
-                    </ActionButton>
-                )}
-
-                {visiblePanels.importGlobal && (
-                    <ActionButton active={activePanel === 'importGlobal'} icon={Globe2} tone="amber" onClick={() => togglePanel('importGlobal')}>
-                        Importar CSV global
-                    </ActionButton>
-                )}
-            </section>
-
-            {activePanel === 'create' && (
-                <CreateInsumoPanel
+            {createModalOpen && (
+                <CreateInsumoModal
                     form={createForm}
                     grupoOptions={grupoOptions}
-                    onClose={() => setActivePanel(null)}
+                    onClose={closeCreateModal}
                     onSubmit={submitCreate}
                 />
             )}
@@ -279,7 +314,9 @@ export default function OrcamentosInsumos({
                 dateOptions={dateOptions}
                 filters={filters}
                 onChange={updateFilter}
+                onClear={clearFilters}
                 onSubmit={submitSearch}
+                summary={insumoSummary}
                 typeOptions={typeOptions}
                 typeOptionsByBank={typeOptionsByBank}
             />
@@ -291,93 +328,164 @@ export default function OrcamentosInsumos({
                 pagination={pagination}
                 setFilters={setFilters}
                 tenant={tenant}
-                totalInsumos={totalInsumos}
+                totalInsumos={insumoSummary?.total ?? totalInsumos}
             />
         </OrcamentoShell>
     );
 }
 
-function SearchPanel({ dateOptions = [], filters, onChange, onSubmit, typeOptions = [], typeOptionsByBank = {} }) {
+function SearchPanel({
+    dateOptions = [],
+    filters,
+    onChange,
+    onClear,
+    onSubmit,
+    summary = { total: 0, types: [] },
+    typeOptions = [],
+    typeOptionsByBank = {},
+}) {
     const bankTypeOptions = typeOptionsByBank?.[filters.bank] ?? typeOptions;
     const normalizedTypeOptions = ensureSelectedOption(bankTypeOptions, filters.type, 'Tipo selecionado');
     const normalizedDateOptions = ensureSelectedOption(dateOptions, filters.date, filters.date);
+    const summaryTypes = summary?.types?.length
+        ? summary.types
+        : normalizedTypeOptions.map((type) => ({ ...type, count: null }));
 
     return (
-        <section className="mb-5 overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
-            <header className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
-                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--primary-50)] text-[var(--primary)]">
-                    <Search size={14} />
-                </span>
-                <div>
-                    <h2 className="m-0 text-[13px] font-bold text-[var(--ink-900)]">Pesquisa de insumos</h2>
-                    <p className="m-0 text-[11.5px] text-[var(--ink-500)]">Filtre por base, estado, tipo e data de referencia</p>
-                </div>
-            </header>
-
-            <form
-                className="grid items-end gap-3 p-4"
-                style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}
-                onSubmit={onSubmit}
+        <section className="mb-5">
+            <div
+                className="mb-4 flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible"
+                style={{ scrollbarWidth: 'none' }}
             >
-                <div className="grid gap-1">
-                    <Field label="Filtro">
-                        <input
-                            value={filters.search}
-                            onChange={(event) => onChange('search', event.target.value)}
-                            placeholder="Descricao ou codigo"
-                        />
-                    </Field>
-                    <Field label="Banco">
-                        <select
-                            value={filters.bank}
-                            onChange={(event) => {
-                                onChange('bank', event.target.value);
-                                onChange('type', 'all');
-                            }}
-                        >
-                            <option value="TODOS">Todos</option>
-                            {banks.map((bank) => <option key={bank.value} value={bank.value}>{bank.label}</option>)}
-                        </select>
-                    </Field>
-                </div>
+                <TypeChip
+                    active={filters.type === 'all'}
+                    count={summary?.total}
+                    label="Todos"
+                    onClick={() => onChange('type', 'all')}
+                />
+                {summaryTypes.map((type) => (
+                    <TypeChip
+                        key={type.value}
+                        active={String(filters.type) === String(type.value)}
+                        count={type.count}
+                        label={type.label}
+                        onClick={() => onChange('type', type.value)}
+                    />
+                ))}
+            </div>
 
-                <div className="grid gap-1">
-                    <Field label="Ordenar por">
-                        <select value={filters.orderBy} onChange={(event) => onChange('orderBy', event.target.value)}>
-                            <option value="description">Descricao</option>
-                            <option value="code">Codigo</option>
-                            <option value="unit">Unidade</option>
-                            <option value="price">Preco</option>
-                        </select>
-                    </Field>
-                    <Field label="Estado">
-                        <select value={filters.state} onChange={(event) => onChange('state', event.target.value)}>
-                            {states.map((state) => <option key={state.value} value={state.value}>{state.label}</option>)}
-                        </select>
-                    </Field>
-                </div>
+            <form className="grid gap-3 lg:grid-cols-12" onSubmit={onSubmit}>
+                <label className="relative block lg:col-span-4">
+                    <span className="sr-only">Buscar por descrição ou código</span>
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-400)]" size={17} />
+                    <input
+                        className="sig-input h-[52px] w-full pl-11"
+                        style={{ paddingLeft: 42 }}
+                        value={filters.search}
+                        onChange={(event) => onChange('search', event.target.value)}
+                        placeholder="Buscar por descrição ou código"
+                    />
+                </label>
 
-                <div className="grid gap-1">
-                    <Field label="Tipo">
-                        <select value={filters.type} onChange={(event) => onChange('type', event.target.value)}>
-                            <option value="all">Todos</option>
-                            {normalizedTypeOptions.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-                        </select>
-                    </Field>
-                    <Field label="Data">
-                        <select value={filters.date} onChange={(event) => onChange('date', event.target.value)}>
-                            <option value="">Todas</option>
-                            {normalizedDateOptions.map((date) => <option key={date.value} value={date.value}>{date.label}</option>)}
-                        </select>
-                    </Field>
-                </div>
+                <CompactSelect
+                    className="lg:col-span-2"
+                    label="Banco"
+                    value={filters.bank}
+                    onChange={(value) => {
+                        onChange('bank', value);
+                        onChange('type', 'all');
+                    }}
+                >
+                    <option value="TODOS">Todos</option>
+                    {banks.map((bank) => <option key={bank.value} value={bank.value}>{bank.label}</option>)}
+                </CompactSelect>
 
-                <button className="sig-btn sig-btn-primary h-9 justify-center" type="submit">
-                    <Search size={14} />
-                    Buscar
-                </button>
+                <CompactSelect
+                    className="lg:col-span-2"
+                    label="Estado"
+                    value={filters.state}
+                    onChange={(value) => onChange('state', value)}
+                >
+                    {states.map((state) => <option key={state.value} value={state.value}>{state.label}</option>)}
+                </CompactSelect>
+
+                <CompactSelect
+                    className="lg:col-span-2"
+                    label="Data de referência"
+                    value={filters.date}
+                    onChange={(value) => onChange('date', value)}
+                >
+                    <option value="">Todas</option>
+                    {normalizedDateOptions.map((date) => <option key={date.value} value={date.value}>{date.label}</option>)}
+                </CompactSelect>
+
+                <CompactSelect
+                    className="lg:col-span-2"
+                    label="Ordenar por"
+                    value={filters.orderBy}
+                    onChange={(value) => onChange('orderBy', value)}
+                >
+                    <option value="description">Descrição (A-Z)</option>
+                    <option value="code">Código</option>
+                    <option value="unit">Unidade</option>
+                    <option value="price">Maior preço</option>
+                </CompactSelect>
+
+                <div className="flex flex-wrap items-center justify-end gap-2 lg:col-span-12">
+                    <button className="sig-btn sig-btn-ghost" type="button" onClick={onClear}>
+                        Limpar filtros
+                    </button>
+                    <button className="sig-btn sig-btn-primary min-w-32 justify-center" type="submit">
+                        <Filter size={15} />
+                        Filtrar
+                    </button>
+                </div>
             </form>
         </section>
+    );
+}
+
+function TypeChip({ active, count, label, onClick }) {
+    return (
+        <button
+            className={`inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition ${
+                active
+                    ? 'border-[var(--border-strong)] bg-[var(--primary-50)] font-semibold text-[var(--ink-900)]'
+                    : 'border-[var(--border)] bg-white text-[var(--ink-700)] hover:border-[var(--border-strong)]'
+            }`}
+            type="button"
+            onClick={onClick}
+        >
+            <span>{label}</span>
+            {count !== null && count !== undefined && (
+                <span className="font-mono text-xs text-[var(--ink-400)]">{formatCount(count)}</span>
+            )}
+        </button>
+    );
+}
+
+function CompactSelect({ children, className = '', label, onChange, value }) {
+    return (
+        <label
+            className={`sig-input relative h-[52px] min-w-0 flex-col justify-center gap-0.5 py-1.5 pl-3.5 pr-9 ${className}`}
+            style={{ alignItems: 'stretch' }}
+        >
+            <span className="pointer-events-none block text-[9.5px] font-bold uppercase leading-[1.2] tracking-[0.05em] text-[var(--ink-400)]">
+                {label}
+            </span>
+            <select
+                className="m-0 h-5 min-h-5 w-full appearance-none border-0 bg-transparent p-0 text-sm font-semibold leading-5 text-[var(--ink-900)] outline-none focus:border-0 focus:ring-0"
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+            >
+                {children}
+            </select>
+            <ChevronDown
+                aria-hidden="true"
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-400)]"
+                size={15}
+            />
+        </label>
     );
 }
 
@@ -639,7 +747,7 @@ function InsumoGroupsPanel({ grupos = [], onClose, tenant }) {
     );
 }
 
-function CreateInsumoPanel({ form, grupoOptions = [], onClose, onSubmit }) {
+function CreateInsumoModal({ form, grupoOptions = [], onClose, onSubmit }) {
     const isEquipment = form.data.tipo === 'equipment';
     const updateTipo = (value) => {
         form.setData({
@@ -650,119 +758,168 @@ function CreateInsumoPanel({ form, grupoOptions = [], onClose, onSubmit }) {
         });
     };
 
+    useEffect(() => {
+        const previousOverflow = document.body.style.overflow;
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        document.body.style.overflow = 'hidden';
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [onClose]);
+
     return (
-        <section className="sig-card mb-5 overflow-hidden">
-            <PanelHeader
-                description="Cadastre um insumo na base propria."
-                icon={Plus}
-                onClose={onClose}
-                title="Criar insumo"
-            />
-
-            <form className="grid gap-4 p-5" onSubmit={onSubmit}>
-                <div className="grid gap-4 lg:grid-cols-4">
-                    <Field label="Tipo" error={form.errors.tipo}>
-                        <select value={form.data.tipo} onChange={(event) => updateTipo(event.target.value)}>
-                            {types.map((type) => <option key={type.value || 'empty'} value={type.value}>{type.label}</option>)}
-                        </select>
-                    </Field>
-
-                    <Field label="Grupo" error={form.errors.grupo_id}>
-                        <select value={form.data.grupo_id} onChange={(event) => form.setData('grupo_id', event.target.value)}>
-                            <option value="">Sem grupo</option>
-                            {grupoOptions.map((grupo) => <option key={grupo.value} value={grupo.value}>{grupo.label}</option>)}
-                        </select>
-                    </Field>
-
-                    <Field label="Codigo insumo" error={form.errors.codigo_insumo}>
-                        <input value={form.data.codigo_insumo} onChange={(event) => form.setData('codigo_insumo', event.target.value)} />
-                    </Field>
-
-                    <Field label="Unidade" error={form.errors.unidade}>
-                        <input value={form.data.unidade} onChange={(event) => form.setData('unidade', event.target.value.toUpperCase())} placeholder="UN, M, KG..." />
-                    </Field>
-                </div>
-
-                <Field label="Descricao" error={form.errors.descricao}>
-                    <input
-                        value={form.data.descricao}
-                        onChange={(event) => form.setData('descricao', event.target.value)}
-                        placeholder="Descricao do insumo"
-                    />
-                </Field>
-
-                <Field label="Observacao" error={form.errors.observacao}>
-                    <textarea
-                        value={form.data.observacao}
-                        onChange={(event) => form.setData('observacao', event.target.value)}
-                        placeholder="Observacao opcional sobre o insumo"
-                        style={{ minHeight: 72, paddingTop: 10, resize: 'vertical' }}
-                    />
-                </Field>
-
-                <div className="grid gap-4 lg:grid-cols-4">
-                    <Field label="UF" error={form.errors.uf}>
-                        <select value={form.data.uf} onChange={(event) => form.setData('uf', event.target.value)}>
-                            {states.map((state) => <option key={state.value} value={state.value}>{state.value} - {state.label}</option>)}
-                        </select>
-                    </Field>
-
-                    <Field label="Preco nao desonerado" error={form.errors.preco_nao_desonerado}>
-                        <input
-                            inputMode="numeric"
-                            value={form.data.preco_nao_desonerado}
-                            onChange={(event) => setMoneyField(form, 'preco_nao_desonerado', event.target.value)}
-                            placeholder="100.000,00"
-                        />
-                    </Field>
-
-                    <Field label="Preco desonerado (opcional)" error={form.errors.preco_desonerado}>
-                        <input
-                            inputMode="numeric"
-                            value={form.data.preco_desonerado}
-                            onChange={(event) => setMoneyField(form, 'preco_desonerado', event.target.value)}
-                            placeholder="Opcional"
-                        />
-                    </Field>
-
-                    <Field label="Data" error={form.errors.data}>
-                        <input value={form.data.data} onChange={(event) => form.setData('data', event.target.value)} placeholder="04/2026" />
-                    </Field>
-                </div>
-
-                {isEquipment && (
-                    <div className="grid gap-4 lg:grid-cols-2">
-                        <Field label="Valor nao Desonerado Improdutivo" error={form.errors.custo_improdutivo_nao_desonerado}>
-                            <input
-                                inputMode="numeric"
-                                value={form.data.custo_improdutivo_nao_desonerado}
-                                onChange={(event) => setMoneyField(form, 'custo_improdutivo_nao_desonerado', event.target.value)}
-                                placeholder="Opcional"
-                            />
-                        </Field>
-
-                        <Field label="Valor Desonerado Improdutivo" error={form.errors.custo_improdutivo_desonerado}>
-                            <input
-                                inputMode="numeric"
-                                value={form.data.custo_improdutivo_desonerado}
-                                onChange={(event) => setMoneyField(form, 'custo_improdutivo_desonerado', event.target.value)}
-                                placeholder="Opcional"
-                            />
-                        </Field>
+        <div
+            aria-labelledby="create-insumo-title"
+            aria-modal="true"
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 p-4"
+            role="dialog"
+            onMouseDown={onClose}
+        >
+            <section
+                className="flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
+                onMouseDown={(event) => event.stopPropagation()}
+            >
+                <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
+                            <Plus size={17} />
+                        </span>
+                        <div className="min-w-0">
+                            <h2 id="create-insumo-title" className="text-[17px] font-semibold text-[var(--ink-900)]">
+                                Criar insumo
+                            </h2>
+                            <p className="mt-1 text-sm text-[var(--ink-500)]">
+                                Cadastre um insumo na base própria.
+                            </p>
+                        </div>
                     </div>
-                )}
+                    <button
+                        aria-label="Fechar"
+                        className="sig-btn sig-btn-ghost h-9 w-9 shrink-0 p-0"
+                        disabled={form.processing}
+                        title="Fechar"
+                        type="button"
+                        onClick={onClose}
+                    >
+                        <X size={17} />
+                    </button>
+                </header>
 
-                <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
-                    <button className="sig-btn sig-btn-secondary" type="button" onClick={onClose}>
-                        Cancelar
-                    </button>
-                    <button className="sig-btn sig-btn-primary" disabled={form.processing} type="submit">
-                        <Plus size={15} />
-                        {form.processing ? 'Salvando...' : 'Salvar insumo'}
-                    </button>
-                </div>
-            </form>
-        </section>
+                <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+                    <div className="grid min-h-0 gap-4 overflow-y-auto p-5">
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <Field label="Tipo" error={form.errors.tipo}>
+                                <select value={form.data.tipo} onChange={(event) => updateTipo(event.target.value)}>
+                                    {types.map((type) => <option key={type.value || 'empty'} value={type.value}>{type.label}</option>)}
+                                </select>
+                            </Field>
+
+                            <Field label="Grupo" error={form.errors.grupo_id}>
+                                <select value={form.data.grupo_id} onChange={(event) => form.setData('grupo_id', event.target.value)}>
+                                    <option value="">Sem grupo</option>
+                                    {grupoOptions.map((grupo) => <option key={grupo.value} value={grupo.value}>{grupo.label}</option>)}
+                                </select>
+                            </Field>
+
+                            <Field label="Código do insumo" error={form.errors.codigo_insumo}>
+                                <input value={form.data.codigo_insumo} onChange={(event) => form.setData('codigo_insumo', event.target.value)} />
+                            </Field>
+
+                            <Field label="Unidade" error={form.errors.unidade}>
+                                <input value={form.data.unidade} onChange={(event) => form.setData('unidade', event.target.value.toUpperCase())} placeholder="UN, M, KG..." />
+                            </Field>
+                        </div>
+
+                        <Field label="Descrição" error={form.errors.descricao}>
+                            <input
+                                value={form.data.descricao}
+                                onChange={(event) => form.setData('descricao', event.target.value)}
+                                placeholder="Descrição do insumo"
+                            />
+                        </Field>
+
+                        <Field label="Observação" error={form.errors.observacao}>
+                            <textarea
+                                value={form.data.observacao}
+                                onChange={(event) => form.setData('observacao', event.target.value)}
+                                placeholder="Observação opcional sobre o insumo"
+                                style={{ minHeight: 72, paddingTop: 10, resize: 'vertical' }}
+                            />
+                        </Field>
+
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <Field label="UF" error={form.errors.uf}>
+                                <select value={form.data.uf} onChange={(event) => form.setData('uf', event.target.value)}>
+                                    {states.map((state) => <option key={state.value} value={state.value}>{state.value} - {state.label}</option>)}
+                                </select>
+                            </Field>
+
+                            <Field label="Preço não desonerado" error={form.errors.preco_nao_desonerado}>
+                                <input
+                                    inputMode="numeric"
+                                    value={form.data.preco_nao_desonerado}
+                                    onChange={(event) => setMoneyField(form, 'preco_nao_desonerado', event.target.value)}
+                                    placeholder="100.000,00"
+                                />
+                            </Field>
+
+                            <Field label="Preço desonerado (opcional)" error={form.errors.preco_desonerado}>
+                                <input
+                                    inputMode="numeric"
+                                    value={form.data.preco_desonerado}
+                                    onChange={(event) => setMoneyField(form, 'preco_desonerado', event.target.value)}
+                                    placeholder="Opcional"
+                                />
+                            </Field>
+
+                            <Field label="Data" error={form.errors.data}>
+                                <input value={form.data.data} onChange={(event) => form.setData('data', event.target.value)} placeholder="04/2026" />
+                            </Field>
+                        </div>
+
+                        {isEquipment && (
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <Field label="Valor não desonerado improdutivo" error={form.errors.custo_improdutivo_nao_desonerado}>
+                                    <input
+                                        inputMode="numeric"
+                                        value={form.data.custo_improdutivo_nao_desonerado}
+                                        onChange={(event) => setMoneyField(form, 'custo_improdutivo_nao_desonerado', event.target.value)}
+                                        placeholder="Opcional"
+                                    />
+                                </Field>
+
+                                <Field label="Valor desonerado improdutivo" error={form.errors.custo_improdutivo_desonerado}>
+                                    <input
+                                        inputMode="numeric"
+                                        value={form.data.custo_improdutivo_desonerado}
+                                        onChange={(event) => setMoneyField(form, 'custo_improdutivo_desonerado', event.target.value)}
+                                        placeholder="Opcional"
+                                    />
+                                </Field>
+                            </div>
+                        )}
+                    </div>
+
+                    <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-[var(--border)] bg-white px-5 py-4">
+                        <button className="sig-btn sig-btn-secondary" disabled={form.processing} type="button" onClick={onClose}>
+                            Cancelar
+                        </button>
+                        <button className="sig-btn sig-btn-primary" disabled={form.processing} type="submit">
+                            <Plus size={15} />
+                            {form.processing ? 'Salvando...' : 'Salvar insumo'}
+                        </button>
+                    </footer>
+                </form>
+            </section>
+        </div>
     );
 }
 
@@ -966,52 +1123,12 @@ function PanelHeader({ description, icon, onClose, title }) {
     );
 }
 
-function ActionButton({ active, children, icon, onClick, tone = 'blue' }) {
+function ActionButton({ active, children, icon, onClick, primary = false }) {
     const Icon = icon;
-    const palette = {
-        blue: {
-            background: '#2563eb',
-            border: '#2563eb',
-            color: '#ffffff',
-            softBackground: '#eff6ff',
-            softBorder: '#bfdbfe',
-            softColor: '#1d4ed8',
-        },
-        green: {
-            background: '#059669',
-            border: '#059669',
-            color: '#ffffff',
-            softBackground: '#ecfdf5',
-            softBorder: '#a7f3d0',
-            softColor: '#047857',
-        },
-        amber: {
-            background: '#d97706',
-            border: '#d97706',
-            color: '#ffffff',
-            softBackground: '#fffbeb',
-            softBorder: '#fde68a',
-            softColor: '#b45309',
-        },
-        violet: {
-            background: '#7c3aed',
-            border: '#7c3aed',
-            color: '#ffffff',
-            softBackground: '#f5f3ff',
-            softBorder: '#ddd6fe',
-            softColor: '#6d28d9',
-        },
-    }[tone];
 
     return (
         <button
-            className="sig-btn"
-            style={{
-                borderColor: active ? palette.border : palette.softBorder,
-                background: active ? palette.background : palette.softBackground,
-                color: active ? palette.color : palette.softColor,
-                boxShadow: active ? '0 10px 20px rgba(15, 23, 42, 0.12)' : 'var(--shadow-sm)',
-            }}
+            className={`sig-btn ${active || primary ? 'sig-btn-primary' : 'sig-btn-secondary'}`}
             type="button"
             onClick={onClick}
         >
@@ -1025,6 +1142,8 @@ function InsumosList({ filters, hasSearched, insumos, pagination, setFilters, te
     const from = pagination?.from ?? (insumos.length ? 1 : 0);
     const to = pagination?.to ?? insumos.length;
     const filteredTotal = pagination?.total ?? insumos.length;
+    const currentPage = pagination?.current_page ?? 1;
+    const lastPage = pagination?.last_page ?? 1;
     const updatePerPage = (perPage) => {
         const nextFilters = { ...filters, perPage };
 
@@ -1035,28 +1154,31 @@ function InsumosList({ filters, hasSearched, insumos, pagination, setFilters, te
             replace: true,
         });
     };
+    const goTo = (url) => {
+        if (url) {
+            router.get(url, {}, { preserveScroll: true, preserveState: true });
+        }
+    };
 
     return (
         <section className="sig-card overflow-hidden">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+            <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
                 <div>
-                    <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Insumos cadastrados</h2>
-                    <p className="mt-1 text-xs text-[var(--ink-500)]">
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-[var(--ink-400)]">
+                        {resultContext(filters)}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--ink-500)]">
                         {hasSearched
-                            ? `${totalInsumos} item(ns) disponiveis nesta base. Exibindo ${from} a ${to} de ${filteredTotal} resultado(s) filtrado(s).`
-                            : `${totalInsumos} item(ns) disponiveis nesta base. Use os filtros acima e clique em Buscar para listar.`}
+                            ? `Exibindo ${formatCount(from)}–${formatCount(to)} de ${formatCount(filteredTotal)} resultados filtrados · ${formatCount(totalInsumos)} na base`
+                            : `${formatCount(totalInsumos)} itens disponíveis. Aplique os filtros para consultar a base.`}
                     </p>
                 </div>
                 {hasSearched && (
-                    <>
-                        <span className="sig-pill sig-pill-blue inline-flex items-center gap-1">
-                            <Database size={13} />
-                            Pagina {pagination?.current_page ?? 1} de {pagination?.last_page ?? 1}
-                        </span>
+                    <div className="flex flex-wrap items-center gap-3">
                         <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.04em] text-[var(--ink-500)]">
-                            Itens por pagina
+                            Itens por página
                             <select
-                                className="sig-input !h-9 !min-h-9 !w-24 !px-3 !text-sm !normal-case !tracking-normal"
+                                className="sig-input !h-9 !min-h-9 !w-20 !px-3 !text-sm !normal-case !tracking-normal"
                                 value={filters.perPage}
                                 onChange={(event) => updatePerPage(event.target.value)}
                             >
@@ -1065,13 +1187,33 @@ function InsumosList({ filters, hasSearched, insumos, pagination, setFilters, te
                                 <option value="100">100</option>
                             </select>
                         </label>
-                    </>
+                        <span className="h-7 w-px bg-[var(--border)]" aria-hidden="true" />
+                        <div className="flex items-center gap-2">
+                            <PageArrow
+                                disabled={!pagination?.prev_page_url}
+                                label="Página anterior"
+                                onClick={() => goTo(pagination?.prev_page_url)}
+                            >
+                                <ChevronLeft size={16} />
+                            </PageArrow>
+                            <span className="min-w-16 text-center text-sm font-medium text-[var(--ink-700)]">
+                                {currentPage} / {lastPage}
+                            </span>
+                            <PageArrow
+                                disabled={!pagination?.next_page_url}
+                                label="Próxima página"
+                                onClick={() => goTo(pagination?.next_page_url)}
+                            >
+                                <ChevronRight size={16} />
+                            </PageArrow>
+                        </div>
+                    </div>
                 )}
             </header>
 
             {!hasSearched ? (
                 <div className="p-8 text-center text-sm text-[var(--ink-500)]">
-                    Preencha os filtros e clique em Buscar para carregar a listagem de insumos.
+                    Selecione os critérios e clique em Filtrar para carregar a listagem de insumos.
                 </div>
             ) : insumos.length === 0 ? (
                 <div className="p-8 text-center text-sm text-[var(--ink-500)]">
@@ -1080,81 +1222,81 @@ function InsumosList({ filters, hasSearched, insumos, pagination, setFilters, te
             ) : (
                 <>
                     <div className="hidden lg:block">
-                        <table className="w-full table-fixed border-collapse text-left">
-                            <colgroup>
-                                <col className="w-[8%]" />
-                                <col className="w-[44%]" />
-                                <col className="w-[12%]" />
-                                <col className="w-[8%]" />
-                                <col className="w-[8%]" />
-                                <col className="w-[10%]" />
-                                <col className="w-[10%]" />
-                            </colgroup>
-                        <thead>
-                            <tr className="bg-[var(--ink-900)] text-white">
-                                <TableHeader>CODIGO</TableHeader>
-                                <TableHeader>DESCRICAO</TableHeader>
-                                <TableHeader>TIPO</TableHeader>
-                                <TableHeader className="text-center">UNIDADE</TableHeader>
-                                <TableHeader className="text-center">DATA</TableHeader>
-                                <TableHeader className="text-right">VALOR NAO DESONERADO</TableHeader>
-                                <TableHeader className="text-right">VALOR DESONERADO</TableHeader>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border)] bg-white">
-                            {insumos.map((insumo) => (
-                                <tr key={insumo.id} className="transition-colors hover:bg-[var(--primary-50)]/50">
-                                    <TableCell className="font-mono text-[13px] font-semibold text-[var(--primary)]">
-                                        {formatInsumoCode(insumo.codigo_insumo)}
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex min-w-0 flex-col gap-1">
-                                            <span className="text-[13px] font-semibold leading-6 text-[var(--ink-900)]">
-                                                {insumo.descricao}
-                                            </span>
-                                            <span className="text-[11px] font-medium text-[var(--ink-400)]">
-                                                {[insumo.banco, insumo.uf].filter(Boolean).join(' - ')}
-                                                {insumo.grupo?.nome ? ` - ${insumo.grupo.nome}` : ''}
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="text-[13px] text-[var(--ink-700)]">
-                                        {displayClassification(insumo)}
-                                    </TableCell>
-                                    <TableCell className="text-center text-[13px] font-semibold text-[var(--ink-800)]">
-                                        {insumo.unidade || '-'}
-                                    </TableCell>
-                                    <TableCell className="text-center text-[13px] text-[var(--ink-700)]">
-                                        {insumo.data || '-'}
-                                    </TableCell>
-                                    <TableCell className="text-right font-mono text-[13px] text-[var(--ink-900)]">
-                                        {formatDecimalValue(insumo.preco_nao_desonerado)}
-                                    </TableCell>
-                                    <TableCell className="text-right font-mono text-[13px] text-[var(--ink-900)]">
-                                        {formatDecimalValue(insumo.preco_desonerado)}
-                                    </TableCell>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[940px] table-fixed border-collapse text-left">
+                                <colgroup>
+                                    <col className="w-[10%]" />
+                                    <col className="w-[40%]" />
+                                    <col className="w-[11%]" />
+                                    <col className="w-[7%]" />
+                                    <col className="w-[9%]" />
+                                    <col className="w-[11.5%]" />
+                                    <col className="w-[11.5%]" />
+                                </colgroup>
+                                <thead>
+                                    <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[var(--ink-400)]">
+                                        <TableHeader>Código</TableHeader>
+                                        <TableHeader>Descrição</TableHeader>
+                                        <TableHeader>Tipo</TableHeader>
+                                        <TableHeader>Unidade</TableHeader>
+                                        <TableHeader>Data</TableHeader>
+                                        <TableHeader className="text-right">Não desonerado</TableHeader>
+                                        <TableHeader className="text-right">Desonerado</TableHeader>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[var(--border)] bg-white">
+                                    {insumos.map((insumo) => (
+                                        <tr key={insumo.id} className="transition-colors hover:bg-slate-50">
+                                            <TableCell className="whitespace-nowrap font-mono text-[13px] font-medium text-[var(--primary)]">
+                                                {formatInsumoCode(insumo.codigo_insumo)}
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex min-w-0 flex-col gap-1">
+                                                    <span className="text-[13.5px] leading-5 text-[var(--ink-900)]">
+                                                        {insumo.descricao}
+                                                    </span>
+                                                    <span className="text-[11px] font-medium text-[var(--ink-400)]">
+                                                        {[insumo.banco, insumo.uf].filter(Boolean).join(' · ')}
+                                                        {insumo.grupo?.nome ? ` · ${insumo.grupo.nome}` : ''}
+                                                    </span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <TypeBadge insumo={insumo} />
+                                            </TableCell>
+                                            <TableCell className="whitespace-nowrap font-mono text-[12px] text-[var(--ink-700)]">
+                                                {insumo.unidade || '-'}
+                                            </TableCell>
+                                            <TableCell className="whitespace-nowrap font-mono text-[12px] text-[var(--ink-400)]">
+                                                {insumo.data || '-'}
+                                            </TableCell>
+                                            <TableCell className="text-right font-mono text-[13px] font-semibold text-[var(--ink-900)]">
+                                                {formatDecimalValue(insumo.preco_nao_desonerado)}
+                                            </TableCell>
+                                            <TableCell className="text-right font-mono text-[13px] text-[var(--ink-500)]">
+                                                {formatDecimalValue(insumo.preco_desonerado)}
+                                            </TableCell>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
-                    <div className="grid gap-3 bg-[var(--surface-muted)] p-3 lg:hidden">
+                    <div className="grid gap-2 bg-[var(--surface-muted)] p-3 lg:hidden">
                         {insumos.map((insumo) => (
-                            <article key={insumo.id} className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-sm)]">
+                            <article key={insumo.id} className="rounded-md border border-[var(--border)] bg-white p-4">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Codigo</span>
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Código</span>
                                         <p className="font-mono text-[14px] font-semibold text-[var(--primary)]">
                                             {formatInsumoCode(insumo.codigo_insumo)}
                                         </p>
                                     </div>
-                                    <span className="rounded-full bg-[var(--primary-50)] px-3 py-1 text-[11px] font-bold text-[var(--primary)]">
-                                        {displayClassification(insumo)}
-                                    </span>
+                                    <TypeBadge insumo={insumo} />
                                 </div>
 
-                                <p className="mt-3 text-[13px] font-semibold leading-6 text-[var(--ink-900)]">
+                                <p className="mt-3 text-[13px] font-medium leading-5 text-[var(--ink-900)]">
                                     {insumo.descricao}
                                 </p>
 
@@ -1180,6 +1322,33 @@ function InsumosList({ filters, hasSearched, insumos, pagination, setFilters, te
                 <Pagination pagination={pagination} />
             )}
         </section>
+    );
+}
+
+function PageArrow({ children, disabled, label, onClick }) {
+    return (
+        <button
+            aria-label={label}
+            className={`flex h-9 w-9 items-center justify-center rounded-md border border-[var(--border)] bg-white text-[var(--ink-600)] transition hover:border-[var(--border-strong)] hover:text-[var(--ink-900)] ${
+                disabled ? 'cursor-not-allowed opacity-40' : ''
+            }`}
+            disabled={disabled}
+            type="button"
+            onClick={onClick}
+        >
+            {children}
+        </button>
+    );
+}
+
+function TypeBadge({ insumo }) {
+    const label = displayClassification(insumo);
+    const tone = classificationTone(insumo, label);
+
+    return (
+        <span className={`inline-flex rounded-md px-2.5 py-1 text-[11px] font-medium ${tone}`}>
+            {label}
+        </span>
     );
 }
 
@@ -1251,7 +1420,7 @@ function paginationLabel(label) {
 
 function TableHeader({ children, className = '' }) {
     return (
-        <th className={`px-3 py-4 text-xs font-bold uppercase tracking-[0.02em] ${className}`}>
+        <th className={`px-3 py-3 text-[10.5px] font-bold uppercase tracking-[0.06em] ${className}`}>
             {children}
         </th>
     );
@@ -1259,7 +1428,7 @@ function TableHeader({ children, className = '' }) {
 
 function TableCell({ children, className = '' }) {
     return (
-        <td className={`break-words px-3 py-3 align-top ${className}`}>
+        <td className={`break-words px-3 py-3.5 align-middle ${className}`}>
             {children}
         </td>
     );
@@ -1329,6 +1498,44 @@ function formatInsumoCode(value) {
     const code = String(value || '').trim();
 
     return /^\d+$/.test(code) ? code.padStart(8, '0') : code;
+}
+
+function formatCount(value) {
+    return new Intl.NumberFormat('pt-BR').format(Number(value ?? 0));
+}
+
+function resultContext(filters) {
+    const bank = filters.bank === 'TODOS' ? 'Todas as bases' : `Base ${filters.bank}`;
+    const state = filters.state ? stateLabel(filters.state) : 'Todos os estados';
+    const date = filters.date || 'Todas as datas';
+
+    return `${bank} · ${state} · ${date}`;
+}
+
+function stateLabel(value) {
+    return states.find((state) => state.value === value)?.label ?? value;
+}
+
+function classificationTone(insumo, label) {
+    const value = String(insumo.tipo || label || '').toLowerCase();
+
+    if (value.includes('serv')) {
+        return 'bg-emerald-50 text-emerald-700';
+    }
+
+    if (value.includes('material')) {
+        return 'bg-blue-50 text-blue-700';
+    }
+
+    if (value.includes('equip')) {
+        return 'bg-amber-50 text-amber-700';
+    }
+
+    if (value.includes('obra') || value.includes('labor')) {
+        return 'bg-violet-50 text-violet-700';
+    }
+
+    return 'bg-slate-100 text-slate-600';
 }
 
 function displayClassification(insumo) {

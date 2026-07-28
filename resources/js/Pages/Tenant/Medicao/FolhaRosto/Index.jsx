@@ -1,12 +1,12 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ArrowLeft, Building2, ChevronDown, ChevronRight, ClipboardList, Eye } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Building2, ChevronDown, ChevronRight, ClipboardList, Eye, Gauge, Settings } from 'lucide-react';
 import { useState } from 'react';
 
 const formatCurrency = (value) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
 
-export default function FolhaRostoIndex({ selectedContractId, contracts = [], grupos = [], boletim = null }) {
+export default function FolhaRostoIndex({ selectedContractId, selectedContract = null, contracts = [], grupos = [], boletim = null }) {
     const tenant = usePage().props.currentTenant;
     const [expandedObras, setExpandedObras] = useState({});
 
@@ -20,6 +20,12 @@ export default function FolhaRostoIndex({ selectedContractId, contracts = [], gr
 
     const folhaUrl = (ordem) => {
         const baseUrl = route('tenant.medicao.folha-rosto.show', [tenant.slug, ordem.id]);
+
+        return boletim ? `${baseUrl}?boletim_id=${boletim.id}` : baseUrl;
+    };
+
+    const simpleUrl = () => {
+        const baseUrl = route('tenant.medicao.folha-rosto.simple.show', [tenant.slug, selectedContract.id]);
 
         return boletim ? `${baseUrl}?boletim_id=${boletim.id}` : baseUrl;
     };
@@ -53,7 +59,7 @@ export default function FolhaRostoIndex({ selectedContractId, contracts = [], gr
                     <p className="mt-2 text-sm text-[var(--ink-500)]">
                         {boletim
                             ? `${boletim.periodo_formatado} · ${boletim.tipo_label} · ${boletim.status_label}`
-                            : 'Acompanhe as OS aprovadas por obra e os pleitos de medição abertos em cada uma.'}
+                            : 'Acompanhe e abra os pleitos de medição conforme o fluxo definido em cada contrato.'}
                     </p>
                 </section>
 
@@ -80,7 +86,40 @@ export default function FolhaRostoIndex({ selectedContractId, contracts = [], gr
                     </label>
                 </section>
 
-                {grupos.length === 0 ? (
+                {!selectedContract?.measurement_mode ? (
+                    <section className="sig-card flex flex-col items-center p-10 text-center">
+                        <AlertTriangle className="text-amber-500" size={34} />
+                        <p className="mt-3 font-bold text-[var(--ink-900)]">Tipo de medição ainda não definido</p>
+                        <p className="mt-1 max-w-xl text-sm text-[var(--ink-500)]">
+                            Parametrize o contrato e escolha entre medição simples ou controlada antes de abrir uma Folha de Rosto.
+                        </p>
+                        <Link href={route('tenant.contracts.index', tenant.slug)} className="sig-btn sig-btn-primary mt-4">
+                            <Settings size={16} />
+                            Parametrizar contrato
+                        </Link>
+                    </section>
+                ) : selectedContract.measurement_mode === 'simple' ? (
+                    <section className="sig-card overflow-hidden">
+                        <div className="flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between">
+                            <div className="flex items-start gap-4">
+                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[var(--primary)]">
+                                    <Gauge size={21} />
+                                </span>
+                                <div>
+                                    <span className="sig-pill sig-pill-blue">Medição simples</span>
+                                    <h2 className="mt-2 text-lg font-bold text-[var(--ink-900)]">Pleito direto pelo contrato</h2>
+                                    <p className="mt-1 max-w-2xl text-sm text-[var(--ink-500)]">
+                                        Crie a FR sem uma OS e selecione diretamente qualquer item de medição disponível neste contrato.
+                                    </p>
+                                </div>
+                            </div>
+                            <Link href={simpleUrl()} className="sig-btn sig-btn-primary justify-center">
+                                <Eye size={16} />
+                                Acessar FR&apos;s
+                            </Link>
+                        </div>
+                    </section>
+                ) : grupos.length === 0 ? (
                     <section className="sig-card p-10 text-center">
                         <ClipboardList className="mx-auto text-[var(--ink-400)]" size={34} />
                         <p className="mt-3 font-bold text-[var(--ink-900)]">Nenhuma OS liberada para medição</p>

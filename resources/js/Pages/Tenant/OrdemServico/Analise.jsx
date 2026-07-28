@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, usePage } from '@inertiajs/react';
-import { CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, Send, TriangleAlert, XCircle } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, Send, TriangleAlert, X, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 const statusLabels = {
     em_analise: 'Em análise',
@@ -28,6 +28,58 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
     const [orderDetails, setOrderDetails] = useState({});
     const [loadingOrderId, setLoadingOrderId] = useState(null);
     const [detailsError, setDetailsError] = useState('');
+    const [rejectionOrder, setRejectionOrder] = useState(null);
+    const [rejectionReason, setRejectionReason] = useState('');
+    const [rejectionError, setRejectionError] = useState('');
+    const [rejectionProcessing, setRejectionProcessing] = useState(false);
+    const [confirmationAction, setConfirmationAction] = useState(null);
+    const [confirmationError, setConfirmationError] = useState('');
+    const [confirmationProcessing, setConfirmationProcessing] = useState(false);
+
+    useEffect(() => {
+        if (!rejectionOrder) {
+            return undefined;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape' && !rejectionProcessing) {
+                setRejectionOrder(null);
+                setRejectionReason('');
+                setRejectionError('');
+            }
+        };
+
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [rejectionOrder, rejectionProcessing]);
+
+    useEffect(() => {
+        if (!confirmationAction) {
+            return undefined;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape' && !confirmationProcessing) {
+                setConfirmationAction(null);
+                setConfirmationError('');
+            }
+        };
+
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [confirmationAction, confirmationProcessing]);
 
     const changeContract = (contractId) => {
         router.get(
@@ -75,10 +127,42 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
         }
     };
 
-    const sendAnalysis = (ordem) => {
+    const openConfirmationModal = (ordem, action) => {
+        setConfirmationAction({ ordem, action });
+        setConfirmationError('');
+    };
+
+    const closeConfirmationModal = () => {
+        if (confirmationProcessing) {
+            return;
+        }
+
+        setConfirmationAction(null);
+        setConfirmationError('');
+    };
+
+    const submitConfirmation = () => {
+        if (!confirmationAction) {
+            return;
+        }
+
+        const { ordem, action } = confirmationAction;
+        const isAnalysis = action === 'analysis';
+        const observation = observations[ordem.id] || '';
+
+        setConfirmationProcessing(true);
+        setConfirmationError('');
+
         router.patch(
-            route('tenant.ordem-servico.os.analyze', [tenant.slug, ordem.id]),
-            { observacao: observations[ordem.id] || '' },
+            route(
+                isAnalysis
+                    ? 'tenant.ordem-servico.os.analyze'
+                    : 'tenant.ordem-servico.os.approve',
+                [tenant.slug, ordem.id]
+            ),
+            isAnalysis
+                ? { observacao: observation }
+                : { decisao: 'aprovar', observacao: observation },
             {
                 preserveScroll: true,
                 onSuccess: () => {
@@ -93,29 +177,83 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
                         return next;
                     });
                     setExpandedOrderId(null);
-                    router.reload({ preserveScroll: true, preserveState: false });
+                    setConfirmationAction(null);
+
+                    if (isAnalysis) {
+                        router.reload({ preserveScroll: true, preserveState: false });
+                    }
                 },
+                onError: (errors) => {
+                    setConfirmationError(
+                        errors.status
+                        || errors.observacao
+                        || errors.decisao
+                        || Object.values(errors)[0]
+                        || 'Não foi possível concluir esta ação.'
+                    );
+                },
+                onFinish: () => setConfirmationProcessing(false),
             }
         );
     };
 
-    const decideApproval = (ordem, decisao) => {
-        const observation = observations[ordem.id] || '';
+    const openRejectionModal = (ordem) => {
+        setRejectionOrder(ordem);
+        setRejectionReason(observations[ordem.id] || '');
+        setRejectionError('');
+    };
 
-        if (decisao === 'recusar' && !observation.trim()) {
-            window.alert('Informe uma observação para recusar a OS.');
+    const closeRejectionModal = () => {
+        if (rejectionProcessing) {
             return;
         }
 
-        const label = decisao === 'aprovar' ? 'aprovar' : 'recusar';
-        if (!window.confirm(`Deseja ${label} a OS ${ordem.codigo}?`)) {
+        setRejectionOrder(null);
+        setRejectionReason('');
+        setRejectionError('');
+    };
+
+    const submitRejection = () => {
+        const reason = rejectionReason.trim();
+
+        if (!reason) {
+            setRejectionError('Informe o motivo da reprovação.');
             return;
         }
+
+        setRejectionProcessing(true);
+        setRejectionError('');
 
         router.patch(
-            route('tenant.ordem-servico.os.approve', [tenant.slug, ordem.id]),
-            { decisao, observacao: observation },
-            { preserveScroll: true }
+            route('tenant.ordem-servico.os.reject', [tenant.slug, rejectionOrder.id]),
+            { motivo: reason },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setObservations((current) => {
+                        const next = { ...current };
+                        delete next[rejectionOrder.id];
+                        return next;
+                    });
+                    setOrderDetails((current) => {
+                        const next = { ...current };
+                        delete next[rejectionOrder.id];
+                        return next;
+                    });
+                    setExpandedOrderId(null);
+                    setRejectionOrder(null);
+                    setRejectionReason('');
+                },
+                onError: (errors) => {
+                    setRejectionError(
+                        errors.motivo
+                        || errors.status
+                        || Object.values(errors)[0]
+                        || 'Não foi possível reprovar a OS.'
+                    );
+                },
+                onFinish: () => setRejectionProcessing(false),
+            }
         );
     };
 
@@ -143,6 +281,213 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
                 {Object.values(page.props.errors || {}).length > 0 && (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
                         {Object.values(page.props.errors)[0]}
+                    </div>
+                )}
+
+                {confirmationAction && (() => {
+                    const isAnalysis = confirmationAction.action === 'analysis';
+                    const ordem = confirmationAction.ordem;
+                    const observation = observations[ordem.id]?.trim();
+
+                    return (
+                        <div
+                            className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.52)] p-4 backdrop-blur-[1px]"
+                            role="presentation"
+                            onMouseDown={(event) => {
+                                if (event.target === event.currentTarget) {
+                                    closeConfirmationModal();
+                                }
+                            }}
+                        >
+                            <section
+                                className="w-full max-w-lg overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                                role="dialog"
+                                aria-modal="true"
+                                aria-labelledby="confirm-service-order-title"
+                                onMouseDown={(event) => event.stopPropagation()}
+                            >
+                                <header className="flex items-start gap-4 border-b border-[var(--border)] px-5 py-5">
+                                    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+                                        isAnalysis
+                                            ? 'bg-blue-50 text-blue-700'
+                                            : 'bg-emerald-50 text-emerald-700'
+                                    }`}>
+                                        {isAnalysis ? <Send size={21} /> : <CheckCircle2 size={21} />}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <span className="eyebrow">
+                                            {isAnalysis ? 'Análise da OS' : 'Aprovação da OS'}
+                                        </span>
+                                        <h2 id="confirm-service-order-title" className="mt-1 text-lg font-bold text-[var(--ink-900)]">
+                                            {isAnalysis
+                                                ? `Enviar ${ordem.codigo} para aprovação?`
+                                                : `Aprovar ${ordem.codigo}?`}
+                                        </h2>
+                                        <p className="mt-2 text-sm leading-6 text-[var(--ink-500)]">
+                                            {isAnalysis
+                                                ? 'O parecer será registrado e a ordem de serviço seguirá para a etapa de aprovação.'
+                                                : 'A aprovação encerrará este fluxo e autorizará a execução da ordem de serviço.'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--ink-500)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
+                                        aria-label="Fechar confirmação da OS"
+                                        disabled={confirmationProcessing}
+                                        onClick={closeConfirmationModal}
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </header>
+
+                                <div className="grid gap-4 px-5 py-5">
+                                    <div className={`rounded-lg border px-4 py-3 text-sm leading-5 ${
+                                        isAnalysis
+                                            ? 'border-blue-200 bg-blue-50 text-blue-800'
+                                            : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                    }`}>
+                                        {isAnalysis
+                                            ? 'Os responsáveis pela aprovação receberão uma notificação e um e-mail para continuar o fluxo.'
+                                            : 'Os responsáveis pela OS receberão uma notificação e um e-mail informando que a execução foi autorizada.'}
+                                    </div>
+
+                                    {observation && (
+                                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+                                            <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">
+                                                Observação registrada
+                                            </span>
+                                            <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-[var(--ink-700)]">
+                                                {observation}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {confirmationError && (
+                                        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                                            {confirmationError}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <footer className="flex flex-wrap justify-end gap-2 bg-[var(--surface-muted)] px-5 py-4">
+                                    <button
+                                        type="button"
+                                        className="sig-btn sig-btn-secondary"
+                                        disabled={confirmationProcessing}
+                                        onClick={closeConfirmationModal}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`sig-btn justify-center text-white disabled:opacity-50 ${
+                                            isAnalysis
+                                                ? 'border-blue-600 bg-blue-600 hover:bg-blue-700'
+                                                : 'border-emerald-600 bg-emerald-600 hover:bg-emerald-700'
+                                        }`}
+                                        disabled={confirmationProcessing}
+                                        onClick={submitConfirmation}
+                                    >
+                                        {isAnalysis ? <Send size={16} /> : <CheckCircle2 size={16} />}
+                                        {confirmationProcessing
+                                            ? (isAnalysis ? 'Enviando...' : 'Aprovando...')
+                                            : (isAnalysis ? 'Enviar para aprovação' : 'Aprovar OS')}
+                                    </button>
+                                </footer>
+                            </section>
+                        </div>
+                    );
+                })()}
+
+                {rejectionOrder && (
+                    <div
+                        className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(11,16,32,0.52)] p-4 backdrop-blur-[1px]"
+                        role="presentation"
+                        onMouseDown={(event) => {
+                            if (event.target === event.currentTarget) {
+                                closeRejectionModal();
+                            }
+                        }}
+                    >
+                        <section
+                            className="w-full max-w-lg overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="reject-service-order-title"
+                            onMouseDown={(event) => event.stopPropagation()}
+                        >
+                            <header className="flex items-start gap-4 border-b border-[var(--border)] px-5 py-5">
+                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-700">
+                                    <XCircle size={21} />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <span className="eyebrow">
+                                        {rejectionOrder.status === 'em_analise' ? 'Análise da OS' : 'Aprovação da OS'}
+                                    </span>
+                                    <h2 id="reject-service-order-title" className="mt-1 text-lg font-bold text-[var(--ink-900)]">
+                                        Reprovar {rejectionOrder.codigo}?
+                                    </h2>
+                                    <p className="mt-2 text-sm leading-6 text-[var(--ink-500)]">
+                                        A OS voltará para rascunho, poderá ser corrigida e enviada novamente.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--ink-500)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
+                                    aria-label="Fechar reprovação da OS"
+                                    disabled={rejectionProcessing}
+                                    onClick={closeRejectionModal}
+                                >
+                                    <X size={18} />
+                                </button>
+                            </header>
+
+                            <div className="grid gap-4 px-5 py-5">
+                                <label className="grid gap-1.5 text-sm">
+                                    <span className="font-bold uppercase tracking-wide text-[var(--ink-500)]">
+                                        Motivo da reprovação
+                                    </span>
+                                    <textarea
+                                        value={rejectionReason}
+                                        onChange={(event) => {
+                                            setRejectionReason(event.target.value);
+                                            setRejectionError('');
+                                        }}
+                                        className="sig-input min-h-32"
+                                        placeholder="Descreva claramente o que precisa ser corrigido."
+                                        maxLength={5000}
+                                        autoFocus
+                                    />
+                                    {rejectionError && (
+                                        <span className="text-xs font-semibold text-red-600">{rejectionError}</span>
+                                    )}
+                                </label>
+
+                                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-5 text-amber-800">
+                                    Os responsáveis pela criação, submissão, análise e aprovação receberão uma notificação e um e-mail com o motivo informado.
+                                </div>
+                            </div>
+
+                            <footer className="flex flex-wrap justify-end gap-2 bg-[var(--surface-muted)] px-5 py-4">
+                                <button
+                                    type="button"
+                                    className="sig-btn sig-btn-secondary"
+                                    disabled={rejectionProcessing}
+                                    onClick={closeRejectionModal}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    className="sig-btn justify-center border-red-200 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                                    disabled={rejectionProcessing}
+                                    onClick={submitRejection}
+                                >
+                                    <XCircle size={16} />
+                                    {rejectionProcessing ? 'Reprovando...' : 'Reprovar e devolver'}
+                                </button>
+                            </footer>
+                        </section>
                     </div>
                 )}
 
@@ -214,33 +559,25 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
 
                             {orderDetails[ordem.id] && (
                             <>
-                            <header className={`${expandedOrderId === ordem.id ? 'grid' : 'hidden'} gap-4 border-t border-b border-[var(--border)] p-5 xl:grid-cols-[180px_1fr_240px]`}>
-                                <div>
-                                    <p className="mono text-lg font-bold text-[var(--primary)]">{ordem.codigo}</p>
-                                    <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-bold ${statusClasses[ordem.status] || 'bg-slate-100 text-slate-700'}`}>
-                                        {statusLabels[ordem.status] || ordem.status}
-                                    </span>
-                                    <SubmissionAgeBadge days={ordem.dias_desde_submissao} />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-bold text-[var(--ink-900)]">{ordem.titulo}</h2>
-                                    <p className="mt-1 text-sm text-[var(--ink-500)]">
-                                        {ordem.contract?.code} - {ordem.contract?.name} · {ordem.obra?.nome || 'Sem obra'} · {ordem.solicitante?.name || 'Sem solicitante'}
-                                    </p>
-                                    <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--ink-500)]">{ordem.descricao}</p>
-                                </div>
-                                <div className="rounded-lg bg-[var(--surface-muted)] p-4">
-                                    <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Custo previsto</span>
-                                    <strong className="mt-2 block text-xl text-[var(--ink-900)]">{formatCurrency(ordem.custo_previsto)}</strong>
-                                </div>
-                            </header>
-
-                            <div className={`${expandedOrderId === ordem.id ? 'grid' : 'hidden'} gap-4 p-5 xl:grid-cols-[1fr_340px]`}>
+                            <div className={`${expandedOrderId === ordem.id ? 'grid' : 'hidden'} gap-4 border-t border-[var(--border)] p-5 xl:grid-cols-[1fr_340px]`}>
                                 <div className="grid gap-3">
+                                    {ordem.descricao && (
+                                        <div className="rounded-lg border border-[var(--border)] px-4 py-3">
+                                            <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">
+                                                Escopo da OS
+                                            </span>
+                                            <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-[var(--ink-700)]">
+                                                {ordem.descricao}
+                                            </p>
+                                        </div>
+                                    )}
+
                                     <AnalysisProjects projects={ordem.projects || []} />
-                                    <Info label="Enviada para análise" value={ordem.submitted_for_review_at || 'Não enviado'} detail={ordem.submitted_by?.name} />
-                                    <Info label="Análise fiscal" value={ordem.analyzed_at || 'Pendente'} detail={ordem.analysis_observation} />
-                                    <Info label="Decisão final" value={ordem.approval_decided_at || 'Pendente'} detail={ordem.approval_observation} />
+                                    <div className="grid gap-2 md:grid-cols-3">
+                                        <Info label="Enviada para análise" value={ordem.submitted_for_review_at || 'Não enviado'} detail={ordem.submitted_by?.name} />
+                                        <Info label="Análise fiscal" value={ordem.analyzed_at || 'Pendente'} detail={ordem.analysis_observation} />
+                                        <Info label="Decisão final" value={ordem.approval_decided_at || 'Pendente'} detail={ordem.approval_observation} />
+                                    </div>
 
                                     <div className="overflow-hidden rounded-lg border border-[var(--border)]">
                                         <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
@@ -285,15 +622,26 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
                                                     placeholder="Registre o parecer do fiscal."
                                                 />
                                             </label>
-                                            <button
-                                                type="button"
-                                                onClick={() => sendAnalysis(ordem)}
-                                                disabled={!ordem.can_analyze}
-                                                className="sig-btn sig-btn-primary justify-center disabled:opacity-50"
-                                            >
-                                                <Send size={16} />
-                                                Enviar para aprovação
-                                            </button>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openRejectionModal(ordem)}
+                                                    disabled={!ordem.can_analyze}
+                                                    className="sig-btn justify-center border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                                                >
+                                                    <XCircle size={16} />
+                                                    Reprovar
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openConfirmationModal(ordem, 'analysis')}
+                                                    disabled={!ordem.can_analyze}
+                                                    className="sig-btn sig-btn-primary justify-center disabled:opacity-50"
+                                                >
+                                                    <Send size={16} />
+                                                    Enviar para aprovação
+                                                </button>
+                                            </div>
                                         </>
                                     )}
 
@@ -311,16 +659,16 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
                                             <div className="grid grid-cols-2 gap-2">
                                                 <button
                                                     type="button"
-                                                    onClick={() => decideApproval(ordem, 'recusar')}
+                                                    onClick={() => openRejectionModal(ordem)}
                                                     disabled={!ordem.can_approve}
                                                     className="sig-btn justify-center border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
                                                 >
                                                     <XCircle size={16} />
-                                                    Recusar
+                                                    Reprovar
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => decideApproval(ordem, 'aprovar')}
+                                                    onClick={() => openConfirmationModal(ordem, 'approval')}
                                                     disabled={!ordem.can_approve}
                                                     className="sig-btn justify-center border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
                                                 >
@@ -351,10 +699,10 @@ export default function OrdemServicoAnalise({ selectedContractId, contracts = []
 
 function Info({ label, value, detail }) {
     return (
-        <div className="rounded-lg border border-[var(--border)] p-4">
+        <div className="min-w-0 rounded-lg border border-[var(--border)] px-3 py-2.5">
             <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">{label}</span>
-            <p className="mt-1 text-sm font-bold text-[var(--ink-900)]">{value}</p>
-            {detail ? <p className="mt-1 text-sm text-[var(--ink-500)]">{detail}</p> : null}
+            <p className="mt-1 break-words text-sm font-bold text-[var(--ink-900)]">{value}</p>
+            {detail ? <p className="mt-1 break-words text-xs leading-5 text-[var(--ink-500)]">{detail}</p> : null}
         </div>
     );
 }

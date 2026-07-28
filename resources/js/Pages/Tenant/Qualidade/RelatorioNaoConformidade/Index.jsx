@@ -170,7 +170,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
 
     return (
         <AuthenticatedLayout>
-            <Head title="Relatorio Nao Conformidade" />
+            <Head title="Relatório de Não Conformidade" />
 
             <section className="sig-content">
                 <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -179,7 +179,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                             <ClipboardX size={14} />
                             <span className="eyebrow">Qualidade</span>
                         </div>
-                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Relatorio Nao Conformidade</h1>
+                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Relatório de Não Conformidade</h1>
                         <p className="mt-1 text-sm text-[var(--ink-500)]">
                             {rncs.length} RNCs cadastradas em {tenant.name}
                         </p>

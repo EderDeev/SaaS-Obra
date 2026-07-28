@@ -80,6 +80,7 @@ export default function AuthenticatedLayout({ children }) {
     const userCan = props.userPermissions?.can || {};
     const projectTourScreen = route().current('tenant.projects.tour-preview') ? props.screen : null;
     const rncTourScreen = route().current('tenant.qualidade.rnc.tour-preview') ? props.screen : null;
+    const diarioObraTourScreen = route().current('tenant.diario-obra.tour-preview') ? props.screen : null;
     const canManageTenantUsers = Boolean(userCan.view_users);
     const canManagePermissions = ['tenant_owner', 'tenant_admin'].includes(tenantRole);
     const rncCan = props.rncPermissions?.can || {};
@@ -94,8 +95,21 @@ export default function AuthenticatedLayout({ children }) {
     const [ordemServicoOpen, setOrdemServicoOpen] = useState(() => route().current('tenant.ordem-servico.*'));
     const [diarioObraOpen, setDiarioObraOpen] = useState(() => route().current('tenant.diario-obra.*'));
     const [gedOpen, setGedOpen] = useState(() => route().current('tenant.ged.*'));
-    const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*'));
-    const [rdaOpen, setRdaOpen] = useState(() => route().current('tenant.diario-obra.rda.*'));
+    const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen && diarioObraTourScreen !== 'rda'));
+    const [rdaOpen, setRdaOpen] = useState(() => route().current('tenant.diario-obra.rda.*') || diarioObraTourScreen === 'rda');
+    const [medicaoRelatoriosOpen, setMedicaoRelatoriosOpen] = useState(() =>
+        route().current('tenant.medicao.boletim-medicao.*')
+        || route().current('tenant.medicao.relatorios.*')
+        || route().current('tenant.medicao.bi.*')
+    );
+    const [medicaoAnaliseOpen, setMedicaoAnaliseOpen] = useState(() =>
+        route().current('tenant.medicao.folha-rosto.*')
+        || route().current('tenant.medicao.analisar-pleito.*')
+    );
+    const [medicaoItensOpen, setMedicaoItensOpen] = useState(() =>
+        route().current('tenant.medicao.item.*')
+        || route().current('tenant.medicao.indice-reajuste.*')
+    );
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -248,44 +262,66 @@ export default function AuthenticatedLayout({ children }) {
     const medicaoItems = tenant
         ? [
             {
-                label: 'Boletim Medição',
-                href: route('tenant.medicao.boletim-medicao.index', tenant.slug),
-                active: route().current('tenant.medicao.boletim-medicao.*'),
+                label: 'Relatórios',
+                active: route().current('tenant.medicao.boletim-medicao.*')
+                    || route().current('tenant.medicao.relatorios.*')
+                    || route().current('tenant.medicao.bi.*'),
+                children: [
+                    {
+                        label: 'Boletim Medição',
+                        href: route('tenant.medicao.boletim-medicao.index', tenant.slug),
+                        active: route().current('tenant.medicao.boletim-medicao.*'),
+                    },
+                    {
+                        label: 'Relatórios Medição',
+                        href: route('tenant.medicao.relatorios.index', tenant.slug),
+                        active: route().current('tenant.medicao.relatorios.*'),
+                    },
+                    {
+                        label: 'B.I',
+                        href: route('tenant.medicao.bi.index', tenant.slug),
+                        active: route().current('tenant.medicao.bi.*'),
+                    },
+                ],
             },
             {
-                label: 'Relatórios Medição',
-                href: route('tenant.medicao.relatorios.index', tenant.slug),
-                active: route().current('tenant.medicao.relatorios.*'),
-            },
-            {
-                label: 'B.I',
-                href: route('tenant.medicao.bi.index', tenant.slug),
-                active: route().current('tenant.medicao.bi.*'),
-            },
-            {
-                label: 'Folha de Rosto',
-                href: route('tenant.medicao.folha-rosto.index', tenant.slug),
-                active: route().current('tenant.medicao.folha-rosto.*'),
-            },
-            {
-                label: 'Analisar Pleito',
-                href: route('tenant.medicao.analisar-pleito.index', tenant.slug),
-                active: route().current('tenant.medicao.analisar-pleito.index'),
+                label: 'Análise Medição',
+                active: route().current('tenant.medicao.folha-rosto.*')
+                    || route().current('tenant.medicao.analisar-pleito.*'),
+                children: [
+                    {
+                        label: 'Folha de Rosto',
+                        href: route('tenant.medicao.folha-rosto.index', tenant.slug),
+                        active: route().current('tenant.medicao.folha-rosto.*'),
+                    },
+                    {
+                        label: 'Analisar Pleito',
+                        href: route('tenant.medicao.analisar-pleito.index', tenant.slug),
+                        active: route().current('tenant.medicao.analisar-pleito.index'),
+                    },
+                    {
+                        label: 'Responsáveis análise',
+                        href: route('tenant.medicao.analisar-pleito.responsaveis.index', tenant.slug),
+                        active: route().current('tenant.medicao.analisar-pleito.responsaveis.*'),
+                    },
+                ],
             },
             {
                 label: 'Item',
-                href: route('tenant.medicao.item.index', tenant.slug),
-                active: route().current('tenant.medicao.item.*'),
-            },
-            {
-                label: 'Índice de Reajuste',
-                href: route('tenant.medicao.indice-reajuste.index', tenant.slug),
-                active: route().current('tenant.medicao.indice-reajuste.*'),
-            },
-            {
-                label: 'Responsáveis análise',
-                href: route('tenant.medicao.analisar-pleito.responsaveis.index', tenant.slug),
-                active: route().current('tenant.medicao.analisar-pleito.responsaveis.*'),
+                active: route().current('tenant.medicao.item.*')
+                    || route().current('tenant.medicao.indice-reajuste.*'),
+                children: [
+                    {
+                        label: 'Item',
+                        href: route('tenant.medicao.item.index', tenant.slug),
+                        active: route().current('tenant.medicao.item.*'),
+                    },
+                    {
+                        label: 'Índice de Reajuste',
+                        href: route('tenant.medicao.indice-reajuste.index', tenant.slug),
+                        active: route().current('tenant.medicao.indice-reajuste.*'),
+                    },
+                ],
             },
         ]
         : [];
@@ -311,43 +347,43 @@ export default function AuthenticatedLayout({ children }) {
     const diarioObraItems = tenant
         ? [{
             label: 'RDO',
-            active: route().current('tenant.diario-obra.rdo.*'),
+            active: route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen && diarioObraTourScreen !== 'rda'),
             children: [
                 {
                     label: 'Calendário',
                     href: route('tenant.diario-obra.rdo.calendar', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.calendar') || route().current('tenant.diario-obra.rdo.show'),
+                    active: route().current('tenant.diario-obra.rdo.calendar') || route().current('tenant.diario-obra.rdo.show') || ['calendar', 'consolidation', 'approval', 'signature'].includes(diarioObraTourScreen),
                 },
                 {
                     label: 'Dashboard',
                     href: route('tenant.diario-obra.rdo.dashboard', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.dashboard'),
+                    active: route().current('tenant.diario-obra.rdo.dashboard') || diarioObraTourScreen === 'dashboard',
                 },
                 {
                     label: 'Responsáveis',
                     href: route('tenant.diario-obra.rdo.responsaveis.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.responsaveis.*'),
+                    active: route().current('tenant.diario-obra.rdo.responsaveis.*') || diarioObraTourScreen === 'responsibles',
                 },
                 {
                     label: 'Cadastros',
                     href: route('tenant.diario-obra.rdo.cadastros.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.cadastros.*'),
+                    active: route().current('tenant.diario-obra.rdo.cadastros.*') || diarioObraTourScreen === 'catalogs',
                 },
                 {
                     label: 'Parametrização',
                     href: route('tenant.diario-obra.rdo.settings', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.settings*'),
+                    active: route().current('tenant.diario-obra.rdo.settings*') || diarioObraTourScreen === 'settings',
                 },
             ],
         },
         {
             label: 'RDA',
-            active: route().current('tenant.diario-obra.rda.*'),
+            active: route().current('tenant.diario-obra.rda.*') || diarioObraTourScreen === 'rda',
             children: [
                 {
                     label: 'Calendário',
                     href: route('tenant.diario-obra.rda.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rda.index') || route().current('tenant.diario-obra.rda.show'),
+                    active: route().current('tenant.diario-obra.rda.index') || route().current('tenant.diario-obra.rda.show') || diarioObraTourScreen === 'rda',
                 },
                 {
                     label: 'Responsáveis',
@@ -385,7 +421,7 @@ export default function AuthenticatedLayout({ children }) {
                 active: route().current('tenant.projects.master-list.*') || projectTourScreen === 'master-list',
             }] : []),
             ...(projectCan.manage_project_responsibles ? [{
-                label: 'Responsaveis',
+                label: 'Responsáveis',
                 href: route('tenant.projects.responsaveis.index', tenant.slug),
                 active: route().current('tenant.projects.responsaveis.*') || projectTourScreen === 'responsibles',
             }] : []),
@@ -485,7 +521,7 @@ export default function AuthenticatedLayout({ children }) {
     const mobileNavItems = [
         ...navItems,
         ...(parametrizacaoItems.length > 0 ? [{
-            label: 'ParametrizaÃ§Ã£o',
+            label: 'Parametrização',
             icon: SlidersHorizontal,
             active: route().current('tenant.parametrizacao.*'),
             children: parametrizacaoItems,
@@ -610,8 +646,15 @@ export default function AuthenticatedLayout({ children }) {
                                     </button>
                                     <CollapsibleNav open={childrenOpen} className="ml-7">
                                             {item.children.map((child) => {
-                                                const nestedOpen = child.label === 'RDA' ? rdaOpen : rdoOpen;
-                                                const toggleNestedOpen = child.label === 'RDA' ? setRdaOpen : setRdoOpen;
+                                                const [nestedOpen, toggleNestedOpen] = child.label === 'RDA'
+                                                    ? [rdaOpen, setRdaOpen]
+                                                    : child.label === 'Relatórios'
+                                                        ? [medicaoRelatoriosOpen, setMedicaoRelatoriosOpen]
+                                                        : child.label === 'Análise Medição'
+                                                            ? [medicaoAnaliseOpen, setMedicaoAnaliseOpen]
+                                                            : child.label === 'Item' && item.label === 'Medição'
+                                                                ? [medicaoItensOpen, setMedicaoItensOpen]
+                                                                : [rdoOpen, setRdoOpen];
 
                                                 return child.children ? (
                                                 <div key={child.label}>

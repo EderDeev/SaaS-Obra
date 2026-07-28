@@ -64,12 +64,18 @@ class OrdemServicoApprovalDecisionNotificationTest extends TestCase
         $database = $notification->toArray($requester);
 
         $this->assertSame('OS aprovada: OS-0050', $mail->subject);
-        $this->assertContains(
+        $this->assertSame('emails.ordem-servico-flow', data_get($mail->view, 'html'));
+        $this->assertSame('emails.ordem-servico-flow-text', data_get($mail->view, 'text'));
+        $this->assertSame(
             'A execução do serviço está autorizada e já pode ser iniciada conforme o escopo aprovado.',
-            $mail->introLines
+            data_get($mail->viewData, 'highlightBody')
         );
-        $this->assertSame('Acessar OS liberada', $mail->actionText);
-        $this->assertStringContainsString('/ordem-servico/os', $mail->actionUrl);
+        $this->assertSame('Acessar OS liberada', data_get($mail->viewData, 'actionLabel'));
+        $this->assertStringContainsString('/ordem-servico/os', data_get($mail->viewData, 'url'));
+        $this->assertStringContainsString(
+            'OS aprovada',
+            app('mailer')->render($mail->view, $mail->viewData)
+        );
         $this->assertStringContainsString('A execução do serviço está autorizada.', $database['body']);
     }
 }

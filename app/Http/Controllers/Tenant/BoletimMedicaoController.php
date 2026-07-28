@@ -29,7 +29,14 @@ class BoletimMedicaoController extends Controller
             ->with(['contract:id,code,name'])
             ->withCount([
                 'folhasRosto as folhas_rosto_total',
-                'folhasRosto as folhas_rosto_abertas' => fn ($query) => $query->where('status', 'aberta'),
+                'folhasRosto as folhas_rosto_abertas' => fn ($query) => $query->whereIn('status', [
+                    'aberta',
+                    'rascunho',
+                    'retornada',
+                    'analise_fiscal',
+                    'analise_qualidade',
+                    'analise_medicao',
+                ]),
             ])
             ->latest('periodo')
             ->latest('id')
@@ -93,13 +100,14 @@ class BoletimMedicaoController extends Controller
 
             $next = BoletimMedicao::withTrashed()
                 ->where('tenant_id', $tenant->id)
+                ->where('contract_id', $contract->id)
                 ->max('sequencial') + 1;
 
             BoletimMedicao::create([
                 'tenant_id' => $tenant->id,
                 'contract_id' => $contract->id,
                 'created_by_id' => $request->user()?->id,
-                'codigo' => 'BM-'.str_pad((string) $next, 4, '0', STR_PAD_LEFT),
+                'codigo' => 'BM-'.str_pad((string) $next, 3, '0', STR_PAD_LEFT),
                 'sequencial' => $next,
                 'periodo' => $periodo,
                 'tipo' => $validated['tipo'],

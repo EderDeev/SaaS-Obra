@@ -20,6 +20,7 @@ use App\Models\TipoEmpresa;
 use App\Models\User;
 use App\Notifications\FolhaRostoSubmittedForAnalysisNotification;
 use App\Notifications\FolhaRostoFlowChangedNotification;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -57,14 +58,19 @@ class FolhaRostoController extends Controller
     public function index(Request $request, Tenant $tenant): Response
     {
         $boletim = $this->resolveBoletim($request, $tenant);
+        $contractsQuery = $this->accessibleContracts($request, $tenant);
         $selectedContractId = $boletim?->contract_id
-            ?: ($request->integer('contract_id') ?: $tenant->contracts()->orderBy('code')->value('id'));
+            ?: ($request->integer('contract_id') ?: (clone $contractsQuery)->orderBy('code')->value('id'));
 
-        $contracts = $tenant->contracts()
+        $contracts = (clone $contractsQuery)
             ->orderBy('code')
-            ->get(['id', 'code', 'name']);
+            ->get(['id', 'code', 'name', 'measurement_mode']);
+        $selectedContract = $contracts->firstWhere('id', $selectedContractId);
 
-        $ordens = OrdemServico::query()
+        $ordens = collect();
+
+        if ($selectedContract?->measurement_mode === 'controlled') {
+            $ordens = OrdemServico::query()
             ->where('tenant_id', $tenant->id)
             ->when($selectedContractId, fn ($query) => $query->where('contract_id', $selectedContractId))
             ->whereIn('status', ['aprovada', 'em_execucao', 'concluida'])
@@ -108,10 +114,12 @@ class FolhaRostoController extends Controller
                 'ordens' => $items->values(),
             ])
             ->values();
+        }
 
         return Inertia::render('Tenant/Medicao/FolhaRosto/Index', [
             'selectedContractId' => $selectedContractId,
             'contracts' => $contracts,
+            'selectedContract' => $selectedContract,
             'grupos' => $ordens,
             'boletim' => $boletim ? $this->serializeBoletim($boletim) : null,
         ]);
@@ -120,6 +128,8 @@ class FolhaRostoController extends Controller
     public function show(Request $request, Tenant $tenant, OrdemServico $ordem): Response
     {
         $this->ensureTenantOrdem($tenant, $ordem);
+        $contract = $this->contractForRequest($request, $tenant, (int) $ordem->contract_id);
+        abort_unless($contract->measurement_mode === 'controlled', 404);
         $boletim = $this->resolveBoletim($request, $tenant);
 
         if ($boletim) {
@@ -129,7 +139,7 @@ class FolhaRostoController extends Controller
         abort_unless(in_array($ordem->status, ['aprovada', 'em_execucao', 'concluida'], true), 404);
 
         $ordem->load([
-            'contract:id,code,name',
+            'contract:id,code,name,measurement_mode',
             'obra:id,codigo,nome',
             'creator:id,name,email',
             'itens.medicaoItem:id,item,codigo,descricao,unidade,quantidade_prevista,valor_total',
@@ -144,7 +154,7 @@ class FolhaRostoController extends Controller
                         ->with('user:id,name,email')
                         ->where('acao', 'retornar_construtora')
                         ->latest('id'),
-                    'itens.ordemServicoItem.medicaoItem:id,item,codigo,descricao,unidade',
+                    'itens.medicaoItem:id,item,codigo,descricao,unidade',
                 ])
                 ->latest('id'),
         ]);
@@ -162,6 +172,9 @@ class FolhaRostoController extends Controller
         $construtoras = $this->construtoraOptions($tenant, (int) $ordem->contract_id);
 
         return Inertia::render('Tenant/Medicao/FolhaRosto/Show', [
+            'measurementMode' => 'controlled',
+            'storeUrl' => route('tenant.medicao.folha-rosto.store', [$tenant, $ordem]),
+            'obras' => [],
             'boletim' => $boletim ? $this->serializeBoletim($boletim) : null,
             'boletinsAbertos' => $boletinsAbertos,
             'construtoras' => $construtoras,
@@ -185,7 +198,7 @@ class FolhaRostoController extends Controller
                 ] : null,
                 'can_create' => in_array($ordem->status, ['aprovada', 'em_execucao'], true)
                     && (! $boletim || $boletim->status === 'aberto_lancamento'),
-                'itens' => $ordem->itens->map(fn (OrdemServicoItem $item): array => $this->serializeItem($item))->values(),
+                'itens' => $ordem->itens->map(fn (OrdemServicoItem $item): array => $this->serializeItem($item->medicaoItem, $item))->values(),
                 'folhas_rosto' => $ordem->folhasRosto->map(fn (FolhaRosto $folha): array => [
                     'id' => $folha->id,
                     'codigo' => $folha->codigo,
@@ -216,10 +229,11 @@ class FolhaRostoController extends Controller
                     'itens' => $folha->itens->map(fn ($item): array => [
                         'id' => $item->id,
                         'ordem_servico_item_id' => $item->ordem_servico_item_id,
-                        'item' => $item->ordemServicoItem?->medicaoItem?->item,
-                        'codigo' => $item->ordemServicoItem?->medicaoItem?->codigo,
-                        'descricao' => $item->ordemServicoItem?->medicaoItem?->descricao,
-                        'unidade' => $item->ordemServicoItem?->medicaoItem?->unidade,
+                        'medicao_item_id' => $item->medicao_item_id,
+                        'item' => $item->medicaoItem?->item,
+                        'codigo' => $item->medicaoItem?->codigo,
+                        'descricao' => $item->medicaoItem?->descricao,
+                        'unidade' => $item->medicaoItem?->unidade,
                         'quantidade_pleiteada' => (float) $item->quantidade_pleiteada,
                         'valor_pleiteado' => (float) $item->valor_pleiteado,
                         'precisa_analise_topografica' => (bool) $item->precisa_analise_topografica,
@@ -230,9 +244,111 @@ class FolhaRostoController extends Controller
         ]);
     }
 
+    public function showSimple(Request $request, Tenant $tenant, Contract $contract): Response
+    {
+        $contract = $this->contractForRequest($request, $tenant, $contract->id);
+        abort_unless($contract->measurement_mode === 'simple', 404);
+        $boletim = $this->resolveBoletim($request, $tenant);
+
+        if ($boletim) {
+            abort_unless((int) $boletim->contract_id === (int) $contract->id, 404);
+        }
+
+        $contract->load([
+            'obra:id,codigo,nome',
+            'obras' => fn ($query) => $query->orderBy('codigo'),
+        ]);
+
+        $items = $contract->medicaoItens()
+            ->where('nivel', 2)
+            ->orderBy('item')
+            ->get([
+                'id',
+                'contract_id',
+                'item',
+                'codigo',
+                'descricao',
+                'unidade',
+                'quantidade_prevista',
+                'valor_unitario',
+                'valor_com_bdi',
+                'valor_total',
+            ]);
+
+        $folhas = FolhaRosto::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contract->id)
+            ->whereNull('ordem_servico_id')
+            ->when($boletim, fn ($query) => $query->where('boletim_medicao_id', $boletim->id))
+            ->with([
+                'obra:id,codigo,nome',
+                'boletimMedicao:id,codigo,periodo,tipo,status',
+                'construtoraEmpresa:id,nome,sigla',
+                'creator:id,name,email',
+                'fluxoHistoricos' => fn ($query) => $query
+                    ->with('user:id,name,email')
+                    ->where('acao', 'retornar_construtora')
+                    ->latest('id'),
+                'itens.medicaoItem:id,item,codigo,descricao,unidade',
+            ])
+            ->latest('id')
+            ->get();
+
+        $boletinsAbertos = BoletimMedicao::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contract->id)
+            ->where('status', 'aberto_lancamento')
+            ->orderByDesc('periodo')
+            ->orderByDesc('id')
+            ->get(['id', 'codigo', 'periodo', 'tipo', 'status'])
+            ->map(fn (BoletimMedicao $item): array => $this->serializeBoletim($item))
+            ->values();
+
+        return Inertia::render('Tenant/Medicao/FolhaRosto/Show', [
+            'measurementMode' => 'simple',
+            'storeUrl' => route('tenant.medicao.folha-rosto.simple.store', [$tenant, $contract]),
+            'obras' => $contract->obras->map(fn (Obra $obra): array => [
+                'id' => $obra->id,
+                'codigo' => $obra->codigo,
+                'nome' => $obra->nome,
+            ])->values(),
+            'boletim' => $boletim ? $this->serializeBoletim($boletim) : null,
+            'boletinsAbertos' => $boletinsAbertos,
+            'construtoras' => $this->construtoraOptions($tenant, (int) $contract->id),
+            'ordem' => [
+                'id' => null,
+                'codigo' => $contract->code,
+                'titulo' => 'Medição simples',
+                'descricao' => 'Pleito direto dos itens do contrato, sem necessidade de Ordem de Serviço.',
+                'status' => 'simple',
+                'contract' => [
+                    'id' => $contract->id,
+                    'code' => $contract->code,
+                    'name' => $contract->name,
+                ],
+                'obra' => $contract->obra ? [
+                    'id' => $contract->obra->id,
+                    'codigo' => $contract->obra->codigo,
+                    'nome' => $contract->obra->nome,
+                ] : null,
+                'solicitante' => null,
+                'can_create' => ! $boletim || $boletim->status === 'aberto_lancamento',
+                'itens' => $items->map(fn (MedicaoItem $item): array => $this->serializeItem($item))->values(),
+                'folhas_rosto' => $folhas->map(fn (FolhaRosto $folha): array => $this->serializeWorkspaceFolha($tenant, $folha))->values(),
+            ],
+        ]);
+    }
+
     public function store(Request $request, Tenant $tenant, OrdemServico $ordem): RedirectResponse
     {
         $this->ensureTenantOrdem($tenant, $ordem);
+        $contract = $this->contractForRequest($request, $tenant, (int) $ordem->contract_id);
+
+        if ($contract->measurement_mode !== 'controlled') {
+            throw ValidationException::withMessages([
+                'measurement_mode' => 'Este contrato não utiliza medição controlada por OS.',
+            ]);
+        }
 
         if (! in_array($ordem->status, ['aprovada', 'em_execucao'], true)) {
             throw ValidationException::withMessages([
@@ -246,6 +362,7 @@ class FolhaRostoController extends Controller
             'construtora_empresa_id' => ['required', 'integer'],
             'itens' => ['required', 'array', 'min:1'],
             'itens.*.ordem_servico_item_id' => ['required', 'integer'],
+            'itens.*.medicao_item_id' => ['nullable', 'integer'],
             'itens.*.quantidade_pleiteada' => ['required', 'numeric', 'gt:0', 'regex:/^\d+(\.\d{1,4})?$/'],
             'itens.*.precisa_analise_topografica' => ['nullable', 'boolean'],
             'itens.*.precisa_analise_qualidade' => ['nullable', 'boolean'],
@@ -281,7 +398,7 @@ class FolhaRostoController extends Controller
             $items = OrdemServicoItem::query()
                 ->where('ordem_servico_id', $ordem->id)
                 ->whereIn('id', $requested->keys())
-                ->with(['folhaRostoItens.folhaRosto'])
+                ->with('medicaoItem')
                 ->get();
 
             if ($items->count() !== $requested->count()) {
@@ -292,8 +409,9 @@ class FolhaRostoController extends Controller
 
             foreach ($items as $item) {
                 $requestedQuantity = (float) $requested[$item->id]['quantidade_pleiteada'];
-                $consumed = $this->consumedQuantity($item);
-                $available = max(0, (float) $item->quantidade_solicitada - $consumed);
+                $medicaoItem = $item->medicaoItem;
+                $consumed = $medicaoItem ? $this->consumedQuantity($medicaoItem) : 0;
+                $available = max(0, (float) ($medicaoItem?->quantidade_prevista ?? 0) - $consumed);
 
                 if ($requestedQuantity > $available + 0.000001) {
                     throw ValidationException::withMessages([
@@ -335,19 +453,150 @@ class FolhaRostoController extends Controller
 
             foreach ($items as $item) {
                 $quantity = (float) $requested[$item->id]['quantidade_pleiteada'];
-                $baseQuantity = (float) $item->quantidade_solicitada;
-                $value = $baseQuantity > 0
-                    ? ((float) $item->valor_previsto / $baseQuantity) * $quantity
-                    : 0;
+                $value = $this->unitValue($item->medicaoItem) * $quantity;
 
                 $folha->itens()->create([
                     'ordem_servico_item_id' => $item->id,
+                    'medicao_item_id' => $item->medicao_item_id,
                     'quantidade_pleiteada' => $quantity,
                     'valor_pleiteado' => round($value, 2),
                     'precisa_analise_topografica' => (bool) ($requested[$item->id]['precisa_analise_topografica'] ?? false),
                     'precisa_analise_qualidade' => (bool) ($requested[$item->id]['precisa_analise_qualidade'] ?? false),
                 ]);
             }
+            });
+        } catch (\Throwable $exception) {
+            if ($storedPath) {
+                Storage::disk('public')->delete($storedPath);
+            }
+
+            throw $exception;
+        }
+
+        return back()->with('success', 'Folha de Rosto criada com sucesso.');
+    }
+
+    public function storeSimple(Request $request, Tenant $tenant, Contract $contract): RedirectResponse
+    {
+        $contract = $this->contractForRequest($request, $tenant, $contract->id);
+
+        if ($contract->measurement_mode !== 'simple') {
+            throw ValidationException::withMessages([
+                'measurement_mode' => 'Este contrato não utiliza medição simples.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'obra_id' => [
+                'required',
+                'integer',
+                Rule::exists('obras', 'id')->where(fn ($query) => $query
+                    ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $contract->id)),
+            ],
+            'comentario' => ['required', 'string', 'min:5'],
+            'boletim_medicao_id' => ['required', 'integer'],
+            'construtora_empresa_id' => ['required', 'integer'],
+            'itens' => ['required', 'array', 'min:1'],
+            'itens.*.medicao_item_id' => ['required', 'integer'],
+            'itens.*.quantidade_pleiteada' => ['required', 'numeric', 'gt:0', 'regex:/^\d+(\.\d{1,4})?$/'],
+            'itens.*.precisa_analise_topografica' => ['nullable', 'boolean'],
+            'itens.*.precisa_analise_qualidade' => ['nullable', 'boolean'],
+            'memoria_calculo' => ['required', 'file', 'mimes:zip', 'max:30720'],
+        ]);
+
+        $requested = collect($validated['itens'])
+            ->keyBy(fn (array $item): int => (int) $item['medicao_item_id']);
+        $boletim = $this->resolveBoletim($request, $tenant);
+
+        if (! $boletim || (int) $boletim->contract_id !== (int) $contract->id) {
+            throw ValidationException::withMessages([
+                'boletim_medicao_id' => 'Selecione um BM válido deste contrato.',
+            ]);
+        }
+
+        if ($boletim->status !== 'aberto_lancamento') {
+            throw ValidationException::withMessages([
+                'boletim_medicao_id' => 'O envio de Folhas de Rosto está pausado para este boletim.',
+            ]);
+        }
+
+        $construtora = $this->resolveConstrutora($tenant, (int) $contract->id, (int) $validated['construtora_empresa_id']);
+        $storedPath = null;
+
+        try {
+            DB::transaction(function () use ($request, $tenant, $contract, $validated, $requested, $boletim, $construtora, &$storedPath): void {
+                Contract::query()->whereKey($contract->id)->lockForUpdate()->firstOrFail();
+
+                $items = MedicaoItem::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $contract->id)
+                    ->where('nivel', 2)
+                    ->whereIn('id', $requested->keys())
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($items->count() !== $requested->count()) {
+                    throw ValidationException::withMessages([
+                        'itens' => 'Um ou mais itens não pertencem a este contrato.',
+                    ]);
+                }
+
+                foreach ($items as $item) {
+                    $requestedQuantity = (float) $requested[$item->id]['quantidade_pleiteada'];
+                    $available = max(0, (float) $item->quantidade_prevista - $this->consumedQuantity($item));
+
+                    if ($requestedQuantity > $available + 0.000001) {
+                        throw ValidationException::withMessages([
+                            "itens.{$item->id}" => "A quantidade pleiteada do item {$item->item} supera o saldo disponível.",
+                        ]);
+                    }
+                }
+
+                $next = FolhaRosto::withTrashed()
+                    ->where('contract_id', $contract->id)
+                    ->whereNull('ordem_servico_id')
+                    ->max('sequencial') + 1;
+
+                $folha = FolhaRosto::create([
+                    'tenant_id' => $tenant->id,
+                    'contract_id' => $contract->id,
+                    'obra_id' => $validated['obra_id'],
+                    'ordem_servico_id' => null,
+                    'boletim_medicao_id' => $boletim->id,
+                    'construtora_empresa_id' => $construtora->id,
+                    'created_by_id' => $request->user()?->id,
+                    'codigo' => "{$contract->code}-FR-".str_pad((string) $next, 3, '0', STR_PAD_LEFT),
+                    'sequencial' => $next,
+                    'comentario' => $validated['comentario'],
+                    'status' => 'rascunho',
+                ]);
+
+                $file = $request->file('memoria_calculo');
+                $storedPath = $file->store(
+                    "tenant-{$tenant->id}/medicao/folhas-rosto/fr-{$folha->id}/memoria-calculo",
+                    'public'
+                );
+
+                $folha->forceFill([
+                    'memoria_calculo_path' => $storedPath,
+                    'memoria_calculo_nome_original' => $file->getClientOriginalName(),
+                    'memoria_calculo_mime_type' => $file->getClientMimeType(),
+                    'memoria_calculo_size' => $file->getSize() ?: 0,
+                ])->save();
+
+                foreach ($items as $item) {
+                    $quantity = (float) $requested[$item->id]['quantidade_pleiteada'];
+
+                    $folha->itens()->create([
+                        'ordem_servico_item_id' => null,
+                        'medicao_item_id' => $item->id,
+                        'quantidade_pleiteada' => $quantity,
+                        'valor_pleiteado' => round($this->unitValue($item) * $quantity, 2),
+                        'precisa_analise_topografica' => (bool) ($requested[$item->id]['precisa_analise_topografica'] ?? false),
+                        'precisa_analise_qualidade' => (bool) ($requested[$item->id]['precisa_analise_qualidade'] ?? false),
+                    ]);
+                }
             });
         } catch (\Throwable $exception) {
             if ($storedPath) {
@@ -370,26 +619,42 @@ class FolhaRostoController extends Controller
             ]);
         }
 
+        $isControlled = $folha->ordem_servico_id !== null;
+        $contract = $this->contractForRequest($request, $tenant, (int) $folha->contract_id);
+
+        if (($isControlled && $contract->measurement_mode !== 'controlled')
+            || (! $isControlled && $contract->measurement_mode !== 'simple')) {
+            throw ValidationException::withMessages([
+                'measurement_mode' => 'O tipo desta Folha de Rosto não corresponde à configuração atual do contrato.',
+            ]);
+        }
+
         $validated = $request->validate([
+            'obra_id' => [
+                Rule::requiredIf(! $isControlled),
+                'nullable',
+                'integer',
+                Rule::exists('obras', 'id')->where(fn ($query) => $query
+                    ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $contract->id)),
+            ],
             'comentario' => ['required', 'string', 'min:5'],
             'boletim_medicao_id' => ['required', 'integer'],
             'construtora_empresa_id' => ['required', 'integer'],
             'itens' => ['required', 'array', 'min:1'],
-            'itens.*.ordem_servico_item_id' => ['required', 'integer'],
+            'itens.*.ordem_servico_item_id' => [Rule::requiredIf($isControlled), 'nullable', 'integer'],
+            'itens.*.medicao_item_id' => ['required', 'integer'],
             'itens.*.quantidade_pleiteada' => ['required', 'numeric', 'gt:0', 'regex:/^\d+(\.\d{1,4})?$/'],
             'itens.*.precisa_analise_topografica' => ['nullable', 'boolean'],
             'itens.*.precisa_analise_qualidade' => ['nullable', 'boolean'],
             'memoria_calculo' => ['nullable', 'file', 'mimes:zip', 'max:30720'],
         ]);
 
-        $ordem = OrdemServico::query()
-            ->where('tenant_id', $tenant->id)
-            ->findOrFail($folha->ordem_servico_id);
         $boletim = $this->resolveBoletim($request, $tenant);
 
-        if (! $boletim || (int) $boletim->contract_id !== (int) $ordem->contract_id) {
+        if (! $boletim || (int) $boletim->contract_id !== (int) $contract->id) {
             throw ValidationException::withMessages([
-                'boletim_medicao_id' => 'Selecione um BM válido para esta OS.',
+                'boletim_medicao_id' => 'Selecione um BM válido para este contrato.',
             ]);
         }
 
@@ -401,11 +666,11 @@ class FolhaRostoController extends Controller
 
         $construtora = $this->resolveConstrutora(
             $tenant,
-            (int) $ordem->contract_id,
+            (int) $contract->id,
             (int) $validated['construtora_empresa_id']
         );
         $requested = collect($validated['itens'])
-            ->keyBy(fn (array $item): int => (int) $item['ordem_servico_item_id']);
+            ->keyBy(fn (array $item): int => (int) $item['medicao_item_id']);
         $newPath = null;
         $oldPath = $folha->memoria_calculo_path;
 
@@ -414,7 +679,8 @@ class FolhaRostoController extends Controller
                 $request,
                 $tenant,
                 $folha,
-                $ordem,
+                $contract,
+                $isControlled,
                 $boletim,
                 $construtora,
                 $validated,
@@ -422,17 +688,35 @@ class FolhaRostoController extends Controller
                 &$newPath
             ): void {
                 $lockedFolha = FolhaRosto::query()->whereKey($folha->id)->lockForUpdate()->firstOrFail();
-                $existingItems = $lockedFolha->itens()->get()->keyBy('ordem_servico_item_id');
-                $items = OrdemServicoItem::query()
-                    ->where('ordem_servico_id', $ordem->id)
+                $existingItems = $lockedFolha->itens()->get()->keyBy('medicao_item_id');
+                $items = MedicaoItem::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $contract->id)
+                    ->where('nivel', 2)
                     ->whereIn('id', $requested->keys())
-                    ->with(['folhaRostoItens.folhaRosto', 'medicaoItem:id,item'])
+                    ->lockForUpdate()
                     ->get();
 
                 if ($items->count() !== $requested->count()) {
                     throw ValidationException::withMessages([
-                        'itens' => 'Um ou mais itens não pertencem à OS selecionada.',
+                        'itens' => 'Um ou mais itens não pertencem ao contrato.',
                     ]);
+                }
+
+                $ordemItems = collect();
+
+                if ($isControlled) {
+                    $ordemItems = OrdemServicoItem::query()
+                        ->where('ordem_servico_id', $lockedFolha->ordem_servico_id)
+                        ->whereIn('medicao_item_id', $requested->keys())
+                        ->get()
+                        ->keyBy('medicao_item_id');
+
+                    if ($ordemItems->count() !== $requested->count()) {
+                        throw ValidationException::withMessages([
+                            'itens' => 'Um ou mais itens não estão vinculados à OS desta Folha de Rosto.',
+                        ]);
+                    }
                 }
 
                 foreach ($items as $item) {
@@ -440,17 +724,18 @@ class FolhaRostoController extends Controller
                     $currentQuantity = (float) ($existingItems->get($item->id)?->quantidade_pleiteada ?? 0);
                     $available = max(
                         0,
-                        (float) $item->quantidade_solicitada - $this->consumedQuantity($item) + $currentQuantity
+                        (float) $item->quantidade_prevista - $this->consumedQuantity($item) + $currentQuantity
                     );
 
                     if ($quantity > $available + 0.000001) {
                         throw ValidationException::withMessages([
-                            "itens.{$item->id}" => "A quantidade pleiteada do item {$item->medicaoItem?->item} supera o saldo disponível.",
+                            "itens.{$item->id}" => "A quantidade pleiteada do item {$item->item} supera o saldo disponível.",
                         ]);
                     }
                 }
 
                 $lockedFolha->forceFill([
+                    'obra_id' => $isControlled ? $lockedFolha->obra_id : $validated['obra_id'],
                     'boletim_medicao_id' => $boletim->id,
                     'construtora_empresa_id' => $construtora->id,
                     'comentario' => $validated['comentario'],
@@ -472,21 +757,19 @@ class FolhaRostoController extends Controller
 
                 $lockedFolha->save();
                 $lockedFolha->itens()
-                    ->whereNotIn('ordem_servico_item_id', $requested->keys())
+                    ->whereNotIn('medicao_item_id', $requested->keys())
                     ->delete();
 
                 foreach ($items as $item) {
                     $quantity = (float) $requested[$item->id]['quantidade_pleiteada'];
-                    $baseQuantity = (float) $item->quantidade_solicitada;
-                    $value = $baseQuantity > 0
-                        ? ((float) $item->valor_previsto / $baseQuantity) * $quantity
-                        : 0;
+                    $ordemItem = $isControlled ? $ordemItems->get($item->id) : null;
 
                     $lockedFolha->itens()->updateOrCreate(
-                        ['ordem_servico_item_id' => $item->id],
+                        ['medicao_item_id' => $item->id],
                         [
+                            'ordem_servico_item_id' => $ordemItem?->id,
                             'quantidade_pleiteada' => $quantity,
-                            'valor_pleiteado' => round($value, 2),
+                            'valor_pleiteado' => round($this->unitValue($item) * $quantity, 2),
                             'precisa_analise_topografica' => (bool) ($requested[$item->id]['precisa_analise_topografica'] ?? false),
                             'precisa_analise_qualidade' => (bool) ($requested[$item->id]['precisa_analise_qualidade'] ?? false),
                         ]
@@ -760,8 +1043,7 @@ class FolhaRostoController extends Controller
         ]);
 
         $folha->loadMissing([
-            'itens.ordemServicoItem.folhaRostoItens.folhaRosto:id,status',
-            'itens.ordemServicoItem.medicaoItem:id,item',
+            'itens.medicaoItem:id,item,quantidade_prevista',
         ]);
         $itemIds = $folha->itens->pluck('id')->map(fn ($id): int => (int) $id)->all();
         $itensById = $folha->itens->keyBy('id');
@@ -801,14 +1083,14 @@ class FolhaRostoController extends Controller
 
                     if ($quantity !== null) {
                         $folhaRostoItem = $itensById->get($folhaRostoItemId);
-                        $ordemItem = $folhaRostoItem?->ordemServicoItem;
-                        $baseQuantity = (float) ($ordemItem?->quantidade_solicitada ?? 0);
-                        $consumed = $ordemItem ? $this->consumedQuantity($ordemItem) : 0;
+                        $medicaoItem = $folhaRostoItem?->medicaoItem;
+                        $baseQuantity = (float) ($medicaoItem?->quantidade_prevista ?? 0);
+                        $consumed = $medicaoItem ? $this->consumedQuantity($medicaoItem) : 0;
                         $saldo = max(0, $baseQuantity - $consumed + (float) $folhaRostoItem->quantidade_pleiteada);
 
                         if ($quantity > $saldo + 0.000001) {
                             throw ValidationException::withMessages([
-                                "setores.{$setor}.itens.{$folhaRostoItemId}.quantidade_aprovada" => "A quantidade aprovada do item {$ordemItem?->medicaoItem?->item} supera o saldo disponível.",
+                                "setores.{$setor}.itens.{$folhaRostoItemId}.quantidade_aprovada" => "A quantidade aprovada do item {$medicaoItem?->item} supera o saldo disponível.",
                             ]);
                         }
                     }
@@ -913,32 +1195,116 @@ class FolhaRostoController extends Controller
         );
     }
 
-    private function serializeItem(OrdemServicoItem $item): array
+    private function serializeItem(MedicaoItem $item, ?OrdemServicoItem $ordemItem = null): array
     {
-        $total = (float) $item->quantidade_solicitada;
+        $total = (float) $item->quantidade_prevista;
         $consumed = $this->consumedQuantity($item);
         $available = max(0, $total - $consumed);
         $percentage = $total > 0 ? min(100, ($consumed / $total) * 100) : 0;
 
         return [
-            'id' => $item->id,
-            'item' => $item->medicaoItem?->item,
-            'codigo' => $item->medicaoItem?->codigo,
-            'descricao' => $item->medicaoItem?->descricao,
-            'unidade' => $item->medicaoItem?->unidade,
+            'id' => $ordemItem?->id ?? $item->id,
+            'ordem_servico_item_id' => $ordemItem?->id,
+            'medicao_item_id' => $item->id,
+            'item' => $item->item,
+            'codigo' => $item->codigo,
+            'descricao' => $item->descricao,
+            'unidade' => $item->unidade,
             'quantidade_total' => $total,
             'quantidade_consumida' => $consumed,
             'quantidade_disponivel' => $available,
             'percentual_consumido' => $percentage,
-            'valor_previsto' => (float) $item->valor_previsto,
+            'valor_previsto' => $this->unitValue($item) * $total,
         ];
     }
 
-    private function consumedQuantity(OrdemServicoItem $item): float
+    private function consumedQuantity(MedicaoItem $item): float
     {
-        return (float) $item->folhaRostoItens
-            ->filter(fn ($claim) => $claim->folhaRosto && in_array($claim->folhaRosto->status, self::CONSUMING_STATUSES, true))
+        return (float) FolhaRostoItem::query()
+            ->where('medicao_item_id', $item->id)
+            ->whereHas('folhaRosto', fn (Builder $query) => $query->whereIn('status', self::CONSUMING_STATUSES))
             ->sum('quantidade_pleiteada');
+    }
+
+    private function unitValue(?MedicaoItem $item): float
+    {
+        if (! $item) {
+            return 0;
+        }
+
+        $value = (float) ($item->valor_com_bdi ?: $item->valor_unitario);
+
+        if ($value > 0) {
+            return $value;
+        }
+
+        $quantity = (float) $item->quantidade_prevista;
+
+        return $quantity > 0 ? (float) $item->valor_total / $quantity : 0;
+    }
+
+    private function serializeWorkspaceFolha(Tenant $tenant, FolhaRosto $folha): array
+    {
+        return [
+            'id' => $folha->id,
+            'codigo' => $folha->codigo,
+            'comentario' => $folha->comentario,
+            'status' => $folha->status,
+            'obra' => $folha->obra ? [
+                'id' => $folha->obra->id,
+                'codigo' => $folha->obra->codigo,
+                'nome' => $folha->obra->nome,
+            ] : null,
+            'boletim' => $folha->boletimMedicao
+                ? $this->serializeBoletim($folha->boletimMedicao)
+                : null,
+            'construtora' => $folha->construtoraEmpresa ? [
+                'id' => $folha->construtoraEmpresa->id,
+                'nome' => $folha->construtoraEmpresa->nome,
+                'sigla' => $folha->construtoraEmpresa->sigla,
+            ] : null,
+            'created_at' => $folha->created_at?->format('d/m/Y H:i'),
+            'dias_retornada' => $this->returnedAgeInDays($folha),
+            'motivo_retorno' => $this->latestReturnReason($folha),
+            'responsavel_retorno' => $this->latestReturnResponsible($folha),
+            'creator' => $folha->creator?->name,
+            'valor_total' => (float) $folha->itens->sum('valor_pleiteado'),
+            'memoria_calculo' => $folha->memoria_calculo_path ? [
+                'nome' => $folha->memoria_calculo_nome_original,
+                'size' => $folha->memoria_calculo_size,
+                'download_url' => route('tenant.medicao.folha-rosto.memoria.download', [
+                    $tenant,
+                    $folha,
+                ]),
+            ] : null,
+            'itens' => $folha->itens->map(fn (FolhaRostoItem $item): array => [
+                'id' => $item->id,
+                'ordem_servico_item_id' => $item->ordem_servico_item_id,
+                'medicao_item_id' => $item->medicao_item_id,
+                'item' => $item->medicaoItem?->item,
+                'codigo' => $item->medicaoItem?->codigo,
+                'descricao' => $item->medicaoItem?->descricao,
+                'unidade' => $item->medicaoItem?->unidade,
+                'quantidade_pleiteada' => (float) $item->quantidade_pleiteada,
+                'valor_pleiteado' => (float) $item->valor_pleiteado,
+                'precisa_analise_topografica' => (bool) $item->precisa_analise_topografica,
+                'precisa_analise_qualidade' => (bool) $item->precisa_analise_qualidade,
+            ])->values(),
+        ];
+    }
+
+    private function folhaWorkspaceUrl(Tenant $tenant, FolhaRosto $folha): string
+    {
+        $routeName = $folha->ordem_servico_id
+            ? 'tenant.medicao.folha-rosto.show'
+            : 'tenant.medicao.folha-rosto.simple.show';
+        $sourceId = $folha->ordem_servico_id ?: $folha->contract_id;
+
+        return route($routeName, [
+            $tenant,
+            $sourceId,
+            'boletim_id' => $folha->boletim_medicao_id,
+        ]);
     }
 
     private function ensureTenantOrdem(Tenant $tenant, OrdemServico $ordem): void
@@ -949,6 +1315,32 @@ class FolhaRostoController extends Controller
     private function ensureTenantFolha(Tenant $tenant, FolhaRosto $folha): void
     {
         abort_unless((int) $folha->tenant_id === (int) $tenant->id, 404);
+    }
+
+    private function accessibleContracts(Request $request, Tenant $tenant)
+    {
+        $query = $tenant->contracts();
+        $tenantRole = $request->user()->tenantRole($tenant);
+
+        if (! $request->user()->is_platform_admin && ! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
+            $query->whereHas('participants', function (Builder $query) use ($request): void {
+                $query->where('user_id', $request->user()->id)
+                    ->where('status', 'active');
+            });
+        }
+
+        return $query;
+    }
+
+    private function contractForRequest(Request $request, Tenant $tenant, int $contractId): Contract
+    {
+        $contract = Contract::query()
+            ->where('tenant_id', $tenant->id)
+            ->findOrFail($contractId);
+
+        abort_unless($this->accessibleContracts($request, $tenant)->whereKey($contract->id)->exists(), 403);
+
+        return $contract;
     }
 
     private function resolveBoletim(Request $request, Tenant $tenant): ?BoletimMedicao
@@ -1327,13 +1719,7 @@ class FolhaRostoController extends Controller
                                 'sigla' => $folha->construtoraEmpresa->sigla,
                             ] : null,
                             'creator' => $folha->creator?->name,
-                            'url' => $folha->ordemServico
-                                ? route('tenant.medicao.folha-rosto.show', [
-                                    $tenant,
-                                    $folha->ordemServico,
-                                    'boletim_id' => $folha->boletim_medicao_id,
-                                ])
-                                : null,
+                            'url' => $this->folhaWorkspaceUrl($tenant, $folha),
                         ])
                         ->values()
                         ->all(),
@@ -1363,8 +1749,7 @@ class FolhaRostoController extends Controller
             'creator:id,name',
             'analises.itens',
             'itens.analises',
-            'itens.ordemServicoItem.medicaoItem.reajusteIndice.indice.competencias',
-            'itens.ordemServicoItem.folhaRostoItens.folhaRosto:id,status',
+            'itens.medicaoItem.reajusteIndice.indice.competencias',
         ];
     }
 
@@ -1410,13 +1795,7 @@ class FolhaRostoController extends Controller
                 'sigla' => $folha->construtoraEmpresa->sigla,
             ] : null,
             'creator' => $folha->creator?->name,
-            'url' => $folha->ordemServico
-                ? route('tenant.medicao.folha-rosto.show', [
-                    $tenant,
-                    $folha->ordemServico,
-                    'boletim_id' => $folha->boletim_medicao_id,
-                ])
-                : null,
+            'url' => $this->folhaWorkspaceUrl($tenant, $folha),
         ];
     }
 
@@ -1459,13 +1838,10 @@ class FolhaRostoController extends Controller
 
     private function serializeAnalysisItem(FolhaRostoItem $item): array
     {
-        $ordemItem = $item->ordemServicoItem;
-        $medicaoItem = $ordemItem?->medicaoItem;
-        $baseQuantity = (float) ($ordemItem?->quantidade_solicitada ?? 0);
-        $precoP0 = $baseQuantity > 0
-            ? (float) ($ordemItem?->valor_previsto ?? 0) / $baseQuantity
-            : 0;
-        $consumed = $ordemItem ? $this->consumedQuantity($ordemItem) : 0;
+        $medicaoItem = $item->medicaoItem;
+        $baseQuantity = (float) ($medicaoItem?->quantidade_prevista ?? 0);
+        $precoP0 = $this->unitValue($medicaoItem);
+        $consumed = $medicaoItem ? $this->consumedQuantity($medicaoItem) : 0;
         $saldo = max(0, $baseQuantity - $consumed + (float) $item->quantidade_pleiteada);
 
         return [

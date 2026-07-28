@@ -1350,6 +1350,19 @@ class OrcamentoController extends Controller
                 now()->addMinutes(5),
                 fn (): int => $this->composicoesAvailableForTenant($tenant)->count(),
             ),
+            'compositionSummary' => Cache::remember(
+                "tenant:{$tenant->id}:orcamento:composicoes:summary",
+                now()->addMinutes(5),
+                fn (): array => [
+                    'official' => $this->composicoesAvailableForTenant($tenant)
+                        ->where('is_global', true)
+                        ->count(),
+                    'own' => $this->composicoesAvailableForTenant($tenant)
+                        ->where('tenant_id', $tenant->id)
+                        ->where('is_global', false)
+                        ->count(),
+                ],
+            ),
             'canManageTenantComposicoes' => $this->canManageTenantInsumos($request, $tenant),
             'canManageGlobalComposicoes' => $this->canManageGlobalInsumos($request),
             'typeOptions' => Cache::remember(
@@ -1763,6 +1776,7 @@ class OrcamentoController extends Controller
                     $query->whereNull('tenant_id')->orWhere('tenant_id', $tenant->id);
                 })
                 ->count(),
+            'insumoSummary' => $this->insumoTypeSummary($tenant, $filters['bank']),
             'typeOptions' => $this->insumoTypeOptions($tenant, $filters['bank']),
             'typeOptionsByBank' => $this->insumoTypeOptionsByBank($tenant),
             'dateOptions' => $this->insumoDateOptions($tenant),
@@ -2114,10 +2128,9 @@ class OrcamentoController extends Controller
             $type,
             $path,
             $data,
-        )->onConnection('database');
+        );
 
         DeleteStoredImportFileJob::dispatch($path)
-            ->onConnection('database')
             ->delay(now()->addHours(6));
 
         return back()->with('success', $message.' O arquivo temporario sera removido automaticamente apos o processamento ou em ate 6 horas.');
@@ -7849,6 +7862,54 @@ class OrcamentoController extends Controller
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
             ->values()
             ->all();
+    }
+
+    private function insumoTypeSummary(Tenant $tenant, string $bank = 'TODOS'): array
+    {
+        $query = $this->insumosAvailableForTenant($tenant);
+
+        if ($bank !== 'TODOS') {
+            $query->where('banco', $bank);
+        }
+
+        $total = (clone $query)->count();
+        $types = $query
+            ->select('classificacao', 'tipo')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy('classificacao', 'tipo')
+            ->get()
+            ->map(function (OrcamentoInsumo $insumo): ?array {
+                $value = $insumo->classificacao ?: $insumo->tipo;
+
+                if (! $value) {
+                    return null;
+                }
+
+                return [
+                    'value' => $value,
+                    'label' => $insumo->classificacao ?: $this->typeLabel($insumo->tipo),
+                    'count' => (int) $insumo->total,
+                ];
+            })
+            ->filter()
+            ->groupBy('value')
+            ->map(function ($items): array {
+                $first = $items->first();
+
+                return [
+                    'value' => $first['value'],
+                    'label' => $first['label'],
+                    'count' => $items->sum('count'),
+                ];
+            })
+            ->sortByDesc('count')
+            ->values()
+            ->all();
+
+        return [
+            'total' => $total,
+            'types' => $types,
+        ];
     }
 
     private function insumoTypeOptionsByBank(Tenant $tenant): array

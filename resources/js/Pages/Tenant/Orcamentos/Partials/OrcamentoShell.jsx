@@ -23,22 +23,39 @@ const navItems = [
     },
 ];
 
-export default function OrcamentoShell({ tenant, active, title, subtitle, children, showNav = true }) {
+export default function OrcamentoShell({
+    tenant,
+    active,
+    title,
+    subtitle,
+    children,
+    showNav = true,
+    actions = null,
+    eyebrow = 'Orçamentos',
+    showHeader = true,
+}) {
     return (
         <AuthenticatedLayout>
             <Head title={title} />
 
             <section className="sig-content fade-in">
-                <header className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                        <div className="eyebrow flex items-center gap-2">
-                            <Calculator size={14} />
-                            Orçamentos
+                {showHeader && (
+                    <header className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <div className="eyebrow flex items-center gap-2">
+                                <Calculator size={14} />
+                                {eyebrow}
+                            </div>
+                            <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">{title}</h1>
+                            <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--ink-500)]">{subtitle}</p>
                         </div>
-                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">{title}</h1>
-                        <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--ink-500)]">{subtitle}</p>
-                    </div>
-                </header>
+                        {actions && (
+                            <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+                                {actions}
+                            </div>
+                        )}
+                    </header>
+                )}
 
                 {showNav && (
                     <nav className="mt-6 flex flex-wrap gap-2">
@@ -59,7 +76,7 @@ export default function OrcamentoShell({ tenant, active, title, subtitle, childr
                     </nav>
                 )}
 
-                <div className="mt-6">{children}</div>
+                <div className={showHeader || showNav ? 'mt-6' : ''}>{children}</div>
             </section>
         </AuthenticatedLayout>
     );

@@ -52,7 +52,9 @@ class FolhaRostoFlowChangedNotification extends Notification
             ->subject($this->title().": {$this->folhaRosto->codigo}")
             ->greeting("Olá, {$notifiable->name}.")
             ->line($this->body())
-            ->line("OS: {$this->folhaRosto->ordemServico?->codigo} - {$this->folhaRosto->ordemServico?->titulo}")
+            ->line($this->folhaRosto->ordemServico
+                ? "OS: {$this->folhaRosto->ordemServico->codigo} - {$this->folhaRosto->ordemServico->titulo}"
+                : 'Origem: medição simples, sem Ordem de Serviço')
             ->line("Contrato: {$this->folhaRosto->contract?->code} - {$this->folhaRosto->contract?->name}")
             ->line("Obra: ".($this->folhaRosto->obra?->nome ?? 'Não informada'));
 
@@ -96,10 +98,15 @@ class FolhaRostoFlowChangedNotification extends Notification
 
     private function url(bool $absolute = true): string
     {
-        if ($this->acao === 'retornar_construtora' && $this->folhaRosto->ordemServico) {
-            return route('tenant.medicao.folha-rosto.show', [
+        if ($this->acao === 'retornar_construtora') {
+            $routeName = $this->folhaRosto->ordemServico
+                ? 'tenant.medicao.folha-rosto.show'
+                : 'tenant.medicao.folha-rosto.simple.show';
+            $source = $this->folhaRosto->ordemServico ?: $this->folhaRosto->contract;
+
+            return route($routeName, [
                 $this->folhaRosto->tenant,
-                $this->folhaRosto->ordemServico,
+                $source,
                 'boletim_id' => $this->folhaRosto->boletim_medicao_id,
             ], $absolute);
         }

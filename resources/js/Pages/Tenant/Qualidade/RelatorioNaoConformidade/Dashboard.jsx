@@ -35,7 +35,7 @@ export default function RelatorioNaoConformidadeDashboard({
                     <div>
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <Gauge size={14} />
-                            <span className="eyebrow">Relatorio Nao Conformidade</span>
+                            <span className="eyebrow">Relatório de Não Conformidade</span>
                         </div>
                         <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Dashboard RNC</h1>
                         <p className="mt-1 text-sm text-[var(--ink-500)]">

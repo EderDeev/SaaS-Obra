@@ -60,10 +60,9 @@ class MedicaoBiController extends Controller
                 'obra:id,codigo,nome',
                 'boletimMedicao:id,codigo,periodo,tipo,status',
                 'construtoraEmpresa:id,nome,sigla',
-                'itens:id,folha_rosto_id,ordem_servico_item_id,quantidade_pleiteada,valor_pleiteado',
+                'itens:id,folha_rosto_id,ordem_servico_item_id,medicao_item_id,quantidade_pleiteada,valor_pleiteado',
                 'itens.analises:id,folha_rosto_item_id,setor,quantidade_aprovada',
-                'itens.ordemServicoItem:id,medicao_item_id',
-                'itens.ordemServicoItem.medicaoItem:id,item,codigo,descricao,unidade',
+                'itens.medicaoItem:id,item,codigo,descricao,unidade',
             ])
             ->latest('created_at')
             ->get();
@@ -195,10 +194,10 @@ class MedicaoBiController extends Controller
     {
         $linhas = $folhas
             ->flatMap(fn (FolhaRosto $folha): Collection => $folha->itens->map(function ($item) use ($folha): array {
-                $medicaoItem = $item->ordemServicoItem?->medicaoItem;
+                $medicaoItem = $item->medicaoItem;
                 $key = $medicaoItem?->id
                     ? 'medicao-'.$medicaoItem->id
-                    : 'os-item-'.$item->ordem_servico_item_id;
+                    : 'medicao-item-'.$item->medicao_item_id;
 
                 return [
                     'key' => $key,

@@ -174,6 +174,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::delete('/atividades/{activity}', [ActivityController::class, 'destroy'])->name('activities.destroy');
         Route::post('/atividades/{activity}/comentarios', [ActivityController::class, 'storeComment'])->name('activities.comments.store');
         Route::post('/atividades/{activity}/arquivos', [ActivityController::class, 'storeFile'])->name('activities.files.store');
+        Route::get('/diario-obra/tour-preview', [RdoController::class, 'tourPreview'])->name('diario-obra.tour-preview');
         Route::get('/diario-obra/rda', [RdaController::class, 'index'])->name('diario-obra.rda.index');
         Route::post('/diario-obra/rda', [RdaController::class, 'store'])->name('diario-obra.rda.store');
         Route::get('/diario-obra/rda/responsaveis', [RdaResponsavelController::class, 'index'])->name('diario-obra.rda.responsaveis.index');
@@ -246,6 +247,8 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/medicao/relatorios', [MedicaoRelatorioController::class, 'index'])->name('medicao.relatorios.index');
         Route::get('/medicao/bi', MedicaoBiController::class)->name('medicao.bi.index');
         Route::get('/medicao/folha-rosto', [FolhaRostoController::class, 'index'])->name('medicao.folha-rosto.index');
+        Route::get('/medicao/folha-rosto/contrato/{contract}', [FolhaRostoController::class, 'showSimple'])->name('medicao.folha-rosto.simple.show');
+        Route::post('/medicao/folha-rosto/contrato/{contract}', [FolhaRostoController::class, 'storeSimple'])->name('medicao.folha-rosto.simple.store');
         Route::get('/medicao/folha-rosto/os/{ordem}', [FolhaRostoController::class, 'show'])->name('medicao.folha-rosto.show');
         Route::post('/medicao/folha-rosto/os/{ordem}', [FolhaRostoController::class, 'store'])->name('medicao.folha-rosto.store');
         Route::patch('/medicao/folha-rosto/{folha}', [FolhaRostoController::class, 'update'])->name('medicao.folha-rosto.update');
@@ -260,9 +263,12 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::patch('/medicao/folha-rosto/{folha}/enviar-analise', [FolhaRostoController::class, 'submitAnalysis'])->name('medicao.folha-rosto.submit-analysis');
         Route::get('/medicao/folha-rosto/{folha}/memoria-calculo', [FolhaRostoController::class, 'downloadMemoria'])->name('medicao.folha-rosto.memoria.download');
         Route::get('/ordem-servico/os', [OrdemServicoController::class, 'index'])->name('ordem-servico.os.index');
+        Route::get('/ordem-servico/os/itens', [OrdemServicoController::class, 'items'])->name('ordem-servico.os.items');
         Route::post('/ordem-servico/os', [OrdemServicoController::class, 'store'])->name('ordem-servico.os.store');
+        Route::patch('/ordem-servico/os/{ordem}', [OrdemServicoController::class, 'update'])->name('ordem-servico.os.update');
         Route::patch('/ordem-servico/os/{ordem}/enviar-analise', [OrdemServicoController::class, 'submitForAnalysis'])->name('ordem-servico.os.submit-analysis');
         Route::patch('/ordem-servico/os/{ordem}/analise', [OrdemServicoController::class, 'analyze'])->name('ordem-servico.os.analyze');
+        Route::patch('/ordem-servico/os/{ordem}/reprovar', [OrdemServicoController::class, 'reject'])->name('ordem-servico.os.reject');
         Route::patch('/ordem-servico/os/{ordem}/aprovacao', [OrdemServicoController::class, 'approve'])->name('ordem-servico.os.approve');
         Route::get('/ordem-servico/analise', [OrdemServicoController::class, 'analise'])->name('ordem-servico.analise.index');
         Route::get('/ordem-servico/analise/{ordem}/detalhes', [OrdemServicoController::class, 'analiseDetalhes'])->name('ordem-servico.analise.detalhes');

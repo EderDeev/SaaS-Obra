@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 #[Fillable([
     'ordem_servico_id',
@@ -38,5 +39,15 @@ class OrdemServicoItem extends Model
     public function folhaRostoItens(): HasMany
     {
         return $this->hasMany(FolhaRostoItem::class);
+    }
+
+    public function folhaRostoItemAnalises(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            FolhaRostoItemAnalise::class,
+            FolhaRostoItem::class,
+            'ordem_servico_item_id',
+            'folha_rosto_item_id'
+        );
     }
 }

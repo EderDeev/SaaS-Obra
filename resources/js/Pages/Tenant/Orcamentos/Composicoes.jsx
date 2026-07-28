@@ -1,5 +1,5 @@
 import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { AlertCircle, Building2, CheckCircle2, Clock3, Eye, FileSpreadsheet, Globe2, Plus, Search, UploadCloud, X } from 'lucide-react';
+import { AlertCircle, Building2, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Eye, FileSpreadsheet, Filter, Globe2, Plus, Search, UploadCloud, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
@@ -39,8 +39,8 @@ const baseOptions = [
 ];
 
 const orderOptions = [
-    { value: 'code', label: 'Codigo' },
-    { value: 'description', label: 'Descricao' },
+    { value: 'code', label: 'Código' },
+    { value: 'description', label: 'Descrição' },
     { value: 'unit', label: 'Unidade' },
 ];
 
@@ -55,6 +55,7 @@ export default function OrcamentosComposicoes({
     hasSearched = false,
     composicoes = [],
     totalComposicoes = 0,
+    compositionSummary = { official: 0, own: 0 },
     canManageTenantComposicoes = false,
     canManageGlobalComposicoes = false,
     typeOptions = [],
@@ -138,6 +139,24 @@ export default function OrcamentosComposicoes({
         });
     };
 
+    const clearFilters = () => {
+        const defaults = {
+            search: '',
+            type: 'all',
+            orderBy: 'code',
+            base: 'SINAPI',
+            baseScope: 'official',
+            state: 'PA',
+            perPage: 50,
+        };
+
+        setFilters(defaults);
+        router.get(route('tenant.orcamentos.composicoes.index', tenant.slug), {}, {
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
     const togglePanel = (panel) => {
         setActivePanel((current) => (current === panel ? null : panel));
     };
@@ -176,9 +195,34 @@ export default function OrcamentosComposicoes({
         <OrcamentoShell
             tenant={tenant}
             active="composicoes"
-            title="Composicoes"
-            subtitle="Pesquise composicoes oficiais ou proprias para estruturar servicos, coeficientes e custos do orcamento."
+            title="Composições"
+            subtitle="Pesquise composições oficiais ou próprias para estruturar serviços, coeficientes e custos do orçamento."
             showNav={false}
+            eyebrow="Orçamentos · Bases de preço"
+            actions={(
+                <>
+                    {visiblePanels.importTenant && (
+                        <ActionButton active={activePanel === 'importTenant'} icon={Building2} onClick={() => togglePanel('importTenant')}>
+                            Importar base própria
+                        </ActionButton>
+                    )}
+                    {visiblePanels.importGlobal && (
+                        <ActionButton active={activePanel === 'importGlobal'} icon={Globe2} onClick={() => togglePanel('importGlobal')}>
+                            Importar global
+                        </ActionButton>
+                    )}
+                    {visiblePanels.importAnalytic && (
+                        <ActionButton active={activePanel === 'importAnalytic'} icon={FileSpreadsheet} onClick={() => togglePanel('importAnalytic')}>
+                            Importar analítico
+                        </ActionButton>
+                    )}
+                    {visiblePanels.create && (
+                        <ActionLink href={route('tenant.orcamentos.composicoes.create', tenant.slug)} icon={Plus} primary>
+                            Criar composição
+                        </ActionLink>
+                    )}
+                </>
+            )}
         >
             {page.props.flash?.success && (
                 <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
@@ -193,32 +237,6 @@ export default function OrcamentosComposicoes({
             {page.props.flash?.import_result && (
                 <ImportResultFeedback result={page.props.flash.import_result} />
             )}
-
-            <section className="mb-5 flex flex-wrap items-center gap-2">
-                {visiblePanels.create && (
-                    <ActionLink href={route('tenant.orcamentos.composicoes.create', tenant.slug)} icon={Plus} tone="blue">
-                        Criar composicao
-                    </ActionLink>
-                )}
-
-                {visiblePanels.importTenant && (
-                    <ActionButton active={activePanel === 'importTenant'} icon={Building2} tone="green" onClick={() => togglePanel('importTenant')}>
-                        Importar base propria
-                    </ActionButton>
-                )}
-
-                {visiblePanels.importGlobal && (
-                    <ActionButton active={activePanel === 'importGlobal'} icon={Globe2} tone="amber" onClick={() => togglePanel('importGlobal')}>
-                        Importar global
-                    </ActionButton>
-                )}
-
-                {visiblePanels.importAnalytic && (
-                    <ActionButton active={activePanel === 'importAnalytic'} icon={FileSpreadsheet} tone="violet" onClick={() => togglePanel('importAnalytic')}>
-                        Importar analitico
-                    </ActionButton>
-                )}
-            </section>
 
             {activePanel === 'importTenant' && (
                 <ImportOwnCompositionPanel
@@ -248,9 +266,11 @@ export default function OrcamentosComposicoes({
             )}
 
             <CompositionSearchPanel
+                compositionSummary={compositionSummary}
                 filters={filters}
                 typeOptions={typeOptions}
                 onChange={updateFilter}
+                onClear={clearFilters}
                 onSubmit={submitSearch}
             />
 
@@ -261,7 +281,9 @@ export default function OrcamentosComposicoes({
                 pagination={pagination}
                 setFilters={setFilters}
                 tenant={tenant}
-                totalComposicoes={totalComposicoes}
+                totalComposicoes={filters.baseScope === 'own'
+                    ? compositionSummary.own
+                    : compositionSummary.official}
             />
         </OrcamentoShell>
     );
@@ -367,6 +389,8 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
     const from = pagination?.from ?? (composicoes.length ? 1 : 0);
     const to = pagination?.to ?? composicoes.length;
     const filteredTotal = pagination?.total ?? composicoes.length;
+    const currentPage = Number(pagination?.current_page ?? 1);
+    const lastPage = Number(pagination?.last_page ?? 1);
     const updatePerPage = (perPage) => {
         const nextFilters = { ...filters, perPage };
 
@@ -377,27 +401,35 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
             replace: true,
         });
     };
+    const goTo = (page) => {
+        if (page >= 1 && page <= lastPage) {
+            router.get(route('tenant.orcamentos.composicoes.index', tenant.slug), {
+                ...filters,
+                page,
+                searched: 1,
+            }, { preserveScroll: true, preserveState: true, replace: true });
+        }
+    };
 
     return (
         <section className="sig-card overflow-hidden">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+            <header className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
                 <div className="min-w-0">
-                    <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Composicoes cadastradas</h2>
-                    <p className="mt-1 text-xs text-[var(--ink-500)]">
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-[var(--ink-400)]">
+                        {compositionResultContext(filters, composicoes)}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--ink-500)]">
                         {hasSearched
-                            ? `${totalComposicoes} composicao(oes) disponiveis. Exibindo ${from} a ${to} de ${filteredTotal} resultado(s) filtrado(s).`
-                            : `${totalComposicoes} composicao(oes) disponiveis. Informe UF, base e clique em Buscar para listar.`}
+                            ? <>Exibindo <DataValue>{from}–{to}</DataValue> de <DataValue>{filteredTotal}</DataValue> resultados filtrados · <DataValue>{totalComposicoes}</DataValue> na base</>
+                            : `${formatCount(totalComposicoes)} composições disponíveis. Selecione os filtros para carregar a listagem.`}
                     </p>
                 </div>
                 {hasSearched && (
-                    <>
-                        <span className="sig-pill sig-pill-blue inline-flex items-center gap-1">
-                            Pagina {pagination?.current_page ?? 1} de {pagination?.last_page ?? 1}
-                        </span>
-                        <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.04em] text-[var(--ink-500)]">
-                            Itens por pagina
+                    <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-2 text-xs text-[var(--ink-400)]">
+                            Itens por página
                             <select
-                                className="sig-input !h-9 !min-h-9 !w-24 !px-3 !text-sm !normal-case !tracking-normal"
+                                className="sig-input !h-9 !min-h-9 !w-20 !px-3 font-mono !text-sm"
                                 value={filters.perPage}
                                 onChange={(event) => updatePerPage(event.target.value)}
                             >
@@ -406,52 +438,70 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                                 <option value="100">100</option>
                             </select>
                         </label>
-                    </>
+                        <span className="h-6 w-px bg-[var(--border)]" />
+                        <div className="flex items-center gap-2">
+                            <PageArrow
+                                disabled={!pagination?.prev_page_url}
+                                icon={ChevronLeft}
+                                label="Página anterior"
+                                onClick={() => goTo(currentPage - 1)}
+                            />
+                            <span className="min-w-16 text-center font-mono text-xs text-[var(--ink-600)]">
+                                {currentPage} / {lastPage}
+                            </span>
+                            <PageArrow
+                                disabled={!pagination?.next_page_url}
+                                icon={ChevronRight}
+                                label="Próxima página"
+                                onClick={() => goTo(currentPage + 1)}
+                            />
+                        </div>
+                    </div>
                 )}
             </header>
 
             {!hasSearched ? (
                 <div className="p-8 text-center text-sm text-[var(--ink-500)]">
-                    Preencha os filtros e clique em Buscar para carregar a listagem de composicoes.
+                    Selecione os filtros para carregar a listagem de composições.
                 </div>
             ) : composicoes.length === 0 ? (
                 <div className="p-8 text-center text-sm text-[var(--ink-500)]">
-                    Nenhuma composicao encontrada para os filtros informados.
+                    Nenhuma composição encontrada para os filtros informados.
                 </div>
             ) : (
                 <>
-                    <div className="hidden [@media(min-width:1700px)]:block">
-                        <table className="w-full table-fixed border-collapse text-left">
+                    <div className="hidden overflow-x-auto xl:block">
+                        <table className="w-full min-w-[1080px] table-fixed border-collapse text-left">
                             <colgroup>
-                                <col className="w-[9%]" />
-                                <col className="w-[30%]" />
-                                <col className="w-[14%]" />
+                                <col className="w-[10%]" />
+                                <col className="w-[29%]" />
+                                <col className="w-[17%]" />
                                 <col className="w-[7%]" />
                                 <col className="w-[9%]" />
                                 <col className="w-[6%]" />
-                                <col className="w-[10%]" />
-                                <col className="w-[10%]" />
-                                <col className="w-[5%]" />
+                                <col className="w-[9%]" />
+                                <col className="w-[9%]" />
+                                <col className="w-[4%]" />
                             </colgroup>
                             <thead>
-                                <tr className="bg-[var(--ink-900)] text-white">
-                                    <TableHeader>CODIGO</TableHeader>
-                                    <TableHeader>DESCRICAO</TableHeader>
+                                <tr className="border-y border-[var(--border)] bg-[var(--surface-muted)] text-[var(--ink-400)]">
+                                    <TableHeader>CÓDIGO</TableHeader>
+                                    <TableHeader>DESCRIÇÃO</TableHeader>
                                     <TableHeader>TIPO</TableHeader>
                                     <TableHeader>UNID.</TableHeader>
                                     <TableHeader>ESTADO</TableHeader>
                                     <TableHeader className="text-center">ITENS</TableHeader>
-                                    <TableHeader className="text-right">PRECO ONERADO</TableHeader>
-                                    <TableHeader className="text-right">PRECO DESONERADO</TableHeader>
-                                    <TableHeader className="text-right">ACOES</TableHeader>
+                                    <TableHeader className="text-right">ONERADO</TableHeader>
+                                    <TableHeader className="text-right">DESONERADO</TableHeader>
+                                    <TableHeader />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--border)] bg-white">
                                 {composicoes.map((composicao) => (
-                                    <tr key={composicao.id} className="transition-colors hover:bg-[var(--primary-50)]/50">
-                                        <TableCell className="font-mono text-[13px] font-semibold">
+                                    <tr key={composicao.id} className="transition-colors hover:bg-[var(--surface-muted)]">
+                                        <TableCell className="whitespace-nowrap font-mono text-[12.5px] font-medium">
                                             <Link
-                                                className="text-[var(--primary)] underline-offset-4 transition hover:underline"
+                                                className="text-[var(--primary)] underline-offset-4 hover:underline"
                                                 href={route('tenant.orcamentos.composicoes.show', [tenant.slug, composicao.id])}
                                             >
                                                 {composicao.codigo}
@@ -459,20 +509,25 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex min-w-0 flex-col gap-1">
-                                                <span className="text-[13px] font-semibold leading-6 text-[var(--ink-900)]">
+                                                <span className="text-[13.5px] font-medium leading-5 text-[var(--ink-900)]">
                                                     {composicao.descricao}
                                                 </span>
-                                                <span className="text-[11px] font-medium text-[var(--ink-400)]">
-                                                    {composicao.base_label ?? composicao.scope_label ?? composicao.modelo} - Modelo {composicao.modelo} - {firstReferenceLabel(composicao)}
-                                                </span>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="text-[11.5px] text-[var(--ink-400)]">
+                                                        {composicao.base_label ?? composicao.scope_label ?? composicao.modelo} · Modelo {composicao.modelo} · {firstReferenceLabel(composicao)}
+                                                    </span>
+                                                    <PriceQualityNote composicao={composicao} compact />
+                                                </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-[12px] text-[var(--ink-700)]">{composicao.tipo_composicao}</TableCell>
-                                        <TableCell className="font-semibold text-[var(--ink-800)]">{composicao.unidade}</TableCell>
-                                        <TableCell>{composicao.estado_label}</TableCell>
-                                        <TableCell className="text-center font-semibold">{composicao.items_count ?? 0}</TableCell>
+                                        <TableCell className="text-[12.5px] leading-5 text-[var(--ink-600)]">{composicao.tipo_composicao}</TableCell>
+                                        <TableCell className="whitespace-nowrap font-mono text-xs">{composicao.unidade}</TableCell>
+                                        <TableCell className="whitespace-nowrap text-xs">{composicao.estado_label}</TableCell>
+                                        <TableCell className={`text-center font-mono text-xs ${Number(composicao.items_count ?? 0) === 0 ? 'text-[var(--ink-300)]' : ''}`}>
+                                            {composicao.items_count ?? 0}
+                                        </TableCell>
                                         <TableCell className="text-right">
-                                            <PriceDisplay composicao={composicao} showNote value={composicao.effective_preco_onerado} />
+                                            <PriceDisplay composicao={composicao} value={composicao.effective_preco_onerado} />
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <PriceDisplay composicao={composicao} value={composicao.effective_preco_desonerado} />
@@ -486,14 +541,13 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                         </table>
                     </div>
 
-                    <div className="grid gap-3 bg-[var(--surface-muted)] p-3 [@media(min-width:1700px)]:hidden">
+                    <div className="grid gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] p-3 xl:hidden">
                         {composicoes.map((composicao) => (
-                            <article key={composicao.id} className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-sm)]">
+                            <article key={composicao.id} className="rounded-lg border border-[var(--border)] bg-white p-3 shadow-[var(--shadow-sm)]">
                                 <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Codigo</span>
                                         <Link
-                                            className="break-words font-mono text-[14px] font-semibold text-[var(--primary)] underline-offset-4 hover:underline"
+                                            className="break-words font-mono text-xs font-semibold text-[var(--primary)] underline-offset-4 hover:underline"
                                             href={route('tenant.orcamentos.composicoes.show', [tenant.slug, composicao.id])}
                                         >
                                             {composicao.codigo}
@@ -501,9 +555,9 @@ function ComposicoesList({ composicoes, filters, hasSearched, pagination, setFil
                                     </div>
                                     <OpenButton composicao={composicao} tenant={tenant} />
                                 </div>
-                                <h3 className="mt-3 break-words text-[15px] font-bold text-[var(--ink-900)]">{composicao.descricao}</h3>
+                                <h3 className="mt-2 break-words text-sm font-semibold leading-5 text-[var(--ink-900)]">{composicao.descricao}</h3>
                                 <p className="mt-1 break-words text-xs text-[var(--ink-500)]">{composicao.tipo_composicao}</p>
-                                <div className="mt-3 grid gap-3 border-t border-[var(--border)] pt-3 text-sm sm:grid-cols-2">
+                                <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 text-sm">
                                     <MobileMetric label="Unidade" value={composicao.unidade} />
                                     <MobileMetric label="Estado" value={composicao.estado_label} />
                                     <MobileMetric label="Itens" value={composicao.items_count ?? 0} />
@@ -542,7 +596,7 @@ function PriceQualityNote({ compact = false, composicao }) {
     }
 
     return (
-        <div className={`mt-2 flex flex-wrap items-center gap-1 text-[10px] font-semibold ${compact ? 'justify-end' : ''}`}>
+        <div className={`flex flex-wrap items-center gap-1 text-[10px] font-semibold ${compact ? 'justify-start' : 'mt-2'}`}>
             {isCalculated && (
                 <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
                     Calculado pelos itens
@@ -561,8 +615,8 @@ function PriceQualityNote({ compact = false, composicao }) {
 function OpenButton({ compact = false, composicao, tenant }) {
     return (
         <Link
-            className={`inline-flex min-h-8 items-center justify-center gap-1 rounded-md border border-[var(--border)] bg-white text-xs font-bold text-[var(--primary)] transition hover:bg-[var(--primary-50)] ${
-                compact ? 'w-9 px-0' : 'px-3'
+            className={`inline-flex min-h-8 items-center justify-center gap-1 rounded-md border border-[var(--border)] bg-white text-xs font-bold text-[var(--ink-600)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--primary)] ${
+                compact ? 'w-8 px-0' : 'px-3'
             }`}
             href={route('tenant.orcamentos.composicoes.show', [tenant.slug, composicao.id])}
             title="Abrir"
@@ -585,29 +639,10 @@ function Pagination({ filters, pagination, tenant }) {
     };
 
     return (
-        <footer className="flex flex-col gap-3 border-t border-[var(--border)] bg-white px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-                <button
-                    className={`sig-btn sig-btn-secondary min-h-9 ${!pagination.prev_page_url ? 'cursor-not-allowed opacity-45' : ''}`}
-                    disabled={!pagination.prev_page_url}
-                    type="button"
-                    onClick={() => goTo(Math.max(1, Number(pagination.current_page ?? 1) - 1))}
-                >
-                    Anterior
-                </button>
-                <button
-                    className={`sig-btn sig-btn-primary min-h-9 ${!pagination.next_page_url ? 'cursor-not-allowed opacity-45' : ''}`}
-                    disabled={!pagination.next_page_url}
-                    type="button"
-                    onClick={() => goTo(Math.min(Number(pagination.last_page ?? 1), Number(pagination.current_page ?? 1) + 1))}
-                >
-                    Proxima
-                </button>
-                <span className="text-xs font-medium text-[var(--ink-500)]">
-                    Pagina {pagination.current_page} de {pagination.last_page}
-                </span>
-            </div>
-
+        <footer className="flex flex-col gap-3 border-t border-[var(--border)] bg-white px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-[var(--ink-400)]">
+                Valores em R$ referentes à base e ao estado selecionados.
+            </p>
             <div className="flex flex-wrap items-center gap-1">
                 {pagination.links
                     .filter((link) => !String(link.label).includes('Previous') && !String(link.label).includes('Next'))
@@ -618,7 +653,7 @@ function Pagination({ filters, pagination, tenant }) {
                         return (
                             <button
                                 key={`${link.label}-${index}`}
-                                className={`min-h-8 rounded-md border px-3 text-xs font-bold transition ${
+                                className={`flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-bold transition ${
                                     link.active
                                         ? 'border-[var(--primary)] bg-[var(--primary)] text-white'
                                         : 'border-[var(--border)] bg-white text-[var(--ink-600)] hover:bg-[var(--primary-50)]'
@@ -644,19 +679,11 @@ function paginationLabel(label) {
         .replace('&raquo;', '');
 }
 
-function ActionLink({ children, href, icon: Icon, tone }) {
-    const palette = actionTone(tone);
-
+function ActionLink({ children, href, icon: Icon, primary = false }) {
     return (
         <Link
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border px-4 text-sm font-bold transition hover:-translate-y-0.5"
+            className={`sig-btn min-h-10 ${primary ? 'sig-btn-primary' : 'sig-btn-secondary'}`}
             href={href}
-            style={{
-                background: palette.background,
-                borderColor: palette.border,
-                color: palette.color,
-                boxShadow: '0 10px 20px rgba(15, 23, 42, 0.12)',
-            }}
         >
             <Icon size={15} />
             {children}
@@ -664,18 +691,10 @@ function ActionLink({ children, href, icon: Icon, tone }) {
     );
 }
 
-function ActionButton({ active, children, icon: Icon, onClick, tone }) {
-    const palette = actionTone(tone);
-
+function ActionButton({ active, children, icon: Icon, onClick }) {
     return (
         <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border px-4 text-sm font-bold transition hover:-translate-y-0.5"
-            style={{
-                background: active ? palette.background : palette.softBackground,
-                borderColor: active ? palette.border : palette.softBorder,
-                color: active ? palette.color : palette.softColor,
-                boxShadow: active ? '0 10px 20px rgba(15, 23, 42, 0.12)' : 'var(--shadow-sm)',
-            }}
+            className={`sig-btn min-h-10 ${active ? 'sig-btn-primary' : 'sig-btn-secondary'}`}
             type="button"
             onClick={onClick}
         >
@@ -683,45 +702,6 @@ function ActionButton({ active, children, icon: Icon, onClick, tone }) {
             {children}
         </button>
     );
-}
-
-function actionTone(tone) {
-    const tones = {
-        blue: {
-            background: 'var(--primary)',
-            border: 'var(--primary)',
-            color: '#fff',
-            softBackground: 'var(--primary-50)',
-            softBorder: 'var(--border)',
-            softColor: 'var(--primary)',
-        },
-        green: {
-            background: '#059669',
-            border: '#059669',
-            color: '#fff',
-            softBackground: '#ecfdf5',
-            softBorder: '#bbf7d0',
-            softColor: '#047857',
-        },
-        amber: {
-            background: '#d97706',
-            border: '#d97706',
-            color: '#fff',
-            softBackground: '#fffbeb',
-            softBorder: '#fde68a',
-            softColor: '#b45309',
-        },
-        violet: {
-            background: '#6d28d9',
-            border: '#6d28d9',
-            color: '#fff',
-            softBackground: '#f5f3ff',
-            softBorder: '#ddd6fe',
-            softColor: '#5b21b6',
-        },
-    };
-
-    return tones[tone] ?? tones.blue;
 }
 
 function ImportOwnCompositionPanel({ form, onClose, onSubmit }) {
@@ -1053,124 +1033,155 @@ function ImportAnalyticPanel({ form, onClose, onSubmit }) {
     );
 }
 
-function CompositionSearchPanel({ filters, onChange, onSubmit, typeOptions = [] }) {
+function CompositionSearchPanel({
+    compositionSummary = { official: 0, own: 0 },
+    filters,
+    onChange,
+    onClear,
+    onSubmit,
+    typeOptions = [],
+}) {
     return (
-        <section className="mb-5 overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
-            <form onSubmit={onSubmit}>
-                <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] p-4 lg:grid-cols-[minmax(0,1fr)_180px_220px]">
-                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
-                        <input
-                            className="sig-input min-w-0 flex-1"
-                            placeholder="Pesquise por descricao ou codigo"
-                            type="search"
-                            value={filters.search}
-                            onChange={(event) => onChange('search', event.target.value)}
-                        />
-                        <button className="sig-btn sig-btn-primary justify-center sm:min-w-[120px]" type="submit">
-                            <Search size={15} />
-                            Buscar
-                        </button>
-                    </div>
+        <section className="mb-5">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+                <ScopeChip
+                    active={filters.baseScope === 'official'}
+                    count={compositionSummary.official}
+                    label="Oficiais"
+                    onClick={() => onChange('baseScope', 'official')}
+                />
+                <ScopeChip
+                    active={filters.baseScope === 'own'}
+                    count={compositionSummary.own}
+                    label="Próprias"
+                    onClick={() => onChange('baseScope', 'own')}
+                />
+            </div>
 
-                    <select
-                        className="sig-input"
-                        value={filters.state}
-                        onChange={(event) => onChange('state', event.target.value)}
-                    >
-                        {states.map((state) => (
-                            <option key={state.value} value={state.value}>
-                                {state.label}
-                            </option>
-                        ))}
-                    </select>
-
-                    <select
-                        className="sig-input"
-                        value={filters.base}
-                        onChange={(event) => onChange('base', event.target.value)}
-                    >
-                        {baseOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                                {option.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_0.8fr]">
-                    <label className="block">
-                        <span className="mb-1 block text-xs font-bold text-[var(--ink-500)]">Tipo:</span>
-                        <select
-                            className="sig-input"
-                            value={filters.type}
-                            onChange={(event) => onChange('type', event.target.value)}
-                        >
-                            <option value="all">Todos os tipos</option>
-                            {typeOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-
-                    <label className="block">
-                        <span className="mb-1 block text-xs font-bold text-[var(--ink-500)]">Ordenacao:</span>
-                        <select
-                            className="sig-input"
-                            value={filters.orderBy}
-                            onChange={(event) => onChange('orderBy', event.target.value)}
-                        >
-                            {orderOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-
-                    <RadioGroup
-                        label="Bases:"
-                        name="composition-base-scope"
-                        options={[
-                            { value: 'official', label: 'Oficiais' },
-                            { value: 'own', label: 'Propria' },
-                        ]}
-                        value={filters.baseScope}
-                        onChange={(value) => onChange('baseScope', value)}
+            <form className="grid gap-3 lg:grid-cols-12" onSubmit={onSubmit}>
+                <label className="relative block lg:col-span-4">
+                    <span className="sr-only">Buscar por descrição ou código</span>
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-400)]" size={17} />
+                    <input
+                        className="sig-input h-[52px] w-full"
+                        style={{ paddingLeft: 42 }}
+                        placeholder="Buscar por descrição ou código"
+                        type="search"
+                        value={filters.search}
+                        onChange={(event) => onChange('search', event.target.value)}
                     />
+                </label>
+
+                <CompactSelect
+                    className="lg:col-span-2"
+                    disabled={filters.baseScope === 'own'}
+                    label="Banco"
+                    value={filters.base}
+                    onChange={(value) => onChange('base', value)}
+                >
+                    {filters.baseScope === 'own'
+                        ? <option value={filters.base}>Base própria</option>
+                        : baseOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                </CompactSelect>
+
+                <CompactSelect
+                    className="lg:col-span-2"
+                    label="Estado"
+                    value={filters.state}
+                    onChange={(value) => onChange('state', value)}
+                >
+                    {states.map((state) => (
+                        <option key={state.value} value={state.value}>{state.label}</option>
+                    ))}
+                </CompactSelect>
+
+                <CompactSelect
+                    className="lg:col-span-2"
+                    label="Tipo"
+                    value={filters.type}
+                    onChange={(value) => onChange('type', value)}
+                >
+                    <option value="all">Todos os tipos</option>
+                    {typeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                </CompactSelect>
+
+                <CompactSelect
+                    className="lg:col-span-2"
+                    label="Ordenar por"
+                    value={filters.orderBy}
+                    onChange={(value) => onChange('orderBy', value)}
+                >
+                    {orderOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                </CompactSelect>
+
+                <div className="flex flex-wrap items-center justify-end gap-2 lg:col-span-12">
+                    <button className="sig-btn sig-btn-ghost" type="button" onClick={onClear}>
+                        Limpar filtros
+                    </button>
+                    <button className="sig-btn sig-btn-primary min-w-36 justify-center" type="submit">
+                        <Filter size={15} />
+                        Aplicar filtros
+                    </button>
                 </div>
             </form>
         </section>
     );
 }
 
-function RadioGroup({ label, name, options, value, onChange }) {
+function ScopeChip({ active, count, label, onClick }) {
     return (
-        <fieldset>
-            <legend className="mb-1 text-xs font-bold text-[var(--ink-500)]">{label}</legend>
-            <div className="flex flex-wrap gap-x-5 gap-y-2 xl:block">
-                {options.map((option) => (
-                    <label key={option.value} className="flex cursor-pointer items-center gap-2 text-sm text-[var(--ink-600)] xl:mb-1">
-                        <input
-                            checked={value === option.value}
-                            className="h-4 w-4 accent-[var(--primary)]"
-                            name={name}
-                            type="radio"
-                            value={option.value}
-                            onChange={(event) => onChange(event.target.value)}
-                        />
-                        {option.label}
-                    </label>
-                ))}
-            </div>
-        </fieldset>
+        <button
+            className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-4 text-sm transition ${
+                active
+                    ? 'border-[var(--border-strong)] bg-[var(--primary-50)] font-semibold text-[var(--ink-900)]'
+                    : 'border-[var(--border)] bg-white text-[var(--ink-700)] hover:border-[var(--border-strong)]'
+            }`}
+            type="button"
+            onClick={onClick}
+        >
+            <span>{label}</span>
+            <span className="font-mono text-xs text-[var(--ink-400)]">{formatCount(count)}</span>
+        </button>
+    );
+}
+
+function CompactSelect({ children, className = '', disabled = false, label, onChange, value }) {
+    return (
+        <label
+            className={`sig-input relative h-[52px] min-w-0 flex-col justify-center gap-0.5 py-1.5 pl-3.5 pr-9 ${
+                disabled ? 'cursor-not-allowed bg-[var(--surface-muted)] opacity-75' : ''
+            } ${className}`}
+            style={{ alignItems: 'stretch' }}
+        >
+            <span className="pointer-events-none block text-[9.5px] font-bold uppercase leading-[1.2] tracking-[0.05em] text-[var(--ink-400)]">
+                {label}
+            </span>
+            <select
+                className="m-0 h-5 min-h-5 w-full appearance-none border-0 bg-transparent p-0 text-sm font-semibold leading-5 text-[var(--ink-900)] outline-none focus:border-0 focus:ring-0"
+                disabled={disabled}
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+            >
+                {children}
+            </select>
+            <ChevronDown
+                aria-hidden="true"
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-400)]"
+                size={15}
+            />
+        </label>
     );
 }
 
 function TableHeader({ children, className = '' }) {
     return (
-        <th className={`px-3 py-4 text-xs font-bold uppercase tracking-[0.02em] ${className}`}>
+        <th className={`px-4 py-3 text-[10.5px] font-bold uppercase tracking-[0.08em] ${className}`}>
             {children}
         </th>
     );
@@ -1178,7 +1189,7 @@ function TableHeader({ children, className = '' }) {
 
 function TableCell({ children, className = '' }) {
     return (
-        <td className={`break-words px-3 py-3 align-top text-[13px] text-[var(--ink-700)] ${className}`}>
+        <td className={`break-words px-4 py-3.5 align-middle text-[13px] text-[var(--ink-700)] ${className}`}>
             {children}
         </td>
     );
@@ -1205,6 +1216,60 @@ function firstReferenceLabel(composicao) {
     }
 
     return reference.codigo ?? `${reference.nome ?? composicao.modelo} ${reference.uf ?? ''}`.trim();
+}
+
+function DataValue({ children }) {
+    return (
+        <span className="font-mono text-xs font-medium text-[var(--ink-700)]">
+            {typeof children === 'number' ? formatCount(children) : children}
+        </span>
+    );
+}
+
+function PageArrow({ disabled, icon: Icon, label, onClick }) {
+    return (
+        <button
+            aria-label={label}
+            className={`flex h-9 w-9 items-center justify-center rounded-md border border-[var(--border)] bg-white text-[var(--ink-500)] transition hover:border-[var(--border-strong)] hover:text-[var(--primary)] ${
+                disabled ? 'cursor-not-allowed opacity-40' : ''
+            }`}
+            disabled={disabled}
+            title={label}
+            type="button"
+            onClick={onClick}
+        >
+            <Icon size={15} />
+        </button>
+    );
+}
+
+function compositionResultContext(filters, composicoes) {
+    const scope = filters.baseScope === 'own' ? 'Base própria' : filters.base;
+    const state = states.find((item) => item.value === filters.state)?.label ?? filters.state;
+    const reference = referenceDateLabel(composicoes[0]);
+
+    return ['Composições cadastradas', scope, state, reference]
+        .filter(Boolean)
+        .join(' · ');
+}
+
+function referenceDateLabel(composicao) {
+    const reference = composicao?.base_references?.[0];
+    const rawDate = reference?.data ?? reference?.date ?? '';
+
+    if (/^\d{2}\/\d{4}$/.test(rawDate)) {
+        return rawDate;
+    }
+
+    if (/^\d{4}-\d{2}/.test(rawDate)) {
+        return `${rawDate.slice(5, 7)}/${rawDate.slice(0, 4)}`;
+    }
+
+    return null;
+}
+
+function formatCount(value) {
+    return new Intl.NumberFormat('pt-BR').format(Number(value ?? 0));
 }
 
 function formatCurrency(value) {
