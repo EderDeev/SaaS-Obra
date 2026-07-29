@@ -159,7 +159,7 @@ class TenantParametrizacaoTest extends TestCase
         $obra = $tenant->obras()->create([
             'contract_id' => $contract->id,
             'nome' => 'Obra Norte',
-            'codigo' => 'OBR-N',
+            'codigo' => '001',
             'tipo' => 'pai',
         ]);
         $contratante = $tenant->empresas()->create([
@@ -240,7 +240,7 @@ class TenantParametrizacaoTest extends TestCase
             ->post(route('tenant.parametrizacao.obras.store', $tenant), [
                 'nome' => 'Residencial Jardim Central',
                 'contract_id' => $contract->id,
-                'codigo' => 'obr-001',
+                'codigo' => '001',
                 'tipo' => 'pai',
             ])
             ->assertRedirect();
@@ -249,7 +249,7 @@ class TenantParametrizacaoTest extends TestCase
             'tenant_id' => $tenant->id,
             'contract_id' => $contract->id,
             'nome' => 'Residencial Jardim Central',
-            'codigo' => 'OBR-001',
+            'codigo' => '001',
             'tipo' => 'pai',
             'obra_pai_id' => null,
         ]);
@@ -261,7 +261,7 @@ class TenantParametrizacaoTest extends TestCase
         $obraPai = $tenant->obras()->create([
             'contract_id' => $contract->id,
             'nome' => 'Residencial Jardim Central',
-            'codigo' => 'OBR-001',
+            'codigo' => '001',
             'tipo' => 'pai',
         ]);
 
@@ -269,7 +269,7 @@ class TenantParametrizacaoTest extends TestCase
             ->post(route('tenant.parametrizacao.obras.store', $tenant), [
                 'nome' => 'Torre A',
                 'contract_id' => $contract->id,
-                'codigo' => 'TOR-A',
+                'codigo' => '002',
                 'tipo' => 'filha',
                 'obra_pai_id' => $obraPai->id,
             ])
@@ -279,7 +279,7 @@ class TenantParametrizacaoTest extends TestCase
             'tenant_id' => $tenant->id,
             'contract_id' => $contract->id,
             'nome' => 'Torre A',
-            'codigo' => 'TOR-A',
+            'codigo' => '002',
             'tipo' => 'filha',
             'obra_pai_id' => $obraPai->id,
         ]);
@@ -291,7 +291,7 @@ class TenantParametrizacaoTest extends TestCase
         $obra = $tenant->obras()->create([
             'contract_id' => $contract->id,
             'nome' => 'Residencial Jardim Central',
-            'codigo' => 'OBR-001',
+            'codigo' => '001',
             'tipo' => 'pai',
         ]);
 
@@ -299,7 +299,7 @@ class TenantParametrizacaoTest extends TestCase
             ->patch(route('tenant.parametrizacao.obras.update', [$tenant, $obra]), [
                 'nome' => 'Residencial Jardim Central Editado',
                 'contract_id' => $contract->id,
-                'codigo' => 'obr-002',
+                'codigo' => '002',
                 'tipo' => 'pai',
             ])
             ->assertRedirect();
@@ -309,7 +309,7 @@ class TenantParametrizacaoTest extends TestCase
             'tenant_id' => $tenant->id,
             'contract_id' => $contract->id,
             'nome' => 'Residencial Jardim Central Editado',
-            'codigo' => 'OBR-002',
+            'codigo' => '002',
             'tipo' => 'pai',
             'obra_pai_id' => null,
         ]);
@@ -370,7 +370,7 @@ class TenantParametrizacaoTest extends TestCase
             ->post(route('tenant.parametrizacao.obras.store', $tenant), [
                 'nome' => 'Torre A',
                 'contract_id' => $contract->id,
-                'codigo' => 'TOR-A',
+                'codigo' => '002',
                 'tipo' => 'filha',
                 'obra_pai_id' => '',
             ])
@@ -396,7 +396,6 @@ class TenantParametrizacaoTest extends TestCase
                 'contract_id' => $contract->id,
                 'nome' => 'Arquitetura',
                 'sigla' => 'arq',
-                'descricao' => 'Projetos arquitetonicos',
                 'cor' => '#1d4ed8',
             ])
             ->assertRedirect();
@@ -406,7 +405,6 @@ class TenantParametrizacaoTest extends TestCase
             'contract_id' => $contract->id,
             'nome' => 'Arquitetura',
             'sigla' => 'ARQ',
-            'descricao' => 'Projetos arquitetonicos',
             'cor' => '#1d4ed8',
         ]);
     }
@@ -418,7 +416,6 @@ class TenantParametrizacaoTest extends TestCase
             'contract_id' => $contract->id,
             'nome' => 'Arquitetura',
             'sigla' => 'ARQ',
-            'descricao' => 'Projetos arquitetonicos',
             'cor' => '#1d4ed8',
         ]);
 
@@ -427,7 +424,6 @@ class TenantParametrizacaoTest extends TestCase
                 'contract_id' => $contract->id,
                 'nome' => 'Estrutura',
                 'sigla' => 'est',
-                'descricao' => 'Projetos estruturais',
                 'cor' => '#16a34a',
             ])
             ->assertRedirect();
@@ -436,7 +432,6 @@ class TenantParametrizacaoTest extends TestCase
             'id' => $disciplina->id,
             'nome' => 'Estrutura',
             'sigla' => 'EST',
-            'descricao' => 'Projetos estruturais',
             'cor' => '#16a34a',
         ]);
     }
@@ -469,21 +464,21 @@ class TenantParametrizacaoTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_tenant_admin_can_access_contrato_parametrizacao(): void
+    public function test_tenant_admin_can_access_contract_parametrization_in_contract_details(): void
     {
-        [$tenant, $admin] = $this->tenantWithUser('tenant_admin');
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
 
         $this->actingAs($admin)
-            ->get(route('tenant.parametrizacao.contrato.index', $tenant))
+            ->get(route('tenant.contracts.show', [$tenant, $contract]))
             ->assertOk();
     }
 
-    public function test_tenant_admin_can_access_usuario_contrato_parametrizacao(): void
+    public function test_tenant_admin_can_access_user_contract_links_in_users(): void
     {
         [$tenant, $admin] = $this->tenantWithUser('tenant_admin');
 
         $this->actingAs($admin)
-            ->get(route('tenant.parametrizacao.usuarios-contratos.index', $tenant))
+            ->get(route('tenant.users.index', $tenant))
             ->assertOk();
     }
 
@@ -491,19 +486,34 @@ class TenantParametrizacaoTest extends TestCase
     {
         [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
         $engineer = User::factory()->create();
-
-        $tenant->memberships()->create([
+        $empresa = $tenant->empresas()->create([
+            'contract_id' => $contract->id,
+            'tipo_empresa_id' => TipoEmpresa::where('nome', 'gerenciadora')->value('id'),
+            'nome' => 'Gerenciadora Teste',
+            'cnpj' => '44.444.444/0001-44',
+            'sigla' => 'GTE',
+        ]);
+        $membership = $tenant->memberships()->create([
             'user_id' => $engineer->id,
+            'empresa_id' => $empresa->id,
             'role' => 'engineer',
             'status' => 'active',
         ]);
 
         $this->actingAs($admin)
-            ->post(route('tenant.parametrizacao.usuarios-contratos.store', $tenant), [
-                'user_id' => $engineer->id,
-                'contract_id' => $contract->id,
-                'side' => 'manager',
-                'role' => 'team_member',
+            ->patch(route('tenant.users.update', [$tenant, $membership]), [
+                'name' => $engineer->name,
+                'email' => $engineer->email,
+                'empresa_id' => $empresa->id,
+                'role' => 'engineer',
+                'contract_accesses' => [[
+                    'contract_id' => $contract->id,
+                    'side' => 'manager',
+                    'role' => 'team_member',
+                    'activity_permissions' => [],
+                    'project_permissions' => [],
+                    'rnc_permissions' => [],
+                ]],
             ])
             ->assertRedirect();
 
@@ -521,9 +531,16 @@ class TenantParametrizacaoTest extends TestCase
     {
         [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
         $engineer = User::factory()->create();
-
-        $tenant->memberships()->create([
+        $empresa = $tenant->empresas()->create([
+            'contract_id' => $contract->id,
+            'tipo_empresa_id' => TipoEmpresa::where('nome', 'gerenciadora')->value('id'),
+            'nome' => 'Gerenciadora Teste',
+            'cnpj' => '55.555.555/0001-55',
+            'sigla' => 'GTE',
+        ]);
+        $membership = $tenant->memberships()->create([
             'user_id' => $engineer->id,
+            'empresa_id' => $empresa->id,
             'role' => 'engineer',
             'status' => 'active',
         ]);
@@ -538,7 +555,13 @@ class TenantParametrizacaoTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->delete(route('tenant.parametrizacao.usuarios-contratos.destroy', [$tenant, $participant]))
+            ->patch(route('tenant.users.update', [$tenant, $membership]), [
+                'name' => $engineer->name,
+                'email' => $engineer->email,
+                'empresa_id' => $empresa->id,
+                'role' => 'engineer',
+                'contract_accesses' => [],
+            ])
             ->assertRedirect();
 
         $this->assertDatabaseHas('contract_participants', [
@@ -554,9 +577,16 @@ class TenantParametrizacaoTest extends TestCase
     {
         [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
         $engineer = User::factory()->create();
-
-        $tenant->memberships()->create([
+        $empresa = $tenant->empresas()->create([
+            'contract_id' => $contract->id,
+            'tipo_empresa_id' => TipoEmpresa::where('nome', 'gerenciadora')->value('id'),
+            'nome' => 'Gerenciadora Teste',
+            'cnpj' => '66.666.666/0001-66',
+            'sigla' => 'GTE',
+        ]);
+        $membership = $tenant->memberships()->create([
             'user_id' => $engineer->id,
+            'empresa_id' => $empresa->id,
             'role' => 'engineer',
             'status' => 'active',
         ]);
@@ -573,11 +603,19 @@ class TenantParametrizacaoTest extends TestCase
         $participant->delete();
 
         $this->actingAs($admin)
-            ->post(route('tenant.parametrizacao.usuarios-contratos.store', $tenant), [
-                'user_id' => $engineer->id,
-                'contract_id' => $contract->id,
-                'side' => 'manager',
-                'role' => 'manager',
+            ->patch(route('tenant.users.update', [$tenant, $membership]), [
+                'name' => $engineer->name,
+                'email' => $engineer->email,
+                'empresa_id' => $empresa->id,
+                'role' => 'engineer',
+                'contract_accesses' => [[
+                    'contract_id' => $contract->id,
+                    'side' => 'manager',
+                    'role' => 'manager',
+                    'activity_permissions' => [],
+                    'project_permissions' => [],
+                    'rnc_permissions' => [],
+                ]],
             ])
             ->assertRedirect();
 
@@ -623,8 +661,7 @@ class TenantParametrizacaoTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->post(route('tenant.parametrizacao.contrato.store', $tenant), [
-                'contract_id' => $contract->id,
+            ->patch(route('tenant.contracts.parametrizacao.update', [$tenant, $contract]), [
                 'obra_id' => $obra->id,
                 'cliente_empresa_id' => $cliente->id,
                 'construtora_empresa_id' => $construtora->id,
@@ -655,20 +692,19 @@ class TenantParametrizacaoTest extends TestCase
         $obra = $tenant->obras()->create([
             'contract_id' => $otherContract->id,
             'nome' => 'Obra de Outro Contrato',
-            'codigo' => 'OBR-OUTRA',
+            'codigo' => '002',
             'tipo' => 'pai',
         ]);
 
         $this->actingAs($admin)
-            ->from(route('tenant.parametrizacao.contrato.index', $tenant))
-            ->post(route('tenant.parametrizacao.contrato.store', $tenant), [
-                'contract_id' => $contract->id,
+            ->from(route('tenant.contracts.show', [$tenant, $contract]))
+            ->patch(route('tenant.contracts.parametrizacao.update', [$tenant, $contract]), [
                 'obra_id' => $obra->id,
                 'cliente_empresa_id' => '',
                 'construtora_empresa_id' => '',
                 'gerenciadora_empresa_id' => '',
             ])
-            ->assertRedirect(route('tenant.parametrizacao.contrato.index', $tenant))
+            ->assertRedirect(route('tenant.contracts.show', [$tenant, $contract]))
             ->assertSessionHasErrors('obra_id');
 
         $this->assertDatabaseMissing('contracts', [
@@ -679,10 +715,20 @@ class TenantParametrizacaoTest extends TestCase
 
     public function test_operational_user_cannot_access_contrato_parametrizacao(): void
     {
-        [$tenant, $engineer] = $this->tenantWithUser('engineer');
+        [$tenant, $engineer, $contract] = $this->tenantWithUser('engineer');
+        ContractParticipant::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'user_id' => $engineer->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
 
         $this->actingAs($engineer)
-            ->get(route('tenant.parametrizacao.contrato.index', $tenant))
+            ->patch(route('tenant.contracts.parametrizacao.update', [$tenant, $contract]), [
+                'obra_id' => null,
+            ])
             ->assertForbidden();
     }
 
@@ -691,7 +737,7 @@ class TenantParametrizacaoTest extends TestCase
         [$tenant, $engineer] = $this->tenantWithUser('engineer');
 
         $this->actingAs($engineer)
-            ->get(route('tenant.parametrizacao.usuarios-contratos.index', $tenant))
+            ->get(route('tenant.users.index', $tenant))
             ->assertForbidden();
     }
 

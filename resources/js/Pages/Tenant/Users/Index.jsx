@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Activity, Check, ChevronRight, Copy, FileWarning, FolderOpen, KeyRound, Pencil, Plus, ShieldCheck, SlidersHorizontal, UserCog, UserX, Users, X } from 'lucide-react';
+import { Activity, Check, ChevronRight, Copy, FileWarning, FolderOpen, KeyRound, Link2, Pencil, Plus, ShieldCheck, SlidersHorizontal, UserCog, UserX, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const contractRoleLabels = {
@@ -94,6 +94,7 @@ export default function TenantUsersIndex({
     const defaultEmpresaId = empresas[0]?.id ?? '';
     const [formOpen, setFormOpen] = useState(false);
     const [editingMembership, setEditingMembership] = useState(null);
+    const [formMode, setFormMode] = useState('create');
     const [resetPasswordModal, setResetPasswordModal] = useState(null);
     const [passwordCopied, setPasswordCopied] = useState(false);
     const [openGlobalPermissionGroup, setOpenGlobalPermissionGroup] = useState('activity_permissions');
@@ -118,6 +119,7 @@ export default function TenantUsersIndex({
 
     const clearForm = () => {
         setEditingMembership(null);
+        setFormMode('create');
         form.clearErrors();
         form.setData(emptyFormData(defaultEmpresaId, defaultRole));
         setFormOpen(false);
@@ -125,6 +127,7 @@ export default function TenantUsersIndex({
 
     const openCreateForm = () => {
         setEditingMembership(null);
+        setFormMode('create');
         form.clearErrors();
         form.setData(emptyFormData(defaultEmpresaId, defaultRole));
         setFormOpen(true);
@@ -132,6 +135,7 @@ export default function TenantUsersIndex({
 
     const editMembership = (membership) => {
         setEditingMembership(membership);
+        setFormMode('edit');
         setFormOpen(true);
         form.clearErrors();
         form.setData({
@@ -141,7 +145,23 @@ export default function TenantUsersIndex({
             role: membership.role ?? defaultRole,
             user_permissions: membership.user_permissions ?? [],
             parametrizacao_permissions: membership.parametrizacao_permissions ?? [],
-            contract_accesses: [],
+            contract_accesses: membership.contract_accesses ?? [],
+        });
+    };
+
+    const linkMembership = (membership) => {
+        setEditingMembership(membership);
+        setFormMode('contracts');
+        setFormOpen(true);
+        form.clearErrors();
+        form.setData({
+            name: membership.user?.name ?? '',
+            email: membership.user?.email ?? '',
+            empresa_id: membership.empresa_id ?? '',
+            role: membership.role ?? defaultRole,
+            user_permissions: membership.user_permissions ?? [],
+            parametrizacao_permissions: membership.parametrizacao_permissions ?? [],
+            contract_accesses: membership.contract_accesses ?? [],
         });
     };
 
@@ -335,9 +355,13 @@ export default function TenantUsersIndex({
                                     <Users size={14} />
                                     <span className="eyebrow">Equipe interna</span>
                                 </div>
-                                <h1 className="mt-2 text-xl font-semibold">{editingMembership ? 'Editar usuario' : 'Adicionar usuario'}</h1>
+                                <h1 className="mt-2 text-xl font-semibold">
+                                    {formMode === 'contracts' ? 'Vincular contratos' : editingMembership ? 'Editar usuario' : 'Adicionar usuario'}
+                                </h1>
                                 <p className="mt-1 text-sm text-[var(--ink-500)]">
-                                    Vincula usuario ao tenant {tenant.name}. Novas contas recebem senha provisoria por email.
+                                    {formMode === 'contracts'
+                                        ? `Defina quais contratos ${editingMembership?.user?.name ?? 'o usuario'} poderá acessar.`
+                                        : `Vincula usuario ao tenant ${tenant.name}. Novas contas recebem senha provisoria por email.`}
                                 </p>
                             </div>
                             <button type="button" className="sig-btn sig-btn-ghost sig-btn-sm" onClick={clearForm}>
@@ -352,6 +376,7 @@ export default function TenantUsersIndex({
                             </div>
                         )}
 
+                        {formMode !== 'contracts' && (
                         <div className="mt-5 grid gap-3 lg:grid-cols-2">
                             <Field label="Nome" error={form.errors.name}>
                                 <input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} required />
@@ -386,6 +411,7 @@ export default function TenantUsersIndex({
                                 </select>
                             </Field>
                         </div>
+                        )}
 
                         {false && (
                         <PermissionModuleList
@@ -435,14 +461,14 @@ export default function TenantUsersIndex({
                         </div>
                         )}
 
-                        {!editingMembership && (
-                            <section className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+                        {formMode !== 'edit' && (
+                        <section className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <span className="eyebrow">Acessos por contrato</span>
                                         <h2 className="mt-1 text-[15px] font-semibold text-[var(--ink-900)]">Contratos vinculados</h2>
                                         <p className="mt-1 text-sm text-[var(--ink-500)]">
-                                            Selecione os contratos que o usuário poderá acessar. O lado da empresa será definido pela empresa escolhida acima.
+                                            Selecione os contratos que o usuário poderá acessar. Desmarcar um contrato remove o acesso ao salvar.
                                         </p>
                                     </div>
                                     <span className="sig-pill sig-pill-blue">{form.data.contract_accesses.length} contrato(s)</span>
@@ -471,6 +497,7 @@ export default function TenantUsersIndex({
                                                         <span className="block font-semibold text-[var(--ink-900)]">{contract.code}</span>
                                                         <span className="block text-xs text-[var(--ink-500)]">{contract.name || 'Contrato sem obra vinculada'}</span>
                                                     </span>
+                                                    {selected && <span className="sig-pill sig-pill-green">Vinculado</span>}
                                                 </label>
 
                                                 {false && selected && access && (
@@ -527,10 +554,10 @@ export default function TenantUsersIndex({
                                         );
                                     })}
                                 </div>
-                            </section>
+                        </section>
                         )}
 
-                        {!editingMembership && (
+                        {formMode === 'create' && (
                             <div className="mt-5">
                                 <PermissionModuleList
                                     eyebrow="Módulos de permissões"
@@ -555,8 +582,8 @@ export default function TenantUsersIndex({
                                 className="sig-btn sig-btn-primary"
                                 disabled={form.processing || empresas.length === 0 || (!editingMembership && !userPermissionCan?.create_user) || (editingMembership && !userPermissionCan?.edit_user)}
                             >
-                                <Plus size={15} />
-                                {editingMembership ? 'Salvar alteracoes' : 'Adicionar'}
+                                {formMode === 'contracts' ? <Link2 size={15} /> : <Plus size={15} />}
+                                {formMode === 'contracts' ? 'Salvar vínculos' : editingMembership ? 'Salvar alteracoes' : 'Adicionar'}
                             </button>
                         </div>
                     </form>
@@ -630,6 +657,12 @@ export default function TenantUsersIndex({
                                                     <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => editMembership(membership)}>
                                                         <Pencil size={14} />
                                                         Editar
+                                                    </button>
+                                                )}
+                                                {userPermissionCan?.edit_user && (
+                                                    <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => linkMembership(membership)}>
+                                                        <Link2 size={14} />
+                                                        Vincular
                                                     </button>
                                                 )}
                                                 {userPermissionCan?.edit_user && membership.user_id !== currentUser.id && (

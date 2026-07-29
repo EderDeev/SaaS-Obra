@@ -557,7 +557,7 @@ class MedicaoController extends Controller
             'meta' => ['created_from' => 'manual_form'],
         ]);
 
-        return back()->with('success', 'Item de medição criado com sucesso.');
+        return back()->with('success', 'Item de contrato criado com sucesso.');
     }
 
     public function storeFromOrcamento(Request $request, Tenant $tenant): RedirectResponse

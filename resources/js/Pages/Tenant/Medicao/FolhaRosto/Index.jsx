@@ -109,7 +109,7 @@ export default function FolhaRostoIndex({ selectedContractId, selectedContract =
                                     <span className="sig-pill sig-pill-blue">Medição simples</span>
                                     <h2 className="mt-2 text-lg font-bold text-[var(--ink-900)]">Pleito direto pelo contrato</h2>
                                     <p className="mt-1 max-w-2xl text-sm text-[var(--ink-500)]">
-                                        Crie a FR sem uma OS e selecione diretamente qualquer item de medição disponível neste contrato.
+                                        Crie a FR sem uma OS e selecione diretamente qualquer item de contrato com saldo disponível.
                                     </p>
                                 </div>
                             </div>

@@ -909,7 +909,7 @@ function ContractMeasurementTab({ tenant, contract }) {
             value: 'simple',
             title: 'Medição simples',
             badge: 'Maior agilidade',
-            description: 'Dispensa OS. A Folha de Rosto é aberta pelo contrato e pode utilizar qualquer item de medição com saldo disponível.',
+            description: 'Dispensa OS. A Folha de Rosto é aberta pelo contrato e pode utilizar qualquer item de contrato com saldo disponível.',
         },
     ];
     const selectedOption = options.find((option) => option.value === form.data.measurement_mode);

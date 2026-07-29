@@ -81,9 +81,11 @@ class TenantOrdemServicoMeasurementProgressTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Tenant/OrdemServico/Index')
+                ->where('ordens.0.custo_real', 250)
                 ->where('ordens.0.itens.0.quantidade_solicitada', 10)
                 ->where('ordens.0.itens.0.quantidade_medida', 2.5)
                 ->where('ordens.0.itens.0.percentual_medido', 25)
+                ->where('ordens.0.itens.0.custo_real', 250)
             );
     }
 

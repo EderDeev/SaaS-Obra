@@ -36,29 +36,61 @@ class UserController extends Controller
     {
         $this->authorizeTenantUsers($tenant);
 
+        $memberships = $tenant->memberships()
+            ->with(['user', 'empresa.tipoEmpresa', 'empresa.contract'])
+            ->latest()
+            ->get();
+        $participantsByUser = ContractParticipant::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('status', 'active')
+            ->get()
+            ->groupBy('user_id');
+        $rncPermissionsByUserContract = RelatorioNaoConformidadeResponsavel::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('status', 'active')
+            ->get()
+            ->keyBy(fn (RelatorioNaoConformidadeResponsavel $responsavel): string => "{$responsavel->user_id}:{$responsavel->contract_id}");
+
+        $memberships->each(function (TenantUser $membership) use ($participantsByUser, $rncPermissionsByUserContract): void {
+            $userPermissions = $membership->role === 'tenant_owner'
+                ? UserPermissions::all()
+                : UserPermissions::normalize(
+                    $membership->user_permissions ?? UserPermissions::defaultForRole($membership->role),
+                );
+
+            $membership->setAttribute('user_permissions', $userPermissions);
+            $membership->setAttribute(
+                'parametrizacao_permissions',
+                $membership->role === 'tenant_owner'
+                    ? ParametrizacaoPermissions::all()
+                    : ParametrizacaoPermissions::normalize(
+                        $membership->parametrizacao_permissions ?? ParametrizacaoPermissions::defaultForRole($membership->role),
+                    ),
+            );
+            $membership->setAttribute(
+                'contract_accesses',
+                $participantsByUser
+                    ->get($membership->user_id, collect())
+                    ->map(fn (ContractParticipant $participant): array => [
+                        'contract_id' => (int) $participant->contract_id,
+                        'side' => $participant->side,
+                        'role' => $participant->role,
+                        'activity_permissions' => ActivityPermissions::normalize($participant->activity_permissions ?? []),
+                        'project_permissions' => ProjectPermissions::normalize($participant->project_permissions ?? []),
+                        'rnc_permissions' => RncPermissions::normalize(
+                            $rncPermissionsByUserContract
+                                ->get("{$membership->user_id}:{$participant->contract_id}")
+                                ?->permissions ?? [],
+                        ),
+                    ])
+                    ->values()
+                    ->all(),
+            );
+        });
+
         return Inertia::render('Tenant/Users/Index', [
             'tenant' => $tenant,
-            'memberships' => $tenant->memberships()
-                ->with(['user', 'empresa.tipoEmpresa', 'empresa.contract'])
-                ->latest()
-                ->get()
-                ->each(function (TenantUser $membership): void {
-                    $userPermissions = $membership->role === 'tenant_owner'
-                        ? UserPermissions::all()
-                        : UserPermissions::normalize(
-                            $membership->user_permissions ?? UserPermissions::defaultForRole($membership->role),
-                        );
-
-                    $membership->setAttribute('user_permissions', $userPermissions);
-                    $membership->setAttribute(
-                        'parametrizacao_permissions',
-                        $membership->role === 'tenant_owner'
-                            ? ParametrizacaoPermissions::all()
-                            : ParametrizacaoPermissions::normalize(
-                                $membership->parametrizacao_permissions ?? ParametrizacaoPermissions::defaultForRole($membership->role),
-                            ),
-                    );
-                }),
+            'memberships' => $memberships,
             'empresas' => $tenant->empresas()
                 ->with(['tipoEmpresa', 'contract'])
                 ->orderBy('nome')
@@ -198,30 +230,56 @@ class UserController extends Controller
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
             'parametrizacao_permissions' => ['nullable', 'array'],
             'parametrizacao_permissions.*' => ['required', 'string', Rule::in(ParametrizacaoPermissions::all())],
+            'contract_accesses' => ['nullable', 'array'],
+            'contract_accesses.*.contract_id' => [
+                'required',
+                'integer',
+                Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
+            'contract_accesses.*.side' => ['required', Rule::in(array_keys(self::CONTRACT_ROLES_BY_SIDE))],
+            'contract_accesses.*.role' => ['required', 'string'],
+            'contract_accesses.*.activity_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.activity_permissions.*' => ['required', 'string', Rule::in(ActivityPermissions::all())],
+            'contract_accesses.*.project_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
+            'contract_accesses.*.rnc_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
         ], [
             'empresa_id.required' => 'Selecione a empresa do usuario.',
             'empresa_id.exists' => 'A empresa selecionada nao pertence a este tenant.',
         ]);
 
-        $membership->user->update([
-            'name' => $data['name'],
-            'email' => mb_strtolower($data['email']),
-        ]);
+        DB::transaction(function () use ($request, $tenant, $membership, $data): void {
+            $membership->user->update([
+                'name' => $data['name'],
+                'email' => mb_strtolower($data['email']),
+            ]);
 
-        $membershipData = [
-            'empresa_id' => $data['empresa_id'],
-            'role' => $data['role'],
-        ];
+            $membershipData = [
+                'empresa_id' => $data['empresa_id'],
+                'role' => $data['role'],
+            ];
 
-        if (array_key_exists('user_permissions', $data)) {
-            $membershipData['user_permissions'] = UserPermissions::normalize($data['user_permissions'] ?? []);
-        }
+            if (array_key_exists('user_permissions', $data)) {
+                $membershipData['user_permissions'] = UserPermissions::normalize($data['user_permissions'] ?? []);
+            }
 
-        if (array_key_exists('parametrizacao_permissions', $data)) {
-            $membershipData['parametrizacao_permissions'] = ParametrizacaoPermissions::normalize($data['parametrizacao_permissions'] ?? []);
-        }
+            if (array_key_exists('parametrizacao_permissions', $data)) {
+                $membershipData['parametrizacao_permissions'] = ParametrizacaoPermissions::normalize($data['parametrizacao_permissions'] ?? []);
+            }
 
-        $membership->update($membershipData);
+            $membership->update($membershipData);
+
+            if (array_key_exists('contract_accesses', $data)) {
+                $this->syncContractAccesses(
+                    $request,
+                    $tenant,
+                    $membership->user,
+                    $data['contract_accesses'] ?? [],
+                    true,
+                );
+            }
+        });
 
         return back()->with('success', 'Usuario atualizado.');
     }
@@ -274,8 +332,59 @@ class UserController extends Controller
         abort_unless($membership->tenant_id === $tenant->id, 404);
     }
 
-    private function syncContractAccesses(Request $request, Tenant $tenant, User $user, array $accesses): void
+    private function syncContractAccesses(
+        Request $request,
+        Tenant $tenant,
+        User $user,
+        array $accesses,
+        bool $removeMissing = false
+    ): void
     {
+        if ($removeMissing) {
+            $selectedKeys = collect($accesses)
+                ->map(fn (array $access): string => "{$access['contract_id']}:{$access['side']}")
+                ->all();
+            $selectedContractIds = collect($accesses)
+                ->pluck('contract_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values();
+
+            ContractParticipant::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('user_id', $user->id)
+                ->where('status', 'active')
+                ->get()
+                ->reject(fn (ContractParticipant $participant): bool => in_array(
+                    "{$participant->contract_id}:{$participant->side}",
+                    $selectedKeys,
+                    true,
+                ))
+                ->each(function (ContractParticipant $participant): void {
+                    $participant->update(['status' => 'inactive']);
+                    $participant->delete();
+                });
+
+            $rncLinksToRemove = RelatorioNaoConformidadeResponsavel::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('user_id', $user->id)
+                ->where('status', 'active');
+
+            if ($selectedContractIds->isNotEmpty()) {
+                $rncLinksToRemove->whereNotIn('contract_id', $selectedContractIds);
+            }
+
+            $rncLinksToRemove
+                ->get()
+                ->each(function (RelatorioNaoConformidadeResponsavel $link): void {
+                    $link->update([
+                        'status' => 'inactive',
+                        'permissions' => [],
+                    ]);
+                    $link->delete();
+                });
+        }
+
         foreach ($accesses as $access) {
             $side = $access['side'];
             $role = $access['role'];
@@ -317,6 +426,17 @@ class UserController extends Controller
             ->first();
 
         if ($permissions === []) {
+            if ($link) {
+                $link->update([
+                    'status' => 'inactive',
+                    'permissions' => [],
+                ]);
+
+                if (! $link->trashed()) {
+                    $link->delete();
+                }
+            }
+
             return;
         }
 

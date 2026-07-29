@@ -573,10 +573,10 @@ export default function IndicesReajuste({ tenant, contracts, selectedContractId,
                         <div>
                             <h2 className="flex items-center gap-2 text-lg font-black text-[var(--ink-900)]">
                                 <Link2 size={19} className="text-[var(--primary)]" />
-                                Vínculo dos itens com índices
+                                Índices dos itens de contrato
                             </h2>
                             <p className="text-sm text-[var(--ink-500)]">
-                                Escolha manualmente o índice de cada item ou importe uma planilha com item e código do índice.
+                                Escolha o índice de reajuste de cada item do contrato ou importe os vínculos por planilha.
                             </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -782,7 +782,7 @@ export default function IndicesReajuste({ tenant, contracts, selectedContractId,
                         </div>
                     ) : (
                         <div className="p-8 text-center text-sm text-[var(--ink-500)]">
-                            Nenhum item de medição disponível para vínculo neste contrato.
+                            Nenhum item de contrato disponível para vínculo.
                         </div>
                     )}
                 </section>

@@ -45,6 +45,7 @@ class TenantRdoTest extends TestCase
                 'copy_equipment' => true,
                 'copy_pending_activities' => true,
                 'require_photos' => false,
+                'digital_signature_enabled' => true,
                 'submission_deadline_days' => 7,
                 'active' => true,
             ]);
@@ -110,6 +111,7 @@ class TenantRdoTest extends TestCase
                 'copy_equipment' => true,
                 'copy_pending_activities' => true,
                 'require_photos' => false,
+                'digital_signature_enabled' => true,
                 'submission_deadline_days' => 7,
                 'active' => true,
             ]);
@@ -199,7 +201,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-24'),
+            $this->referenceDate(1),
             false,
             $user->id,
         );
@@ -240,7 +242,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach([$obra->id, $secondObra->id]);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -271,7 +273,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -303,7 +305,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $source = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-24'),
+            $this->referenceDate(1),
             false,
             $user->id,
         );
@@ -318,12 +320,12 @@ class TenantRdoTest extends TestCase
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.generate', $tenant), [
                 'configuration_id' => $configuration->id,
-                'reference_date' => '2026-06-25',
+                'reference_date' => $this->referenceDate()->format('Y-m-d'),
                 'copy_from_rdo_id' => $source->id,
             ])
             ->assertSessionHasNoErrors();
 
-        $copied = RdoDiario::query()->whereDate('reference_date', '2026-06-25')->firstOrFail();
+        $copied = RdoDiario::query()->whereDate('reference_date', $this->referenceDate()->format('Y-m-d'))->firstOrFail();
         $this->assertSame($source->id, $copied->copied_from_rdo_id);
         $this->assertSame(
             'Base copiada',
@@ -339,7 +341,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -390,7 +392,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -416,7 +418,7 @@ class TenantRdoTest extends TestCase
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
                 'action' => 'approve',
-                'comment' => 'Aprovado pela gerenciadora.',
+                'comments_by_obra' => [$obra->id => 'Aprovado pela gerenciadora.'],
             ])
             ->assertSessionHasNoErrors();
         $this->assertSame('em_aprovacao', $rdo->fresh()->status);
@@ -424,7 +426,7 @@ class TenantRdoTest extends TestCase
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
                 'action' => 'approve',
-                'comment' => 'De acordo.',
+                'comments_by_obra' => [$obra->id => 'De acordo.'],
             ])
             ->assertSessionHasNoErrors();
 
@@ -446,7 +448,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -455,7 +457,7 @@ class TenantRdoTest extends TestCase
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
                 'action' => 'approve_with_reservations',
-                'comment' => 'Gerenciadora solicitou comprovação fotográfica.',
+                'comments_by_obra' => [$obra->id => 'Gerenciadora solicitou comprovação fotográfica.'],
             ])
             ->assertSessionHasNoErrors();
         $this->assertSame('em_aprovacao', $rdo->fresh()->status);
@@ -463,7 +465,7 @@ class TenantRdoTest extends TestCase
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
                 'action' => 'approve',
-                'comment' => 'Cliente de acordo.',
+                'comments_by_obra' => [$obra->id => 'Cliente de acordo.'],
             ])
             ->assertSessionHasNoErrors();
         $this->assertSame('pendente_comprovacao', $rdo->fresh()->status);
@@ -476,7 +478,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -485,7 +487,7 @@ class TenantRdoTest extends TestCase
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
                 'action' => 'return',
-                'comment' => 'Corrigir o efetivo informado.',
+                'comments_by_obra' => [$obra->id => 'Corrigir o efetivo informado.'],
             ])
             ->assertSessionHasNoErrors();
         $this->assertSame('devolvido_construtora', $rdo->fresh()->status);
@@ -521,7 +523,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach($obra->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -531,7 +533,7 @@ class TenantRdoTest extends TestCase
                 'obra_id' => $obra->id,
                 'updated_by_id' => $user->id,
                 'secao' => $section,
-                'dados' => [],
+                'dados' => $section === 'comentarios' ? ['construtora' => 'RDO pronto para análise.'] : [],
             ]);
         }
 
@@ -617,7 +619,7 @@ class TenantRdoTest extends TestCase
         $configuration->obras()->attach([$obra->id, $secondObra->id]);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $owner->id,
         );
@@ -628,7 +630,9 @@ class TenantRdoTest extends TestCase
                     'obra_id' => $front->id,
                     'updated_by_id' => $owner->id,
                     'secao' => $section,
-                    'dados' => [],
+                    'dados' => $section === 'comentarios'
+                        ? ['construtora' => 'Frente preenchida e pronta para análise.']
+                        : [],
                 ]);
             }
         }
@@ -659,12 +663,24 @@ class TenantRdoTest extends TestCase
         $this->assertDatabaseHas('rdo_analises', ['rdo_diario_id' => $rdo->id, 'obra_id' => $secondObra->id, 'etapa' => 'construtora']);
 
         $this->actingAs($manager)
-            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'approve'])
+            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
+                'action' => 'approve',
+                'comments_by_obra' => [
+                    $obra->id => 'Gerenciadora aprovou a obra principal.',
+                    $secondObra->id => 'Gerenciadora aprovou a frente 02.',
+                ],
+            ])
             ->assertSessionHasNoErrors();
         $this->assertSame('em_aprovacao', $rdo->fresh()->status);
 
         $this->actingAs($client)
-            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'approve'])
+            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
+                'action' => 'approve',
+                'comments_by_obra' => [
+                    $obra->id => 'Cliente aprovou a obra principal.',
+                    $secondObra->id => 'Cliente aprovou a frente 02.',
+                ],
+            ])
             ->assertSessionHasNoErrors();
         $this->assertSame('arquivado', $rdo->fresh()->status);
     }
@@ -679,7 +695,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -727,7 +743,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -796,7 +812,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -830,7 +846,7 @@ class TenantRdoTest extends TestCase
                 && data_get($payload, 'signers.0.signer_role') === 'signer'
                 && data_get($payload, 'signers.0.role') === 'cliente'
                 && data_get($payload, 'signers.0.widgets.0.type') === 'signature'
-                && data_get($payload, 'signers.0.widgets.0.name') === 'assinatura_cliente'
+                && data_get($payload, 'signers.0.widgets.0.name') === 'assinatura_cliente_pagina_1'
                 && data_get($payload, 'signers.0.widgets.0.x') === 431
                 && data_get($payload, 'signers.0.widgets.0.y') === 710
                 && data_get($payload, 'signers.0.widgets.0.w') === 112
@@ -885,8 +901,13 @@ class TenantRdoTest extends TestCase
         Http::fake([
             'https://sandbox.opensign.test/api/v1.2/document/doc-completed-123' => Http::response([
                 'objectId' => 'doc-completed-123',
+                'status' => 'completed',
                 'SignedUrl' => 'https://files.opensign.test/rdo-assinado.pdf',
                 'CertificateUrl' => 'https://files.opensign.test/certificado.pdf',
+                'signers' => [[
+                    'email' => 'assinante-opensign@example.test',
+                    'status' => 'completed',
+                ]],
             ]),
             'https://files.opensign.test/rdo-assinado.pdf' => Http::response('%PDF-1.4 signed rdo'),
             'https://files.opensign.test/certificado.pdf' => Http::response('%PDF-1.4 certificate'),
@@ -896,7 +917,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -910,10 +931,15 @@ class TenantRdoTest extends TestCase
             'status' => 'sent',
             'title' => 'Assinatura RDO',
         ]);
+        $this->createOpenSignSigner($signatureRequest, 'assinante-opensign@example.test');
 
         app(\App\Services\RdoSignatureService::class)->applyWebhook([
             'document_id' => 'doc-completed-123',
             'event' => 'completed',
+            'signers' => [[
+                'email' => 'assinante-opensign@example.test',
+                'status' => 'completed',
+            ]],
         ]);
 
         $signatureRequest->refresh();
@@ -941,6 +967,11 @@ class TenantRdoTest extends TestCase
                 'objectId' => 'doc-refresh-123',
                 'status' => 'completed',
                 'SignedUrl' => 'https://files.opensign.test/rdo-refresh-assinado.pdf',
+                'signers' => [
+                    ['email' => 'construtora@example.test', 'status' => 'completed'],
+                    ['email' => 'gerenciadora@example.test', 'status' => 'completed'],
+                    ['email' => 'cliente@example.test', 'status' => 'completed'],
+                ],
             ]),
             'https://files.opensign.test/rdo-refresh-assinado.pdf' => Http::response('%PDF-1.4 signed refreshed rdo'),
         ]);
@@ -949,7 +980,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -1004,6 +1035,10 @@ class TenantRdoTest extends TestCase
                 'signedPdf' => [
                     'url' => '/files/rdo-nested-assinado.pdf',
                 ],
+                'signers' => [[
+                    'email' => 'assinante-opensign@example.test',
+                    'status' => 'completed',
+                ]],
             ]),
             'https://sandbox.opensign.test/files/rdo-nested-assinado.pdf' => Http::response('%PDF-1.4 signed nested rdo'),
         ]);
@@ -1012,7 +1047,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -1027,6 +1062,7 @@ class TenantRdoTest extends TestCase
             'title' => 'Assinatura RDO',
             'completed_at' => now(),
         ]);
+        $this->createOpenSignSigner($signatureRequest, 'assinante-opensign@example.test');
 
         app(\App\Services\RdoSignatureService::class)->refreshFromProvider($signatureRequest);
 
@@ -1050,6 +1086,10 @@ class TenantRdoTest extends TestCase
                 'objectId' => 'doc-file-123',
                 'status' => 'completed',
                 'file' => 'https://files.opensign.test/rdo-file-assinado.pdf',
+                'signers' => [[
+                    'email' => 'assinante-opensign@example.test',
+                    'status' => 'completed',
+                ]],
             ]),
             'https://files.opensign.test/rdo-file-assinado.pdf' => Http::response('%PDF-1.4 signed file fallback rdo'),
         ]);
@@ -1058,7 +1098,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -1073,6 +1113,7 @@ class TenantRdoTest extends TestCase
             'title' => 'Assinatura RDO',
             'completed_at' => now(),
         ]);
+        $this->createOpenSignSigner($signatureRequest, 'assinante-opensign@example.test');
 
         app(\App\Services\RdoSignatureService::class)->refreshFromProvider($signatureRequest);
 
@@ -1091,7 +1132,7 @@ class TenantRdoTest extends TestCase
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
             $configuration,
-            CarbonImmutable::parse('2026-06-25'),
+            $this->referenceDate(),
             false,
             $user->id,
         );
@@ -1169,6 +1210,25 @@ class TenantRdoTest extends TestCase
         return [$tenant, $user, $contract, $obra];
     }
 
+    private function referenceDate(int $daysAgo = 0): CarbonImmutable
+    {
+        return CarbonImmutable::now('America/Sao_Paulo')
+            ->startOfDay()
+            ->subDays($daysAgo);
+    }
+
+    private function createOpenSignSigner(RdoSignatureRequest $signatureRequest, string $email): void
+    {
+        \App\Models\RdoSignatureSigner::create([
+            'tenant_id' => $signatureRequest->tenant_id,
+            'rdo_signature_request_id' => $signatureRequest->id,
+            'role' => 'cliente',
+            'name' => 'Assinante OpenSign',
+            'email' => $email,
+            'status' => 'pending',
+        ]);
+    }
+
     private function configuration(int $tenantId, int $contractId, int $obraId, int $userId, array $overrides = []): RdoConfiguracao
     {
         return RdoConfiguracao::create([
@@ -1187,6 +1247,7 @@ class TenantRdoTest extends TestCase
             'copy_equipment' => true,
             'copy_pending_activities' => true,
             'require_photos' => false,
+            'digital_signature_enabled' => true,
             'submission_deadline_days' => 7,
             'active' => true,
             ...$overrides,

@@ -56,9 +56,9 @@ class OrdemServicoController extends Controller
                 'gerenciadoraEmpresa:id,nome,sigla,tipo_empresa_id',
                 'construtoraEmpresa:id,nome,sigla,tipo_empresa_id',
                 'creator:id,name,email,avatar_url',
-                'itens',
-                'itens.medicaoItem' => fn ($query) => $this->withMeasuredQuantity($query
-                    ->select('id', 'item', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_com_bdi', 'valor_total')),
+                'itens' => fn ($query) => $this->withMeasuredQuantity($query),
+                'itens.medicaoItem' => fn ($query) => $query
+                    ->select('id', 'item', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_unitario', 'valor_com_bdi', 'valor_total'),
                 'itens.medicaoItem.reajusteIndice.indice.competencias',
                 'responsaveis.user:id,name,email,avatar_url',
                 'documentos:id,ordem_servico_id,nome_original,size',
@@ -335,9 +335,9 @@ class OrdemServicoController extends Controller
             'gerenciadoraEmpresa:id,nome,sigla',
             'construtoraEmpresa:id,nome,sigla',
             'creator:id,name,email,avatar_url',
-            'itens',
-            'itens.medicaoItem' => fn ($query) => $this->withMeasuredQuantity($query
-                ->select('id', 'item', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_com_bdi', 'valor_total')),
+            'itens' => fn ($query) => $this->withMeasuredQuantity($query),
+            'itens.medicaoItem' => fn ($query) => $query
+                ->select('id', 'item', 'codigo', 'descricao', 'unidade', 'quantidade_prevista', 'valor_unitario', 'valor_com_bdi', 'valor_total'),
             'itens.medicaoItem.reajusteIndice.indice.competencias',
             'documentos:id,ordem_servico_id,nome_original,size',
             'responsaveis.user:id,name,email,avatar_url',
@@ -899,6 +899,36 @@ class OrdemServicoController extends Controller
 
     private function serializeOrdem(OrdemServico $ordem): array
     {
+        $items = $ordem->itens->map(function (OrdemServicoItem $item): array {
+            $measuredQuantity = (float) ($item->quantidade_medida ?? 0);
+            $actualCost = round($measuredQuantity * $this->orderItemUnitValue($item), 2);
+
+            return [
+                'id' => $item->id,
+                'medicao_item_id' => $item->medicao_item_id,
+                'item' => $item->medicaoItem?->item,
+                'codigo' => $item->medicaoItem?->codigo,
+                'descricao' => $item->medicaoItem?->descricao,
+                'unidade' => $item->medicaoItem?->unidade,
+                'quantidade_solicitada' => (float) $item->quantidade_solicitada,
+                'quantidade_medida' => $measuredQuantity,
+                'percentual_medido' => $this->measuredPercentage($item),
+                'custo_real' => $actualCost,
+                'valor_total' => (float) $item->valor_previsto,
+                'valor_total_p0' => (float) $item->valor_previsto,
+                'valor_previsto' => (float) $item->valor_previsto,
+                'valor_reajustado' => $this->adjustedValue(
+                    (float) $item->valor_previsto,
+                    $item->medicaoItem
+                ),
+                'valor_total_reajustado' => $this->adjustedValue(
+                    (float) $item->valor_previsto,
+                    $item->medicaoItem
+                ),
+                'percentual_reajuste' => $this->adjustmentPercentage($item->medicaoItem),
+            ];
+        })->values();
+
         return [
             'id' => $ordem->id,
             'codigo' => $ordem->codigo,
@@ -909,6 +939,7 @@ class OrdemServicoController extends Controller
             'prazo_execucao' => $ordem->prazo_execucao?->format('Y-m-d'),
             'prazo_execucao_label' => $ordem->prazo_execucao?->format('d/m/Y'),
             'custo_previsto' => (float) $ordem->custo_previsto,
+            'custo_real' => round((float) $items->sum('custo_real'), 2),
             'custo_observacao' => $ordem->custo_observacao,
             'contract' => $ordem->contract ? [
                 'id' => $ordem->contract->id,
@@ -950,29 +981,7 @@ class OrdemServicoController extends Controller
                 'email' => $ordem->creator->email,
                 'avatar_url' => $ordem->creator->avatar_url,
             ] : null,
-            'itens' => $ordem->itens->map(fn ($item): array => [
-                'id' => $item->id,
-                'medicao_item_id' => $item->medicao_item_id,
-                'item' => $item->medicaoItem?->item,
-                'codigo' => $item->medicaoItem?->codigo,
-                'descricao' => $item->medicaoItem?->descricao,
-                'unidade' => $item->medicaoItem?->unidade,
-                'quantidade_solicitada' => (float) $item->quantidade_solicitada,
-                'quantidade_medida' => (float) ($item->medicaoItem?->quantidade_medida ?? 0),
-                'percentual_medido' => $this->measuredPercentage($item),
-                'valor_total' => (float) $item->valor_previsto,
-                'valor_total_p0' => (float) $item->valor_previsto,
-                'valor_previsto' => (float) $item->valor_previsto,
-                'valor_reajustado' => $this->adjustedValue(
-                    (float) $item->valor_previsto,
-                    $item->medicaoItem
-                ),
-                'valor_total_reajustado' => $this->adjustedValue(
-                    (float) $item->valor_previsto,
-                    $item->medicaoItem
-                ),
-                'percentual_reajuste' => $this->adjustmentPercentage($item->medicaoItem),
-            ])->values(),
+            'itens' => $items,
             'responsaveis' => $ordem->responsaveis->map(fn ($responsavel): array => [
                 'id' => $responsavel->id,
                 'name' => $responsavel->user?->name,
@@ -1046,13 +1055,40 @@ class OrdemServicoController extends Controller
 
     private function measuredPercentage(OrdemServicoItem $item): float
     {
-        $requested = (float) ($item->medicaoItem?->quantidade_prevista ?? 0);
+        $requested = (float) $item->quantidade_solicitada;
 
         if ($requested <= 0) {
             return 0;
         }
 
-        return round(min(100, ((float) ($item->medicaoItem?->quantidade_medida ?? 0) / $requested) * 100), 2);
+        return round(min(100, ((float) ($item->quantidade_medida ?? 0) / $requested) * 100), 2);
+    }
+
+    private function orderItemUnitValue(OrdemServicoItem $item): float
+    {
+        $requested = (float) $item->quantidade_solicitada;
+
+        if ($requested > 0) {
+            return (float) $item->valor_previsto / $requested;
+        }
+
+        $medicaoItem = $item->medicaoItem;
+
+        if (! $medicaoItem) {
+            return 0;
+        }
+
+        $unitValue = (float) ($medicaoItem->valor_com_bdi ?: $medicaoItem->valor_unitario);
+
+        if ($unitValue > 0) {
+            return $unitValue;
+        }
+
+        $contractQuantity = (float) $medicaoItem->quantidade_prevista;
+
+        return $contractQuantity > 0
+            ? (float) $medicaoItem->valor_total / $contractQuantity
+            : 0;
     }
 
     private function obraOptions(Tenant $tenant, ?int $contractId): array

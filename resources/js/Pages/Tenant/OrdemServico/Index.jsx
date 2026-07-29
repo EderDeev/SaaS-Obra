@@ -5,6 +5,7 @@ import {
     CalendarDays,
     ChevronDown,
     ChevronRight,
+    CircleDollarSign,
     ClipboardCheck,
     ClipboardList,
     FileText,
@@ -549,7 +550,7 @@ export default function OrdemServicoIndex({
                 )}
 
                 <section className="sig-card p-5">
-                    <div className="grid gap-4 lg:grid-cols-[1fr_220px_220px] lg:items-end">
+                    <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-[1fr_190px_220px_220px] lg:items-end">
                         <Field label="Contrato">
                             <select
                                 value={selectedContractId || ''}
@@ -569,6 +570,11 @@ export default function OrdemServicoIndex({
                             icon={ClipboardCheck}
                             label="Custo previsto"
                             value={formatCurrency(ordens.reduce((sum, ordem) => sum + Number(ordem.custo_previsto || 0), 0))}
+                        />
+                        <MetricCard
+                            icon={CircleDollarSign}
+                            label="Custo real"
+                            value={formatCurrency(ordens.reduce((sum, ordem) => sum + Number(ordem.custo_real || 0), 0))}
                         />
                     </div>
                 </section>
@@ -774,7 +780,7 @@ export default function OrdemServicoIndex({
                             </Field>
 
                             <SelectionPanel
-                                title="Itens utilizados"
+                                title="Itens de contrato vinculados"
                                 icon={FolderKanban}
                                 search={itemSearch}
                                 setSearch={(value) => setItemSearch(value)}
@@ -978,7 +984,7 @@ export default function OrdemServicoIndex({
                                         type="button"
                                         onClick={() => setExpandedOrderId((current) => current === ordem.id ? null : ordem.id)}
                                         aria-expanded={expandedOrderId === ordem.id}
-                                        className="grid w-full items-center gap-3 p-4 text-left transition hover:bg-[var(--surface-muted)] md:grid-cols-[110px_minmax(0,1fr)_170px_150px_28px]"
+                                        className="grid w-full items-center gap-3 p-4 text-left transition hover:bg-[var(--surface-muted)] md:grid-cols-[110px_minmax(0,1fr)_150px_230px_28px]"
                                     >
                                         <p className="mono font-bold text-[var(--primary)]">{ordem.codigo}</p>
                                         <div className="min-w-0">
@@ -990,7 +996,24 @@ export default function OrdemServicoIndex({
                                         <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${statusClasses[ordem.status] || statusClasses.rascunho}`}>
                                             {statusLabels[ordem.status] || ordem.status}
                                         </span>
-                                        <strong className="text-sm text-[var(--ink-900)]">{formatCurrency(ordem.custo_previsto)}</strong>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--ink-500)]">
+                                                    Previsto
+                                                </span>
+                                                <strong className="mt-1 block whitespace-nowrap text-sm text-[var(--ink-900)]">
+                                                    {formatCurrency(ordem.custo_previsto)}
+                                                </strong>
+                                            </div>
+                                            <div>
+                                                <span className="block text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                                                    Real
+                                                </span>
+                                                <strong className="mt-1 block whitespace-nowrap text-sm text-emerald-700">
+                                                    {formatCurrency(ordem.custo_real)}
+                                                </strong>
+                                            </div>
+                                        </div>
                                         {expandedOrderId === ordem.id
                                             ? <ChevronDown size={18} className="text-[var(--ink-500)]" />
                                             : <ChevronRight size={18} className="text-[var(--ink-500)]" />}
@@ -1090,6 +1113,9 @@ export default function OrdemServicoIndex({
                                                                 {formatPercentage(item.percentual_medido)}%
                                                             </strong>
                                                         </div>
+                                                        <span className="mt-1 block whitespace-nowrap text-[10px] font-semibold text-emerald-700">
+                                                            Custo real: {formatCurrency(item.custo_real)}
+                                                        </span>
                                                     </div>
                                                 </span>
                                             ))}
@@ -1097,9 +1123,15 @@ export default function OrdemServicoIndex({
                                     </div>
 
                                     <div className="grid content-between gap-4">
-                                        <div className="rounded-lg bg-[var(--surface-muted)] p-4">
-                                            <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Custo previsto</span>
-                                            <strong className="mt-2 block text-xl text-[var(--ink-900)]">{formatCurrency(ordem.custo_previsto)}</strong>
+                                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                                            <div className="rounded-lg bg-[var(--surface-muted)] p-4">
+                                                <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Custo previsto</span>
+                                                <strong className="mt-2 block text-xl text-[var(--ink-900)]">{formatCurrency(ordem.custo_previsto)}</strong>
+                                            </div>
+                                            <div className="rounded-lg bg-emerald-50 p-4">
+                                                <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">Custo real</span>
+                                                <strong className="mt-2 block text-xl text-emerald-800">{formatCurrency(ordem.custo_real)}</strong>
+                                            </div>
                                         </div>
 
                                         <div className="grid gap-2 text-sm">

@@ -43,9 +43,15 @@ const desktopMenuSteps = [
         placement: 'right',
     },
     {
-        target: '[data-tour="overview-nav-budgets"]',
-        title: 'Orçamentos e medições',
-        content: 'Orçamentos estrutura custos e composições; Medição controla boletins; Ordem de Serviço formaliza solicitações e análises.',
+        target: '[data-tour="overview-nav-planning"]',
+        title: 'Programação',
+        content: 'Planejamento organiza a programação da execução, Orçamentos estrutura custos e composições, e Compras atenderá às aquisições previstas.',
+        placement: 'right',
+    },
+    {
+        target: '[data-tour="overview-nav-execution"]',
+        title: 'Acompanhamento',
+        content: 'Medição controla boletins e pleitos; Ordem de Serviço formaliza itens, solicitações, análises e aprovações.',
         placement: 'right',
     },
     {
@@ -57,7 +63,13 @@ const desktopMenuSteps = [
     {
         target: '[data-tour="overview-nav-control"]',
         title: 'Controle',
-        content: 'Documentação gerencia o acervo e e-mails; Projetos controla revisões e análises; Tutoriais reúne orientações do sistema.',
+        content: 'Documentação gerencia o acervo e e-mails, enquanto Projetos controla submissões, revisões, análises e visualizações.',
+        placement: 'right',
+    },
+    {
+        target: '[data-tour="overview-nav-help"]',
+        title: 'Ajuda',
+        content: 'Tutoriais reúne orientações e materiais de apoio para o uso do sistema.',
         placement: 'right',
     },
     {
@@ -77,7 +89,7 @@ const desktopMenuSteps = [
 const mobileMenuStep = {
     target: '[data-tour="overview-mobile-menu"]',
     title: 'Módulos do sistema',
-    content: 'No Menu ficam Gestão, Orçamentos e medições, Campo, Controle, Administração e Parametrização. Cada grupo reúne os módulos relacionados à sua operação.',
+    content: 'No Menu ficam Gestão, Programação, Acompanhamento, Campo, Controle, Ajuda, Administração e Parametrização. Cada grupo reúne os módulos relacionados à sua operação.',
     placement: 'bottom',
 };
 

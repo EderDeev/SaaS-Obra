@@ -8,6 +8,7 @@ import {
     Building2,
     Calculator,
     CalendarDays,
+    ChartNoAxesGantt,
     ChevronDown,
     ChevronRight,
     ClipboardList,
@@ -25,6 +26,7 @@ import {
     Search,
     Settings,
     ShieldCheck,
+    ShoppingCart,
     SlidersHorizontal,
     Users,
 } from 'lucide-react';
@@ -89,6 +91,7 @@ export default function AuthenticatedLayout({ children }) {
     const parametrizacaoCan = props.parametrizacaoPermissions?.can || {};
     const [parametrizacaoOpen, setParametrizacaoOpen] = useState(() => route().current('tenant.parametrizacao.*'));
     const [qualidadeOpen, setQualidadeOpen] = useState(() => route().current('tenant.qualidade.*'));
+    const [rncOpen, setRncOpen] = useState(() => route().current('tenant.qualidade.rnc.*'));
     const [projectOpen, setProjectOpen] = useState(() => route().current('tenant.projects.*'));
     const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
     const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
@@ -239,7 +242,20 @@ export default function AuthenticatedLayout({ children }) {
             ] : []),
         ]
         : [];
-    const qualidadeItems = rncChildren;
+    const qualidadeItems = rncChildren.length > 0
+        ? [
+            {
+                label: 'RNC',
+                active: route().current('tenant.qualidade.rnc.*'),
+                children: rncChildren,
+            },
+            {
+                label: 'IC',
+                active: false,
+                disabled: true,
+            },
+        ]
+        : [];
     const orcamentoItems = tenant
         ? [
             {
@@ -307,12 +323,12 @@ export default function AuthenticatedLayout({ children }) {
                 ],
             },
             {
-                label: 'Item',
+                label: 'Itens de Contrato',
                 active: route().current('tenant.medicao.item.*')
                     || route().current('tenant.medicao.indice-reajuste.*'),
                 children: [
                     {
-                        label: 'Item',
+                        label: 'Base de itens',
                         href: route('tenant.medicao.item.index', tenant.slug),
                         active: route().current('tenant.medicao.item.*'),
                     },
@@ -469,7 +485,9 @@ export default function AuthenticatedLayout({ children }) {
             ...(activityCan.view_activities ? [
                 { label: 'Atividades', icon: Activity, href: route('tenant.activities.index', tenant.slug), active: route().current('tenant.activities.*') },
             ] : []),
+            { label: 'Planejamento', icon: ChartNoAxesGantt, active: false, disabled: true },
             { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
+            { label: 'Compras', icon: ShoppingCart, active: false, disabled: true },
             { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
             { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
             { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
@@ -542,8 +560,12 @@ export default function AuthenticatedLayout({ children }) {
             items: navItems.filter((item) => ['Visão geral', 'Contratos', 'Atividades'].includes(item.label)),
         },
         {
-            label: 'Orçamentos e medições',
-            items: navItems.filter((item) => ['Orçamentos', 'Medição', 'Ordem de Serviço'].includes(item.label)),
+            label: 'Programação',
+            items: navItems.filter((item) => ['Planejamento', 'Orçamentos', 'Compras'].includes(item.label)),
+        },
+        {
+            label: 'Acompanhamento',
+            items: navItems.filter((item) => ['Medição', 'Ordem de Serviço'].includes(item.label)),
         },
         {
             label: 'Campo',
@@ -551,7 +573,11 @@ export default function AuthenticatedLayout({ children }) {
         },
         {
             label: 'Controle',
-            items: navItems.filter((item) => ['Documentação', 'Projetos', 'Tutoriais'].includes(item.label)),
+            items: navItems.filter((item) => ['Documentação', 'Projetos'].includes(item.label)),
+        },
+        {
+            label: 'Ajuda',
+            items: navItems.filter((item) => item.label === 'Tutoriais'),
         },
         {
             label: 'Administração',
@@ -593,9 +619,11 @@ export default function AuthenticatedLayout({ children }) {
                             className="sig-nav-section"
                             data-tour={route().current('tenant.dashboard') ? {
                                 'Gestão': 'overview-nav-management',
-                                'Orçamentos e medições': 'overview-nav-budgets',
+                                Programação: 'overview-nav-planning',
+                                Acompanhamento: 'overview-nav-execution',
                                 Campo: 'overview-nav-field',
                                 Controle: 'overview-nav-control',
+                                Ajuda: 'overview-nav-help',
                                 Administração: 'overview-nav-administration',
                             }[section.label] : undefined}
                         >
@@ -646,13 +674,15 @@ export default function AuthenticatedLayout({ children }) {
                                     </button>
                                     <CollapsibleNav open={childrenOpen} className="ml-7">
                                             {item.children.map((child) => {
-                                                const [nestedOpen, toggleNestedOpen] = child.label === 'RDA'
+                                                const [nestedOpen, toggleNestedOpen] = child.label === 'RNC' && item.label === 'Qualidade'
+                                                    ? [rncOpen, setRncOpen]
+                                                    : child.label === 'RDA'
                                                     ? [rdaOpen, setRdaOpen]
                                                     : child.label === 'Relatórios'
                                                         ? [medicaoRelatoriosOpen, setMedicaoRelatoriosOpen]
                                                         : child.label === 'Análise Medição'
                                                             ? [medicaoAnaliseOpen, setMedicaoAnaliseOpen]
-                                                            : child.label === 'Item' && item.label === 'Medição'
+                                                            : child.label === 'Itens de Contrato' && item.label === 'Medição'
                                                                 ? [medicaoItensOpen, setMedicaoItensOpen]
                                                                 : [rdoOpen, setRdoOpen];
 
@@ -680,6 +710,17 @@ export default function AuthenticatedLayout({ children }) {
                                                             ))}
                                                     </CollapsibleNav>
                                                 </div>
+                                            ) : child.disabled ? (
+                                                <button
+                                                    type="button"
+                                                    key={child.label}
+                                                    className="sig-nav-item !w-[calc(100%_-_16px)] border-0 bg-transparent !py-2 text-left !text-[12.5px]"
+                                                    role="menuitem"
+                                                    aria-disabled="true"
+                                                >
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
+                                                    <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                                                </button>
                                             ) : (
                                                 <Link
                                                     key={child.label}
@@ -694,6 +735,21 @@ export default function AuthenticatedLayout({ children }) {
                                             })}
                                     </CollapsibleNav>
                                 </div>
+                            );
+                        }
+
+                        if (item.disabled) {
+                            return (
+                                <button
+                                    type="button"
+                                    key={item.label}
+                                    className="sig-nav-item border-0 bg-transparent text-left"
+                                    role="menuitem"
+                                    aria-disabled="true"
+                                >
+                                    <Icon size={17} strokeWidth={1.8} />
+                                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                </button>
                             );
                         }
 
@@ -1013,6 +1069,20 @@ function MobileNavItem({ item, onNavigate, level }) {
                 </button>
                 {open && <MobileNavList items={item.children} onNavigate={onNavigate} level={level + 1} />}
             </div>
+        );
+    }
+
+    if (item.disabled) {
+        return (
+            <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[var(--ink-700)] hover:bg-[var(--surface-muted)]"
+                role="menuitem"
+                aria-disabled="true"
+            >
+                {Icon ? <Icon size={16} /> : <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            </button>
         );
     }
 

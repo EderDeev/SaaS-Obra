@@ -548,7 +548,7 @@ export default function MedicaoItens({
 
     return (
         <AuthenticatedLayout>
-            <Head title="Medição - Item" />
+            <Head title="Medição - Itens de Contrato" />
 
             <section className="sig-content grid gap-5">
                 <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -557,9 +557,9 @@ export default function MedicaoItens({
                             <Ruler size={15} />
                             <span className="eyebrow">Medição</span>
                         </div>
-                        <h1 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">Itens por contrato</h1>
+                        <h1 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">Itens de Contrato</h1>
                         <p className="mt-1 text-sm text-[var(--ink-500)]">
-                            Cadastre a base que será medida dentro de cada contrato.
+                            Gerencie a base contratual utilizada nas OS, medições, reajustes e aditivos.
                         </p>
                     </div>
 
@@ -603,7 +603,7 @@ export default function MedicaoItens({
                         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/15">
                             <Upload size={15} />
                         </span>
-                        {importOptionsOpen ? 'Ocultar importação' : 'Importar Item'}
+                        {importOptionsOpen ? 'Ocultar importação' : 'Importar itens'}
                     </button>
                     <button
                         type="button"
@@ -616,7 +616,7 @@ export default function MedicaoItens({
                         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/15">
                             <GitBranch size={15} />
                         </span>
-                        {additiveOptionsOpen ? 'Ocultar aditivo' : 'Aditivo Item'}
+                        {additiveOptionsOpen ? 'Ocultar aditivo' : 'Aditivo de itens'}
                     </button>
                 </div>
 
@@ -655,7 +655,7 @@ export default function MedicaoItens({
                             <div>
                                 <h2 className="text-base font-semibold text-[var(--ink-900)]">Importar de orçamento finalizado</h2>
                                 <p className="mt-1 text-sm text-[var(--ink-500)]">
-                                    Somente orçamentos finalizados aparecem aqui. O orçamento continua no tenant, mas os itens de medição serão vinculados ao contrato{' '}
+                                    Somente orçamentos finalizados aparecem aqui. O orçamento continua no tenant, mas os itens serão incorporados à base do contrato{' '}
                                     {selectedContract ? <strong>{selectedContract.code}</strong> : 'selecionado'}.
                                 </p>
                             </div>
@@ -1167,7 +1167,7 @@ export default function MedicaoItens({
                 <section className="sig-card overflow-hidden">
                     <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
-                            <h2 className="text-base font-semibold text-[var(--ink-900)]">Itens cadastrados</h2>
+                            <h2 className="text-base font-semibold text-[var(--ink-900)]">Base de itens do contrato</h2>
                             <p className="mt-1 text-sm text-[var(--ink-500)]">
                                 {selectedContract
                                     ? `${selectedContract.code} - ${selectedContract.name}`
@@ -1265,10 +1265,10 @@ export default function MedicaoItens({
                         <div className="grid place-items-center px-5 py-12 text-center">
                             <ClipboardList className="text-[var(--ink-400)]" size={34} />
                             <h3 className="mt-3 text-base font-semibold text-[var(--ink-900)]">
-                                Nenhum item cadastrado neste contrato
+                                Nenhum item de contrato cadastrado
                             </h3>
                             <p className="mt-1 max-w-xl text-sm text-[var(--ink-500)]">
-                                Use uma das três opções acima para montar a base de medição do contrato.
+                                Use uma das três opções acima para montar a base de itens do contrato.
                             </p>
                         </div>
                     ) : (

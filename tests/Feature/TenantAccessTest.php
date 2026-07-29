@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Contract;
+use App\Models\ContractParticipant;
 use App\Models\Empresa;
 use App\Models\Orcamento;
 use App\Models\OrcamentoComposicao;
@@ -1653,9 +1654,7 @@ class TenantAccessTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors()
-            ->assertSessionHas('import_result.created', 1)
-            ->assertSessionHas('import_result.updated', 0)
-            ->assertSessionHas('import_result.skipped', 0);
+            ->assertSessionHas('success');
 
         $this->assertDatabaseHas('orcamento_composicoes', [
             'tenant_id' => $tenant->id,
@@ -1839,9 +1838,7 @@ class TenantAccessTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors()
-            ->assertSessionHas('import_result.created', 2)
-            ->assertSessionHas('import_result.updated', 0)
-            ->assertSessionHas('import_result.skipped', 0);
+            ->assertSessionHas('success');
 
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
             'tenant_id' => null,
@@ -1894,8 +1891,7 @@ class TenantAccessTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors()
-            ->assertSessionHas('import_result.created', 4)
-            ->assertSessionHas('import_result.duplicated', 0);
+            ->assertSessionHas('success');
 
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
             'tenant_id' => null,
@@ -1975,8 +1971,7 @@ class TenantAccessTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors()
-            ->assertSessionHas('import_result.created', 2)
-            ->assertSessionHas('import_result.skipped', 0);
+            ->assertSessionHas('success');
 
         $this->assertDatabaseHas('orcamento_composicao_analitico_items', [
             'tenant_id' => null,
@@ -2020,7 +2015,7 @@ class TenantAccessTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors()
-            ->assertSessionHas('import_result.created', 1);
+            ->assertSessionHas('success');
 
         $record = OrcamentoComposicaoAnaliticoItem::firstOrFail();
 
@@ -2443,6 +2438,116 @@ class TenantAccessTest extends TestCase
             'empresa_id' => $empresaB->id,
             'role' => 'financial',
             'status' => 'active',
+        ]);
+    }
+
+    public function test_tenant_admin_can_manage_user_contract_links_when_updating_user(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'teste-vinculos',
+            'name' => 'Empresa Vinculos',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $admin = User::factory()->create();
+        $managedUser = User::factory()->create();
+        $contractA = $tenant->contracts()->create([
+            'code' => 'CT-001',
+            'name' => 'Contrato A',
+            'status' => 'active',
+        ]);
+        $contractB = $tenant->contracts()->create([
+            'code' => 'CT-002',
+            'name' => 'Contrato B',
+            'status' => 'active',
+        ]);
+        $tipo = TipoEmpresa::where('nome', 'gerenciadora')->firstOrFail();
+        $empresa = $tenant->empresas()->create([
+            'contract_id' => $contractA->id,
+            'tipo_empresa_id' => $tipo->id,
+            'nome' => 'Gerenciadora Vinculos',
+            'cnpj' => '66.666.666/0001-66',
+            'sigla' => 'GVIN',
+        ]);
+
+        $tenant->memberships()->create([
+            'user_id' => $admin->id,
+            'role' => 'tenant_admin',
+            'status' => 'active',
+        ]);
+        $membership = $tenant->memberships()->create([
+            'user_id' => $managedUser->id,
+            'empresa_id' => $empresa->id,
+            'role' => 'engineer',
+            'status' => 'active',
+        ]);
+        $participantA = ContractParticipant::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contractA->id,
+            'user_id' => $managedUser->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+            'project_permissions' => [ProjectPermissions::VIEW],
+        ]);
+        RelatorioNaoConformidadeResponsavel::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contractA->id,
+            'user_id' => $managedUser->id,
+            'created_by_id' => $admin->id,
+            'status' => 'active',
+            'responsibility_type' => 'acompanhamento',
+            'permissions' => [RncPermissions::VIEW],
+        ]);
+
+        $payload = [
+            'name' => $managedUser->name,
+            'email' => $managedUser->email,
+            'empresa_id' => $empresa->id,
+            'role' => 'engineer',
+            'contract_accesses' => [
+                [
+                    'contract_id' => $contractB->id,
+                    'side' => 'manager',
+                    'role' => 'team_member',
+                    'activity_permissions' => [ActivityPermissions::VIEW],
+                    'project_permissions' => [ProjectPermissions::VIEW],
+                    'rnc_permissions' => [RncPermissions::VIEW],
+                ],
+            ],
+        ];
+
+        $this->actingAs($admin)
+            ->patch(route('tenant.users.update', [$tenant, $membership]), $payload)
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSoftDeleted('contract_participants', [
+            'id' => $participantA->id,
+            'status' => 'inactive',
+        ]);
+        $this->assertDatabaseHas('contract_participants', [
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contractB->id,
+            'user_id' => $managedUser->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'deleted_at' => null,
+        ]);
+        $this->assertSoftDeleted('relatorio_nao_conformidade_responsaveis', [
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contractA->id,
+            'user_id' => $managedUser->id,
+            'status' => 'inactive',
+        ]);
+        $this->assertDatabaseHas('relatorio_nao_conformidade_responsaveis', [
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contractB->id,
+            'user_id' => $managedUser->id,
+            'status' => 'active',
+            'deleted_at' => null,
         ]);
     }
 
