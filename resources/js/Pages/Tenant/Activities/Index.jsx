@@ -1,6 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import ActivityTour, { startActivityTour } from '@/Components/ActivityTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     BarChart3,
@@ -175,6 +176,7 @@ export default function ActivitiesIndex({
     canCreateActivities,
     canEditActivities,
     canDeleteActivities,
+    canViewActivityMetrics,
     tourMode = false,
     tourScreen = null,
 }) {
@@ -207,6 +209,25 @@ export default function ActivitiesIndex({
         priority: tourMode ? 'high' : 'normal',
         due_date: tourMode ? activities[0]?.due_date || '' : '',
     });
+
+    useEffect(() => {
+        if (tourMode || !canCreateActivities) {
+            return;
+        }
+
+        const assistantDraft = consumeAssistantDraft(tenant.id, 'activity');
+
+        if (!assistantDraft) {
+            return;
+        }
+
+        form.setData((current) => ({
+            ...current,
+            ...assistantDraft,
+            assigned_to_ids: [],
+        }));
+        setShowCreate(true);
+    }, []);
 
     const activitiesForBoard = useMemo(() => activities.map((activity) => (
         tourMode && tourScreen === 'flow' && activity._tourData
@@ -323,19 +344,16 @@ export default function ActivitiesIndex({
             return;
         }
 
-        if (!canEditActivities) {
-            return;
-        }
-
         if (!draggedActivityId) {
             return;
         }
 
         const activity = activities.find((item) => item.id === draggedActivityId);
+        const canMoveActivity = activity?.can_move ?? activity?.can_edit ?? canEditActivities;
 
         setDraggedActivityId(null);
 
-        if (!activity || activity.status === status) {
+        if (!activity || !canMoveActivity || activity.status === status) {
             return;
         }
 
@@ -363,14 +381,16 @@ export default function ActivitiesIndex({
                                 Iniciar tour
                             </button>
                         )}
-                        <Link
-                            href={tourMode ? '#' : route('tenant.activities.metrics', tenant.slug)}
-                            className="sig-btn sig-btn-secondary"
-                            onClick={(event) => tourMode && event.preventDefault()}
-                        >
-                            <BarChart3 size={15} />
-                            Métricas
-                        </Link>
+                        {(tourMode || canViewActivityMetrics) && (
+                            <Link
+                                href={tourMode ? '#' : route('tenant.activities.metrics', tenant.slug)}
+                                className="sig-btn sig-btn-secondary"
+                                onClick={(event) => tourMode && event.preventDefault()}
+                            >
+                                <BarChart3 size={15} />
+                                Métricas
+                            </Link>
+                        )}
                         {canCreateActivities && (
                             <button
                                 className="sig-btn sig-btn-primary"
@@ -579,7 +599,7 @@ export default function ActivitiesIndex({
                                 data-tour={`activities-column-${column.value}`}
                                 className="min-w-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3"
                                 onDragOver={(event) => event.preventDefault()}
-                                onDrop={() => canEditActivities && moveActivity(column.value)}
+                                onDrop={() => moveActivity(column.value)}
                             >
                                 <header className="mb-3 flex items-center justify-between gap-3 px-1">
                                     <div className="flex items-center gap-2">
@@ -596,20 +616,24 @@ export default function ActivitiesIndex({
                                 </header>
 
                                 <div className="grid min-w-0 gap-3">
-                                    {columnActivities.map((activity) => (
-                                        <ActivityCard
-                                            key={activity.id}
-                                            activity={activity}
-                                            dragging={draggedActivityId === activity.id}
-                                            onClick={() => setSelectedActivityId(activity.id)}
-                                            canEditActivities={canEditActivities}
-                                            onDragStart={() => canEditActivities && setDraggedActivityId(activity.id)}
-                                            onDragEnd={() => setDraggedActivityId(null)}
-                                            tourTarget={activity._tourData
-                                                ? (tourScreen === 'flow' ? 'activities-flow-card' : 'activities-card')
-                                                : undefined}
-                                        />
-                                    ))}
+                                    {columnActivities.map((activity) => {
+                                        const canMoveActivity = activity.can_move ?? activity.can_edit ?? canEditActivities;
+
+                                        return (
+                                            <ActivityCard
+                                                key={activity.id}
+                                                activity={activity}
+                                                dragging={draggedActivityId === activity.id}
+                                                onClick={() => setSelectedActivityId(activity.id)}
+                                                canEditActivities={canMoveActivity}
+                                                onDragStart={() => canMoveActivity && setDraggedActivityId(activity.id)}
+                                                onDragEnd={() => setDraggedActivityId(null)}
+                                                tourTarget={activity._tourData
+                                                    ? (tourScreen === 'flow' ? 'activities-flow-card' : 'activities-card')
+                                                    : undefined}
+                                            />
+                                        );
+                                    })}
 
                                     {columnActivities.length === 0 && (
                                         <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-white px-3 py-8 text-center text-[12.5px] text-[var(--ink-500)]">
@@ -631,8 +655,8 @@ export default function ActivitiesIndex({
                     priorities={priorities}
                     categories={categories}
                     visibilities={visibilities}
-                    canEditActivities={canEditActivities}
-                    canDeleteActivities={canDeleteActivities}
+                    canEditActivities={selectedActivity.can_edit ?? canEditActivities}
+                    canDeleteActivities={selectedActivity.can_delete ?? canDeleteActivities}
                     onClose={() => !tourMode && setSelectedActivityId(null)}
                     tourMode={tourMode}
                 />
@@ -757,6 +781,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
     const assignees = activityAssignees(activity);
     const contractName = activity.contract?.obra?.nome || activity.contract?.name;
     const assignableUsers = assigneesByContract?.[String(activity.contract_id)] || [];
+    const canInteract = activity.can_interact ?? tourMode;
 
     const toggleEditAssignee = (userId) => {
         const normalizedUserId = Number(userId);
@@ -965,24 +990,26 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                                 )}
                             </div>
 
-                            <form className="mt-3 grid gap-2" onSubmit={submitComment}>
-                                <label className="sig-input">
-                                    <textarea
-                                        value={commentForm.data.body}
-                                        onChange={(event) => commentForm.setData('body', event.target.value)}
-                                        placeholder="Escrever comentário"
-                                        rows={3}
-                                        required
-                                    />
-                                </label>
-                                {commentForm.errors.body && <span className="text-xs text-[var(--red)]">{commentForm.errors.body}</span>}
-                                <div>
-                                    <button className="sig-btn sig-btn-primary" disabled={commentForm.processing}>
-                                        <Send size={14} />
-                                        Enviar comentário
-                                    </button>
-                                </div>
-                            </form>
+                            {canInteract && (
+                                <form className="mt-3 grid gap-2" onSubmit={submitComment}>
+                                    <label className="sig-input">
+                                        <textarea
+                                            value={commentForm.data.body}
+                                            onChange={(event) => commentForm.setData('body', event.target.value)}
+                                            placeholder="Escrever comentário"
+                                            rows={3}
+                                            required
+                                        />
+                                    </label>
+                                    {commentForm.errors.body && <span className="text-xs text-[var(--red)]">{commentForm.errors.body}</span>}
+                                    <div>
+                                        <button className="sig-btn sig-btn-primary" disabled={commentForm.processing}>
+                                            <Send size={14} />
+                                            Enviar comentário
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
                         </section>
                     </div>
 
@@ -1032,16 +1059,18 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                                 )}
                             </div>
 
-                            <form className="mt-3 grid gap-2" onSubmit={submitFile}>
-                                <label className="sig-input">
-                                    <input type="file" onChange={(event) => fileForm.setData('file', event.target.files?.[0] || null)} />
-                                </label>
-                                {fileForm.errors.file && <span className="text-xs text-[var(--red)]">{fileForm.errors.file}</span>}
-                                <button className="sig-btn sig-btn-secondary" disabled={fileForm.processing || !fileForm.data.file}>
-                                    <Upload size={14} />
-                                    Anexar arquivo
-                                </button>
-                            </form>
+                            {canInteract && (
+                                <form className="mt-3 grid gap-2" onSubmit={submitFile}>
+                                    <label className="sig-input">
+                                        <input type="file" onChange={(event) => fileForm.setData('file', event.target.files?.[0] || null)} />
+                                    </label>
+                                    {fileForm.errors.file && <span className="text-xs text-[var(--red)]">{fileForm.errors.file}</span>}
+                                    <button className="sig-btn sig-btn-secondary" disabled={fileForm.processing || !fileForm.data.file}>
+                                        <Upload size={14} />
+                                        Anexar arquivo
+                                    </button>
+                                </form>
+                            )}
                         </section>
                     </aside>
                 </div>

@@ -9,6 +9,7 @@ use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Support\ActivityPermissions;
+use App\Support\BudgetPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -85,6 +86,13 @@ class PermissionController extends Controller
                         : ParametrizacaoPermissions::normalize($membership->parametrizacao_permissions ?? ParametrizacaoPermissions::defaultForRole($membership->role)),
                 ])
                 ->all(),
+            'budgetPermissionsByUser' => $memberships
+                ->mapWithKeys(fn (TenantUser $membership): array => [
+                    $membership->user_id => $membership->role === 'tenant_owner'
+                        ? BudgetPermissions::all()
+                        : BudgetPermissions::normalize($membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role)),
+                ])
+                ->all(),
             'permissionGroups' => [
                 'activities' => [
                     'label' => 'Atividades',
@@ -97,6 +105,10 @@ class PermissionController extends Controller
                 'projects' => [
                     'label' => 'Projetos',
                     'permissions' => ProjectPermissions::labels(),
+                ],
+                'budgets' => [
+                    'label' => 'Orçamentos',
+                    'permissions' => BudgetPermissions::labels(),
                 ],
                 'users' => [
                     'label' => 'Usuarios',
@@ -116,7 +128,7 @@ class PermissionController extends Controller
 
         $data = $request->validate([
             'user_id' => ['required', 'integer', Rule::exists('tenant_users', 'user_id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)->where('status', 'active'))],
-            'contract_id' => ['required', 'integer', Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
+            'contract_id' => ['nullable', 'integer', Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
             'activity_permissions' => ['nullable', 'array'],
             'activity_permissions.*' => ['required', 'string', Rule::in(ActivityPermissions::all())],
             'project_permissions' => ['nullable', 'array'],
@@ -127,13 +139,17 @@ class PermissionController extends Controller
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
             'parametrizacao_permissions' => ['nullable', 'array'],
             'parametrizacao_permissions.*' => ['required', 'string', Rule::in(ParametrizacaoPermissions::all())],
+            'budget_permissions' => ['nullable', 'array'],
+            'budget_permissions.*' => ['required', 'string', Rule::in(BudgetPermissions::all())],
         ]);
 
         $membership = $tenant->memberships()
             ->where('user_id', $data['user_id'])
             ->where('status', 'active')
             ->firstOrFail();
-        $contract = $tenant->contracts()->findOrFail($data['contract_id']);
+        $contract = ! empty($data['contract_id'])
+            ? $tenant->contracts()->findOrFail($data['contract_id'])
+            : null;
 
         if ($membership->role === 'tenant_owner') {
             return back()->with('success', 'Owner mantem acesso total automaticamente.');
@@ -144,6 +160,7 @@ class PermissionController extends Controller
         $rncPermissions = RncPermissions::normalize($data['rnc_permissions'] ?? []);
         $userPermissions = UserPermissions::normalize($data['user_permissions'] ?? []);
         $parametrizacaoPermissions = ParametrizacaoPermissions::normalize($data['parametrizacao_permissions'] ?? []);
+        $budgetPermissions = BudgetPermissions::normalize($data['budget_permissions'] ?? []);
 
         if ($membership->role === 'tenant_admin') {
             $membership->update([
@@ -151,33 +168,43 @@ class PermissionController extends Controller
                 'project_permissions' => $projectPermissions,
                 'user_permissions' => $userPermissions,
                 'parametrizacao_permissions' => $parametrizacaoPermissions,
+                'budget_permissions' => $budgetPermissions,
             ]);
         } else {
-            $participant = ContractParticipant::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('contract_id', $contract->id)
-                ->where('user_id', $membership->user_id)
-                ->where('status', 'active')
-                ->first();
+            if ($contract) {
+                $participant = ContractParticipant::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $contract->id)
+                    ->where('user_id', $membership->user_id)
+                    ->where('status', 'active')
+                    ->first();
 
-            if (! $participant) {
+                if (! $participant) {
+                    throw ValidationException::withMessages([
+                        'contract_id' => 'Este usuario nao esta vinculado ao contrato selecionado.',
+                    ]);
+                }
+
+                $participant->update([
+                    'activity_permissions' => $activityPermissions,
+                    'project_permissions' => $projectPermissions,
+                ]);
+            } elseif ($activityPermissions !== [] || $projectPermissions !== [] || $rncPermissions !== []) {
                 throw ValidationException::withMessages([
-                    'contract_id' => 'Este usuario nao esta vinculado ao contrato selecionado.',
+                    'contract_id' => 'Vincule o usuario a um contrato para configurar Atividades, Projetos ou RNC.',
                 ]);
             }
-
-            $participant->update([
-                'activity_permissions' => $activityPermissions,
-                'project_permissions' => $projectPermissions,
-            ]);
 
             $membership->update([
                 'user_permissions' => $userPermissions,
                 'parametrizacao_permissions' => $parametrizacaoPermissions,
+                'budget_permissions' => $budgetPermissions,
             ]);
         }
 
-        $this->syncRncPermissions($request, $tenant, $contract, $membership, $rncPermissions);
+        if ($contract) {
+            $this->syncRncPermissions($request, $tenant, $contract, $membership, $rncPermissions);
+        }
 
         return back()->with('success', 'Permissoes atualizadas.');
     }

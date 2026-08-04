@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import {
     Building2,
@@ -137,6 +138,22 @@ export default function OrdemServicoIndex({
     const [analysisSubmitting, setAnalysisSubmitting] = useState(false);
 
     const form = useForm(orderFormDefaults(selectedContractId || ''));
+
+    useEffect(() => {
+        const assistantDraft = consumeAssistantDraft(tenant.id, 'service_order');
+
+        if (!assistantDraft) {
+            return;
+        }
+
+        setEditingOrder(null);
+        setSelectedItemMap({});
+        form.setData({
+            ...orderFormDefaults(assistantDraft.contract_id || selectedContractId || ''),
+            ...assistantDraft,
+        });
+        setShowForm(true);
+    }, []);
 
     const selectedContract = contracts.find((contract) => Number(contract.id) === Number(form.data.contract_id));
     const obras = options.obras || [];

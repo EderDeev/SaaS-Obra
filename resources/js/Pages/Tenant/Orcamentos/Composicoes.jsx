@@ -58,6 +58,7 @@ export default function OrcamentosComposicoes({
     compositionSummary = { official: 0, own: 0 },
     canManageTenantComposicoes = false,
     canManageGlobalComposicoes = false,
+    canImportTenantComposicoes = false,
     typeOptions = [],
 }) {
     const page = usePage();
@@ -121,10 +122,10 @@ export default function OrcamentosComposicoes({
 
     const visiblePanels = useMemo(() => ({
         create: canManageTenantComposicoes,
-        importTenant: canManageTenantComposicoes,
+        importTenant: canImportTenantComposicoes,
         importGlobal: canManageGlobalComposicoes,
         importAnalytic: canManageGlobalComposicoes,
-    }), [canManageGlobalComposicoes, canManageTenantComposicoes]);
+    }), [canImportTenantComposicoes, canManageGlobalComposicoes, canManageTenantComposicoes]);
     const updateFilter = (field, value) => {
         setFilters((current) => ({ ...current, [field]: value }));
     };

@@ -84,4 +84,9 @@ class Orcamento extends Model
     {
         return $this->hasMany(OrcamentoItem::class)->orderBy('ordem');
     }
+
+    public function accesses(): HasMany
+    {
+        return $this->hasMany(OrcamentoAcesso::class);
+    }
 }

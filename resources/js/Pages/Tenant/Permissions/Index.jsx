@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { Activity, ChevronRight, ClipboardList, FileWarning, FolderOpen, KeyRound, Save, Search, ShieldCheck, SlidersHorizontal, UserCog, Users } from 'lucide-react';
+import { Activity, Calculator, ChevronRight, ClipboardList, FileWarning, FolderOpen, KeyRound, Save, Search, ShieldCheck, SlidersHorizontal, UserCog, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 function initials(name = 'U') {
@@ -26,9 +26,10 @@ function contractLabel(contract) {
 }
 
 const groupMeta = {
-    activities: { icon: Activity, dataKey: 'activity_permissions' },
-    rnc: { icon: FileWarning, dataKey: 'rnc_permissions' },
-    projects: { icon: FolderOpen, dataKey: 'project_permissions' },
+    activities: { icon: Activity, dataKey: 'activity_permissions', contractScoped: true },
+    rnc: { icon: FileWarning, dataKey: 'rnc_permissions', contractScoped: true },
+    projects: { icon: FolderOpen, dataKey: 'project_permissions', contractScoped: true },
+    budgets: { icon: Calculator, dataKey: 'budget_permissions' },
     users: { icon: UserCog, dataKey: 'user_permissions' },
     parametrizacao: { icon: SlidersHorizontal, dataKey: 'parametrizacao_permissions' },
 };
@@ -43,6 +44,7 @@ export default function PermissionsIndex({
     rncPermissionsByUserContract,
     userPermissionsByUser,
     parametrizacaoPermissionsByUser,
+    budgetPermissionsByUser,
     permissionGroups,
 }) {
     const page = usePage();
@@ -67,6 +69,7 @@ export default function PermissionsIndex({
         rnc_permissions: [],
         user_permissions: [],
         parametrizacao_permissions: [],
+        budget_permissions: [],
     });
 
     const filteredUsers = useMemo(() => {
@@ -95,12 +98,15 @@ export default function PermissionsIndex({
             rnc_permissions: rncPermissionsByUserContract?.[key] || [],
             user_permissions: userPermissionsByUser?.[selectedUserId] || [],
             parametrizacao_permissions: parametrizacaoPermissionsByUser?.[selectedUserId] || [],
+            budget_permissions: budgetPermissionsByUser?.[selectedUserId] || [],
         });
         form.clearErrors();
     }, [selectedUserId, selectedContractId]);
 
     const togglePermission = (dataKey, permission) => {
-        if (lockedOwner) {
+        const contractScoped = ['activity_permissions', 'project_permissions', 'rnc_permissions'].includes(dataKey);
+
+        if (lockedOwner || (contractScoped && !selectedContractId)) {
             return;
         }
 
@@ -214,7 +220,7 @@ export default function PermissionsIndex({
                                 )}
                             </div>
                         </div>
-                        <button className="sig-btn sig-btn-primary" disabled={form.processing || lockedOwner || !selectedContractId}>
+                        <button className="sig-btn sig-btn-primary" disabled={form.processing || lockedOwner || !selectedUserId}>
                             <Save size={15} />
                             Salvar permissoes
                         </button>
@@ -244,6 +250,7 @@ export default function PermissionsIndex({
                             const selected = form.data[meta.dataKey] || [];
                             const permissions = Object.entries(group.permissions || {});
                             const expanded = openGroup === groupKey;
+                            const contractUnavailable = Boolean(meta.contractScoped && !selectedContractId);
 
                             return (
                                 <div key={groupKey}>
@@ -273,12 +280,12 @@ export default function PermissionsIndex({
                                                 return (
                                                     <label
                                                         key={permission}
-                                                        className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition sm:ml-12 ${checked ? 'border-[var(--primary)] bg-[var(--primary-50)] text-[var(--primary)]' : 'border-[var(--border)] bg-white hover:bg-[var(--surface-muted)]'} ${lockedOwner ? 'cursor-not-allowed opacity-75' : ''}`}
+                                                        className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition sm:ml-12 ${checked ? 'border-[var(--primary)] bg-[var(--primary-50)] text-[var(--primary)]' : 'border-[var(--border)] bg-white hover:bg-[var(--surface-muted)]'} ${lockedOwner || contractUnavailable ? 'cursor-not-allowed opacity-75' : ''}`}
                                                     >
                                                         <input
                                                             type="checkbox"
                                                             checked={checked}
-                                                            disabled={lockedOwner}
+                                                            disabled={lockedOwner || contractUnavailable}
                                                             onChange={() => togglePermission(meta.dataKey, permission)}
                                                         />
                                                         <span>{label}</span>
@@ -298,12 +305,13 @@ export default function PermissionsIndex({
                             <Users size={14} />
                             <span className="eyebrow">Resumo</span>
                         </div>
-                        <div className="grid gap-2 text-sm text-[var(--ink-600)] md:grid-cols-5">
+                        <div className="grid gap-2 text-sm text-[var(--ink-600)] md:grid-cols-6">
                             <Summary label="Atividades" value={form.data.activity_permissions.length} />
                             <Summary label="Projetos" value={form.data.project_permissions.length} />
                             <Summary label="RNC" value={form.data.rnc_permissions.length} />
                             <Summary label="Usuarios" value={form.data.user_permissions.length} />
                             <Summary label="Parametrizacao" value={form.data.parametrizacao_permissions.length} />
+                            <Summary label="Orçamentos" value={form.data.budget_permissions.length} />
                         </div>
                     </section>
                 </form>

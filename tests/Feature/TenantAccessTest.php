@@ -17,6 +17,7 @@ use App\Models\TipoEmpresa;
 use App\Models\User;
 use App\Notifications\UserTemporaryPasswordNotification;
 use App\Support\ActivityPermissions;
+use App\Support\BudgetPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -337,6 +338,7 @@ class TenantAccessTest extends TestCase
             'user_id' => $user->id,
             'role' => 'engineer',
             'status' => 'active',
+            'budget_permissions' => [BudgetPermissions::VIEW],
         ]);
 
         $this->actingAs($user)

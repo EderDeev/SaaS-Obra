@@ -14,12 +14,14 @@ class ActivityPermissions
     public const VIEW = 'view_activities';
     public const CREATE = 'create_activity';
     public const EDIT = 'edit_activity';
+    public const VIEW_METRICS = 'view_activity_metrics';
     public const DELETE = 'delete_activity';
 
     public const LABELS = [
         self::VIEW => 'Visualizar Atividades',
         self::CREATE => 'Criar atividade',
         self::EDIT => 'Editar atividade',
+        self::VIEW_METRICS => 'Visualizar métricas',
         self::DELETE => 'Excluir atividade',
     ];
 
@@ -163,7 +165,7 @@ class ActivityPermissions
             ...TenantRoles::engineeringRoles(),
             ...TenantRoles::supervisionRoles(),
         ], true)) {
-            return [self::VIEW, self::CREATE, self::EDIT];
+            return [self::VIEW, self::CREATE, self::EDIT, self::VIEW_METRICS];
         }
 
         if (in_array($role, [

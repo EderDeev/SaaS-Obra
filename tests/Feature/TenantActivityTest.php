@@ -154,6 +154,53 @@ class TenantActivityTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_activity_metrics_require_specific_permission(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantWithUser('engineer');
+
+        $tenant->memberships()
+            ->where('user_id', $user->id)
+            ->update(['activity_permissions' => [ActivityPermissions::VIEW]]);
+
+        $participant = $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canViewActivityMetrics', false)
+            );
+
+        $this->actingAs($user)
+            ->get(route('tenant.activities.metrics', $tenant))
+            ->assertForbidden();
+
+        $permissions = [ActivityPermissions::VIEW, ActivityPermissions::VIEW_METRICS];
+
+        $tenant->memberships()
+            ->where('user_id', $user->id)
+            ->update(['activity_permissions' => $permissions]);
+        $participant->update(['activity_permissions' => $permissions]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canViewActivityMetrics', true)
+            );
+
+        $this->actingAs($user)
+            ->get(route('tenant.activities.metrics', $tenant))
+            ->assertOk();
+    }
+
     public function test_user_without_create_activity_permission_cannot_create_activity(): void
     {
         [$tenant, $user, $contract] = $this->tenantWithUser('engineer');
@@ -179,7 +226,7 @@ class TenantActivityTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_user_without_edit_or_delete_activity_permissions_cannot_change_activity(): void
+    public function test_creator_can_edit_and_delete_own_activity_without_general_permissions(): void
     {
         [$tenant, $user, $contract] = $this->tenantWithUser('engineer');
 
@@ -204,6 +251,64 @@ class TenantActivityTest extends TestCase
         ]);
 
         $this->actingAs($user)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('activities.0.can_edit', true)
+                ->where('activities.0.can_delete', true)
+            );
+
+        $this->actingAs($user)
+            ->patch(route('tenant.activities.update', [$tenant, $activity]), [
+                'status' => 'done',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($user)
+            ->delete(route('tenant.activities.destroy', [$tenant, $activity]))
+            ->assertRedirect();
+
+        $this->assertSoftDeleted('activities', [
+            'id' => $activity->id,
+            'status' => 'done',
+        ]);
+    }
+
+    public function test_user_without_edit_or_delete_permissions_cannot_change_activity_created_by_another_user(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantWithUser('engineer');
+        $creator = User::factory()->create();
+
+        $tenant->memberships()
+            ->where('user_id', $user->id)
+            ->update(['activity_permissions' => [ActivityPermissions::VIEW, ActivityPermissions::CREATE]]);
+
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+        ]);
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $creator->id,
+            'title' => 'Atividade de outro usuário',
+            'visibility' => Activity::VISIBILITY_PUBLIC,
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('activities.0.can_edit', false)
+                ->where('activities.0.can_delete', false)
+            );
+
+        $this->actingAs($user)
             ->patch(route('tenant.activities.update', [$tenant, $activity]), [
                 'status' => 'done',
             ])
@@ -216,6 +321,7 @@ class TenantActivityTest extends TestCase
         $this->assertDatabaseHas('activities', [
             'id' => $activity->id,
             'status' => 'todo',
+            'deleted_at' => null,
         ]);
     }
 

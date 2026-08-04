@@ -48,4 +48,12 @@ return [
         'auto_process' => env('AUTODESK_APS_AUTO_PROCESS', true),
     ],
 
+    'openai' => [
+        'enabled' => env('AI_ASSISTANT_ENABLED', true),
+        'key' => env('OPENAI_API_KEY'),
+        'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+        'model' => env('OPENAI_CHAT_MODEL', 'gpt-5.6-sol'),
+        'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+    ],
+
 ];

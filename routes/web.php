@@ -5,6 +5,7 @@ use App\Http\Controllers\Platform\DashboardController as PlatformDashboardContro
 use App\Http\Controllers\Platform\TenantController as PlatformTenantController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Tenant\ActivityController;
+use App\Http\Controllers\Tenant\AssistantController;
 use App\Http\Controllers\Tenant\BoletimMedicaoController;
 use App\Http\Controllers\Tenant\ContractController;
 use App\Http\Controllers\Tenant\ContractAdditiveController;
@@ -103,6 +104,9 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
     ->name('tenant.')
     ->group(function () {
         Route::get('/', TenantDashboardController::class)->name('dashboard');
+        Route::get('/assistente', [AssistantController::class, 'show'])->name('assistant.show');
+        Route::post('/assistente/mensagens', [AssistantController::class, 'store'])->middleware('throttle:20,1')->name('assistant.messages.store');
+        Route::delete('/assistente/conversas/{conversation}', [AssistantController::class, 'destroy'])->name('assistant.conversations.destroy');
         Route::get('/documentacao', [GedController::class, 'index'])->name('ged.index');
         Route::get('/documentacao/tour-preview', [GedController::class, 'tourPreview'])->name('ged.tour-preview');
         Route::post('/documentacao', [GedController::class, 'store'])->name('ged.store');
@@ -276,6 +280,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::post('/ordem-servico/responsaveis', [OrdemServicoController::class, 'storeResponsavel'])->name('ordem-servico.responsaveis.store');
         Route::delete('/ordem-servico/responsaveis/{responsavel}', [OrdemServicoController::class, 'destroyResponsavel'])->name('ordem-servico.responsaveis.destroy');
         Route::get('/orcamentos', [OrcamentoController::class, 'index'])->name('orcamentos.index');
+        Route::get('/orcamentos/tour-preview', [OrcamentoController::class, 'tourPreview'])->name('orcamentos.tour-preview');
         Route::get('/orcamentos/novo', [OrcamentoController::class, 'create'])->name('orcamentos.create');
         Route::get('/orcamentos/importar', [OrcamentoController::class, 'createImport'])->name('orcamentos.import.create');
         Route::post('/orcamentos/importar', [OrcamentoController::class, 'storeImport'])->name('orcamentos.import.store');
@@ -304,6 +309,8 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/orcamentos/{orcamento}/relatorios/resumo', [OrcamentoController::class, 'downloadRelatorioResumo'])->name('orcamentos.relatorios.resumo');
         Route::get('/orcamentos/{orcamento}/copiar/{sourceOrcamento}', [OrcamentoController::class, 'copyPreview'])->name('orcamentos.copy.preview');
         Route::post('/orcamentos/{orcamento}/copiar', [OrcamentoController::class, 'copyFromOrcamento'])->name('orcamentos.copy.store');
+        Route::get('/orcamentos/{orcamento}/acessos', [OrcamentoController::class, 'accesses'])->name('orcamentos.accesses.index');
+        Route::put('/orcamentos/{orcamento}/acessos', [OrcamentoController::class, 'updateAccesses'])->name('orcamentos.accesses.update');
         Route::patch('/orcamentos/{orcamento}/finalizar', [OrcamentoController::class, 'close'])->name('orcamentos.close');
         Route::post('/orcamentos/{orcamento}/etapas/{etapa}/composicoes', [OrcamentoController::class, 'storeOrcamentoComposicaoItem'])->name('orcamentos.etapas.composicoes.store');
         Route::post('/orcamentos/{orcamento}/etapas/{etapa}/insumos', [OrcamentoController::class, 'storeOrcamentoInsumoItem'])->name('orcamentos.etapas.insumos.store');

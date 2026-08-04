@@ -1,4 +1,5 @@
 import SigLogo from '@/Components/SigLogo';
+import AiAssistantChat from '@/Components/AiAssistantChat';
 import { Link, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -26,7 +27,6 @@ import {
     Search,
     Settings,
     ShieldCheck,
-    ShoppingCart,
     SlidersHorizontal,
     Users,
 } from 'lucide-react';
@@ -88,6 +88,7 @@ export default function AuthenticatedLayout({ children }) {
     const rncCan = props.rncPermissions?.can || {};
     const activityCan = props.activityPermissions?.can || {};
     const projectCan = props.projectPermissions?.can || {};
+    const budgetCan = props.budgetPermissions?.can || {};
     const parametrizacaoCan = props.parametrizacaoPermissions?.can || {};
     const [parametrizacaoOpen, setParametrizacaoOpen] = useState(() => route().current('tenant.parametrizacao.*'));
     const [qualidadeOpen, setQualidadeOpen] = useState(() => route().current('tenant.qualidade.*'));
@@ -486,8 +487,9 @@ export default function AuthenticatedLayout({ children }) {
                 { label: 'Atividades', icon: Activity, href: route('tenant.activities.index', tenant.slug), active: route().current('tenant.activities.*') },
             ] : []),
             { label: 'Planejamento', icon: ChartNoAxesGantt, active: false, disabled: true },
-            { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
-            { label: 'Compras', icon: ShoppingCart, active: false, disabled: true },
+            ...(budgetCan.view_budgets ? [
+                { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
+            ] : []),
             { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
             { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
             { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
@@ -561,7 +563,7 @@ export default function AuthenticatedLayout({ children }) {
         },
         {
             label: 'Programação',
-            items: navItems.filter((item) => ['Planejamento', 'Orçamentos', 'Compras'].includes(item.label)),
+            items: navItems.filter((item) => ['Planejamento', 'Orçamentos'].includes(item.label)),
         },
         {
             label: 'Acompanhamento',
@@ -1036,6 +1038,7 @@ export default function AuthenticatedLayout({ children }) {
 
                 <main>{children}</main>
             </section>
+            <AiAssistantChat tenant={tenant} />
         </div>
     );
 }

@@ -83,6 +83,8 @@ export default function OrcamentoShow({
     etapas = [],
     copySources = [],
     canManageOrcamentos = false,
+    canFinalizeOrcamento = false,
+    canExportReports = false,
 }) {
     const page = usePage();
     const [showEtapaForm, setShowEtapaForm] = useState(false);
@@ -808,16 +810,18 @@ export default function OrcamentoShow({
                         </button>
                     )}
 
-                    <button
-                        className="sig-btn sig-btn-secondary"
-                        type="button"
-                        onClick={() => setReportsModalOpen(true)}
-                    >
-                        <FileSpreadsheet size={15} />
-                        Relatórios
-                    </button>
+                    {canExportReports && (
+                        <button
+                            className="sig-btn sig-btn-secondary"
+                            type="button"
+                            onClick={() => setReportsModalOpen(true)}
+                        >
+                            <FileSpreadsheet size={15} />
+                            Relatórios
+                        </button>
+                    )}
 
-                    {canEditOrcamento && (
+                    {canFinalizeOrcamento && !isClosed && (
                         <button
                             className="sig-btn sig-btn-primary"
                             type="button"

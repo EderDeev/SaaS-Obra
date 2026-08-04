@@ -69,6 +69,7 @@ export default function OrcamentosInsumos({
     grupos = [],
     canManageTenantInsumos = false,
     canManageGlobalInsumos = false,
+    canImportTenantInsumos = false,
 }) {
     const page = usePage();
     const insumoRows = insumos?.data ?? insumos;
@@ -138,9 +139,9 @@ export default function OrcamentosInsumos({
     const visiblePanels = useMemo(() => ({
         create: canManageTenantInsumos,
         groups: canManageTenantInsumos,
-        importTenant: canManageTenantInsumos,
+        importTenant: canImportTenantInsumos,
         importGlobal: canManageGlobalInsumos,
-    }), [canManageGlobalInsumos, canManageTenantInsumos]);
+    }), [canImportTenantInsumos, canManageGlobalInsumos, canManageTenantInsumos]);
     const [currentImportLabel, setCurrentImportLabel] = useState(null);
     const activeImportForm = tenantImportForm.processing
         ? tenantImportForm

@@ -45,7 +45,7 @@ const desktopMenuSteps = [
     {
         target: '[data-tour="overview-nav-planning"]',
         title: 'Programação',
-        content: 'Planejamento organiza a programação da execução, Orçamentos estrutura custos e composições, e Compras atenderá às aquisições previstas.',
+        content: 'Planejamento organiza a programação da execução, enquanto Orçamentos estrutura custos, insumos e composições.',
         placement: 'right',
     },
     {

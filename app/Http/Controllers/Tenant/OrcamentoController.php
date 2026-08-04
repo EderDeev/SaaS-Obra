@@ -7,6 +7,7 @@ use App\Jobs\DeleteStoredImportFileJob;
 use App\Jobs\ImportOrcamentoComposicoesJob;
 use App\Models\Empresa;
 use App\Models\Orcamento;
+use App\Models\OrcamentoAcesso;
 use App\Models\OrcamentoComposicao;
 use App\Models\OrcamentoComposicaoAnaliticoItem;
 use App\Models\OrcamentoComposicaoItem;
@@ -16,14 +17,17 @@ use App\Models\OrcamentoInsumoGrupo;
 use App\Models\OrcamentoItem;
 use App\Models\Tenant;
 use App\Models\TipoEmpresa;
+use App\Models\User;
+use App\Support\BudgetPermissions;
+use App\Support\TenantRoles;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -36,6 +40,7 @@ use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -124,29 +129,52 @@ class OrcamentoController extends Controller
 
     public function index(Request $request, Tenant $tenant): Response
     {
-        $orcamentos = Orcamento::query()
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::VIEW);
+
+        $orcamentosQuery = Orcamento::query()
             ->with(['clienteEmpresa:id,nome'])
             ->where('tenant_id', $tenant->id)
-            ->latest()
-            ->get();
+            ->latest();
+
+        $orcamentos = BudgetPermissions::scopeVisibleTo($orcamentosQuery, $request->user(), $tenant)->get();
 
         return Inertia::render('Tenant/Orcamentos/Index', [
             'tenant' => $tenant,
             'orcamentos' => $orcamentos
-                ->map(fn (Orcamento $orcamento): array => $this->serializeOrcamento($orcamento))
+                ->map(fn (Orcamento $orcamento): array => [
+                    ...$this->serializeOrcamento($orcamento),
+                    'can_manage_accesses' => BudgetPermissions::canManageAccesses($request->user(), $tenant, $orcamento),
+                ])
                 ->values(),
             'stats' => [
                 'total' => $orcamentos->count(),
                 'draft' => $orcamentos->where('status', 'draft')->count(),
                 'closed' => $orcamentos->where('status', 'closed')->count(),
             ],
-            'canManageOrcamentos' => $this->canManageTenantInsumos($request, $tenant),
+            'canCreateOrcamentos' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::CREATE),
+            'canImportOrcamentos' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::IMPORT),
+        ]);
+    }
+
+    public function tourPreview(Request $request, Tenant $tenant): Response
+    {
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::VIEW);
+
+        $screen = (string) $request->query('screen', 'insumos');
+
+        if (! in_array($screen, ['insumos', 'composicoes', 'orcamento'], true)) {
+            $screen = 'insumos';
+        }
+
+        return Inertia::render('Tenant/Orcamentos/TourPreview', [
+            'tenant' => $tenant,
+            'screen' => $screen,
         ]);
     }
 
     public function create(Request $request, Tenant $tenant): Response
     {
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::CREATE);
 
         return Inertia::render('Tenant/Orcamentos/Create', [
             'tenant' => $tenant,
@@ -156,7 +184,7 @@ class OrcamentoController extends Controller
 
     public function createImport(Request $request, Tenant $tenant): Response
     {
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::IMPORT);
 
         return Inertia::render('Tenant/Orcamentos/Import', [
             'tenant' => $tenant,
@@ -166,7 +194,7 @@ class OrcamentoController extends Controller
 
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::CREATE);
 
         $data = $request->validate([
             'codigo' => ['required', 'string', 'max:50', Rule::unique('orcamentos', 'codigo')->where('tenant_id', $tenant->id)->whereNull('deleted_at')],
@@ -246,7 +274,7 @@ class OrcamentoController extends Controller
 
     public function storeImport(Request $request, Tenant $tenant): RedirectResponse
     {
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::IMPORT);
 
         $data = $request->validate([
             'codigo' => ['required', 'string', 'max:50', Rule::unique('orcamentos', 'codigo')->where('tenant_id', $tenant->id)->whereNull('deleted_at')],
@@ -369,10 +397,11 @@ class OrcamentoController extends Controller
 
     public function show(Request $request, Tenant $tenant, Orcamento $orcamento): Response
     {
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        $this->authorizeBudgetView($request, $tenant, $orcamento);
 
         $orcamento->load([
             'clienteEmpresa:id,nome',
+            'accesses:id,orcamento_id,user_id,access_level',
             'etapas' => fn ($query) => $query
                 ->with(['itens' => fn ($query) => $query->orderBy('ordem')->orderBy('id')])
                 ->orderBy('ordem'),
@@ -385,16 +414,115 @@ class OrcamentoController extends Controller
             'etapas' => $orcamento->etapas
                 ->map(fn (OrcamentoEtapa $etapa): array => $this->serializeOrcamentoEtapa($etapa, $orcamento))
                 ->values(),
-            'copySources' => $this->orcamentoCopySources($tenant, $orcamento),
-            'canManageOrcamentos' => $this->canManageTenantInsumos($request, $tenant),
+            'copySources' => BudgetPermissions::canEditBudget($request->user(), $tenant, $orcamento)
+                ? $this->orcamentoCopySources($tenant, $orcamento, $request->user())
+                : [],
+            'canManageOrcamentos' => BudgetPermissions::canEditBudget($request->user(), $tenant, $orcamento),
+            'canFinalizeOrcamento' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::FINALIZE)
+                && BudgetPermissions::canEditBudget($request->user(), $tenant, $orcamento),
+            'canExportReports' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::REPORTS),
         ]);
+    }
+
+    public function accesses(Request $request, Tenant $tenant, Orcamento $orcamento): JsonResponse
+    {
+        $this->authorizeBudgetView($request, $tenant, $orcamento);
+        abort_unless(BudgetPermissions::canManageAccesses($request->user(), $tenant, $orcamento), 403);
+
+        $search = trim((string) $request->query('search', ''));
+        $available = $request->boolean('available');
+        abort_if(mb_strlen($search) > 100, 422, 'A busca deve ter no maximo 100 caracteres.');
+
+        $orcamento->load('accesses:id,orcamento_id,user_id,access_level');
+
+        return response()->json([
+            'users' => $this->budgetAccessUsers($tenant, $orcamento, $search, $available),
+        ]);
+    }
+
+    public function updateAccesses(Request $request, Tenant $tenant, Orcamento $orcamento): RedirectResponse
+    {
+        $this->authorizeBudgetView($request, $tenant, $orcamento);
+        abort_unless(BudgetPermissions::canManageAccesses($request->user(), $tenant, $orcamento), 403);
+
+        $data = $request->validate([
+            'accesses' => ['nullable', 'array'],
+            'accesses.*.user_id' => [
+                'required',
+                'integer',
+                'distinct',
+                Rule::exists('tenant_users', 'user_id')
+                    ->where(fn ($query) => $query
+                        ->where('tenant_id', $tenant->id)
+                        ->where('status', 'active')),
+            ],
+            'accesses.*.access_level' => [
+                'required',
+                'string',
+                Rule::in([OrcamentoAcesso::LEVEL_VIEW, OrcamentoAcesso::LEVEL_EDIT]),
+            ],
+        ]);
+
+        $memberships = $tenant->memberships()
+            ->where('status', 'active')
+            ->whereIn('user_id', collect($data['accesses'] ?? [])->pluck('user_id'))
+            ->get(['user_id', 'role', 'budget_permissions'])
+            ->keyBy('user_id');
+
+        $accesses = collect($data['accesses'] ?? [])
+            ->filter(function (array $access) use ($memberships, $orcamento): bool {
+                $membership = $memberships->get((int) $access['user_id']);
+                $permissions = $membership
+                    ? BudgetPermissions::normalize(
+                        $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
+                    )
+                    : [];
+
+                return $membership
+                    && (int) $access['user_id'] !== (int) $orcamento->created_by_id
+                    && ! in_array($membership->role, [TenantRoles::OWNER, TenantRoles::ADMIN], true)
+                    && in_array(BudgetPermissions::VIEW, $permissions, true);
+            })
+            ->map(function (array $access) use ($tenant, $orcamento, $request, $memberships): array {
+                $membership = $memberships->get((int) $access['user_id']);
+                $permissions = BudgetPermissions::normalize(
+                    $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
+                );
+                $level = $access['access_level'] === OrcamentoAcesso::LEVEL_EDIT
+                    && in_array(BudgetPermissions::EDIT, $permissions, true)
+                        ? OrcamentoAcesso::LEVEL_EDIT
+                        : OrcamentoAcesso::LEVEL_VIEW;
+
+                return [
+                    'tenant_id' => $tenant->id,
+                    'orcamento_id' => $orcamento->id,
+                    'user_id' => (int) $access['user_id'],
+                    'access_level' => $level,
+                    'granted_by_id' => $request->user()->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            })
+            ->values();
+
+        DB::transaction(function () use ($tenant, $orcamento, $accesses): void {
+            OrcamentoAcesso::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->delete();
+
+            if ($accesses->isNotEmpty()) {
+                OrcamentoAcesso::query()->insert($accesses->all());
+            }
+        });
+
+        return back()->with('success', 'Acessos do orcamento atualizados.');
     }
 
     public function copyPreview(Request $request, Tenant $tenant, Orcamento $orcamento, Orcamento $sourceOrcamento): JsonResponse
     {
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
-        abort_unless((int) $sourceOrcamento->tenant_id === (int) $tenant->id, 404);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
+        $this->authorizeBudgetView($request, $tenant, $sourceOrcamento);
         abort_if((int) $sourceOrcamento->id === (int) $orcamento->id, 422);
 
         $sourceOrcamento->load([
@@ -415,8 +543,7 @@ class OrcamentoController extends Controller
 
     public function copyFromOrcamento(Request $request, Tenant $tenant, Orcamento $orcamento): RedirectResponse
     {
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
         $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
@@ -447,6 +574,7 @@ class OrcamentoController extends Controller
                     ->orderBy('ordem'),
             ])
             ->findOrFail($data['source_orcamento_id']);
+        $this->authorizeBudgetView($request, $tenant, $sourceOrcamento);
 
         $selectedEtapaIds = collect($data['etapa_ids'] ?? [])
             ->map(fn (mixed $id): int => (int) $id)
@@ -582,8 +710,8 @@ class OrcamentoController extends Controller
 
     public function close(Request $request, Tenant $tenant, Orcamento $orcamento): RedirectResponse
     {
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::FINALIZE);
 
         if ($orcamento->status === 'closed') {
             return back()->with('success', 'Orcamento ja estava finalizado.');
@@ -600,7 +728,8 @@ class OrcamentoController extends Controller
 
     public function downloadRelatorioSintetico(Request $request, Tenant $tenant, Orcamento $orcamento): StreamedResponse
     {
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        $this->authorizeBudgetView($request, $tenant, $orcamento);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::REPORTS);
 
         $this->loadOrcamentoForReport($orcamento);
 
@@ -611,7 +740,8 @@ class OrcamentoController extends Controller
 
     public function downloadRelatorioResumo(Request $request, Tenant $tenant, Orcamento $orcamento): StreamedResponse
     {
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        $this->authorizeBudgetView($request, $tenant, $orcamento);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::REPORTS);
 
         $this->loadOrcamentoForReport($orcamento);
 
@@ -622,7 +752,8 @@ class OrcamentoController extends Controller
 
     public function downloadRelatoriosZip(Request $request, Tenant $tenant, Orcamento $orcamento): BinaryFileResponse
     {
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        $this->authorizeBudgetView($request, $tenant, $orcamento);
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::REPORTS);
 
         $data = $request->validate([
             'reports' => ['required', 'array', 'min:2'],
@@ -639,7 +770,7 @@ class OrcamentoController extends Controller
         }
 
         $zipPath = tempnam($tempDirectory, 'orcamento_reports_');
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
 
         abort_unless($zip->open($zipPath, ZipArchive::OVERWRITE) === true, 500, 'Não foi possível gerar o arquivo ZIP.');
 
@@ -714,8 +845,7 @@ class OrcamentoController extends Controller
 
     public function storeEtapa(Request $request, Tenant $tenant, Orcamento $orcamento): RedirectResponse
     {
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
         $this->ensureOrcamentoIsOpen($orcamento);
 
         $data = $request->validate([
@@ -844,8 +974,7 @@ class OrcamentoController extends Controller
 
     public function orcamentoComposicaoOptions(Request $request, Tenant $tenant, Orcamento $orcamento): JsonResponse
     {
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
 
         $filters = $request->validate([
             'codigo' => ['nullable', 'string', 'max:80'],
@@ -911,8 +1040,7 @@ class OrcamentoController extends Controller
 
     public function orcamentoInsumoOptions(Request $request, Tenant $tenant, Orcamento $orcamento): JsonResponse
     {
-        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
 
         $filters = $request->validate([
             'codigo' => ['nullable', 'string', 'max:80'],
@@ -1017,7 +1145,7 @@ class OrcamentoController extends Controller
 
             $this->assertOrcamentoItemOrderCanBeUsed($tenant, $orcamento, $etapa, $ordem);
 
-            $prices = $this->orcamentoComposicaoPrices($tenant, $composicao);
+            $prices = $this->orcamentoComposicaoPrices($tenant, $composicao, $orcamento);
             $item = OrcamentoItem::create([
                 'tenant_id' => $tenant->id,
                 'orcamento_id' => $orcamento->id,
@@ -1082,7 +1210,7 @@ class OrcamentoController extends Controller
             ]);
         }
 
-        $prices = $this->orcamentoInsumoPrices($insumo);
+        $prices = $this->orcamentoInsumoPrices($insumo, $orcamento);
         $selectedPrice = $orcamento->encargos_sociais === 'nao_desonerado'
             ? (float) $prices['nao_desonerado']
             : (float) $prices['desonerado'];
@@ -1267,6 +1395,8 @@ class OrcamentoController extends Controller
 
     public function composicoes(Request $request, Tenant $tenant): Response
     {
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::VIEW);
+
         $state = mb_strtoupper((string) $request->query('state', 'PA'));
         $state = in_array($state, self::BRAZILIAN_STATES, true) ? $state : 'PA';
         $perPage = (int) $request->query('perPage', 50);
@@ -1365,6 +1495,7 @@ class OrcamentoController extends Controller
             ),
             'canManageTenantComposicoes' => $this->canManageTenantInsumos($request, $tenant),
             'canManageGlobalComposicoes' => $this->canManageGlobalInsumos($request),
+            'canImportTenantComposicoes' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::IMPORT_CATALOGS),
             'typeOptions' => Cache::remember(
                 "tenant:{$tenant->id}:orcamento:composicoes:types",
                 now()->addMinutes(5),
@@ -1441,8 +1572,9 @@ class OrcamentoController extends Controller
             ->with('success', 'Composicao criada.');
     }
 
-    public function showComposicao(Tenant $tenant, OrcamentoComposicao $composicao): Response
+    public function showComposicao(Request $request, Tenant $tenant, OrcamentoComposicao $composicao): Response
     {
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::VIEW);
         abort_unless($composicao->tenant_id === $tenant->id || $composicao->is_global, 404);
 
         $composicao->load(['items' => fn ($query) => $query->orderBy('created_at')->orderBy('id')]);
@@ -1685,6 +1817,8 @@ class OrcamentoController extends Controller
 
     public function insumos(Request $request, Tenant $tenant): Response
     {
+        $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::VIEW);
+
         $hasSearched = $request->boolean('searched');
         $state = mb_strtoupper((string) $request->query('state', 'PA'));
         $state = in_array($state, self::BRAZILIAN_STATES, true) ? $state : 'PA';
@@ -1784,6 +1918,7 @@ class OrcamentoController extends Controller
             'grupos' => $this->insumoGruposForPage($tenant),
             'canManageTenantInsumos' => $this->canManageTenantInsumos($request, $tenant),
             'canManageGlobalInsumos' => $this->canManageGlobalInsumos($request),
+            'canImportTenantInsumos' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::IMPORT_CATALOGS),
         ]);
     }
 
@@ -1912,7 +2047,7 @@ class OrcamentoController extends Controller
         $scope = (string) $request->input('scope', 'tenant');
 
         if ($scope === 'tenant') {
-            abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+            $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::IMPORT_CATALOGS);
 
             $data = $request->validate([
                 'scope' => ['required', Rule::in(['tenant'])],
@@ -2014,7 +2149,7 @@ class OrcamentoController extends Controller
         $scope = (string) $request->input('scope', 'tenant');
 
         if ($scope === 'tenant') {
-            abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+            $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::IMPORT_CATALOGS);
 
             $data = $request->validate([
                 'scope' => ['required', Rule::in(['tenant'])],
@@ -2203,6 +2338,7 @@ class OrcamentoController extends Controller
 
             if ($payload === null) {
                 $result['skipped']++;
+
                 continue;
             }
 
@@ -2210,6 +2346,7 @@ class OrcamentoController extends Controller
 
             if (isset($seenImportKeys[$importKey])) {
                 $result['duplicated']++;
+
                 continue;
             }
 
@@ -2348,6 +2485,7 @@ class OrcamentoController extends Controller
 
             if ($payload === null) {
                 $result['skipped']++;
+
                 continue;
             }
 
@@ -2355,6 +2493,7 @@ class OrcamentoController extends Controller
 
             if (isset($seenImportKeys[$importKey])) {
                 $result['duplicated']++;
+
                 continue;
             }
 
@@ -2741,11 +2880,13 @@ class OrcamentoController extends Controller
 
             if ($payload === []) {
                 $result['composition_headers']++;
+
                 continue;
             }
 
             if ($payload === null) {
                 $result['skipped']++;
+
                 continue;
             }
 
@@ -2753,6 +2894,7 @@ class OrcamentoController extends Controller
 
             if (isset($seenImportKeys[$importKey])) {
                 $result['duplicated']++;
+
                 continue;
             }
 
@@ -3300,6 +3442,7 @@ class OrcamentoController extends Controller
                 }
 
                 $item->forceFill($row)->save();
+
                 continue;
             }
 
@@ -3651,6 +3794,7 @@ class OrcamentoController extends Controller
 
             if ($payload === null) {
                 $result['skipped']++;
+
                 continue;
             }
 
@@ -3886,6 +4030,7 @@ class OrcamentoController extends Controller
 
             if ($payload === null) {
                 $result['skipped']++;
+
                 continue;
             }
 
@@ -3893,6 +4038,7 @@ class OrcamentoController extends Controller
 
             if (isset($seenImportKeys[$importKey])) {
                 $result['duplicated']++;
+
                 continue;
             }
 
@@ -4051,6 +4197,7 @@ class OrcamentoController extends Controller
 
             if ($payload === null) {
                 $result['skipped']++;
+
                 continue;
             }
 
@@ -4058,6 +4205,7 @@ class OrcamentoController extends Controller
 
             if (isset($seenImportKeys[$importKey])) {
                 $result['duplicated']++;
+
                 continue;
             }
 
@@ -5028,7 +5176,7 @@ class OrcamentoController extends Controller
         return null;
     }
 
-    private function sameComposicoesByState(Tenant $tenant, OrcamentoComposicao $composicao, ?string $referenceDate): \Illuminate\Support\Collection
+    private function sameComposicoesByState(Tenant $tenant, OrcamentoComposicao $composicao, ?string $referenceDate): Collection
     {
         $candidates = $this->composicoesAvailableForTenant($tenant)
             ->where('modelo', mb_strtoupper($composicao->modelo))
@@ -5047,7 +5195,7 @@ class OrcamentoController extends Controller
         return $candidates->isNotEmpty() ? $candidates : collect([$composicao]);
     }
 
-    private function analyticItemsForComposicao(Tenant $tenant, OrcamentoComposicao $composicao, ?string $referenceDate): \Illuminate\Support\Collection
+    private function analyticItemsForComposicao(Tenant $tenant, OrcamentoComposicao $composicao, ?string $referenceDate): Collection
     {
         $cacheKey = implode("\x1F", [
             $tenant->id,
@@ -5088,7 +5236,7 @@ class OrcamentoController extends Controller
             ->values();
     }
 
-    private function analyticSourcesByState(Tenant $tenant, string $model, array $states, \Illuminate\Support\Collection $analyticItems, ?string $referenceDate): array
+    private function analyticSourcesByState(Tenant $tenant, string $model, array $states, Collection $analyticItems, ?string $referenceDate): array
     {
         $insumoCodes = $analyticItems
             ->filter(fn (OrcamentoComposicaoAnaliticoItem $item): bool => $item->tipo_item === 'insumo')
@@ -5109,7 +5257,7 @@ class OrcamentoController extends Controller
         ];
     }
 
-    private function analyticInsumoSourcesByState(Tenant $tenant, string $model, array $states, array $codes, ?string $referenceDate): \Illuminate\Support\Collection
+    private function analyticInsumoSourcesByState(Tenant $tenant, string $model, array $states, array $codes, ?string $referenceDate): Collection
     {
         if ($states === [] || $codes === []) {
             return collect();
@@ -5133,7 +5281,7 @@ class OrcamentoController extends Controller
                 ->first());
     }
 
-    private function analyticComposicaoSourcesByState(Tenant $tenant, string $model, array $states, array $codes, ?string $referenceDate): \Illuminate\Support\Collection
+    private function analyticComposicaoSourcesByState(Tenant $tenant, string $model, array $states, array $codes, ?string $referenceDate): Collection
     {
         if ($states === [] || $codes === []) {
             return collect();
@@ -5157,7 +5305,7 @@ class OrcamentoController extends Controller
                 ->first());
     }
 
-    private function serializeAnaliticoState(OrcamentoComposicao $stateComposicao, \Illuminate\Support\Collection $analyticItems, array $sources, ?Tenant $tenant = null, array $visited = []): array
+    private function serializeAnaliticoState(OrcamentoComposicao $stateComposicao, Collection $analyticItems, array $sources, ?Tenant $tenant = null, array $visited = []): array
     {
         $calculationMethod = $this->calculationMethodForComposicao($stateComposicao);
         $items = $analyticItems
@@ -5322,7 +5470,7 @@ class OrcamentoController extends Controller
         ];
     }
 
-    private function sicro3AnaliticoStateSummary(OrcamentoComposicao $stateComposicao, \Illuminate\Support\Collection $items, \Illuminate\Support\Collection $analyticItems, string $calculationMethod): array
+    private function sicro3AnaliticoStateSummary(OrcamentoComposicao $stateComposicao, Collection $items, Collection $analyticItems, string $calculationMethod): array
     {
         $sections = [
             'equipamentos' => ['onerado' => 0.0, 'desonerado' => 0.0],
@@ -5461,7 +5609,7 @@ class OrcamentoController extends Controller
         ]);
     }
 
-    private function composicaoListPriceSummaries(Tenant $tenant, \Illuminate\Support\Collection $composicoes): array
+    private function composicaoListPriceSummaries(Tenant $tenant, Collection $composicoes): array
     {
         $summaries = [];
         $needsAnalyticFallback = collect();
@@ -5486,7 +5634,7 @@ class OrcamentoController extends Controller
         return $summaries;
     }
 
-    private function composicaoListAnalyticSummaries(Tenant $tenant, \Illuminate\Support\Collection $composicoes): array
+    private function composicaoListAnalyticSummaries(Tenant $tenant, Collection $composicoes): array
     {
         $references = [];
         $models = [];
@@ -5538,7 +5686,7 @@ class OrcamentoController extends Controller
 
         $states = $composicoes->pluck('uf')->filter()->unique()->values()->all();
         $allAnalyticItems = $analyticItems->reduce(
-            fn (\Illuminate\Support\Collection $carry, \Illuminate\Support\Collection $group): \Illuminate\Support\Collection => $carry->merge($group),
+            fn (Collection $carry, Collection $group): Collection => $carry->merge($group),
             collect(),
         );
         $sourcesByDate = [];
@@ -5928,7 +6076,7 @@ class OrcamentoController extends Controller
         ])->save();
     }
 
-    private function sicro3ManualCalculation(OrcamentoComposicao $composicao, ?\Illuminate\Support\Collection $items = null): array
+    private function sicro3ManualCalculation(OrcamentoComposicao $composicao, ?Collection $items = null): array
     {
         $calculationMethod = $this->calculationMethodForComposicao($composicao);
         $items ??= $composicao->relationLoaded('items')
@@ -6501,7 +6649,7 @@ class OrcamentoController extends Controller
         abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
         abort_unless((int) $etapa->tenant_id === (int) $tenant->id, 404);
         abort_unless((int) $etapa->orcamento_id === (int) $orcamento->id, 404);
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
     }
 
     private function renumberOrcamentoEtapas(Tenant $tenant, Orcamento $orcamento): void
@@ -6514,7 +6662,7 @@ class OrcamentoController extends Controller
         abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
         abort_unless((int) $item->tenant_id === (int) $tenant->id, 404);
         abort_unless((int) $item->orcamento_id === (int) $orcamento->id, 404);
-        abort_unless($this->canManageTenantInsumos($request, $tenant), 403);
+        $this->authorizeBudgetEdit($request, $tenant, $orcamento);
     }
 
     private function renumberOrcamentoItems(Tenant $tenant, OrcamentoEtapa $etapa): void
@@ -6797,17 +6945,30 @@ class OrcamentoController extends Controller
         $quantity = (float) $item->quantidade;
         $meta = $item->meta ?? [];
         $bdiPercentual = $meta['bdi_percentual'] ?? $orcamento->bdi_percentual;
-        $bdiMultiplier = 1 + ((float) $bdiPercentual / 100);
-        $unitNaoDesonerado = (float) $item->valor_unitario_nao_desonerado;
-        $unitDesonerado = (float) $item->valor_unitario_desonerado;
-        $withBdiNaoDesonerado = $this->calculateMoney($unitNaoDesonerado * $bdiMultiplier, 'truncate_2');
-        $withBdiDesonerado = $this->calculateMoney($unitDesonerado * $bdiMultiplier, 'truncate_2');
+        $bdiMultiplier = $item->aplicar_bdi
+            ? 1 + ((float) $bdiPercentual / 100)
+            : 1.0;
+        $unitMethod = $this->orcamentoUnitCalculationMethod($orcamento);
+        $totalMethod = $this->orcamentoTotalCalculationMethod($orcamento);
+        $unitNaoDesonerado = $this->calculateMoney($item->valor_unitario_nao_desonerado, $unitMethod);
+        $unitDesonerado = $this->calculateMoney($item->valor_unitario_desonerado, $unitMethod);
+        $withBdiNaoDesonerado = $this->calculateMoney($unitNaoDesonerado * $bdiMultiplier, $unitMethod);
+        $withBdiDesonerado = $this->calculateMoney($unitDesonerado * $bdiMultiplier, $unitMethod);
+        $applyBdiToTotal = $orcamento->bdi_tipo === 'total_budget' && $item->aplicar_bdi;
+        $rawTotalNaoDesonerado = $applyBdiToTotal
+            ? $unitNaoDesonerado * $quantity * $bdiMultiplier
+            : $withBdiNaoDesonerado * $quantity;
+        $rawTotalDesonerado = $applyBdiToTotal
+            ? $unitDesonerado * $quantity * $bdiMultiplier
+            : $withBdiDesonerado * $quantity;
 
         $item->forceFill([
+            'valor_unitario_nao_desonerado' => $this->storeMoney($unitNaoDesonerado),
+            'valor_unitario_desonerado' => $this->storeMoney($unitDesonerado),
             'valor_com_bdi_nao_desonerado' => $this->storeMoney($withBdiNaoDesonerado),
             'valor_com_bdi_desonerado' => $this->storeMoney($withBdiDesonerado),
-            'valor_total_nao_desonerado' => $this->storeMoney($this->calculateMoney($withBdiNaoDesonerado * $quantity, 'truncate_2')),
-            'valor_total_desonerado' => $this->storeMoney($this->calculateMoney($withBdiDesonerado * $quantity, 'truncate_2')),
+            'valor_total_nao_desonerado' => $this->storeMoney($this->calculateMoney($rawTotalNaoDesonerado, $totalMethod)),
+            'valor_total_desonerado' => $this->storeMoney($this->calculateMoney($rawTotalDesonerado, $totalMethod)),
         ])->save();
     }
 
@@ -6820,7 +6981,8 @@ class OrcamentoController extends Controller
             ->get();
 
         $memo = [];
-        $calculateEtapaTotals = function (OrcamentoEtapa $etapa) use (&$calculateEtapaTotals, &$memo, $etapas): array {
+        $totalMethod = $this->orcamentoTotalCalculationMethod($orcamento);
+        $calculateEtapaTotals = function (OrcamentoEtapa $etapa) use (&$calculateEtapaTotals, &$memo, $etapas, $totalMethod): array {
             if (isset($memo[$etapa->id])) {
                 return $memo[$etapa->id];
             }
@@ -6840,8 +7002,8 @@ class OrcamentoController extends Controller
             }
 
             return $memo[$etapa->id] = [
-                'nao_desonerado' => $this->calculateMoney($naoDesonerado, 'truncate_2'),
-                'desonerado' => $this->calculateMoney($desonerado, 'truncate_2'),
+                'nao_desonerado' => $this->calculateMoney($naoDesonerado, $totalMethod),
+                'desonerado' => $this->calculateMoney($desonerado, $totalMethod),
             ];
         };
 
@@ -6858,9 +7020,33 @@ class OrcamentoController extends Controller
         $budgetEtapas = $rootEtapas->isNotEmpty() ? $rootEtapas : $etapas;
 
         $orcamento->forceFill([
-            'valor_nao_desonerado' => $this->storeMoney($budgetEtapas->sum(fn (OrcamentoEtapa $etapa): float => (float) ($memo[$etapa->id]['nao_desonerado'] ?? 0))),
-            'valor_desonerado' => $this->storeMoney($budgetEtapas->sum(fn (OrcamentoEtapa $etapa): float => (float) ($memo[$etapa->id]['desonerado'] ?? 0))),
+            'valor_nao_desonerado' => $this->storeMoney($this->calculateMoney(
+                $budgetEtapas->sum(fn (OrcamentoEtapa $etapa): float => (float) ($memo[$etapa->id]['nao_desonerado'] ?? 0)),
+                $totalMethod,
+            )),
+            'valor_desonerado' => $this->storeMoney($this->calculateMoney(
+                $budgetEtapas->sum(fn (OrcamentoEtapa $etapa): float => (float) ($memo[$etapa->id]['desonerado'] ?? 0)),
+                $totalMethod,
+            )),
         ])->save();
+    }
+
+    private function orcamentoUnitCalculationMethod(Orcamento $orcamento): string
+    {
+        return match ($orcamento->arredondamento) {
+            'round_all_2', 'round_compositions_2' => 'round_2',
+            'none' => 'none',
+            default => 'truncate_2',
+        };
+    }
+
+    private function orcamentoTotalCalculationMethod(Orcamento $orcamento): string
+    {
+        return match ($orcamento->arredondamento) {
+            'round_all_2', 'round_compositions_2', 'round_and_truncate_unit' => 'round_2',
+            'none' => 'none',
+            default => 'truncate_2',
+        };
     }
 
     private function orcamentoSelectedReferences(Orcamento $orcamento): array
@@ -6921,11 +7107,16 @@ class OrcamentoController extends Controller
         return false;
     }
 
-    private function orcamentoComposicaoPrices(Tenant $tenant, OrcamentoComposicao $composicao): array
-    {
+    private function orcamentoComposicaoPrices(
+        Tenant $tenant,
+        OrcamentoComposicao $composicao,
+        ?Orcamento $orcamento = null,
+    ): array {
         $summary = $this->composicaoListPriceSummaries($tenant, collect([$composicao]))[$composicao->id]
             ?? $this->fastComposicaoPriceSummary($composicao);
-        $method = $this->calculationMethodForComposicao($composicao);
+        $method = $orcamento
+            ? $this->orcamentoUnitCalculationMethod($orcamento)
+            : $this->calculationMethodForComposicao($composicao);
 
         return [
             'nao_desonerado' => $this->storeMoney($this->calculateMoney($summary['effective_preco_onerado'] ?? 0, $method)),
@@ -6933,11 +7124,13 @@ class OrcamentoController extends Controller
         ];
     }
 
-    private function orcamentoInsumoPrices(OrcamentoInsumo $insumo): array
+    private function orcamentoInsumoPrices(OrcamentoInsumo $insumo, ?Orcamento $orcamento = null): array
     {
+        $method = $orcamento ? $this->orcamentoUnitCalculationMethod($orcamento) : 'truncate_2';
+
         return [
-            'nao_desonerado' => $this->storeMoney($this->calculateMoney($insumo->preco_nao_desonerado ?? 0)),
-            'desonerado' => $this->storeMoney($this->calculateMoney($insumo->preco_desonerado ?? 0)),
+            'nao_desonerado' => $this->storeMoney($this->calculateMoney($insumo->preco_nao_desonerado ?? 0, $method)),
+            'desonerado' => $this->storeMoney($this->calculateMoney($insumo->preco_desonerado ?? 0, $method)),
         ];
     }
 
@@ -7004,7 +7197,7 @@ class OrcamentoController extends Controller
 
     private function buildOrcamentoSinteticoSpreadsheet(Tenant $tenant, Orcamento $orcamento): Spreadsheet
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $spreadsheet->getProperties()
             ->setCreator('Deming')
             ->setTitle('Orcamento Sintetico - '.$orcamento->codigo)
@@ -7103,6 +7296,8 @@ class OrcamentoController extends Controller
         $row = 7;
         $stageRows = [];
         $useNaoDesonerado = $orcamento->encargos_sociais === 'nao_desonerado';
+        $unitCalculationMethod = $this->orcamentoUnitCalculationMethod($orcamento);
+        $totalCalculationMethod = $this->orcamentoTotalCalculationMethod($orcamento);
 
         foreach ($orcamento->etapas as $etapa) {
             $stageRow = $row;
@@ -7122,7 +7317,13 @@ class OrcamentoController extends Controller
                 $bdiPercent = (float) ($meta['bdi_percentual'] ?? $orcamento->bdi_percentual);
                 $bdiFormulaValue = number_format($bdiPercent / 100, 8, '.', '');
                 $bdiReference = (bool) ($meta['bdi_diferenciado'] ?? false) ? $bdiFormulaValue : '$J$5';
-                $itemFormula = "=TRUNC(TRUNC(G{$row}*{$bdiReference},2)+G{$row},2)";
+                $applyBdi = (bool) $item->aplicar_bdi;
+                $unitExpression = $applyBdi ? "G{$row}*(1+{$bdiReference})" : "G{$row}";
+                $unitFormula = $this->orcamentoSpreadsheetMoneyFormula($unitExpression, $unitCalculationMethod);
+                $totalExpression = $orcamento->bdi_tipo === 'total_budget' && $applyBdi
+                    ? "F{$row}*G{$row}*(1+{$bdiReference})"
+                    : "F{$row}*H{$row}";
+                $totalFormula = $this->orcamentoSpreadsheetMoneyFormula($totalExpression, $totalCalculationMethod);
 
                 $sheet->setCellValueExplicit("A{$row}", $etapa->ordem.'.'.$item->ordem, DataType::TYPE_STRING);
                 $sheet->setCellValueExplicit("B{$row}", (string) $item->codigo, DataType::TYPE_STRING);
@@ -7131,8 +7332,8 @@ class OrcamentoController extends Controller
                 $sheet->setCellValueExplicit("E{$row}", (string) $item->unidade, DataType::TYPE_STRING);
                 $sheet->setCellValue("F{$row}", (float) $item->quantidade);
                 $sheet->setCellValue("G{$row}", $unit);
-                $sheet->setCellValue("H{$row}", $itemFormula);
-                $sheet->setCellValue("I{$row}", "=TRUNC(F{$row}*H{$row},2)");
+                $sheet->setCellValue("H{$row}", $unitFormula);
+                $sheet->setCellValue("I{$row}", $totalFormula);
                 $sheet->setCellValue("J{$row}", "=IF(\$J\$4=0,0,I{$row}/\$J\$4)");
 
                 $this->styleOrcamentoSinteticoDataRow($sheet, $row, $item->item_type === 'insumo' ? 'FEF3C7' : 'DCFCE7');
@@ -7141,21 +7342,31 @@ class OrcamentoController extends Controller
 
             $lastItemRow = $row - 1;
             $stageTotalFormula = $lastItemRow >= $firstItemRow ? "SUM(I{$firstItemRow}:I{$lastItemRow})" : '0';
-            $sheet->setCellValue("I{$stageRow}", "=TRUNC({$stageTotalFormula},2)");
+            $sheet->setCellValue(
+                "I{$stageRow}",
+                $this->orcamentoSpreadsheetMoneyFormula($stageTotalFormula, $totalCalculationMethod),
+            );
             $sheet->setCellValue("J{$stageRow}", "=IF(\$J\$4=0,0,I{$stageRow}/\$J\$4)");
             $this->styleOrcamentoSinteticoDataRow($sheet, $stageRow, 'DBEAFE', true);
         }
 
         $lastDataRow = max(6, $row - 1);
-        $totalFormula = count($stageRows) > 0
-            ? '=SUM('.collect($stageRows)->map(fn (int $stageRow): string => "I{$stageRow}")->implode(',').')'
-            : '=0';
+        $totalExpression = count($stageRows) > 0
+            ? 'SUM('.collect($stageRows)->map(fn (int $stageRow): string => "I{$stageRow}")->implode(',').')'
+            : '0';
+        $totalFormula = $this->orcamentoSpreadsheetMoneyFormula($totalExpression, $totalCalculationMethod);
         $sheet->setCellValue('J4', $totalFormula);
 
         $summaryRow = $lastDataRow + 2;
         $sheet->mergeCells("F{$summaryRow}:H{$summaryRow}");
         $sheet->setCellValue("F{$summaryRow}", 'Total sem BDI');
-        $sheet->setCellValue("J{$summaryRow}", "=SUMPRODUCT(F7:F{$lastDataRow},G7:G{$lastDataRow})");
+        $sheet->setCellValue(
+            "J{$summaryRow}",
+            $this->orcamentoSpreadsheetMoneyFormula(
+                "SUMPRODUCT(F7:F{$lastDataRow},G7:G{$lastDataRow})",
+                $totalCalculationMethod,
+            ),
+        );
         $sheet->mergeCells('F'.($summaryRow + 1).':H'.($summaryRow + 1));
         $sheet->setCellValue('F'.($summaryRow + 1), 'Total do BDI');
         $sheet->setCellValue('J'.($summaryRow + 1), "=J4-J{$summaryRow}");
@@ -7185,7 +7396,7 @@ class OrcamentoController extends Controller
 
     private function buildOrcamentoResumoSpreadsheet(Tenant $tenant, Orcamento $orcamento): Spreadsheet
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $spreadsheet->getProperties()
             ->setCreator('Deming')
             ->setTitle('Resumo do Orcamento - '.$orcamento->codigo)
@@ -7320,7 +7531,10 @@ class OrcamentoController extends Controller
         $sheet->mergeCells("A{$summaryRow}:C{$summaryRow}");
         $sheet->mergeCells("F{$summaryRow}:G{$summaryRow}");
         $sheet->setCellValue("F{$summaryRow}", 'Total sem BDI');
-        $sheet->setCellValue("H{$summaryRow}", $this->calculateMoney($totalSemBdi, 'truncate_2'));
+        $sheet->setCellValue(
+            "H{$summaryRow}",
+            $this->calculateMoney($totalSemBdi, $this->orcamentoTotalCalculationMethod($orcamento)),
+        );
 
         $sheet->mergeCells('A'.($summaryRow + 1).':C'.($summaryRow + 1));
         $sheet->mergeCells('F'.($summaryRow + 1).':G'.($summaryRow + 1));
@@ -7353,7 +7567,7 @@ class OrcamentoController extends Controller
         return $spreadsheet;
     }
 
-    private function styleOrcamentoSinteticoDataRow(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $row, string $fillColor, bool $bold = false): void
+    private function styleOrcamentoSinteticoDataRow(Worksheet $sheet, int $row, string $fillColor, bool $bold = false): void
     {
         $sheet->getStyle("A{$row}:J{$row}")->applyFromArray([
             'font' => ['bold' => $bold, 'color' => ['rgb' => '0F172A']],
@@ -7361,6 +7575,15 @@ class OrcamentoController extends Controller
             'alignment' => ['vertical' => Alignment::VERTICAL_TOP],
         ]);
         $sheet->getRowDimension($row)->setRowHeight($bold ? 24 : 38);
+    }
+
+    private function orcamentoSpreadsheetMoneyFormula(string $expression, string $method): string
+    {
+        return match ($method) {
+            'round_2' => "=ROUND({$expression},2)",
+            'none' => "={$expression}",
+            default => "=TRUNC({$expression},2)",
+        };
     }
 
     private function orcamentoBaseReferencesReportText(Orcamento $orcamento): string
@@ -7416,20 +7639,104 @@ class OrcamentoController extends Controller
         ];
     }
 
-    private function orcamentoCopySources(Tenant $tenant, Orcamento $currentOrcamento): array
+    private function orcamentoCopySources(Tenant $tenant, Orcamento $currentOrcamento, User $user): array
     {
-        return Orcamento::query()
+        $query = Orcamento::query()
             ->with(['clienteEmpresa:id,nome'])
             ->withCount(['etapas', 'itens'])
             ->where('tenant_id', $tenant->id)
             ->whereKeyNot($currentOrcamento->id)
-            ->latest('updated_at')
+            ->latest('updated_at');
+
+        return BudgetPermissions::scopeVisibleTo($query, $user, $tenant)
             ->get()
             ->map(fn (Orcamento $orcamento): array => [
                 ...$this->serializeOrcamento($orcamento),
                 'etapas_count' => $orcamento->etapas_count,
                 'itens_count' => $orcamento->itens_count,
             ])
+            ->values()
+            ->all();
+    }
+
+    private function budgetAccessUsers(
+        Tenant $tenant,
+        Orcamento $orcamento,
+        string $search = '',
+        bool $available = false,
+    ): array
+    {
+        $accessLevels = $orcamento->relationLoaded('accesses')
+            ? $orcamento->accesses->pluck('access_level', 'user_id')
+            : OrcamentoAcesso::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('orcamento_id', $orcamento->id)
+                ->pluck('access_level', 'user_id');
+
+        $memberships = $tenant->memberships()
+            ->where('status', 'active')
+            ->with('user:id,name,email,avatar_url')
+            ->orderBy('role');
+
+        if ($available || $search !== '') {
+            if ($search !== '') {
+                $normalizedSearch = mb_strtolower($search);
+
+                $memberships->whereHas('user', function ($query) use ($normalizedSearch): void {
+                    $query->where(function ($query) use ($normalizedSearch): void {
+                        $term = '%'.$normalizedSearch.'%';
+
+                        $query
+                            ->whereRaw('LOWER(name) LIKE ?', [$term])
+                            ->orWhereRaw('LOWER(email) LIKE ?', [$term]);
+                    });
+                });
+            }
+
+            $memberships->limit(20);
+        } else {
+            $accessUserIds = $accessLevels->keys()->map(fn ($userId): int => (int) $userId)->all();
+
+            $memberships->where(function ($query) use ($orcamento, $accessUserIds): void {
+                $query
+                    ->where('user_id', $orcamento->created_by_id)
+                    ->orWhereIn('role', [TenantRoles::OWNER, TenantRoles::ADMIN]);
+
+                if ($accessUserIds !== []) {
+                    $query->orWhereIn('user_id', $accessUserIds);
+                }
+            });
+        }
+
+        return $memberships
+            ->get(['id', 'user_id', 'role', 'budget_permissions'])
+            ->filter(fn ($membership): bool => $membership->user !== null)
+            ->map(function ($membership) use ($accessLevels, $orcamento): array {
+                $isCreator = (int) $membership->user_id === (int) $orcamento->created_by_id;
+                $isAdministrator = in_array($membership->role, [TenantRoles::OWNER, TenantRoles::ADMIN], true);
+                $automatic = $isCreator || $isAdministrator;
+                $permissions = $membership->role === TenantRoles::OWNER
+                    ? BudgetPermissions::all()
+                    : BudgetPermissions::normalize(
+                        $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
+                    );
+
+                return [
+                    'id' => (int) $membership->user_id,
+                    'name' => $membership->user->name,
+                    'email' => $membership->user->email,
+                    'avatar_url' => $membership->user->avatar_url,
+                    'role' => $membership->role,
+                    'role_label' => TenantRoles::label($membership->role),
+                    'access_level' => $automatic
+                        ? OrcamentoAcesso::LEVEL_EDIT
+                        : $accessLevels->get($membership->user_id),
+                    'automatic' => $automatic,
+                    'automatic_reason' => $isCreator ? 'Criador do orçamento' : ($isAdministrator ? 'Administrador do tenant' : null),
+                    'can_view_globally' => $automatic || in_array(BudgetPermissions::VIEW, $permissions, true),
+                    'can_edit_globally' => $automatic || in_array(BudgetPermissions::EDIT, $permissions, true),
+                ];
+            })
             ->values()
             ->all();
     }
@@ -7516,17 +7823,9 @@ class OrcamentoController extends Controller
 
     private function orcamentoItemTotalWithBdi(OrcamentoItem $item, bool $useNaoDesonerado): float
     {
-        $unitWithBdi = $useNaoDesonerado
-            ? (float) $item->valor_com_bdi_nao_desonerado
-            : (float) $item->valor_com_bdi_desonerado;
-
-        if ($unitWithBdi <= 0) {
-            $unitWithBdi = $useNaoDesonerado
-                ? (float) $item->valor_unitario_nao_desonerado
-                : (float) $item->valor_unitario_desonerado;
-        }
-
-        return $this->calculateMoney($unitWithBdi * (float) $item->quantidade, 'truncate_2');
+        return $useNaoDesonerado
+            ? (float) $item->valor_total_nao_desonerado
+            : (float) $item->valor_total_desonerado;
     }
 
     private function orcamentoStatusLabel(?string $status): string
@@ -7677,8 +7976,7 @@ class OrcamentoController extends Controller
         ?string $base = null,
         ?string $codigo = null,
         ?string $descricao = null,
-    ): array
-    {
+    ): array {
         $references = $this->normalizedCompositionReferences($composicao);
         $query = $this->insumosAvailableForTenant($tenant);
 
@@ -7724,8 +8022,7 @@ class OrcamentoController extends Controller
         ?string $base = null,
         ?string $codigo = null,
         ?string $descricao = null,
-    ): array
-    {
+    ): array {
         $references = $this->normalizedCompositionReferences($composicao);
         $query = OrcamentoComposicao::query()->where('id', '!=', $composicao->id);
 
@@ -8012,20 +8309,36 @@ class OrcamentoController extends Controller
         ][$uf] ?? $uf;
     }
 
+    private function authorizeBudgetPermission(Request $request, Tenant $tenant, string $permission): void
+    {
+        abort_unless(BudgetPermissions::can($request->user(), $tenant, $permission), 403);
+    }
+
+    private function authorizeBudgetView(Request $request, Tenant $tenant, Orcamento $orcamento): void
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless(BudgetPermissions::canViewBudget($request->user(), $tenant, $orcamento), 403);
+    }
+
+    private function authorizeBudgetEdit(Request $request, Tenant $tenant, Orcamento $orcamento): void
+    {
+        abort_unless((int) $orcamento->tenant_id === (int) $tenant->id, 404);
+        abort_unless(BudgetPermissions::canEditBudget($request->user(), $tenant, $orcamento), 403);
+    }
+
     private function authorizeInsumoScope(Request $request, Tenant $tenant, string $scope): void
     {
         abort_unless(
             $scope === 'global'
                 ? $this->canManageGlobalInsumos($request)
-                : $this->canManageTenantInsumos($request, $tenant),
+                : BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::IMPORT_CATALOGS),
             403,
         );
     }
 
     private function canManageTenantInsumos(Request $request, Tenant $tenant): bool
     {
-        return $request->user()->is_platform_admin
-            || in_array($request->user()->tenantRole($tenant), ['tenant_owner', 'tenant_admin'], true);
+        return BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::MANAGE_CATALOGS);
     }
 
     private function canManageGlobalInsumos(Request $request): bool

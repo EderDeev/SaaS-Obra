@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\Tenant;
 use App\Models\GedEmailProcessedMessage;
 use App\Support\ActivityPermissions;
+use App\Support\BudgetPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -173,6 +174,21 @@ class HandleInertiaRequests extends Middleware
                     'can' => collect(ActivityPermissions::all())
                         ->mapWithKeys(fn (string $permission): array => [
                             $permission => ActivityPermissions::canAny($request->user(), $tenant, $permission),
+                        ])
+                        ->all(),
+                    ]
+                    : ['all' => [], 'labels' => [], 'can' => []];
+            },
+            'budgetPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+
+                return $request->user() && $tenant
+                    ? [
+                    'all' => BudgetPermissions::all(),
+                    'labels' => BudgetPermissions::labels(),
+                    'can' => collect(BudgetPermissions::all())
+                        ->mapWithKeys(fn (string $permission): array => [
+                            $permission => BudgetPermissions::canAny($request->user(), $tenant, $permission),
                         ])
                         ->all(),
                     ]

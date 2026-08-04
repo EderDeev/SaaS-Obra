@@ -1,14 +1,19 @@
 import { Link, usePage } from '@inertiajs/react';
-import { CalendarClock, ClipboardList, Eye, FilePlus2, FolderOpen, Scale, Upload } from 'lucide-react';
+import { CalendarClock, ClipboardList, Eye, FilePlus2, FolderOpen, Plane, Scale, Upload, UsersRound } from 'lucide-react';
+import { useState } from 'react';
+import { startBudgetTour } from '@/Components/BudgetTour';
+import BudgetAccessDialog from './Partials/BudgetAccessDialog';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
 export default function OrcamentosIndex({
     tenant,
     orcamentos = [],
     stats = {},
-    canManageOrcamentos = false,
+    canCreateOrcamentos = false,
+    canImportOrcamentos = false,
 }) {
     const page = usePage();
+    const [accessBudget, setAccessBudget] = useState(null);
 
     return (
         <OrcamentoShell
@@ -32,18 +37,28 @@ export default function OrcamentosIndex({
                     </p>
                 </div>
 
-                {canManageOrcamentos && (
-                    <div className="flex flex-wrap gap-2">
-                        <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.import.create', tenant.slug)}>
-                            <Upload size={16} />
-                            Importar Orçamento
-                        </Link>
-                        <Link className="sig-btn sig-btn-primary" href={route('tenant.orcamentos.create', tenant.slug)}>
-                            <FilePlus2 size={16} />
-                            Criar orçamento
-                        </Link>
-                    </div>
-                )}
+                <div className="flex flex-wrap gap-2">
+                    <button className="sig-btn sig-btn-secondary" type="button" onClick={() => startBudgetTour(tenant.slug)}>
+                        <Plane size={16} />
+                        Iniciar tour
+                    </button>
+                    {(canCreateOrcamentos || canImportOrcamentos) && (
+                        <>
+                        {canImportOrcamentos && (
+                            <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.import.create', tenant.slug)}>
+                                <Upload size={16} />
+                                Importar Orçamento
+                            </Link>
+                        )}
+                        {canCreateOrcamentos && (
+                            <Link className="sig-btn sig-btn-primary" href={route('tenant.orcamentos.create', tenant.slug)}>
+                                <FilePlus2 size={16} />
+                                Criar orçamento
+                            </Link>
+                        )}
+                        </>
+                    )}
+                </div>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-3">
@@ -132,19 +147,40 @@ export default function OrcamentosIndex({
                                             {reference.nome} {reference.uf} {reference.data}
                                         </span>
                                     ))}
-                                    <Link
-                                        className="sig-btn sig-btn-secondary px-3 py-2 text-xs"
-                                        href={route('tenant.orcamentos.show', [tenant.slug, orcamento.id])}
-                                    >
-                                        <Eye size={14} />
-                                        Abrir
-                                    </Link>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {orcamento.can_manage_accesses && (
+                                            <button
+                                                type="button"
+                                                className="sig-btn sig-btn-secondary px-3 py-2 text-xs"
+                                                onClick={() => setAccessBudget(orcamento)}
+                                            >
+                                                <UsersRound size={14} />
+                                                Acessos
+                                            </button>
+                                        )}
+                                        <Link
+                                            className="sig-btn sig-btn-secondary px-3 py-2 text-xs"
+                                            href={route('tenant.orcamentos.show', [tenant.slug, orcamento.id])}
+                                        >
+                                            <Eye size={14} />
+                                            Abrir
+                                        </Link>
+                                    </div>
                                 </div>
                             </article>
                         ))}
                     </div>
                 )}
             </section>
+
+            {accessBudget && (
+                <BudgetAccessDialog
+                    key={accessBudget.id}
+                    tenant={tenant}
+                    orcamento={accessBudget}
+                    onCancel={() => setAccessBudget(null)}
+                />
+            )}
         </OrcamentoShell>
     );
 }

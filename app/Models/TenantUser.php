@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['tenant_id', 'user_id', 'empresa_id', 'role', 'status', 'activity_permissions', 'user_permissions', 'parametrizacao_permissions', 'project_permissions', 'invited_at', 'joined_at'])]
+#[Fillable(['tenant_id', 'user_id', 'empresa_id', 'role', 'status', 'activity_permissions', 'user_permissions', 'parametrizacao_permissions', 'project_permissions', 'budget_permissions', 'invited_at', 'joined_at'])]
 class TenantUser extends Model
 {
     protected function casts(): array
@@ -16,6 +16,7 @@ class TenantUser extends Model
             'user_permissions' => 'array',
             'parametrizacao_permissions' => 'array',
             'project_permissions' => 'array',
+            'budget_permissions' => 'array',
             'invited_at' => 'datetime',
             'joined_at' => 'datetime',
         ];

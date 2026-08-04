@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -135,6 +136,24 @@ export default function RelatorioNaoConformidadeCreate({
         acoes_corretivas_recomendadas: rnc?.acoes_corretivas_recomendadas ?? '',
         prazo_resposta_acao_corretiva: dateInput(rnc?.prazo_resposta_acao_corretiva) || addDays(initialOpenedAt, 7),
     });
+
+    useEffect(() => {
+        if (isEditing) {
+            return;
+        }
+
+        const assistantDraft = consumeAssistantDraft(tenant.id, 'rnc');
+
+        if (!assistantDraft) {
+            return;
+        }
+
+        form.setData((current) => ({
+            ...current,
+            ...assistantDraft,
+            project_document_ids: [],
+        }));
+    }, []);
 
     const selectedObra = useMemo(
         () => obras.find((obra) => String(obra.id) === String(form.data.obra_id)),

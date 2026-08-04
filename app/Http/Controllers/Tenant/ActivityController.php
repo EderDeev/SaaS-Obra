@@ -87,6 +87,15 @@ class ActivityController extends Controller
             ->latest()
             ->get();
 
+        $activities->each(function (Activity $activity) use ($request, $tenant): void {
+            $contract = $activity->contract;
+
+            $activity->setAttribute('can_edit', $this->canEditActivity($request->user(), $tenant, $contract, $activity));
+            $activity->setAttribute('can_move', $this->canMoveActivity($request->user(), $tenant, $contract, $activity));
+            $activity->setAttribute('can_interact', $this->canInteractWithActivity($request->user(), $tenant, $contract, $activity));
+            $activity->setAttribute('can_delete', $this->canDeleteActivity($request->user(), $tenant, $contract, $activity));
+        });
+
         return Inertia::render('Tenant/Activities/Index', [
             'tenant' => $tenant,
             'contracts' => $contracts->map(fn (Contract $contract): array => [
@@ -104,12 +113,13 @@ class ActivityController extends Controller
             'canCreateActivities' => $contracts->contains(fn (Contract $contract): bool => ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::CREATE, $contract)),
             'canEditActivities' => ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::EDIT),
             'canDeleteActivities' => ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::DELETE),
+            'canViewActivityMetrics' => $contracts->contains(fn (Contract $contract): bool => ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW_METRICS, $contract)),
         ]);
     }
 
     public function metrics(Request $request, Tenant $tenant): Response
     {
-        abort_unless(ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::VIEW), 403);
+        abort_unless(ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::VIEW_METRICS), 403);
 
         $filters = $request->validate([
             'period' => ['nullable', Rule::in(['30', '90', '180', '365', 'all'])],
@@ -122,7 +132,16 @@ class ActivityController extends Controller
         $contracts = $this->accessibleContracts($request, $tenant, ActivityPermissions::VIEW)
             ->with('obra:id,nome')
             ->orderBy('code')
-            ->get();
+            ->get()
+            ->filter(fn (Contract $contract): bool => ActivityPermissions::can(
+                $request->user(),
+                $tenant,
+                ActivityPermissions::VIEW_METRICS,
+                $contract,
+            ))
+            ->values();
+
+        abort_unless($contracts->isNotEmpty(), 403);
         $contractIds = $contracts->pluck('id')->map(fn ($id): int => (int) $id);
         $contractId = ! empty($filters['contract_id']) ? (int) $filters['contract_id'] : null;
         $assigneeId = ! empty($filters['assignee_id']) ? (int) $filters['assignee_id'] : null;
@@ -290,6 +309,7 @@ class ActivityController extends Controller
         $contract = $tenant->contracts()->findOrFail($data['contract_id']);
 
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
+        abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW, $contract), 403);
         abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::CREATE, $contract), 403);
 
         $assignedUserIds = collect($data['assigned_to_ids'] ?? [])
@@ -338,12 +358,16 @@ class ActivityController extends Controller
         $contract = $activity->contract()->firstOrFail();
 
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
+        abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW, $contract), 403);
         abort_unless($activity->isVisibleTo($request->user()), 403);
-        abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::EDIT, $contract), 403);
 
         if (! $request->has('title')) {
+            abort_unless($this->canMoveActivity($request->user(), $tenant, $contract, $activity), 403);
+
             return $this->updateStatus($request, $tenant, $contract, $activity);
         }
+
+        abort_unless($this->canEditActivity($request->user(), $tenant, $contract, $activity), 403);
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -393,8 +417,9 @@ class ActivityController extends Controller
         $contract = $activity->contract()->firstOrFail();
 
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
+        abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW, $contract), 403);
         abort_unless($activity->isVisibleTo($request->user()), 403);
-        abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::DELETE, $contract), 403);
+        abort_unless($this->canDeleteActivity($request->user(), $tenant, $contract, $activity), 403);
 
         $activity->delete();
 
@@ -526,6 +551,35 @@ class ActivityController extends Controller
         abort_unless($this->canAccessContract($user, $tenant, $contract), 403);
         abort_unless(ActivityPermissions::can($user, $tenant, ActivityPermissions::VIEW, $contract), 403);
         abort_unless($activity->isVisibleTo($user), 403);
+        abort_unless($this->canInteractWithActivity($user, $tenant, $contract, $activity), 403);
+    }
+
+    private function canEditActivity(User $user, Tenant $tenant, Contract $contract, Activity $activity): bool
+    {
+        return (int) $activity->created_by_id === (int) $user->id
+            || ActivityPermissions::can($user, $tenant, ActivityPermissions::EDIT, $contract);
+    }
+
+    private function canDeleteActivity(User $user, Tenant $tenant, Contract $contract, Activity $activity): bool
+    {
+        return (int) $activity->created_by_id === (int) $user->id
+            || ActivityPermissions::can($user, $tenant, ActivityPermissions::DELETE, $contract);
+    }
+
+    private function canMoveActivity(User $user, Tenant $tenant, Contract $contract, Activity $activity): bool
+    {
+        if ((int) $activity->created_by_id === (int) $user->id
+            || (int) $activity->assigned_to_id === (int) $user->id
+            || ActivityPermissions::can($user, $tenant, ActivityPermissions::EDIT, $contract)) {
+            return true;
+        }
+
+        return $activity->assignees()->where('users.id', $user->id)->exists();
+    }
+
+    private function canInteractWithActivity(User $user, Tenant $tenant, Contract $contract, Activity $activity): bool
+    {
+        return $this->canMoveActivity($user, $tenant, $contract, $activity);
     }
 
     /**
