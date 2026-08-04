@@ -1,5 +1,7 @@
 # Deploy de teste no Railway
 
+O fluxo de branches, CI, homologacao e promocao para producao esta documentado em [`docs/ci-cd.md`](ci-cd.md).
+
 Este projeto pode subir no Railway como um unico servico:
 
 - Laravel serve o backend.
