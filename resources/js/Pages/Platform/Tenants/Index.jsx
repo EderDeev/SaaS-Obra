@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { Plus, X } from 'lucide-react';
+import { Gauge, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 
 function formatCnpj(value) {
@@ -25,9 +25,14 @@ const statusPills = {
     suspended: 'sig-pill-red',
 };
 
-export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
+function formatTokens(value) {
+    return new Intl.NumberFormat('pt-BR').format(Number(value || 0));
+}
+
+export default function PlatformTenantsIndex({ tenants, plans, statuses, defaultAiTenantTokenLimit }) {
     const page = usePage();
     const [formOpen, setFormOpen] = useState(false);
+    const [quotaTenant, setQuotaTenant] = useState(null);
     const form = useForm({
         name: '',
         slug: '',
@@ -36,7 +41,9 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
         status: 'active',
         owner_name: '',
         owner_email: '',
+        ai_monthly_token_limit: '',
     });
+    const quotaForm = useForm({ ai_monthly_token_limit: '' });
 
     const submit = (event) => {
         event.preventDefault();
@@ -47,6 +54,20 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
                 form.reset();
                 setFormOpen(false);
             },
+        });
+    };
+
+    const openQuota = (tenant) => {
+        setQuotaTenant(tenant);
+        quotaForm.clearErrors();
+        quotaForm.setData('ai_monthly_token_limit', tenant.ai_monthly_token_limit ?? '');
+    };
+
+    const submitQuota = (event) => {
+        event.preventDefault();
+        quotaForm.patch(route('platform.tenants.assistant-quota.update', quotaTenant.slug), {
+            preserveScroll: true,
+            onSuccess: () => setQuotaTenant(null),
         });
     };
 
@@ -103,6 +124,9 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
                             </div>
                             <Field label="Owner" error={form.errors.owner_name}><input value={form.data.owner_name} onChange={(e) => form.setData('owner_name', e.target.value)} required /></Field>
                             <Field label="Email do owner" error={form.errors.owner_email}><input type="email" value={form.data.owner_email} onChange={(e) => form.setData('owner_email', e.target.value)} required /></Field>
+                            <Field label="Cota mensal do agente" error={form.errors.ai_monthly_token_limit}>
+                                <input type="number" min="1000" value={form.data.ai_monthly_token_limit} onChange={(e) => form.setData('ai_monthly_token_limit', e.target.value)} placeholder={`${formatTokens(defaultAiTenantTokenLimit)} tokens`} />
+                            </Field>
                         </div>
 
                         <button className="sig-btn sig-btn-primary mt-5 w-full justify-center sm:w-auto" disabled={form.processing}><Plus size={15} /> Criar tenant</button>
@@ -128,14 +152,14 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
 
                     <div className="divide-y divide-[var(--border)] md:hidden">
                         {tenants.map((tenant) => (
-                            <TenantCard key={tenant.id} tenant={tenant} />
+                            <TenantCard key={tenant.id} tenant={tenant} onQuota={() => openQuota(tenant)} />
                         ))}
                     </div>
 
                     <div className="hidden overflow-x-auto md:block">
                         <table className="sig-table min-w-[760px]">
                             <thead>
-                                <tr><th>Tenant</th><th>Plano</th><th>Status</th><th>Uso</th><th></th></tr>
+                                <tr><th>Tenant</th><th>Plano</th><th>Status</th><th>Uso</th><th>Agente</th><th></th></tr>
                             </thead>
                             <tbody>
                                 {tenants.map((tenant) => (
@@ -144,19 +168,53 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses }) {
                                         <td>{tenant.plan}</td>
                                         <td><StatusPill status={tenant.status} /></td>
                                         <td>{tenant.users_count} usuários · {tenant.contracts_count} contratos</td>
-                                        <td className="text-right"><AccessButton tenant={tenant} compact /></td>
+                                        <td>
+                                            <div className="text-sm font-semibold">{formatTokens(tenant.ai_tokens_used_current_month)} tokens</div>
+                                            <div className="text-xs text-[var(--ink-500)]">de {formatTokens(tenant.ai_effective_monthly_token_limit)} no mês</div>
+                                        </td>
+                                        <td className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => openQuota(tenant)}><Gauge size={14} /> Cota</button>
+                                                <AccessButton tenant={tenant} compact />
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                 </section>
+
+                {quotaTenant && (
+                    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/35 p-4" onMouseDown={() => setQuotaTenant(null)}>
+                        <form className="sig-card w-full max-w-md p-5" onSubmit={submitQuota} onMouseDown={(event) => event.stopPropagation()}>
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <div className="eyebrow">Assistente Deming</div>
+                                    <h2 className="mt-2 text-lg font-semibold">Cota de {quotaTenant.name}</h2>
+                                    <p className="mt-1 text-sm text-[var(--ink-500)]">Limite compartilhado por todos os usuários do tenant a cada mês.</p>
+                                </div>
+                                <button type="button" className="sig-btn sig-btn-ghost sig-btn-sm" onClick={() => setQuotaTenant(null)} aria-label="Fechar"><X size={15} /></button>
+                            </div>
+                            <div className="mt-5">
+                                <Field label="Limite mensal em tokens" error={quotaForm.errors.ai_monthly_token_limit}>
+                                    <input type="number" min="1000" value={quotaForm.data.ai_monthly_token_limit} onChange={(event) => quotaForm.setData('ai_monthly_token_limit', event.target.value)} placeholder={`Padrão: ${formatTokens(defaultAiTenantTokenLimit)}`} />
+                                </Field>
+                                <p className="mt-2 text-xs text-[var(--ink-500)]">Deixe vazio para usar o limite padrão do ambiente.</p>
+                            </div>
+                            <div className="mt-5 flex justify-end gap-2">
+                                <button type="button" className="sig-btn sig-btn-secondary" onClick={() => setQuotaTenant(null)}>Cancelar</button>
+                                <button className="sig-btn sig-btn-primary" disabled={quotaForm.processing}>Salvar cota</button>
+                            </div>
+                        </form>
+                    </div>
+                )}
             </section>
         </AuthenticatedLayout>
     );
 }
 
-function TenantCard({ tenant }) {
+function TenantCard({ tenant, onQuota }) {
     return (
         <article className="space-y-4 p-4">
             <div className="flex items-start justify-between gap-3">
@@ -170,9 +228,13 @@ function TenantCard({ tenant }) {
             <div className="grid grid-cols-2 gap-3 text-sm">
                 <Info label="Plano" value={tenant.plan} />
                 <Info label="Uso" value={`${tenant.users_count} usuários · ${tenant.contracts_count} contratos`} />
+                <Info label="Agente" value={`${formatTokens(tenant.ai_tokens_used_current_month)} / ${formatTokens(tenant.ai_effective_monthly_token_limit)}`} />
             </div>
 
-            <AccessButton tenant={tenant} />
+            <div className="flex gap-2">
+                <button type="button" className="sig-btn sig-btn-secondary flex-1 justify-center" onClick={onQuota}><Gauge size={14} /> Cota</button>
+                <AccessButton tenant={tenant} />
+            </div>
         </article>
     );
 }

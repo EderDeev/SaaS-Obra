@@ -25,6 +25,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.access' => \App\Http\Middleware\EnsureTenantAccess::class,
             'tenant.admin' => \App\Http\Middleware\EnsureTenantAdmin::class,
             'parametrizacao.permission' => \App\Http\Middleware\EnsureParametrizacaoPermission::class,
+            'documentation.permission' => \App\Http\Middleware\EnsureDocumentationPermission::class,
+            'diario.permission' => \App\Http\Middleware\EnsureDiarioObraPermission::class,
+            'ordem-servico.permission' => \App\Http\Middleware\EnsureOrdemServicoPermission::class,
+            'medicao.permission' => \App\Http\Middleware\EnsureMedicaoPermission::class,
+            'contract.permission' => \App\Http\Middleware\EnsureContractPermission::class,
             'password.changed' => \App\Http\Middleware\EnsurePasswordWasChanged::class,
             'mobile.token' => \App\Http\Middleware\EnsureMobileApiToken::class,
         ]);

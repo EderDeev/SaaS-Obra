@@ -2,7 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ProjectTour, { startProjectTour } from '@/Components/ProjectTour';
 import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, router } from '@inertiajs/react';
-import { ChevronRight, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Plane, Search, TriangleAlert, Upload } from 'lucide-react';
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, Eye, FileText, Filter, Folder, FolderOpen, GitBranch, MessageSquare, Plane, Search, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 const derivativeLabels = {
@@ -15,6 +15,7 @@ const derivativeLabels = {
 
 const tourContract = { id: 'tour-contract-1', code: 'CT-001', name: 'Obra Jardim Central', status: 'active' };
 const tourObra = { id: 'tour-obra-1', contract_id: tourContract.id, obra_pai_id: null, codigo: '001', nome: 'Jardim Central', tipo: 'obra' };
+const tourTrecho = { id: 'tour-trecho-1', obra_id: tourObra.id, codigo: 'GER', nome: 'Geral', is_default: true };
 const tourDisciplina = { id: 'tour-disciplina-1', contract_id: tourContract.id, sigla: 'ARQ', nome: 'Arquitetura', cor: '#2563eb' };
 const tourPhase = { id: 'tour-phase-1', code: 'EXE', name: 'Projeto executivo' };
 const tourVersion = {
@@ -22,7 +23,7 @@ const tourVersion = {
     revision: 'R02',
     status: 'ativo',
     original_name: 'planta-pavimento-tipo-r02.pdf',
-    stored_name: 'CT001-001-ARQ-EXE-PRJ-001-R02.pdf',
+    stored_name: 'CT001-001-GER-ARQ-EXE-PRJ-001-R02.pdf',
     derivative_status: 'ready',
     aps_urn: 'urn:project-tour',
     approved_at: '2026-07-10T14:30:00-03:00',
@@ -33,15 +34,17 @@ const tourDocument = {
     id: 'tour-project-1',
     contract_id: tourContract.id,
     obra_id: tourObra.id,
+    trecho_id: tourTrecho.id,
     disciplina_id: tourDisciplina.id,
     project_phase_id: tourPhase.id,
     document_type: 'projeto',
     title: 'Planta do pavimento tipo',
-    code: 'CT001-001-ARQ-EXE-PRJ-001',
+    code: 'CT001-001-GER-ARQ-EXE-PRJ-001',
     status: 'ativo',
     approved_at: tourVersion.approved_at,
     contract: tourContract,
     obra: tourObra,
+    trecho: tourTrecho,
     disciplina: tourDisciplina,
     phase: tourPhase,
     latest_version: tourVersion,
@@ -71,6 +74,22 @@ function fileDisplayName(version) {
 
 function viewerWorkspaceUrl(tenant, version, workspace) {
     return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}&origin=visualizar`;
+}
+
+function treeStateStorageKey(tenantSlug) {
+    return `projects:tree-return:${tenantSlug}`;
+}
+
+function readTreeReturnState(tenantSlug) {
+    if (typeof window === 'undefined' || new URLSearchParams(window.location.search).get('restore_tree') !== '1') {
+        return null;
+    }
+
+    try {
+        return JSON.parse(window.sessionStorage.getItem(treeStateStorageKey(tenantSlug)) || 'null');
+    } catch {
+        return null;
+    }
 }
 
 function isApsWaiting(version) {
@@ -122,7 +141,8 @@ function OpenRncBadge({ tenant, document }) {
     );
 }
 
-export default function ProjectTree({ tenant, contracts, obras, disciplinas, documents, documentTypes }) {
+export default function ProjectTree({ tenant, contracts, obras, trechos = [], disciplinas, documents, documentTypes }) {
+    const [returnState] = useState(() => readTreeReturnState(tenant.slug));
     const [showTourData, setShowTourData] = useState(() => {
         if (typeof window === 'undefined') {
             return false;
@@ -132,13 +152,14 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
             && window.sessionStorage.getItem('projects:tour-section') === 'tree'
             && window.sessionStorage.getItem('projects:tour-navigating') === '1';
     });
-    const [contractFilter, setContractFilter] = useState('todos');
-    const [obraFilter, setObraFilter] = useState('todos');
-    const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
-    const [query, setQuery] = useState('');
-    const [openNodes, setOpenNodes] = useState(() => new Set());
+    const [contractFilter, setContractFilter] = useState(() => returnState?.contractFilter || 'todos');
+    const [obraFilter, setObraFilter] = useState(() => returnState?.obraFilter || 'todos');
+    const [disciplinaFilter, setDisciplinaFilter] = useState(() => returnState?.disciplinaFilter || 'todos');
+    const [query, setQuery] = useState(() => returnState?.query || '');
+    const [openNodes, setOpenNodes] = useState(() => new Set(returnState?.openNodes || []));
     const visibleContracts = useMemo(() => showTourData ? [tourContract] : contracts, [showTourData, contracts]);
     const visibleObras = useMemo(() => showTourData ? [tourObra] : obras, [showTourData, obras]);
+    const visibleTrechos = useMemo(() => showTourData ? [tourTrecho] : trechos, [showTourData, trechos]);
     const visibleDisciplinas = useMemo(() => showTourData ? [tourDisciplina] : disciplinas, [showTourData, disciplinas]);
     const visibleDocuments = useMemo(() => showTourData ? [tourDocument] : documents, [showTourData, documents]);
 
@@ -178,7 +199,7 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
 
             const version = document.latest_approved_version || document.latest_version;
 
-            return `${document.title} ${projectEap(document, version)} ${fileDisplayName(version)} ${version?.original_name || ''} ${document.contract?.code || ''} ${document.obra?.codigo || ''} ${document.obra?.nome || ''} ${document.disciplina?.sigla || ''} ${document.disciplina?.nome || ''} ${document.phase?.code || ''} ${document.phase?.name || ''}`
+            return `${document.title} ${projectEap(document, version)} ${fileDisplayName(version)} ${version?.original_name || ''} ${document.contract?.code || ''} ${document.obra?.codigo || ''} ${document.obra?.nome || ''} ${document.trecho?.codigo || ''} ${document.trecho?.nome || ''} ${document.disciplina?.sigla || ''} ${document.disciplina?.nome || ''} ${document.phase?.code || ''} ${document.phase?.name || ''}`
                 .toLowerCase()
                 .includes(term);
         });
@@ -192,6 +213,22 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
             setOpenNodes(new Set(expandableNodeIds));
         }
     }, [showTourData, expandableNodeIds]);
+
+    useEffect(() => {
+        if (!returnState || typeof window === 'undefined') {
+            return undefined;
+        }
+
+        const frame = window.requestAnimationFrame(() => {
+            window.scrollTo({ top: Number(returnState.scrollY || 0), behavior: 'auto' });
+        });
+        const url = new URL(window.location.href);
+        url.searchParams.delete('restore_tree');
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+        window.sessionStorage.removeItem(treeStateStorageKey(tenant.slug));
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [returnState, tenant.slug]);
 
     const updateContractFilter = (contractId) => {
         setContractFilter(contractId);
@@ -214,6 +251,35 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
         });
     };
 
+    const setBranchExpanded = (node, expanded) => {
+        const branchNodeIds = collectExpandableNodeIds([node]);
+
+        setOpenNodes((current) => {
+            const next = new Set(current);
+
+            branchNodeIds.forEach((nodeId) => {
+                if (expanded) {
+                    next.add(nodeId);
+                } else {
+                    next.delete(nodeId);
+                }
+            });
+
+            return next;
+        });
+    };
+
+    const rememberTreeState = () => {
+        window.sessionStorage.setItem(treeStateStorageKey(tenant.slug), JSON.stringify({
+            contractFilter,
+            obraFilter,
+            disciplinaFilter,
+            query,
+            openNodes: Array.from(openNodes),
+            scrollY: window.scrollY,
+        }));
+    };
+
     const processVersion = (version) => {
         router.post(route('tenant.projects.process-aps', [tenant.slug, version.id]), {}, {
             preserveScroll: true,
@@ -233,7 +299,7 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
                         </div>
                         <h1 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">Visualizar projetos</h1>
                         <p className="mt-1 text-sm text-[var(--ink-500)]">
-                            Arvore principal com os documentos aprovados por contrato, obra, disciplina, fase e tipo.
+                            Arvore principal com os documentos aprovados por contrato, obra, trecho, disciplina, fase e tipo.
                         </p>
                     </div>
 
@@ -253,7 +319,7 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
                     <Metric label="Projetos aprovados" value={visibleDocuments.length} />
                     <Metric label="Contratos" value={visibleContracts.length} />
                     <Metric label="Obras" value={visibleObras.length} />
-                    <Metric label="Disciplinas" value={visibleDisciplinas.length} />
+                    <Metric label="Trechos" value={visibleTrechos.length} />
                 </div>
 
                 <section data-tour="projects-tree" className="sig-card overflow-hidden">
@@ -323,6 +389,8 @@ export default function ProjectTree({ tenant, contracts, obras, disciplinas, doc
                                             level={0}
                                             openNodes={openNodes}
                                             toggleNode={toggleNode}
+                                            setBranchExpanded={setBranchExpanded}
+                                            rememberTreeState={rememberTreeState}
                                             processVersion={processVersion}
                                             tenant={tenant}
                                         />
@@ -352,6 +420,7 @@ function buildTree(documents, documentTypes) {
     documents.forEach((document) => {
         const contractKey = document.contract?.id || document.contract_id || 'sem-contrato';
         const obraKey = document.obra?.id || document.obra_id || 'sem-obra';
+        const trechoKey = document.trecho?.id || document.trecho_id || 'sem-trecho';
         const disciplinaKey = document.disciplina?.id || document.disciplina_id || 'sem-disciplina';
         const phaseKey = document.phase?.id || document.project_phase_id || 'sem-fase';
         const typeKey = document.document_type || 'outro';
@@ -373,15 +442,27 @@ function buildTree(documents, documentTypes) {
                 type: 'obra',
                 label: document.obra?.codigo || 'S/C',
                 description: document.obra?.nome || 'Sem obra',
-                disciplinas: new Map(),
+                trechos: new Map(),
             });
         }
 
         const obra = contract.obras.get(obraKey);
 
-        if (!obra.disciplinas.has(disciplinaKey)) {
-            obra.disciplinas.set(disciplinaKey, {
-                id: `disciplina:${contractKey}:${obraKey}:${disciplinaKey}`,
+        if (!obra.trechos.has(trechoKey)) {
+            obra.trechos.set(trechoKey, {
+                id: `trecho:${contractKey}:${obraKey}:${trechoKey}`,
+                type: 'trecho',
+                label: document.trecho?.codigo || 'LEG',
+                description: document.trecho?.nome || 'Projeto legado',
+                disciplinas: new Map(),
+            });
+        }
+
+        const trecho = obra.trechos.get(trechoKey);
+
+        if (!trecho.disciplinas.has(disciplinaKey)) {
+            trecho.disciplinas.set(disciplinaKey, {
+                id: `disciplina:${contractKey}:${obraKey}:${trechoKey}:${disciplinaKey}`,
                 type: 'disciplina',
                 label: document.disciplina?.sigla || 'S/D',
                 description: document.disciplina?.nome || 'Sem disciplina',
@@ -390,11 +471,11 @@ function buildTree(documents, documentTypes) {
             });
         }
 
-        const disciplina = obra.disciplinas.get(disciplinaKey);
+        const disciplina = trecho.disciplinas.get(disciplinaKey);
 
         if (!disciplina.phases.has(phaseKey)) {
             disciplina.phases.set(phaseKey, {
-                id: `phase:${contractKey}:${obraKey}:${disciplinaKey}:${phaseKey}`,
+                id: `phase:${contractKey}:${obraKey}:${trechoKey}:${disciplinaKey}:${phaseKey}`,
                 type: 'phase',
                 label: document.phase?.code || 'S/F',
                 description: document.phase?.name || 'Sem fase',
@@ -406,7 +487,7 @@ function buildTree(documents, documentTypes) {
 
         if (!phase.documentTypes.has(typeKey)) {
             phase.documentTypes.set(typeKey, {
-                id: `document-type:${contractKey}:${obraKey}:${disciplinaKey}:${phaseKey}:${typeKey}`,
+                id: `document-type:${contractKey}:${obraKey}:${trechoKey}:${disciplinaKey}:${phaseKey}:${typeKey}`,
                 type: 'documentType',
                 label: documentTypes[typeKey] || typeKey,
                 description: 'Tipo de documento',
@@ -417,8 +498,11 @@ function buildTree(documents, documentTypes) {
         phase.documentTypes.get(typeKey).documents.push({
             id: `document:${document.id}`,
             type: 'document',
-            label: document.title,
-            description: projectEap(document, document.latest_approved_version || document.latest_version) || 'Sem codigo',
+            label: projectEap(document, document.latest_approved_version || document.latest_version) || 'Sem codigo',
+            description: (document.latest_approved_version || document.latest_version)?.original_name
+                || (document.latest_approved_version || document.latest_version)?.stored_name
+                || 'Arquivo nao informado',
+            projectTitle: document.title,
             document,
         });
     });
@@ -427,13 +511,16 @@ function buildTree(documents, documentTypes) {
         ...contract,
         children: Array.from(contract.obras.values()).map((obra) => ({
             ...obra,
-            children: Array.from(obra.disciplinas.values()).map((disciplina) => ({
-                ...disciplina,
-                children: Array.from(disciplina.phases.values()).map((phase) => ({
-                    ...phase,
-                    children: Array.from(phase.documentTypes.values()).map((documentType) => ({
-                        ...documentType,
-                        children: documentType.documents,
+            children: Array.from(obra.trechos.values()).map((trecho) => ({
+                ...trecho,
+                children: Array.from(trecho.disciplinas.values()).map((disciplina) => ({
+                    ...disciplina,
+                    children: Array.from(disciplina.phases.values()).map((phase) => ({
+                        ...phase,
+                        children: Array.from(phase.documentTypes.values()).map((documentType) => ({
+                            ...documentType,
+                            children: documentType.documents,
+                        })),
                     })),
                 })),
             })),
@@ -461,9 +548,12 @@ function collectExpandableNodeIds(nodes) {
     ]);
 }
 
-function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }) {
+function TreeNode({ node, level, openNodes, toggleNode, setBranchExpanded, rememberTreeState, tenant, processVersion }) {
     const hasChildren = node.children?.length > 0;
     const isOpen = openNodes.has(node.id);
+    const isContract = node.type === 'contract';
+    const branchNodeIds = isContract ? collectExpandableNodeIds([node]) : [];
+    const isBranchFullyOpen = branchNodeIds.length > 0 && branchNodeIds.every((nodeId) => openNodes.has(nodeId));
     const isDocument = node.type === 'document';
     const document = node.document;
     const version = document?.latest_approved_version || document?.latest_version;
@@ -501,11 +591,12 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                     </span>
                 )}
 
-                <button
-                    type="button"
-                    className={`relative z-10 flex min-w-0 flex-1 items-center gap-2 py-2 text-left ${hasChildren ? '' : 'cursor-default'}`}
-                    onClick={() => hasChildren && toggleNode(node.id)}
-                >
+                <div className="relative z-10 flex min-w-0 flex-1 items-center gap-1">
+                    <button
+                        type="button"
+                        className={`flex min-w-0 items-center gap-2 py-2 text-left ${isContract ? '' : 'flex-1'} ${hasChildren ? '' : 'cursor-default'}`}
+                        onClick={() => hasChildren && toggleNode(node.id)}
+                    >
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--surface-muted)] text-[var(--ink-600)]">
                         {node.type === 'disciplina' ? (
                             <span className="h-3.5 w-3.5 rounded-full border border-[var(--border)]" style={{ backgroundColor: node.cor }} />
@@ -516,14 +607,17 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                         )}
                     </span>
                     <span className="min-w-0 flex-1">
-                        <span className="flex min-w-0 flex-wrap items-center gap-2">
-                            <span className={`${node.type === 'contract' ? 'text-[15px]' : 'text-sm'} truncate font-semibold text-[var(--ink-900)]`}>
+                        <span className={`min-w-0 ${isDocument ? 'block' : 'flex flex-wrap items-center gap-2'}`}>
+                            <span className={`${node.type === 'contract' ? 'text-[15px]' : 'text-sm'} ${isDocument ? 'mono block break-all font-bold text-[var(--primary)]' : 'truncate font-semibold text-[var(--ink-900)]'}`}>
                                 {node.label}
                             </span>
                              {node.description && (
-                                 <span className="truncate text-[12.5px] text-[var(--ink-500)]">
+                                 <span className={`${isDocument ? 'mt-1 block break-all font-medium text-[var(--ink-700)]' : 'truncate text-[var(--ink-500)]'} text-[12.5px]`}>
                                      {node.description}
                                  </span>
+                             )}
+                             {isDocument && node.projectTitle && (
+                                 <span className="mt-1 block text-xs text-[var(--ink-500)]">{node.projectTitle}</span>
                              )}
                              {revisionInProgress && (
                                  <span className="sig-pill sig-pill-amber">Em revisão</span>
@@ -537,8 +631,21 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                                 <span>{derivativeLabels[version?.derivative_status] || version?.derivative_status || 'Sem APS'}</span>
                             </span>
                         )}
-                    </span>
-                </button>
+                        </span>
+                    </button>
+                    {isContract && hasChildren && (
+                        <button
+                            type="button"
+                            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11.5px] font-semibold text-[var(--ink-500)] transition hover:bg-[var(--primary-50)] hover:text-[var(--primary)]"
+                            onClick={() => setBranchExpanded(node, !isBranchFullyOpen)}
+                            title={isBranchFullyOpen ? 'Recolher toda a árvore deste contrato' : 'Expandir toda a árvore deste contrato'}
+                            aria-label={isBranchFullyOpen ? 'Recolher tudo deste contrato' : 'Expandir tudo deste contrato'}
+                        >
+                            {isBranchFullyOpen ? <ChevronsDownUp size={14} /> : <ChevronsUpDown size={14} />}
+                            {isBranchFullyOpen ? 'Recolher tudo' : 'Expandir tudo'}
+                        </button>
+                    )}
+                </div>
 
                 <div className="projects-tree-actions relative z-10 flex shrink-0 items-center gap-2">
                     {!isDocument && (
@@ -552,6 +659,7 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                         <Link
                             data-tour={document?._tourData ? 'projects-open-viewer' : undefined}
                             href={document?._tourData ? route('tenant.projects.tour-preview', tenant.slug) : viewerWorkspaceUrl(tenant, version, 'view')}
+                            onClick={document?._tourData ? undefined : rememberTreeState}
                             className="sig-btn sig-btn-primary sig-btn-sm"
                         >
                             <Eye size={13} />
@@ -561,6 +669,7 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                     {isDocument && !revisionInProgress && version?.aps_urn && (
                         <Link
                             href={document?._tourData ? route('tenant.projects.tour-preview', tenant.slug) : viewerWorkspaceUrl(tenant, version, 'comments')}
+                            onClick={document?._tourData ? undefined : rememberTreeState}
                             className="sig-btn sig-btn-secondary sig-btn-sm"
                         >
                             <MessageSquare size={13} />
@@ -596,6 +705,8 @@ function TreeNode({ node, level, openNodes, toggleNode, tenant, processVersion }
                             level={level + 1}
                             openNodes={openNodes}
                             toggleNode={toggleNode}
+                            setBranchExpanded={setBranchExpanded}
+                            rememberTreeState={rememberTreeState}
                             tenant={tenant}
                             processVersion={processVersion}
                         />

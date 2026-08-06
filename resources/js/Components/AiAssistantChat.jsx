@@ -28,6 +28,10 @@ function cleanAssistantText(content = '') {
         .trim();
 }
 
+function formatTokens(value) {
+    return new Intl.NumberFormat('pt-BR').format(Number(value || 0));
+}
+
 function AssistantMessage({ message, onAction }) {
     const links = message.links || [];
     const actions = message.actions || [];
@@ -92,6 +96,7 @@ export default function AiAssistantChat({ tenant }) {
     const [open, setOpen] = useState(false);
     const [loaded, setLoaded] = useState(false);
     const [available, setAvailable] = useState(true);
+    const [quota, setQuota] = useState(null);
     const [conversationId, setConversationId] = useState(null);
     const [messages, setMessages] = useState([]);
     const [draft, setDraft] = useState('');
@@ -116,6 +121,7 @@ export default function AiAssistantChat({ tenant }) {
         setLoaded(false);
         setConversationId(null);
         setMessages([]);
+        setQuota(null);
         setError('');
     }, [tenant?.id]);
 
@@ -131,6 +137,7 @@ export default function AiAssistantChat({ tenant }) {
             .then(({ data }) => {
                 if (!active) return;
                 setAvailable(Boolean(data.available));
+                setQuota(data.quota || null);
                 setConversationId(data.conversation?.id || null);
                 setMessages(data.conversation?.messages || []);
                 setLoaded(true);
@@ -187,6 +194,7 @@ export default function AiAssistantChat({ tenant }) {
             });
 
             setConversationId(data.conversation_id);
+            setQuota(data.quota || quota);
             setMessages((current) => [
                 ...current.filter((item) => item.id !== temporaryId),
                 data.user_message,
@@ -206,6 +214,9 @@ export default function AiAssistantChat({ tenant }) {
             }
         } catch (requestError) {
             const responseMessage = requestError.response?.data?.message;
+            if (requestError.response?.data?.quota) {
+                setQuota(requestError.response.data.quota);
+            }
             setConversationId(requestError.response?.data?.conversation_id || conversationId);
             setError(responseMessage || 'Não foi possível enviar a mensagem.');
         } finally {
@@ -258,6 +269,18 @@ export default function AiAssistantChat({ tenant }) {
         return null;
     }
 
+    const quotaAllowed = quota?.allowed !== false;
+    const activeQuota = quota?.user?.limit && quota?.tenant?.limit
+        ? (quota.user.remaining <= quota.tenant.remaining ? quota.user : quota.tenant)
+        : (quota?.user?.limit ? quota.user : quota?.tenant);
+    const displayedQuota = quota?.user?.limit ? quota.user : activeQuota;
+    const quotaPercentage = Math.min(100, Math.max(0, Number(displayedQuota?.percentage || 0)));
+    const quotaTone = quotaPercentage >= 90
+        ? 'bg-[#D92D20]'
+        : quotaPercentage >= 75
+            ? 'bg-[#F79009]'
+            : 'bg-[#155EEF]';
+
     return (
         <>
             {!open && (
@@ -283,10 +306,32 @@ export default function AiAssistantChat({ tenant }) {
                         </span>
                         <div className="min-w-0 flex-1">
                             <h2 className="truncate text-sm font-bold text-[var(--ink-900)]">Assistente Deming</h2>
-                            <p className="flex items-center gap-1 text-[11px] text-[var(--ink-500)]">
-                                <ShieldCheck size={12} />
-                                Consulta e prepara rascunhos
-                            </p>
+                            {displayedQuota?.limit ? (
+                                <div
+                                    className="mt-0.5"
+                                    title={`${formatTokens(displayedQuota.used)} de ${formatTokens(displayedQuota.limit)} tokens utilizados em ${quota.period}`}
+                                >
+                                    <p className="flex items-center gap-1 text-[11px] text-[var(--ink-500)]">
+                                        <ShieldCheck size={12} />
+                                        {quotaPercentage.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% utilizado em {quota.period}
+                                    </p>
+                                    <div
+                                        className="mt-1 h-1 w-full max-w-[190px] overflow-hidden rounded-full bg-[#E4E7EC]"
+                                        role="progressbar"
+                                        aria-label="Consumo da cota mensal do assistente"
+                                        aria-valuemin="0"
+                                        aria-valuemax="100"
+                                        aria-valuenow={quotaPercentage}
+                                    >
+                                        <div className={`h-full rounded-full transition-[width] duration-300 ${quotaTone}`} style={{ width: `${quotaPercentage}%` }} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="flex items-center gap-1 text-[11px] text-[var(--ink-500)]">
+                                    <ShieldCheck size={12} />
+                                    Consulta e prepara rascunhos
+                                </p>
+                            )}
                         </div>
                         <button
                             type="button"
@@ -353,6 +398,12 @@ export default function AiAssistantChat({ tenant }) {
                         </div>
                     )}
 
+                    {!loading && available && !quotaAllowed && (
+                        <div className="mx-4 mb-3 rounded-md border border-[#FEDF89] bg-[#FFFAEB] px-3 py-2 text-xs font-medium text-[#93370D]">
+                            Cota mensal atingida. O agente volta a ficar disponivel no proximo mes ou apos o ajuste do limite.
+                        </div>
+                    )}
+
                     <form onSubmit={sendMessage} className="shrink-0 border-t border-[var(--border)] bg-white p-3">
                         <div className="flex items-end gap-2 rounded-lg border border-[var(--border)] bg-white p-2 focus-within:border-[#84ADFF] focus-within:ring-2 focus-within:ring-[#D1E0FF]">
                             <textarea
@@ -362,13 +413,13 @@ export default function AiAssistantChat({ tenant }) {
                                 onKeyDown={handleKeyDown}
                                 rows={1}
                                 maxLength={2000}
-                                disabled={!available || loading || sending}
+                                disabled={!available || !quotaAllowed || loading || sending}
                                 placeholder="Pergunte sobre o sistema..."
                                 className="max-h-28 min-h-[36px] min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-[var(--ink-900)] outline-none placeholder:text-[var(--ink-400)] focus:border-0 focus:ring-0 disabled:cursor-not-allowed"
                             />
                             <button
                                 type="submit"
-                                disabled={!draft.trim() || !available || loading || sending}
+                                disabled={!draft.trim() || !available || !quotaAllowed || loading || sending}
                                 className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#155EEF] text-white hover:bg-[#004EEB] disabled:cursor-not-allowed disabled:bg-[#B2CCFF]"
                                 aria-label="Enviar mensagem"
                                 title="Enviar"

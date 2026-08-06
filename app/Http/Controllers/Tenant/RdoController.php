@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Notifications\RdoFlowChangedNotification;
 use App\Services\RdoDailyGenerator;
 use App\Services\RdoPdfRenderer;
+use App\Support\DiarioObraPermissions;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -62,7 +63,7 @@ class RdoController extends Controller
             'month' => ['nullable', 'date_format:Y-m'],
         ]);
 
-        $contracts = $this->contracts($tenant);
+        $contracts = $this->contracts($tenant, $request->user(), DiarioObraPermissions::DASHBOARD);
         $selectedContractId = (int) ($filters['contract_id'] ?? $contracts->first()?->id ?? 0);
         $month = CarbonImmutable::createFromFormat('Y-m', $filters['month'] ?? now()->format('Y-m'))->startOfMonth();
 
@@ -210,7 +211,7 @@ class RdoController extends Controller
             'date_to' => ['nullable', 'date_format:Y-m-d'],
         ]);
 
-        $contracts = $this->contracts($tenant);
+        $contracts = $this->contracts($tenant, $request->user(), DiarioObraPermissions::VIEW);
         $selectedContractId = (int) ($filters['contract_id'] ?? $contracts->first()?->id ?? 0);
         $obras = $this->obras($tenant, $selectedContractId);
         $month = CarbonImmutable::createFromFormat('Y-m', ! empty($filters['date_from'] ?? null) ? substr($filters['date_from'], 0, 7) : ($filters['month'] ?? now()->format('Y-m')))->startOfMonth();
@@ -236,7 +237,7 @@ class RdoController extends Controller
             ->whereBetween('reference_date', [$dateFrom, $dateTo])
             ->orderBy('reference_date')
             ->get()
-            ->map(fn (RdoDiario $rdo): array => $this->rdoPayload($tenant, $rdo));
+            ->map(fn (RdoDiario $rdo): array => $this->rdoPayload($tenant, $rdo, $request->user()));
 
         return Inertia::render('Tenant/Rdo/Calendar', [
             'contracts' => $contracts,
@@ -272,6 +273,12 @@ class RdoController extends Controller
                     ])
                 : [],
             'rdos' => $rdos,
+            'can_generate' => $selectedContractId > 0 && DiarioObraPermissions::can(
+                $request->user(),
+                $tenant,
+                DiarioObraPermissions::SETTINGS,
+                $contracts->firstWhere('id', $selectedContractId)
+            ),
             'batch_download_url' => route('tenant.diario-obra.rdo.batch-pdf', [
                 'tenant' => $tenant->slug,
                 'contract_id' => $selectedContractId ?: null,
@@ -346,7 +353,7 @@ class RdoController extends Controller
 
     public function settings(Request $request, Tenant $tenant): Response
     {
-        $contracts = $this->contracts($tenant);
+        $contracts = $this->contracts($tenant, $request->user(), DiarioObraPermissions::SETTINGS);
         $selectedContractId = $request->integer('contract_id') ?: (int) ($contracts->first()?->id ?? 0);
         $obras = $this->obras($tenant, $selectedContractId);
         $selectedObraId = $request->integer('obra_id') ?: (int) ($obras->first()?->id ?? 0);
@@ -562,7 +569,7 @@ class RdoController extends Controller
         $publishedRdas = $this->publishedRdasForRdo($tenant, $rdo);
 
         return Inertia::render('Tenant/Rdo/Show', [
-            'rdo' => $this->rdoPayload($tenant, $rdo) + [
+            'rdo' => $this->rdoPayload($tenant, $rdo, request()->user()) + [
                 'contract' => [
                     ...$rdo->contract->only(['id', 'code', 'name']),
                     'cliente' => $rdo->contract->clienteEmpresa,
@@ -580,6 +587,12 @@ class RdoController extends Controller
                 'active_stage' => $capabilities['active_stage'],
                 'approval_comments' => $this->approvalCommentsByStage($rdo),
                 'digital_signature_enabled' => (bool) ($rdo->configuracao?->digital_signature_enabled ?? true),
+                'can_manage_signatures' => DiarioObraPermissions::can(
+                    request()->user(),
+                    $tenant,
+                    DiarioObraPermissions::SIGNATURES,
+                    $rdo->contract
+                ),
                 'signature' => $this->signaturePayload($tenant, $rdo),
                 'published_rdas' => $publishedRdas,
                 'sections' => $rdo->secoes
@@ -897,6 +910,10 @@ class RdoController extends Controller
     {
         abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
         $rdo->loadMissing(['contract', 'configuracao.obras', 'secoes']);
+        $requiredPermission = $request->input('action') === 'submit'
+            ? DiarioObraPermissions::FILL_RDO
+            : DiarioObraPermissions::REVIEW_RDO;
+        abort_unless(DiarioObraPermissions::can($request->user(), $tenant, $requiredPermission, $rdo->contract), 403);
         $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
 
         if (empty($capabilities['actions'])) {
@@ -1154,12 +1171,18 @@ class RdoController extends Controller
         ];
     }
 
-    private function contracts(Tenant $tenant)
+    private function contracts(Tenant $tenant, ?User $user = null, string $permission = DiarioObraPermissions::VIEW)
     {
-        return Contract::query()
+        $query = Contract::query()
             ->where('tenant_id', $tenant->id)
-            ->orderBy('code')
-            ->get(['id', 'code', 'name']);
+            ->orderBy('code');
+        $contractIds = $user ? DiarioObraPermissions::contractIdsFor($user, $tenant, $permission) : collect();
+
+        if ($contractIds !== null) {
+            $query->whereIn('id', $contractIds);
+        }
+
+        return $query->get(['id', 'code', 'name']);
     }
 
     private function obras(Tenant $tenant, int $contractId)
@@ -1196,7 +1219,7 @@ class RdoController extends Controller
         return $expected > 0 ? min(100, (int) round(($filled / $expected) * 100)) : 0;
     }
 
-    private function rdoPayload(Tenant $tenant, RdoDiario $rdo): array
+    private function rdoPayload(Tenant $tenant, RdoDiario $rdo, ?User $user = null): array
     {
         $missingSubmissionObraIds = $this->missingSubmissionObraIds($rdo);
         $submissionReady = empty($missingSubmissionObraIds);
@@ -1224,9 +1247,13 @@ class RdoController extends Controller
             'calendar_status_label' => $this->calendarStatusLabel($rdo, $signatureStatus),
             'calendar_action_label' => $this->calendarActionLabel($rdo, $submissionReady),
             'is_reopened' => $this->isRdoReopened($rdo),
-            'can_reopen' => $this->isRdoReopenable($rdo),
+            'can_reopen' => $this->isRdoReopenable($rdo)
+                && $user
+                && DiarioObraPermissions::can($user, $tenant, DiarioObraPermissions::SETTINGS, $rdo->contract),
             'can_fill' => in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)
-                && ! $this->isRdoReopenable($rdo),
+                && ! $this->isRdoReopenable($rdo)
+                && $user
+                && DiarioObraPermissions::can($user, $tenant, DiarioObraPermissions::FILL_RDO, $rdo->contract),
             'submission_deadline_formatted' => $this->submissionDeadline($rdo)->format('d/m/Y'),
             'deadline_counter' => $deadlinePayload['label'],
             'deadline_counter_tone' => $deadlinePayload['tone'],
@@ -1440,6 +1467,9 @@ class RdoController extends Controller
             ->where('status', 'active')
             ->first();
         $isAdmin = $user->is_platform_admin || in_array($membership?->role, ['tenant_owner', 'tenant_admin'], true);
+        $rdo->loadMissing('contract');
+        $canFill = DiarioObraPermissions::can($user, $tenant, DiarioObraPermissions::FILL_RDO, $rdo->contract);
+        $canReview = DiarioObraPermissions::can($user, $tenant, DiarioObraPermissions::REVIEW_RDO, $rdo->contract);
         $allObraIds = $rdo->configuracao?->obras->pluck('id')->map(fn ($id) => (int) $id)->all() ?? [];
         $stage = $this->stageForUserAndStatus($tenant, $rdo, $user, $isAdmin, $membership);
         $assignedObraIds = $stage
@@ -1447,6 +1477,7 @@ class RdoController extends Controller
             : [];
         $pendingObraIds = $this->pendingObraIds($rdo, $stage, $assignedObraIds);
         $editableObraIds = in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)
+            && $canFill
             ? $this->responsibleObraIds($tenant, $rdo, $user, 'construtora', $isAdmin, $membership)
             : [];
         $editableStatuses = ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'];
@@ -1458,14 +1489,14 @@ class RdoController extends Controller
                 : [];
         }
 
-        if ($stage === 'construtora' && $pendingObraIds && in_array($rdo->status, $editableStatuses, true)) {
+        if ($canFill && $stage === 'construtora' && $pendingObraIds && in_array($rdo->status, $editableStatuses, true)) {
             $actions['submit'] = [
                 'label' => $rdo->status === 'pendente_comprovacao' ? 'Enviar comprovação das frentes' : 'Enviar frentes para análise',
                 'tone' => 'primary',
                 'comment_required' => false,
             ];
         }
-        if (in_array($stage, ['gerenciadora', 'cliente'], true) && $pendingObraIds) {
+        if ($canReview && in_array($stage, ['gerenciadora', 'cliente'], true) && $pendingObraIds) {
             $actions += $this->reviewActions();
         }
 

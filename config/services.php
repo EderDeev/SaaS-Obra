@@ -46,14 +46,24 @@ return [
         'verify_ssl' => env('AUTODESK_APS_VERIFY_SSL', true),
         'ca_bundle' => env('AUTODESK_APS_CA_BUNDLE'),
         'auto_process' => env('AUTODESK_APS_AUTO_PROCESS', true),
+        'queue' => env('AUTODESK_APS_QUEUE', 'aps'),
+        'worker_timeout' => (int) env('AUTODESK_APS_WORKER_TIMEOUT', 900),
     ],
 
     'openai' => [
         'enabled' => env('AI_ASSISTANT_ENABLED', true),
         'key' => env('OPENAI_API_KEY'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-        'model' => env('OPENAI_CHAT_MODEL', 'gpt-5.6-sol'),
+        'model' => env('OPENAI_CHAT_MODEL', 'gpt-5.6-luna'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+        'max_output_tokens' => (int) env('OPENAI_MAX_OUTPUT_TOKENS', 700),
+        'history_messages' => (int) env('OPENAI_HISTORY_MESSAGES', 4),
+        'history_character_limit' => (int) env('OPENAI_HISTORY_CHARACTER_LIMIT', 1200),
+        'rag_max_sources' => (int) env('OPENAI_RAG_MAX_SOURCES', 8),
+        'rag_source_character_limit' => (int) env('OPENAI_RAG_SOURCE_CHARACTER_LIMIT', 1600),
+        'rag_context_character_limit' => (int) env('OPENAI_RAG_CONTEXT_CHARACTER_LIMIT', 12000),
+        'tenant_monthly_token_limit' => (int) env('AI_TENANT_MONTHLY_TOKEN_LIMIT', 1000000),
+        'user_monthly_token_limit' => (int) env('AI_USER_MONTHLY_TOKEN_LIMIT', 60000),
     ],
 
 ];

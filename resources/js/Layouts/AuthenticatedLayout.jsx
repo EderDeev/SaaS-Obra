@@ -81,6 +81,14 @@ export default function AuthenticatedLayout({ children }) {
     const isPlatformAdmin = Boolean(user?.is_platform_admin);
     const userCan = props.userPermissions?.can || {};
     const projectTourScreen = route().current('tenant.projects.tour-preview') ? props.screen : null;
+    const storedProjectTourScreen = typeof window !== 'undefined'
+        && window.sessionStorage.getItem('projects:tour-active') === '1'
+        ? window.sessionStorage.getItem('projects:tour-section')
+        : null;
+    const activeProjectTourScreen = projectTourScreen || storedProjectTourScreen;
+    const projectTourNavigationSection = ['tree', 'viewer'].includes(activeProjectTourScreen)
+        ? 'viewer'
+        : activeProjectTourScreen;
     const rncTourScreen = route().current('tenant.qualidade.rnc.tour-preview') ? props.screen : null;
     const diarioObraTourScreen = route().current('tenant.diario-obra.tour-preview') ? props.screen : null;
     const canManageTenantUsers = Boolean(userCan.view_users);
@@ -89,6 +97,11 @@ export default function AuthenticatedLayout({ children }) {
     const activityCan = props.activityPermissions?.can || {};
     const projectCan = props.projectPermissions?.can || {};
     const budgetCan = props.budgetPermissions?.can || {};
+    const documentationCan = props.documentationPermissions?.can || {};
+    const diarioObraCan = props.diarioObraPermissions?.can || {};
+    const ordemServicoCan = props.ordemServicoPermissions?.can || {};
+    const medicaoCan = props.medicaoPermissions?.can || {};
+    const contractCan = props.contractPermissions?.can || {};
     const parametrizacaoCan = props.parametrizacaoPermissions?.can || {};
     const [parametrizacaoOpen, setParametrizacaoOpen] = useState(() => route().current('tenant.parametrizacao.*'));
     const [qualidadeOpen, setQualidadeOpen] = useState(() => route().current('tenant.qualidade.*'));
@@ -135,6 +148,23 @@ export default function AuthenticatedLayout({ children }) {
             window.localStorage.setItem('deming:sidebar-collapsed', String(sidebarCollapsed));
         }
     }, [sidebarCollapsed]);
+
+    useEffect(() => {
+        if (!projectTourNavigationSection) {
+            return undefined;
+        }
+
+        setProjectOpen(true);
+        setSidebarCollapsed(false);
+
+        const timer = window.setTimeout(() => {
+            document
+                .querySelector(`[data-project-tour-section="${projectTourNavigationSection}"]`)
+                ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }, 220);
+
+        return () => window.clearTimeout(timer);
+    }, [projectTourNavigationSection]);
 
     useEffect(() => {
         if (!notificationsOpen) {
@@ -203,6 +233,11 @@ export default function AuthenticatedLayout({ children }) {
                 label: 'Obras',
                 href: route('tenant.parametrizacao.obras.index', tenant.slug),
                 active: route().current('tenant.parametrizacao.obras.*'),
+            }] : []),
+            ...(parametrizacaoCan.view_parametrizacao_trechos ? [{
+                label: 'Trechos',
+                href: route('tenant.parametrizacao.trechos.index', tenant.slug),
+                active: route().current('tenant.parametrizacao.trechos.*'),
             }] : []),
             ...(parametrizacaoCan.view_parametrizacao_disciplinas ? [{
                 label: 'Disciplinas',
@@ -278,17 +313,20 @@ export default function AuthenticatedLayout({ children }) {
         : [];
     const medicaoItems = tenant
         ? [
-            {
+            ...(medicaoCan.view_measurements || medicaoCan.view_measurement_reports ? [{
                 label: 'Relatórios',
                 active: route().current('tenant.medicao.boletim-medicao.*')
                     || route().current('tenant.medicao.relatorios.*')
                     || route().current('tenant.medicao.bi.*'),
                 children: [
+                    ...(medicaoCan.view_measurements ? [
                     {
                         label: 'Boletim Medição',
                         href: route('tenant.medicao.boletim-medicao.index', tenant.slug),
                         active: route().current('tenant.medicao.boletim-medicao.*'),
                     },
+                    ] : []),
+                    ...(medicaoCan.view_measurement_reports ? [
                     {
                         label: 'Relatórios Medição',
                         href: route('tenant.medicao.relatorios.index', tenant.slug),
@@ -299,31 +337,38 @@ export default function AuthenticatedLayout({ children }) {
                         href: route('tenant.medicao.bi.index', tenant.slug),
                         active: route().current('tenant.medicao.bi.*'),
                     },
+                    ] : []),
                 ],
-            },
-            {
+            }] : []),
+            ...(medicaoCan.view_measurements || medicaoCan.analyze_measurement_claims || medicaoCan.manage_measurement_responsibles ? [{
                 label: 'Análise Medição',
                 active: route().current('tenant.medicao.folha-rosto.*')
                     || route().current('tenant.medicao.analisar-pleito.*'),
                 children: [
+                    ...(medicaoCan.view_measurements ? [
                     {
                         label: 'Folha de Rosto',
                         href: route('tenant.medicao.folha-rosto.index', tenant.slug),
                         active: route().current('tenant.medicao.folha-rosto.*'),
                     },
+                    ] : []),
+                    ...(medicaoCan.analyze_measurement_claims ? [
                     {
                         label: 'Analisar Pleito',
                         href: route('tenant.medicao.analisar-pleito.index', tenant.slug),
                         active: route().current('tenant.medicao.analisar-pleito.index'),
                     },
+                    ] : []),
+                    ...(medicaoCan.manage_measurement_responsibles ? [
                     {
                         label: 'Responsáveis análise',
                         href: route('tenant.medicao.analisar-pleito.responsaveis.index', tenant.slug),
                         active: route().current('tenant.medicao.analisar-pleito.responsaveis.*'),
                     },
+                    ] : []),
                 ],
-            },
-            {
+            }] : []),
+            ...(medicaoCan.view_measurements ? [{
                 label: 'Itens de Contrato',
                 active: route().current('tenant.medicao.item.*')
                     || route().current('tenant.medicao.indice-reajuste.*'),
@@ -339,133 +384,145 @@ export default function AuthenticatedLayout({ children }) {
                         active: route().current('tenant.medicao.indice-reajuste.*'),
                     },
                 ],
-            },
+            }] : []),
         ]
         : [];
     const ordemServicoItems = tenant
         ? [
-        {
+        ...(ordemServicoCan.view_service_orders ? [{
             label: 'OS',
             href: route('tenant.ordem-servico.os.index', tenant.slug),
             active: route().current('tenant.ordem-servico.os.*'),
-        },
-        {
+        }] : []),
+        ...(ordemServicoCan.analyze_service_orders || ordemServicoCan.approve_service_orders ? [{
             label: 'Análise OS',
             href: route('tenant.ordem-servico.analise.index', tenant.slug),
             active: route().current('tenant.ordem-servico.analise.*'),
-        },
-        {
+        }] : []),
+        ...(ordemServicoCan.manage_service_order_responsibles ? [{
             label: 'Responsáveis',
             href: route('tenant.ordem-servico.responsaveis.index', tenant.slug),
             active: route().current('tenant.ordem-servico.responsaveis.*'),
-        },
+        }] : []),
     ]
     : [];
-    const diarioObraItems = tenant
-        ? [{
+    const rdoItems = tenant
+        ? [
+            ...(diarioObraCan.view_diario_obra ? [{
+                label: 'Calendário',
+                href: route('tenant.diario-obra.rdo.calendar', tenant.slug),
+                active: route().current('tenant.diario-obra.rdo.calendar') || route().current('tenant.diario-obra.rdo.show') || ['calendar', 'consolidation', 'approval', 'signature'].includes(diarioObraTourScreen),
+            }] : []),
+            ...(diarioObraCan.view_rdo_dashboard ? [{
+                label: 'Dashboard',
+                href: route('tenant.diario-obra.rdo.dashboard', tenant.slug),
+                active: route().current('tenant.diario-obra.rdo.dashboard') || diarioObraTourScreen === 'dashboard',
+            }] : []),
+            ...(diarioObraCan.manage_diario_responsibles ? [{
+                label: 'Responsáveis',
+                href: route('tenant.diario-obra.rdo.responsaveis.index', tenant.slug),
+                active: route().current('tenant.diario-obra.rdo.responsaveis.*') || diarioObraTourScreen === 'responsibles',
+            }] : []),
+            ...(diarioObraCan.manage_rdo_catalogs ? [{
+                label: 'Cadastros',
+                href: route('tenant.diario-obra.rdo.cadastros.index', tenant.slug),
+                active: route().current('tenant.diario-obra.rdo.cadastros.*') || diarioObraTourScreen === 'catalogs',
+            }] : []),
+            ...(diarioObraCan.manage_rdo_settings ? [{
+                label: 'Parametrização',
+                href: route('tenant.diario-obra.rdo.settings', tenant.slug),
+                active: route().current('tenant.diario-obra.rdo.settings*') || diarioObraTourScreen === 'settings',
+            }] : []),
+        ]
+        : [];
+    const rdaItems = tenant
+        ? [
+            ...(diarioObraCan.view_diario_obra ? [{
+                label: 'Calendário',
+                href: route('tenant.diario-obra.rda.index', tenant.slug),
+                active: route().current('tenant.diario-obra.rda.index') || route().current('tenant.diario-obra.rda.show') || diarioObraTourScreen === 'rda',
+            }] : []),
+            ...(diarioObraCan.manage_diario_responsibles ? [{
+                label: 'Responsáveis',
+                href: route('tenant.diario-obra.rda.responsaveis.index', tenant.slug),
+                active: route().current('tenant.diario-obra.rda.responsaveis.*'),
+            }] : []),
+        ]
+        : [];
+    const diarioObraItems = [
+        ...(rdoItems.length > 0 ? [{
             label: 'RDO',
             active: route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen && diarioObraTourScreen !== 'rda'),
-            children: [
-                {
-                    label: 'Calendário',
-                    href: route('tenant.diario-obra.rdo.calendar', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.calendar') || route().current('tenant.diario-obra.rdo.show') || ['calendar', 'consolidation', 'approval', 'signature'].includes(diarioObraTourScreen),
-                },
-                {
-                    label: 'Dashboard',
-                    href: route('tenant.diario-obra.rdo.dashboard', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.dashboard') || diarioObraTourScreen === 'dashboard',
-                },
-                {
-                    label: 'Responsáveis',
-                    href: route('tenant.diario-obra.rdo.responsaveis.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.responsaveis.*') || diarioObraTourScreen === 'responsibles',
-                },
-                {
-                    label: 'Cadastros',
-                    href: route('tenant.diario-obra.rdo.cadastros.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.cadastros.*') || diarioObraTourScreen === 'catalogs',
-                },
-                {
-                    label: 'Parametrização',
-                    href: route('tenant.diario-obra.rdo.settings', tenant.slug),
-                    active: route().current('tenant.diario-obra.rdo.settings*') || diarioObraTourScreen === 'settings',
-                },
-            ],
-        },
-        {
+            children: rdoItems,
+        }] : []),
+        ...(rdaItems.length > 0 ? [{
             label: 'RDA',
             active: route().current('tenant.diario-obra.rda.*') || diarioObraTourScreen === 'rda',
-            children: [
-                {
-                    label: 'Calendário',
-                    href: route('tenant.diario-obra.rda.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rda.index') || route().current('tenant.diario-obra.rda.show') || diarioObraTourScreen === 'rda',
-                },
-                {
-                    label: 'Responsáveis',
-                    href: route('tenant.diario-obra.rda.responsaveis.index', tenant.slug),
-                    active: route().current('tenant.diario-obra.rda.responsaveis.*'),
-                },
-            ],
-        }]
-        : [];
+            children: rdaItems,
+        }] : []),
+    ];
     const projectItems = tenant
         ? [
             ...(projectCan.view_projects ? [{
                 label: 'Visualizar projetos',
                 href: route('tenant.projects.visualizar.index', tenant.slug),
                 active: route().current('tenant.projects.visualizar.*') || route().current('tenant.projects.viewer') || projectTourScreen === 'viewer',
+                projectTourSection: 'viewer',
             }] : []),
             ...(projectCan.upload_project ? [{
                 label: 'Submeter projeto',
                 href: route('tenant.projects.index', tenant.slug),
                 active: route().current('tenant.projects.index') || projectTourScreen === 'submit',
+                projectTourSection: 'submit',
             }] : []),
             ...(projectCan.review_project ? [{
                 label: 'Analisar projeto',
                 href: route('tenant.projects.review.index', tenant.slug),
                 active: route().current('tenant.projects.review.*') || projectTourScreen === 'review',
+                projectTourSection: 'review',
             }] : []),
             ...(projectCan.view_projects ? [{
                 label: 'Projetos revisados',
                 href: route('tenant.projects.revisions.index', tenant.slug),
                 active: route().current('tenant.projects.revisions.*') || projectTourScreen === 'revisions',
+                projectTourSection: 'revisions',
             }] : []),
             ...(projectCan.view_projects ? [{
                 label: 'Lista Mestra',
                 href: route('tenant.projects.master-list.index', tenant.slug),
                 active: route().current('tenant.projects.master-list.*') || projectTourScreen === 'master-list',
+                projectTourSection: 'master-list',
             }] : []),
             ...(projectCan.manage_project_responsibles ? [{
                 label: 'Responsáveis',
                 href: route('tenant.projects.responsaveis.index', tenant.slug),
                 active: route().current('tenant.projects.responsaveis.*') || projectTourScreen === 'responsibles',
+                projectTourSection: 'responsibles',
             }] : []),
         ]
         : [];
-    const gedItems = tenant
+    const gedItems = tenant && documentationCan.view_documents
         ? [
             {
                 label: 'Documentos',
                 href: route('tenant.ged.index', tenant.slug),
                 active: route().current('tenant.ged.index'),
             },
-            {
+            ...(documentationCan.manage_document_email ? [{
                 label: 'E-mail',
                 href: route('tenant.ged.email', tenant.slug),
                 active: route().current('tenant.ged.email'),
-            },
-            {
+            }] : []),
+            ...(documentationCan.manage_document_trash ? [{
                 label: 'Lixeira',
                 href: route('tenant.ged.trash', tenant.slug),
                 active: route().current('tenant.ged.trash'),
-            },
-            {
+            }] : []),
+            ...(documentationCan.manage_document_settings ? [{
                 label: 'Parametrização',
                 href: route('tenant.ged.settings', tenant.slug),
                 active: route().current('tenant.ged.settings'),
-            },
+            }] : []),
         ]
         : [];
 
@@ -482,7 +539,9 @@ export default function AuthenticatedLayout({ children }) {
     if (tenant) {
         navItems.push(
             { label: 'Visão geral', icon: Home, href: route('tenant.dashboard', tenant.slug), active: route().current('tenant.dashboard') },
-            { label: 'Contratos', icon: ClipboardList, href: route('tenant.contracts.index', tenant.slug), active: route().current('tenant.contracts.*'), badge: contract ? 'ativo' : null },
+            ...(contractCan.view_contracts ? [
+                { label: 'Contratos', icon: ClipboardList, href: route('tenant.contracts.index', tenant.slug), active: route().current('tenant.contracts.*'), badge: contract ? 'ativo' : null },
+            ] : []),
             ...(activityCan.view_activities ? [
                 { label: 'Atividades', icon: Activity, href: route('tenant.activities.index', tenant.slug), active: route().current('tenant.activities.*') },
             ] : []),
@@ -491,9 +550,15 @@ export default function AuthenticatedLayout({ children }) {
                 { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
             ] : []),
             { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
-            { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
-            { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
-            { label: 'Documentação', icon: FileText, active: route().current('tenant.ged.*'), children: gedItems },
+            ...(ordemServicoItems.length > 0 ? [
+                { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
+            ] : []),
+            ...(diarioObraItems.length > 0 ? [
+                { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
+            ] : []),
+            ...(gedItems.length > 0 ? [
+                { label: 'Documentação', icon: FileText, active: route().current('tenant.ged.*'), children: gedItems },
+            ] : []),
             ...(projectItems.length > 0 ? [
                 { label: 'Projetos', icon: FolderOpen, active: route().current('tenant.projects.*'), children: projectItems },
             ] : []),
@@ -727,6 +792,7 @@ export default function AuthenticatedLayout({ children }) {
                                                 <Link
                                                     key={child.label}
                                                     href={child.href}
+                                                    data-project-tour-section={child.projectTourSection}
                                                     className={`sig-nav-item !w-[calc(100%_-_16px)] !py-2 !text-[12.5px] ${child.active ? 'active' : ''}`}
                                                 >
                                                     <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />

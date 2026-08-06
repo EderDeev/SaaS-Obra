@@ -12,16 +12,32 @@ use Illuminate\Support\Collection;
 class ProjectPermissions
 {
     public const VIEW = 'view_projects';
+
     public const UPLOAD = 'upload_project';
+
+    public const UPLOAD_BATCH = 'upload_project_batch';
+
     public const REVIEW = 'review_project';
+
+    public const REVIEW_BATCH = 'review_project_batch';
+
+    public const COMMENTS = 'manage_project_comments';
+
     public const RESPONSIBLES = 'manage_project_responsibles';
+
+    public const STATUS = 'manage_project_status';
+
     public const DELETE = 'delete_project';
 
     public const LABELS = [
-        self::VIEW => 'Visualizar Projetos',
-        self::UPLOAD => 'Submeter projeto',
-        self::REVIEW => 'Analisar projeto',
-        self::RESPONSIBLES => 'Responsaveis projeto',
+        self::VIEW => 'Visualizar arvore, revisoes e Lista Mestra',
+        self::UPLOAD => 'Submeter projeto individual',
+        self::UPLOAD_BATCH => 'Submeter projetos em lote',
+        self::REVIEW => 'Analisar projeto individual',
+        self::REVIEW_BATCH => 'Analisar e aprovar pacotes',
+        self::COMMENTS => 'Gerenciar comentarios tecnicos',
+        self::RESPONSIBLES => 'Gerenciar responsaveis por disciplina',
+        self::STATUS => 'Alterar status do projeto',
         self::DELETE => 'Excluir projeto',
     ];
 
@@ -160,18 +176,35 @@ class ProjectPermissions
         }
 
         if (in_array($role, TenantRoles::managementRoles(), true)) {
-            return [self::VIEW, self::UPLOAD, self::REVIEW, self::RESPONSIBLES];
+            return [
+                self::VIEW,
+                self::UPLOAD,
+                self::UPLOAD_BATCH,
+                self::REVIEW,
+                self::REVIEW_BATCH,
+                self::COMMENTS,
+                self::RESPONSIBLES,
+                self::STATUS,
+            ];
         }
 
         if (in_array($role, TenantRoles::coordinationRoles(), true)) {
-            return [self::VIEW, self::UPLOAD, self::REVIEW];
+            return [
+                self::VIEW,
+                self::UPLOAD,
+                self::UPLOAD_BATCH,
+                self::REVIEW,
+                self::REVIEW_BATCH,
+                self::COMMENTS,
+                self::STATUS,
+            ];
         }
 
         if (in_array($role, [
             ...TenantRoles::engineeringRoles(),
             ...TenantRoles::technicalRoles(),
         ], true)) {
-            return [self::VIEW, self::UPLOAD];
+            return [self::VIEW, self::UPLOAD, self::UPLOAD_BATCH];
         }
 
         if (in_array($role, TenantRoles::administrativeRoles(), true)) {

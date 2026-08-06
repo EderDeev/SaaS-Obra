@@ -122,7 +122,7 @@ class AutodeskApsService
             return $version->refresh();
         }
 
-        $absolutePath = Storage::disk('public')->path($version->file_path);
+        $absolutePath = Storage::disk($version->storageDisk())->path($version->file_path);
 
         if (! is_file($absolutePath)) {
             throw new RuntimeException('Arquivo local nao encontrado para envio a APS.');

@@ -58,26 +58,49 @@ class ProjectApprovedNotification extends Notification
         $projectsUrl = route($isRevision ? 'tenant.projects.revisions.index' : 'tenant.projects.visualizar.index', $this->document->tenant);
         $systemUrl = route('tenant.dashboard', $this->document->tenant);
 
+        $viewData = [
+            'headline' => $isRevision ? 'Revisão de projeto aprovada' : 'Projeto aprovado',
+            'intro' => $isRevision
+                ? "{$this->actor->name} aprovou a revisão {$revision}. A nova versão está disponível para uso."
+                : "{$this->actor->name} aprovou o projeto e o liberou para a árvore principal.",
+            'tone' => 'success',
+            'notifiable' => $notifiable,
+            'details' => $this->projectDetails($isRevision),
+            'highlightTitle' => 'Situação atual',
+            'highlightBody' => $isRevision
+                ? 'A revisão aprovada substitui a versão anterior na visualização oficial do projeto.'
+                : 'O projeto já pode ser consultado pelos usuários autorizados do contrato.',
+            'actionLabel' => $isRevision ? 'Ver revisões' : 'Ver projetos',
+            'url' => $projectsUrl,
+            'systemUrl' => $systemUrl,
+        ];
+
         return (new MailMessage)
             ->subject($isRevision
-                ? "Revisao de projeto aprovada: {$this->document->title} - {$revision}"
+                ? "Revisão de projeto aprovada: {$this->document->title} - {$revision}"
                 : "Projeto aprovado: {$this->document->title}")
-            ->view('emails.project-approved', [
-                'document' => $this->document,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'isRevision' => $isRevision,
-                'url' => $projectsUrl,
-                'systemUrl' => $systemUrl,
-            ])
-            ->text('emails.project-approved-text', [
-                'document' => $this->document,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'isRevision' => $isRevision,
-                'url' => $projectsUrl,
-                'systemUrl' => $systemUrl,
-            ]);
+            ->view('emails.project-event', $viewData)
+            ->text('emails.project-event-text', $viewData);
+    }
+
+    private function projectDetails(bool $isRevision): array
+    {
+        $details = [
+            ['label' => 'EAP', 'value' => $this->document->eap($this->document->latestVersion?->revision) ?: 'Sem EAP'],
+            ['label' => 'Projeto', 'value' => $this->document->title],
+            ['label' => 'Contrato', 'value' => trim(($this->document->contract?->code ? $this->document->contract->code.' - ' : '').($this->document->contract?->name ?? '')) ?: 'Não informado'],
+            ['label' => 'Obra', 'value' => trim(($this->document->obra?->codigo ? $this->document->obra->codigo.' - ' : '').($this->document->obra?->nome ?? '')) ?: 'Não informada'],
+            ['label' => 'Disciplina', 'value' => trim(($this->document->disciplina?->sigla ? $this->document->disciplina->sigla.' - ' : '').($this->document->disciplina?->nome ?? '')) ?: 'Não informada'],
+            ['label' => 'Revisão', 'value' => $this->document->latestVersion?->revision ?: 'Não informada'],
+        ];
+
+        if ($isRevision) {
+            $details[] = ['label' => 'CAP', 'value' => $this->document->latestVersion?->cap_number ?: 'Não informada'];
+        }
+
+        $details[] = ['label' => 'Aprovado por', 'value' => $this->actor->name];
+
+        return $details;
     }
 
     private function isRevision(): bool

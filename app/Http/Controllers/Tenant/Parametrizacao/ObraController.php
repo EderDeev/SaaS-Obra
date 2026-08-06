@@ -7,6 +7,7 @@ use App\Models\Contract;
 use App\Models\Obra;
 use App\Models\RelatorioNaoConformidade;
 use App\Models\Tenant;
+use App\Models\Trecho;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -36,7 +37,8 @@ class ObraController extends Controller
 
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
-        $tenant->obras()->create($this->validatedObraData($request, $tenant));
+        $obra = $tenant->obras()->create($this->validatedObraData($request, $tenant));
+        Trecho::defaultForObra($obra);
 
         return back()->with('success', 'Obra cadastrada com sucesso.');
     }

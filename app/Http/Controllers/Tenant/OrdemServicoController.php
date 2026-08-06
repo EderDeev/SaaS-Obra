@@ -18,6 +18,7 @@ use App\Notifications\OrdemServicoApprovalDecisionNotification;
 use App\Notifications\OrdemServicoReadyForApprovalNotification;
 use App\Notifications\OrdemServicoReturnedForCorrectionNotification;
 use App\Notifications\OrdemServicoSubmittedForReviewNotification;
+use App\Support\OrdemServicoPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,12 +33,25 @@ class OrdemServicoController extends Controller
 {
     public function index(Request $request, Tenant $tenant): Response
     {
-        $selectedContractId = $request->integer('contract_id') ?: $tenant->contracts()->orderBy('code')->value('id');
-
-        $contracts = $tenant->contracts()
+        $contractQuery = $tenant->contracts()
             ->with('obra')
-            ->orderBy('code')
-            ->get()
+            ->orderBy('code');
+        $permissionContractIds = OrdemServicoPermissions::contractIdsFor(
+            $request->user(),
+            $tenant,
+            OrdemServicoPermissions::VIEW
+        );
+
+        if ($permissionContractIds !== null) {
+            $contractQuery->whereIn('contracts.id', $permissionContractIds);
+        }
+
+        $contractModels = $contractQuery->get();
+        $requestedContractId = $request->integer('contract_id');
+        $selectedContract = $contractModels->firstWhere('id', $requestedContractId) ?? $contractModels->first();
+        $selectedContractId = $selectedContract?->id;
+
+        $contracts = $contractModels
             ->map(fn (Contract $contract): array => [
                 'id' => $contract->id,
                 'code' => $contract->code,
@@ -78,6 +92,11 @@ class OrdemServicoController extends Controller
                 'obras' => $this->obraOptions($tenant, $selectedContractId),
                 'projects' => $this->projectOptions($tenant, $selectedContractId),
                 'empresas' => $this->empresaOptions($tenant, $selectedContractId),
+            ],
+            'can' => [
+                'manage_drafts' => $selectedContract
+                    ? OrdemServicoPermissions::can($request->user(), $tenant, OrdemServicoPermissions::MANAGE_DRAFTS, $selectedContract)
+                    : false,
             ],
         ]);
     }
@@ -283,11 +302,21 @@ class OrdemServicoController extends Controller
 
     public function analise(Request $request, Tenant $tenant): Response
     {
-        $selectedContractId = $request->integer('contract_id') ?: $tenant->contracts()->orderBy('code')->value('id');
+        $contractQuery = $tenant->contracts()->orderBy('code');
+        $permissionContractIds = $this->contractIdsForAnyPermissions($request, $tenant, [
+            OrdemServicoPermissions::ANALYZE,
+            OrdemServicoPermissions::APPROVE,
+        ]);
 
-        $contracts = $tenant->contracts()
-            ->orderBy('code')
-            ->get(['id', 'code', 'name'])
+        if ($permissionContractIds !== null) {
+            $contractQuery->whereIn('contracts.id', $permissionContractIds);
+        }
+
+        $contractModels = $contractQuery->get(['id', 'code', 'name']);
+        $requestedContractId = $request->integer('contract_id');
+        $selectedContractId = ($contractModels->firstWhere('id', $requestedContractId) ?? $contractModels->first())?->id;
+
+        $contracts = $contractModels
             ->map(fn (Contract $contract): array => [
                 'id' => $contract->id,
                 'code' => $contract->code,
@@ -541,11 +570,22 @@ class OrdemServicoController extends Controller
 
     public function responsaveis(Request $request, Tenant $tenant): Response
     {
-        $selectedContractId = $request->integer('contract_id') ?: $tenant->contracts()->orderBy('code')->value('id');
+        $contractQuery = $tenant->contracts()->orderBy('code');
+        $permissionContractIds = OrdemServicoPermissions::contractIdsFor(
+            $request->user(),
+            $tenant,
+            OrdemServicoPermissions::RESPONSIBLES
+        );
 
-        $contracts = $tenant->contracts()
-            ->orderBy('code')
-            ->get(['id', 'code', 'name'])
+        if ($permissionContractIds !== null) {
+            $contractQuery->whereIn('contracts.id', $permissionContractIds);
+        }
+
+        $contractModels = $contractQuery->get(['id', 'code', 'name']);
+        $requestedContractId = $request->integer('contract_id');
+        $selectedContractId = ($contractModels->firstWhere('id', $requestedContractId) ?? $contractModels->first())?->id;
+
+        $contracts = $contractModels
             ->map(fn (Contract $contract): array => [
                 'id' => $contract->id,
                 'code' => $contract->code,
@@ -1246,6 +1286,17 @@ class OrdemServicoController extends Controller
             return false;
         }
 
+        $contract = Contract::query()
+            ->where('tenant_id', $tenant->id)
+            ->find($ordem->contract_id);
+        $permission = $tipo === 'aprovador'
+            ? OrdemServicoPermissions::APPROVE
+            : OrdemServicoPermissions::ANALYZE;
+
+        if (! $contract || ! OrdemServicoPermissions::can($user, $tenant, $permission, $contract)) {
+            return false;
+        }
+
         if ($user->is_platform_admin) {
             return true;
         }
@@ -1272,6 +1323,24 @@ class OrdemServicoController extends Controller
             ->where('tipo', $tipo)
             ->where('status', 'active')
             ->exists();
+    }
+
+    /** @param array<int, string> $permissions */
+    private function contractIdsForAnyPermissions(Request $request, Tenant $tenant, array $permissions): ?Collection
+    {
+        $contractIds = collect();
+
+        foreach ($permissions as $permission) {
+            $ids = OrdemServicoPermissions::contractIdsFor($request->user(), $tenant, $permission);
+
+            if ($ids === null) {
+                return null;
+            }
+
+            $contractIds = $contractIds->merge($ids);
+        }
+
+        return $contractIds->map(fn ($id): int => (int) $id)->unique()->values();
     }
 
     /**

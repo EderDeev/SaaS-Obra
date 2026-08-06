@@ -576,6 +576,22 @@ body.sig-viewer-body .sig-main > main {
     color: var(--ink-500);
 }
 
+.sig-btn-success {
+    background: var(--green);
+    color: #ffffff;
+}
+
+.sig-btn-success:hover {
+    background: #0b7f50;
+}
+
+.sig-btn-success:disabled,
+.sig-btn-success:disabled:hover {
+    border-color: var(--border);
+    background: var(--ink-200);
+    color: var(--ink-500);
+}
+
 .budget-page-header {
     display: flex;
     align-items: flex-start;

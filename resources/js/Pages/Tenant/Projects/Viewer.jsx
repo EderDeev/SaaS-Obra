@@ -18,9 +18,11 @@ import {
     PanelRightOpen,
     Play,
     RefreshCw,
+    Search,
     Trash2,
     TriangleAlert,
     UserRound,
+    X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -105,8 +107,119 @@ function fileDisplayName(version) {
     return version?.stored_name || version?.original_name || '';
 }
 
+function originalFileName(version) {
+    return version?.original_name || version?.stored_name || '';
+}
+
 function userLabel(user) {
     return user ? `${user.name} (${user.email})` : 'Sem responsavel';
+}
+
+function AssigneeMultiSelect({ users, value = [], onChange, disabled = false }) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const containerRef = useRef(null);
+    const selectedIds = useMemo(() => value.map(Number), [value]);
+    const selectedUsers = useMemo(
+        () => users.filter((user) => selectedIds.includes(Number(user.id))),
+        [selectedIds, users],
+    );
+    const filteredUsers = useMemo(() => {
+        const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR');
+
+        if (!normalizedQuery) {
+            return users;
+        }
+
+        return users.filter((user) => `${user.name} ${user.email}`.toLocaleLowerCase('pt-BR').includes(normalizedQuery));
+    }, [query, users]);
+
+    useEffect(() => {
+        const closeOnOutsideClick = (event) => {
+            if (!containerRef.current?.contains(event.target)) {
+                setOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', closeOnOutsideClick);
+        return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+    }, []);
+
+    const toggleUser = (userId) => {
+        const numericId = Number(userId);
+        onChange(selectedIds.includes(numericId)
+            ? selectedIds.filter((id) => id !== numericId)
+            : [...selectedIds, numericId]);
+    };
+
+    return (
+        <div ref={containerRef} className="relative">
+            <button
+                type="button"
+                disabled={disabled}
+                className="sig-input flex w-full items-center justify-between gap-2 bg-white text-left disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setOpen((current) => !current)}
+            >
+                <span className={selectedUsers.length ? 'truncate text-[var(--ink-700)]' : 'truncate text-[var(--ink-400)]'}>
+                    {selectedUsers.length === 0
+                        ? 'Sem responsáveis'
+                        : selectedUsers.length === 1
+                            ? selectedUsers[0].name
+                            : `${selectedUsers.length} responsáveis`}
+                </span>
+                <ChevronDown size={15} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+
+            {selectedUsers.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                    {selectedUsers.map((user) => (
+                        <span key={user.id} className="sig-pill sig-pill-blue max-w-full gap-1">
+                            <span className="truncate">{user.name}</span>
+                            {!disabled && (
+                                <button type="button" title={`Remover ${user.name}`} onClick={() => toggleUser(user.id)}>
+                                    <X size={11} />
+                                </button>
+                            )}
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            {open && !disabled && (
+                <div className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-xl">
+                    <div className="border-b border-[var(--border)] p-2">
+                        <span className="sig-input bg-white">
+                            <Search size={14} />
+                            <input
+                                autoFocus
+                                value={query}
+                                onChange={(event) => setQuery(event.target.value)}
+                                placeholder="Buscar usuário"
+                            />
+                        </span>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto p-1.5">
+                        {filteredUsers.length > 0 ? filteredUsers.map((user) => (
+                            <label key={user.id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-[var(--surface-muted)]">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedIds.includes(Number(user.id))}
+                                    onChange={() => toggleUser(user.id)}
+                                    className="mt-0.5"
+                                />
+                                <span className="min-w-0">
+                                    <span className="block truncate text-xs font-semibold text-[var(--ink-800)]">{user.name}</span>
+                                    <span className="block truncate text-[11px] text-[var(--ink-500)]">{user.email}</span>
+                                </span>
+                            </label>
+                        )) : (
+                            <p className="px-2 py-3 text-center text-xs text-[var(--ink-500)]">Nenhum usuário encontrado.</p>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }
 
 function formatDateTime(value) {
@@ -481,6 +594,7 @@ export default function Viewer({
     apsConfigured,
     apsViewerApi = 'streamingV2',
     canReviewProjects = false,
+    canManageProjectComments = false,
     canReplyToMarkups = false,
     contractUsers = [],
     reviewMarkups = [],
@@ -517,8 +631,9 @@ export default function Viewer({
 
     const isReady = currentStatus === 'ready' && version.aps_urn;
     const displayName = fileDisplayName(version);
+    const originalName = originalFileName(version);
     const projectListUrl = projectListContext === 'visualizar'
-        ? route('tenant.projects.visualizar.index', tenant.slug)
+        ? `${route('tenant.projects.visualizar.index', tenant.slug)}?restore_tree=1`
         : route('tenant.projects.review.index', tenant.slug);
     const projectListLabel = projectListContext === 'visualizar' ? 'Visualizar projetos' : 'Analisar projetos';
     const visibleMarkups = useMemo(
@@ -1426,7 +1541,7 @@ export default function Viewer({
 
     return (
         <AuthenticatedLayout>
-            <Head title={`Visualizar ${version.document.title}`} />
+            <Head title={`Visualizar ${projectEap(version.document, version)}`} />
 
             <section className="sig-content sig-viewer-content">
                 <header className="sig-viewer-header flex flex-wrap items-center justify-between gap-3">
@@ -1435,9 +1550,10 @@ export default function Viewer({
                             <Eye size={15} />
                             <span className="eyebrow">Projetos</span>
                         </div>
-                        <h1 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">{version.document.title}</h1>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">
-                            {projectEap(version.document, version)} - {displayName} - {statusLabels[currentStatus] || currentStatus}
+                        <h1 className="mono mt-1 break-all text-xl font-bold text-[var(--primary)]">{projectEap(version.document, version)}</h1>
+                        <p className="mt-1 break-all text-sm font-medium text-[var(--ink-700)]">{originalName}</p>
+                        <p className="mt-1 text-xs text-[var(--ink-500)]">
+                            {version.document.title} - {statusLabels[currentStatus] || currentStatus}
                         </p>
                     </div>
 
@@ -1498,6 +1614,7 @@ export default function Viewer({
                                 version={version}
                                 workspaceMode={workspaceMode}
                                 canReviewProjects={canReviewProjects}
+                                canManageProjectComments={canManageProjectComments}
                                 canReplyToMarkups={canReplyToMarkups}
                                 contractUsers={contractUsers}
                                 markups={visibleMarkups}
@@ -1621,6 +1738,7 @@ function ProjectReviewPanel({
     version,
     workspaceMode,
     canReviewProjects,
+    canManageProjectComments,
     canReplyToMarkups,
     contractUsers,
     markups,
@@ -1647,7 +1765,7 @@ function ProjectReviewPanel({
     const [markupForm, setMarkupForm] = useState({
         title: '',
         description: '',
-        assigned_to_id: '',
+        assigned_to_ids: [],
         priority: 'normal',
     });
     const [commentFormOpen, setCommentFormOpen] = useState(false);
@@ -1691,7 +1809,6 @@ function ProjectReviewPanel({
 
         router.post(route('tenant.projects.markups.store', [tenant.slug, version.id]), {
             ...markupForm,
-            assigned_to_id: markupForm.assigned_to_id || null,
             due_date: null,
             viewer_state: captureViewerState(),
             markup_payload: markupPayload,
@@ -1701,7 +1818,7 @@ function ProjectReviewPanel({
                 setMarkupForm({
                     title: '',
                     description: '',
-                    assigned_to_id: '',
+                    assigned_to_ids: [],
                     priority: 'normal',
                 });
                 setCommentFormOpen(false);
@@ -1805,7 +1922,7 @@ function ProjectReviewPanel({
                 </div>
             </div>
 
-            {canReviewProjects ? (
+            {canManageProjectComments ? (
                 <section className="border-b border-[var(--border)] p-4">
                     <button
                         type="button"
@@ -1973,20 +2090,14 @@ function ProjectReviewPanel({
                         />
                     </label>
                     <div className="grid gap-3 sm:grid-cols-2">
-                        <label>
-                            <span className="eyebrow mb-1 block">Responsável</span>
-                            <span className="sig-input bg-white">
-                                <select
-                                    value={markupForm.assigned_to_id}
-                                    onChange={(event) => setMarkupForm((current) => ({ ...current, assigned_to_id: event.target.value }))}
-                                >
-                                    <option value="">Sem responsavel</option>
-                                    {contractUsers.map((user) => (
-                                        <option key={user.id} value={user.id}>{userLabel(user)}</option>
-                                    ))}
-                                </select>
-                            </span>
-                        </label>
+                        <div>
+                            <span className="eyebrow mb-1 block">Responsáveis</span>
+                            <AssigneeMultiSelect
+                                users={contractUsers}
+                                value={markupForm.assigned_to_ids}
+                                onChange={(assignedToIds) => setMarkupForm((current) => ({ ...current, assigned_to_ids: assignedToIds }))}
+                            />
+                        </div>
                         <label>
                             <span className="eyebrow mb-1 block">Prioridade</span>
                             <span className="sig-input bg-white">
@@ -2035,6 +2146,9 @@ function ProjectReviewPanel({
                     <div className="grid gap-3">
                         {markups.map((markup, index) => {
                             const objectName = markupObjectName(markup);
+                            const markupAssignees = markup.assignees?.length
+                                ? markup.assignees
+                                : (markup.assignee ? [markup.assignee] : []);
 
                             return (
                             <article
@@ -2080,10 +2194,12 @@ function ProjectReviewPanel({
                                              {objectName}
                                          </span>
                                      )}
-                                     <span className="flex items-center gap-1">
-                                          <UserRound size={13} />
-                                          {userLabel(markup.assignee)}
-                                     </span>
+                                      <span className="flex items-center gap-1">
+                                           <UserRound size={13} />
+                                           {markupAssignees.length > 0
+                                               ? markupAssignees.map((user) => user.name).join(', ')
+                                               : 'Sem responsáveis'}
+                                      </span>
                                      <span>
                                          Criado por {markup.creator?.name || 'Sistema'} em {formatDateTime(markup.created_at)}
                                      </span>
@@ -2163,7 +2279,7 @@ function ProjectReviewPanel({
                                      </div>
                                  )}
 
-                                 {canReviewProjects && (
+                                 {canManageProjectComments && (
                                     <div className="mt-3 grid gap-2">
                                         <div className="grid grid-cols-[1fr_auto] gap-2">
                                             <span className="sig-input bg-white">
@@ -2186,17 +2302,11 @@ function ProjectReviewPanel({
                                                 <Trash2 size={13} />
                                             </ConfirmActionButton>
                                         </div>
-                                        <span className="sig-input bg-white">
-                                            <select
-                                                value={markup.assigned_to_id || ''}
-                                                onChange={(event) => updateMarkup(markup, { assigned_to_id: event.target.value || null })}
-                                            >
-                                                <option value="">Sem responsavel</option>
-                                                {contractUsers.map((user) => (
-                                                    <option key={user.id} value={user.id}>{userLabel(user)}</option>
-                                                ))}
-                                            </select>
-                                        </span>
+                                        <AssigneeMultiSelect
+                                            users={contractUsers}
+                                            value={markupAssignees.map((user) => user.id)}
+                                            onChange={(assignedToIds) => updateMarkup(markup, { assigned_to_ids: assignedToIds })}
+                                        />
                                     </div>
                                 )}
                             </article>
@@ -2226,7 +2336,7 @@ function ProjectReviewPanel({
                                             type="checkbox"
                                             className="mt-1 h-4 w-4 rounded border-[var(--border)]"
                                             checked={item.checked}
-                                            disabled={!canReviewProjects}
+                                            disabled={!canManageProjectComments}
                                             onChange={(event) => updateChecklistItem(item, { checked: event.target.checked })}
                                         />
                                         <span className="min-w-0 flex-1">
@@ -2242,7 +2352,7 @@ function ProjectReviewPanel({
 
                                     <textarea
                                         value={checklistNotes[item.id] || ''}
-                                        disabled={!canReviewProjects}
+                                        disabled={!canManageProjectComments}
                                         onChange={(event) => setChecklistNotes((current) => ({ ...current, [item.id]: event.target.value }))}
                                         onBlur={() => updateChecklistItem(item, { notes: checklistNotes[item.id] || '' })}
                                         placeholder="Observação do item"

@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class TenantParametrizacaoTest extends TestCase
@@ -679,6 +680,38 @@ class TenantParametrizacaoTest extends TestCase
             'contractor_company_name' => 'Construtora Horizonte',
             'name' => 'Obra Norte',
         ]);
+    }
+
+    public function test_contract_list_parametrizacao_includes_trechos_grouped_by_contract(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $obra = $tenant->obras()->create([
+            'contract_id' => $contract->id,
+            'nome' => 'Rodovia Norte',
+            'codigo' => '001',
+            'tipo' => 'pai',
+        ]);
+        $tenant->trechos()->create([
+            'obra_id' => $obra->id,
+            'codigo' => 'GER',
+            'nome' => 'Geral',
+            'is_default' => true,
+        ]);
+        $tenant->trechos()->create([
+            'obra_id' => $obra->id,
+            'codigo' => 'T01',
+            'nome' => 'Km 0 ao Km 10',
+            'is_default' => false,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('tenant.contracts.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has("parametrizacao.trechos.{$contract->id}", 2)
+                ->where("parametrizacao.trechos.{$contract->id}.0.codigo", 'GER')
+                ->where("parametrizacao.trechos.{$contract->id}.1.codigo", 'T01')
+                ->where("parametrizacao.trechos.{$contract->id}.1.obra.codigo", '001'));
     }
 
     public function test_contrato_parametrizacao_rejects_obra_from_another_contract(): void

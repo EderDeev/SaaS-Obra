@@ -319,7 +319,7 @@ function DocumentSelectionToggle({ checked, onToggle, className = '' }) {
     );
 }
 
-function BulkActionsDropdown({ tenant, selectedIds = [], onRotate }) {
+function BulkActionsDropdown({ tenant, selectedIds = [], onRotate, canOcr = false, canEdit = false }) {
     const [open, setOpen] = useState(false);
 
     function reprocess() {
@@ -352,11 +352,11 @@ function BulkActionsDropdown({ tenant, selectedIds = [], onRotate }) {
 
             {open && (
                 <div className="absolute left-0 z-[120] mt-1 w-48 rounded-lg border border-slate-200 bg-white py-2 shadow-xl">
-                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ink-800)] hover:bg-slate-50" onClick={reprocess}>
+                    {canOcr && <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ink-800)] hover:bg-slate-50" onClick={reprocess}>
                         <RotateCw size={16} />
                         Reprocessar
-                    </button>
-                    <button
+                    </button>}
+                    {canEdit && <button
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ink-800)] hover:bg-slate-50"
                         onClick={() => {
@@ -366,7 +366,7 @@ function BulkActionsDropdown({ tenant, selectedIds = [], onRotate }) {
                     >
                         <RotateCw size={16} />
                         Girar
-                    </button>
+                    </button>}
                     <button type="button" className="flex w-full cursor-not-allowed items-center gap-2 px-3 py-2 text-left text-sm text-slate-400" disabled>
                         <FileArchive size={16} />
                         Juntar
@@ -779,6 +779,15 @@ function PaperlessPagination({ pagination, selectedCount = 0, compact = false })
 
 export default function GedIndex({ tenant, documents, filters = {}, contracts = [], types = [], tags = [], correspondents = [], filterCorrespondents = [], stats = {} }) {
     const { props } = usePage();
+    const documentationCan = props.documentationPermissions?.can || {};
+    const canRunFullTour = [
+        'upload_documents',
+        'edit_documents',
+        'manage_document_permissions',
+        'manage_document_settings',
+        'manage_document_email',
+        'manage_document_trash',
+    ].every((permission) => documentationCan[permission]);
     const [showUpload, setShowUpload] = useState(false);
     const [showRotateModal, setShowRotateModal] = useState(false);
     const [showTrashModal, setShowTrashModal] = useState(false);
@@ -910,32 +919,32 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                     </div>
 
                     <div className="flex flex-wrap gap-3 pt-1 lg:pr-2">
-                        <button type="button" className="sig-btn sig-btn-secondary border-emerald-700 text-emerald-800 hover:bg-emerald-50" onClick={() => startGedTour(tenant.slug)}>
+                        {canRunFullTour && <button type="button" className="sig-btn sig-btn-secondary border-emerald-700 text-emerald-800 hover:bg-emerald-50" onClick={() => startGedTour(tenant.slug)}>
                             <Plane size={17} />
                             Iniciar tour
-                        </button>
-                        <Link data-tour="ged-settings-link" href={route('tenant.ged.settings', tenant.slug)} className="sig-btn sig-btn-secondary">
+                        </button>}
+                        {documentationCan.manage_document_settings && <Link data-tour="ged-settings-link" href={route('tenant.ged.settings', tenant.slug)} className="sig-btn sig-btn-secondary">
                             <FileSearch size={17} />
                             Parametrização
-                        </Link>
-                        <Link data-tour="ged-triage-link" href={route('tenant.ged.triage', tenant.slug)} className="sig-btn sig-btn-secondary">
+                        </Link>}
+                        {documentationCan.manage_document_email && <Link data-tour="ged-triage-link" href={route('tenant.ged.triage', tenant.slug)} className="sig-btn sig-btn-secondary">
                             <Inbox size={17} />
                             Triagem
                             {pendingTriageCount > 0 && (
                                 <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">{pendingTriageCount}</span>
                             )}
-                        </Link>
-                        <Link data-tour="ged-trash-link" href={route('tenant.ged.trash', tenant.slug)} className="sig-btn sig-btn-secondary">
+                        </Link>}
+                        {documentationCan.manage_document_trash && <Link data-tour="ged-trash-link" href={route('tenant.ged.trash', tenant.slug)} className="sig-btn sig-btn-secondary">
                             <ArchiveRestore size={17} />
                             Lixeira
                             {Number(stats.trash || 0) > 0 && (
                                 <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">{stats.trash}</span>
                             )}
-                        </Link>
-                        <button data-tour="ged-upload" type="button" className="sig-btn sig-btn-primary" onClick={() => setShowUpload((open) => !open)}>
+                        </Link>}
+                        {documentationCan.upload_documents && <button data-tour="ged-upload" type="button" className="sig-btn sig-btn-primary" onClick={() => setShowUpload((open) => !open)}>
                             <UploadCloud size={17} />
                             Enviar documento
-                        </button>
+                        </button>}
                     </div>
                 </div>
 
@@ -1152,15 +1161,17 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
 
                                         {selectedIds.length > 0 && (
                                             <div className="inline-flex flex-wrap gap-2 sm:flex-nowrap">
-                                                <BulkActionsDropdown tenant={tenant} selectedIds={selectedIds} onRotate={() => setShowRotateModal(true)} />
-                                                <button
+                                                {(documentationCan.manage_document_ocr || documentationCan.edit_documents) && (
+                                                    <BulkActionsDropdown tenant={tenant} selectedIds={selectedIds} onRotate={() => setShowRotateModal(true)} canOcr={documentationCan.manage_document_ocr} canEdit={documentationCan.edit_documents} />
+                                                )}
+                                                {documentationCan.delete_documents && <button
                                                     type="button"
                                                     className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-rose-500 bg-rose-500 px-3 text-sm font-bold text-white shadow-sm hover:bg-rose-600"
                                                     onClick={() => setShowTrashModal(true)}
                                                 >
                                                     <Trash2 size={16} />
                                                     Excluir
-                                                </button>
+                                                </button>}
                                                 <BulkDownloadDropdown tenant={tenant} selectedIds={selectedIds} />
                                             </div>
                                         )}

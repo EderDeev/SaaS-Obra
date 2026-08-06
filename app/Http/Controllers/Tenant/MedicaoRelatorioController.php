@@ -9,6 +9,7 @@ use App\Models\FolhaRosto;
 use App\Models\FolhaRostoItem;
 use App\Models\MedicaoItem;
 use App\Models\Tenant;
+use App\Support\MedicaoPermissions;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -31,7 +32,9 @@ class MedicaoRelatorioController extends Controller
         $selectedContractId = $request->integer('contract_id') ?: null;
         $selectedReport = $request->string('relatorio')->toString() ?: 'pleito_preliminar';
 
+        $contractIds = MedicaoPermissions::contractIdsFor($request->user(), $tenant, MedicaoPermissions::REPORTS);
         $contracts = $tenant->contracts()
+            ->when($contractIds !== null, fn ($query) => $query->whereKey($contractIds))
             ->orderBy('code')
             ->get(['id', 'code', 'name']);
 

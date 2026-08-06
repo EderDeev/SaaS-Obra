@@ -17,6 +17,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
+use App\Support\DocumentationPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -266,7 +267,7 @@ class AssistantContextBuilder
                 'Ajuda',
                 'Fluxo de '.$item['guide']['label'],
                 route($item['guide']['route'], $tenant),
-                $item['guide']['workflow'],
+                $item['guide']['tutorial'] ?? $item['guide']['workflow'],
                 900 + ($item['score'] * 10)
             ))
             ->values();
@@ -294,7 +295,11 @@ class AssistantContextBuilder
             'measurement' => $this->capability('Medição', $hasTenantAccess),
             'service_orders' => $this->capability('Ordem de Serviço', $hasTenantAccess),
             'field' => $this->capability('Diário de Obra (RDO e RDA)', $hasTenantAccess),
-            'documents' => $this->capability('Documentação', $hasTenantAccess),
+            'documents' => $this->capability(
+                'Documentação',
+                DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::VIEW),
+                $this->allowedLabels(DocumentationPermissions::labels(), fn (string $permission): bool => DocumentationPermissions::canAny($user, $tenant, $permission))
+            ),
             'projects' => $this->capability(
                 'Projetos',
                 ProjectPermissions::canAny($user, $tenant, ProjectPermissions::VIEW),
@@ -408,6 +413,15 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'centraliza vigência, valor, empresas, obras, disciplinas, equipe, aditivos e resumos dos módulos.',
                 'workflow' => 'Fluxo: crie o contrato, parametrize empresas/obras/disciplinas, salve os vínculos e escolha o modo de medição. Use Aditivo para registrar custo e/ou novo prazo com documento. Ao abrir o contrato, acompanhe equipe, atividades, projetos e RNCs vinculados.',
+                'tutorial' => <<<'TEXT'
+Tutorial de contratos:
+1. Em Contratos, clique em Novo contrato e informe identificação, vigência, valor e documento contratual.
+2. Abra Parametrizar. Cadastre ou selecione empresas, obras e disciplinas e, por último, salve os vínculos do contrato. A obra principal deve ser uma obra pai.
+3. Na aba Medição, escolha entre Simples e Controlada antes de iniciar medições. A modalidade não deve ser alterada depois que o contrato entrar em operação.
+4. Vincule a equipe e confira quem participa do contrato. Esses vínculos delimitam o acesso dos usuários aos módulos por contrato.
+5. Use Aditivo para registrar custo, prazo ou ambos, com título, motivação e documento. O novo prazo começa após a vigência atual e o histórico preserva o contrato base e todos os aditivos.
+6. Ao abrir o contrato, acompanhe prazo restante, equipe e os resumos de atividades, projetos e RNCs. Os atalhos permitem criar registros já relacionados ao contrato.
+TEXT,
             ],
             'activities' => [
                 'label' => 'Atividades',
@@ -416,14 +430,31 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'organiza tarefas públicas ou restritas, responsáveis, comentários, anexos, prazos e métricas.',
                 'workflow' => 'Fluxo: crie a atividade pelo modal, informe contrato, categoria, responsáveis, prazo, prioridade e visibilidade. Atividade pública aparece aos usuários do contrato; restrita apenas ao criador e vinculados. Os envolvidos movimentam, comentam e anexam arquivos. O criador gerencia a atividade e o dashboard Métricas mostra produtividade e cumprimento de prazos.',
+                'tutorial' => <<<'TEXT'
+Tutorial de atividades:
+1. Em Atividades, clique em Nova atividade. Selecione contrato, categoria, prioridade, prazo e os responsáveis.
+2. Escolha a visibilidade. Pública permite visualização pelos usuários do contrato; restrita limita o card ao criador e aos usuários vinculados à atividade.
+3. Salve para criar o card no fluxo. Os participantes podem movimentar a atividade, comentar e anexar arquivos sem uma permissão adicional.
+4. Abra o card para acompanhar descrição, responsáveis, prazo, histórico, comentários e anexos. O criador pode editar, excluir e gerenciar os responsáveis; outros usuários dependem das permissões globais para editar ou excluir atividades alheias.
+5. Conclua a atividade no fluxo quando o trabalho terminar. Em Métricas, acompanhe produtividade, responsáveis, categorias, resolução dentro do prazo e atrasos, desde que possua a permissão de visualizar métricas.
+TEXT,
             ],
             'budgets' => [
                 'label' => 'Orçamentos',
-                'aliases' => ['orçamento', 'orcamento', 'insumo', 'composição', 'composicao', 'base de preço'],
+                'aliases' => ['orçamento', 'orcamento', 'insumo', 'composição', 'composicao', 'base de preço', 'sinapi', 'sicro', 'sicro 3'],
                 'route' => 'tenant.orcamentos.index',
                 'enabled' => true,
                 'summary' => 'estrutura bases de preço, insumos, composições, etapas, BDI, relatórios e acessos por orçamento.',
                 'workflow' => 'Fluxo recomendado: consulte ou cadastre insumos, monte composições com coeficientes e custos e então crie o orçamento. No orçamento, configure bases, encargos e BDI, crie etapas e adicione composições ou insumos. O botão Acessos define quem apenas visualiza ou também edita; relatórios e finalização dependem das permissões globais.',
+                'tutorial' => <<<'TEXT'
+Tutorial de orçamento com SINAPI e SICRO:
+Pré-requisito: o usuário precisa visualizar Orçamentos e ter as permissões exigidas para cadastrar, importar ou editar.
+1. Em Orçamentos > Insumos, consulte a base SINAPI ou SICRO escolhendo banco, estado e data de referência. Use os filtros para localizar o código ou a descrição. Também é possível cadastrar insumo próprio ou importar uma base, conforme a permissão.
+2. Em Composições, consulte as composições oficiais e abra o detalhe para conferir itens analíticos, coeficientes, unidades e preços por UF. Para uma composição própria, cadastre os dados e vincule seus insumos ou composições auxiliares.
+3. Em Orçamentos, clique em Novo orçamento. Informe os dados gerais; depois configure arredondamento, encargos sociais e BDI; por fim escolha as bases SINAPI/SICRO, UF e competência. Se permitir preços zerados, esses valores precisarão ser preenchidos antes da conclusão.
+4. Abra o orçamento, crie as etapas da estrutura analítica e adicione composições ou insumos. Informe quantidades e confira valor unitário, incidência de BDI e total de cada item.
+5. Revise os totais, gere os relatórios e finalize quando a estrutura estiver conferida. Use Acessos para definir quem pode somente visualizar ou também editar o orçamento.
+TEXT,
             ],
             'projects' => [
                 'label' => 'Projetos',
@@ -432,6 +463,15 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'controla responsáveis, submissão, análise, aprovação, visualização APS, comentários, CAP e revisões.',
                 'workflow' => 'Fluxo: vincule responsáveis por disciplina, submeta o projeto com EAP e arquivo, analise e aprove ou reprove. Depois de aprovado, ele entra na árvore de visualização para inspeção e comentários. Revisões aprovadas atualizam a árvore, notificam usuários do contrato e geram histórico/CAP. A Lista Mestra filtra e exporta o acervo.',
+                'tutorial' => <<<'TEXT'
+Tutorial de projetos:
+1. Em Responsáveis, vincule por contrato e disciplina quem analisa e quem aprova os projetos.
+2. Em Submeter projeto, informe contrato, obra, trecho, disciplina, fase, tipo de documento, título e arquivo. Em obras sem divisão por trechos, use GER - Geral. Confira a EAP e a revisão no modal de confirmação.
+3. Em Analisar projeto, abra o Viewer e o checklist, registre comentários técnicos e envie para aprovação. A reprovação exige motivo e notifica quem submeteu.
+4. Depois da aprovação, o projeto entra na árvore de Visualizar projetos. Use o Viewer APS para navegar, medir, consultar objetos e propriedades e registrar comentários visuais com responsáveis e respostas.
+5. Uma nova submissão de projeto já aprovado entra como revisão. Durante o processo, a versão vigente fica Em revisão. Após aprovada, a revisão atualiza a árvore e notifica os usuários do contrato.
+6. Em Projetos revisados, consulte a CAP, o histórico e a comparação entre versões. A Lista Mestra combina filtros e exporta a relação em PDF ou Excel.
+TEXT,
             ],
             'quality' => [
                 'label' => 'Qualidade / RNC',
@@ -440,6 +480,17 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'opera o ciclo de não conformidade, responsáveis, ação corretiva, evidência, PDF e dashboard.',
                 'workflow' => 'Fluxo: primeiro aloque responsáveis operacional, da construtora e de acompanhamento. Abra a RNC, vincule um ou mais projetos quando necessário e notifique. A construtora envia a ação corretiva; o responsável operacional analisa, solicita ajustes ou aprova e registra evidências. A finalização gera o PDF e alimenta o dashboard.',
+                'tutorial' => <<<'TEXT'
+Tutorial para abrir e conduzir uma RNC:
+Pré-requisito: em Qualidade > RNC > Responsáveis, vincule ao contrato o responsável operacional, o responsável da construtora e, quando necessário, o responsável de acompanhamento.
+1. Em Qualidade > RNC, clique em Nova RNC. Escolha contrato e obra, informe disciplina, gravidade, natureza, local e as datas solicitadas.
+2. Vincule um ou mais projetos quando a ocorrência estiver relacionada a projetos. Descreva claramente o problema, acrescente observações, ações corretivas recomendadas, coordenadas e fotografias.
+3. Salve a RNC e confira o registro. Enquanto ainda não foi notificada, ajuste os dados se necessário.
+4. Clique em Notificar. O sistema comunica os responsáveis e libera o envio da proposta de ação corretiva.
+5. O responsável da construtora informa a correção proposta, o prazo e o documento de apoio. O responsável operacional analisa: pode aprovar ou reprovar com justificativa.
+6. Depois da aprovação da proposta, registre as evidências da execução com descrições, imagens e anexos. O envio conclui o fluxo conforme as permissões.
+7. Consulte o histórico e o PDF final na própria RNC. O Dashboard de RNC mostra volumes, atrasos, propostas em análise e registros finalizados.
+TEXT,
             ],
             'documents' => [
                 'label' => 'Documentação',
@@ -448,6 +499,16 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'gerencia PDFs, OCR, anexos, permissões, e-mails, triagem, parametrização e lixeira.',
                 'workflow' => 'Fluxo: envie o PDF principal vinculado a um contrato e use Anexos para arquivos complementares. PDFs anexos também podem passar por OCR e ser visualizados. Regras de e-mail podem criar um PDF do e-mail e anexar os demais arquivos; quando há mais de um PDF e a regra não define o principal, a mensagem vai para Triagem. Exclusões vão para a Lixeira antes da remoção definitiva.',
+                'tutorial' => <<<'TEXT'
+Tutorial de documentação:
+1. Em Documentação, clique em Enviar documento. O contrato é o único campo obrigatório e o documento principal deve ser PDF.
+2. Abra o documento para editar detalhes, consultar o conteúdo OCR, anexos, metadados, notas, histórico e permissões.
+3. Em Anexos, vincule vários arquivos complementares. PDFs anexos passam por OCR e podem ser visualizados; outros formatos ficam disponíveis para download.
+4. Em E-mail, configure a conta e as regras de consumo. A regra pode processar anexos ou criar um PDF fiel ao e-mail e manter os arquivos recebidos como anexos do documento.
+5. Quando um e-mail tiver mais de um PDF e não houver definição segura do principal, ele vai para Triagem para que o usuário faça a escolha. Mensagens já processadas não devem ser importadas novamente.
+6. A Parametrização mantém tipos, etiquetas e correspondentes. Tipos ou etiquetas em uso não podem ser excluídos.
+7. Excluir um documento o envia para a Lixeira, onde pode ser restaurado ou removido definitivamente.
+TEXT,
             ],
             'field' => [
                 'label' => 'Diário de Obra',
@@ -456,6 +517,17 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'registra RDA de campo, consolida RDO, aprovações, assinatura digital e PDF diário.',
                 'workflow' => 'Fluxo: configure responsáveis, cadastros reutilizáveis e parâmetros do RDO. O RDA é o apontamento de apoio preenchido no campo, inclusive pelo aplicativo mobile offline. Os apontamentos são consolidados no RDO, que segue pelas etapas de conferência e aprovação, recebe assinaturas digitais e gera o documento final.',
+                'tutorial' => <<<'TEXT'
+Tutorial de Diário de Obra, RDA e RDO:
+Pré-requisito: em Diário de Obra, parametrize o contrato, obras ou frentes, dias de geração, prazos, continuidade, geração automática e assinatura digital. Cadastre mão de obra, equipamentos e subcontratadas e defina os responsáveis.
+1. O RDA é o apontamento de campo que apoia o RDO oficial. O responsável registra clima, atividades, ocorrências, equipes, equipamentos e fotografias.
+2. No aplicativo mobile, o RDA pode ser preenchido offline. Quando a conexão voltar, sincronize os dados e publique o apontamento. Somente RDAs publicados ficam disponíveis para consolidação.
+3. No Calendário do RDO, escolha a data habilitada. Gere um RDO vazio ou copie o anterior, conforme a configuração do contrato.
+4. Abra o RDO e importe os RDAs publicados da mesma data e frente. Revise as seções, elimine duplicidades e complete as informações necessárias.
+5. Envie o RDO para análise. Gerenciadora e cliente registram aprovação, ressalva ou devolução com parecer, preservando o histórico.
+6. Após a aprovação, gere o PDF e envie para assinatura digital dos participantes configurados. O sistema acompanha as assinaturas e guarda o PDF final e a trilha de auditoria.
+7. Use o Dashboard do RDO para acompanhar geração, envio, aprovação, devoluções e preenchimento no período.
+TEXT,
             ],
             'service_orders' => [
                 'label' => 'Ordem de Serviço',
@@ -464,6 +536,16 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'autoriza itens contratuais para medição controlada e acompanha análise, aprovação, custo previsto e real.',
                 'workflow' => 'Fluxo: crie a OS em rascunho, vincule itens de contrato e responsáveis e ajuste enquanto estiver em rascunho. Ao enviar para análise, a edição é bloqueada. Fiscais analisam e aprovadores concluem; uma reprovação devolve a OS ao rascunho com comunicação aos responsáveis. Na medição controlada, apenas itens de OS aprovada podem ser pleiteados.',
+                'tutorial' => <<<'TEXT'
+Tutorial de Ordem de Serviço:
+1. Em Ordem de Serviço > OS, clique em Nova OS. Informe contrato, obra, título, descrição, prazo, custos e selecione os itens contratuais autorizados.
+2. Salve como rascunho. Enquanto estiver nesse estado, a OS pode ser reaberta e editada; revise itens, quantidades e responsáveis antes do envio.
+3. Em Responsáveis, configure fiscais e aprovadores da obra. A listagem agrupa as funções por usuário.
+4. Envie a OS para análise e confirme no diálogo. Depois do envio, a edição fica bloqueada.
+5. Em Análise, o fiscal registra a decisão. Se aprovada, a OS segue para aprovação; se reprovada, retorna a rascunho com o motivo e os responsáveis recebem a comunicação.
+6. O aprovador conclui ou reprova a OS. Uma OS aprovada libera seus itens para pleito quando o contrato usa Medição Controlada.
+7. A listagem acompanha status, custo previsto, custo real calculado pelas quantidades medidas e o percentual medido dos itens.
+TEXT,
             ],
             'measurement' => [
                 'label' => 'Medição',
@@ -472,6 +554,17 @@ class AssistantContextBuilder
                 'enabled' => true,
                 'summary' => 'controla itens de contrato, pleitos, folhas de rosto, boletins, reajustes, análises e relatórios.',
                 'workflow' => 'O contrato define o modo de medição. No modo Controlada, uma OS aprovada libera quais itens podem entrar em folha de rosto e pleito. No modo Simples, a folha de rosto e o pleito podem usar itens do contrato sem OS. Depois, os valores seguem para análise, boletim, reajustes e relatórios. A escolha do modo deve ser feita na parametrização do contrato e não deve mudar após o início da operação.',
+                'tutorial' => <<<'TEXT'
+Tutorial de medição:
+Pré-requisito: na Parametrização do contrato > Medição, escolha uma vez o modo Simples ou Controlada antes de iniciar o fluxo. Confira também os Itens de Contrato e os índices de reajuste.
+1. No modo Controlada, crie uma Ordem de Serviço, vincule os itens autorizados e conclua o fluxo de análise e aprovação. Somente itens de OS aprovada ficam disponíveis para o pleito.
+2. No modo Simples, não é necessária OS aprovada: a Folha de Rosto pode usar diretamente os itens do contrato.
+3. Em Boletim Medição, cadastre ou abra a competência correta. A numeração do BM é sequencial dentro de cada contrato.
+4. Em Folha de Rosto, selecione o BM aberto, a construtora solicitante e os itens. Informe as quantidades pleiteadas e o comentário do período; depois envie para análise.
+5. Em Analisar pleito, os responsáveis conferem os itens e registram as quantidades aprovadas ou as devoluções em cada etapa do fluxo.
+6. Confira reajustes, acumulados e valores do boletim. Congele ou finalize o BM somente depois da conferência.
+7. Use Relatórios de Medição para gerar pleito preliminar, análise, sintético, resumo e demais saídas; o B.I. apresenta os indicadores e a curva ABC dos itens pleiteados.
+TEXT,
             ],
             'users' => [
                 'label' => 'Usuários',

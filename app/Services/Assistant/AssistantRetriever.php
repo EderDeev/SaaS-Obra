@@ -56,7 +56,7 @@ class AssistantRetriever
         $this->fieldSources($tenant, $contractIds, $terms)->each(fn (array $source) => $sources->push($source));
         $this->commercialSources($tenant, $contractIds, $terms)->each(fn (array $source) => $sources->push($source));
 
-        return $sources
+        $ranked = $sources
             ->map(function (array $source) use ($terms, $currentPath): array {
                 $haystack = Str::lower($source['title'].' '.$source['content']);
                 $score = collect($terms)->sum(fn (string $term): int => substr_count($haystack, Str::lower($term)));
@@ -72,16 +72,27 @@ class AssistantRetriever
                 return $source;
             })
             ->sortByDesc('_score')
-            ->take(20)
-            ->values()
-            ->map(function (array $source, int $index): array {
-                unset($source['_score']);
-                unset($source['_priority']);
-                $source['id'] = 'S'.($index + 1);
+            ->values();
 
-                return $source;
-            })
-            ->all();
+        $maxSources = max(1, (int) config('services.openai.rag_max_sources', 8));
+        $sourceLimit = max(300, (int) config('services.openai.rag_source_character_limit', 1600));
+        $remainingCharacters = max($sourceLimit, (int) config('services.openai.rag_context_character_limit', 12000));
+        $selected = collect();
+
+        foreach ($ranked as $source) {
+            if ($selected->count() >= $maxSources || $remainingCharacters <= 0) {
+                break;
+            }
+
+            $allowedCharacters = min($sourceLimit, $remainingCharacters);
+            $source['content'] = Str::limit((string) $source['content'], $allowedCharacters, '');
+            $remainingCharacters -= mb_strlen($source['content']);
+            unset($source['_score'], $source['_priority']);
+            $source['id'] = 'S'.($selected->count() + 1);
+            $selected->push($source);
+        }
+
+        return $selected->all();
     }
 
     /** @param Collection<int, int> $contractIds */

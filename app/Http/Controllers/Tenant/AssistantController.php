@@ -8,6 +8,7 @@ use App\Models\AiConversation;
 use App\Models\AiMessage;
 use App\Models\Tenant;
 use App\Services\Assistant\AssistantActionResolver;
+use App\Services\Assistant\AssistantQuotaService;
 use App\Services\Assistant\AssistantRetriever;
 use App\Services\Assistant\OpenAiAssistant;
 use Illuminate\Http\JsonResponse;
@@ -18,7 +19,7 @@ use Throwable;
 
 class AssistantController extends Controller
 {
-    public function show(Request $request, Tenant $tenant, OpenAiAssistant $assistant): JsonResponse
+    public function show(Request $request, Tenant $tenant, OpenAiAssistant $assistant, AssistantQuotaService $quota): JsonResponse
     {
         $conversation = AiConversation::query()
             ->where('tenant_id', $tenant->id)
@@ -34,6 +35,7 @@ class AssistantController extends Controller
 
         return response()->json([
             'available' => $assistant->isAvailable(),
+            'quota' => $quota->status($tenant, $request->user()),
             'conversation' => $conversation ? $this->serializeConversation($conversation) : null,
         ]);
     }
@@ -43,7 +45,8 @@ class AssistantController extends Controller
         Tenant $tenant,
         AssistantRetriever $retriever,
         AssistantActionResolver $actionResolver,
-        OpenAiAssistant $assistant
+        OpenAiAssistant $assistant,
+        AssistantQuotaService $quota
     ): JsonResponse {
         if (! $assistant->isAvailable()) {
             return response()->json([
@@ -52,6 +55,17 @@ class AssistantController extends Controller
         }
 
         $user = $request->user();
+        $quotaStatus = $quota->status($tenant, $user);
+
+        if (! $quotaStatus['allowed']) {
+            $scope = $quotaStatus['exhausted_by'] === 'tenant' ? 'do tenant' : 'do usuario';
+
+            return response()->json([
+                'message' => "A cota mensal {$scope} foi atingida. O acesso sera liberado no proximo mes ou apos o ajuste do limite.",
+                'quota' => $quotaStatus,
+            ], 429);
+        }
+
         $data = $request->validated();
         $conversation = filled($data['conversation_id'] ?? null)
             ? AiConversation::query()
@@ -67,7 +81,7 @@ class AssistantController extends Controller
 
         $history = $conversation->messages()
             ->latest('id')
-            ->limit(8)
+            ->limit(max(1, (int) config('services.openai.history_messages', 4)))
             ->get(['role', 'content'])
             ->reverse()
             ->values()
@@ -129,12 +143,14 @@ class AssistantController extends Controller
                 'usage' => $result['usage'],
                 'model' => $result['model'],
             ]);
+            $quotaStatus = $quota->record($tenant, $user, $result['usage']);
             $conversation->forceFill(['last_message_at' => now()])->save();
 
             return response()->json([
                 'conversation_id' => $conversation->id,
                 'user_message' => $this->serializeMessage($userMessage),
                 'assistant_message' => $this->serializeMessage($assistantMessage),
+                'quota' => $quotaStatus,
             ]);
         } catch (Throwable $exception) {
             Log::error('Falha ao responder no Assistente Deming.', [

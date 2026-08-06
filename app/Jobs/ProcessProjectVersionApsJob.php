@@ -20,8 +20,14 @@ class ProcessProjectVersionApsJob implements ShouldQueue
 
     public int $timeout = 600;
 
+    public int $tries = 3;
+
+    /** @var array<int, int> */
+    public array $backoff = [30, 120];
+
     public function __construct(private readonly int $versionId)
     {
+        $this->onQueue((string) config('services.autodesk_aps.queue', 'aps'));
     }
 
     public function handle(AutodeskApsService $aps): void
@@ -48,15 +54,24 @@ class ProcessProjectVersionApsJob implements ShouldQueue
             return;
         }
 
-        try {
-            $aps->submitVersion($version);
-        } catch (Throwable $exception) {
-            report($exception);
+        $aps->submitVersion($version);
+    }
 
-            $version->forceFill([
-                'derivative_status' => 'failed',
-                'processed_at' => now(),
-            ])->save();
+    public function failed(?Throwable $exception): void
+    {
+        if ($exception) {
+            report($exception);
         }
+
+        $version = ProjectDocumentVersion::query()->find($this->versionId);
+
+        if (! $version || $version->trashed() || $version->status === 'reprovado') {
+            return;
+        }
+
+        $version->forceFill([
+            'derivative_status' => 'failed',
+            'processed_at' => now(),
+        ])->save();
     }
 }

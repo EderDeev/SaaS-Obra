@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { Activity, Calculator, ChevronRight, ClipboardList, FileWarning, FolderOpen, KeyRound, Save, Search, ShieldCheck, SlidersHorizontal, UserCog, Users } from 'lucide-react';
+import { Activity, Calculator, CalendarDays, ChevronRight, ClipboardList, FileKey2, FileText, FileWarning, FolderOpen, KeyRound, Ruler, Save, Search, ShieldCheck, SlidersHorizontal, UserCog, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 function initials(name = 'U') {
@@ -27,9 +27,14 @@ function contractLabel(contract) {
 
 const groupMeta = {
     activities: { icon: Activity, dataKey: 'activity_permissions', contractScoped: true },
+    contracts: { icon: FileKey2, dataKey: 'contract_permissions', contractScoped: true },
     rnc: { icon: FileWarning, dataKey: 'rnc_permissions', contractScoped: true },
     projects: { icon: FolderOpen, dataKey: 'project_permissions', contractScoped: true },
     budgets: { icon: Calculator, dataKey: 'budget_permissions' },
+    documentation: { icon: FileText, dataKey: 'documentation_permissions', contractScoped: true },
+    diario_obra: { icon: CalendarDays, dataKey: 'diario_obra_permissions', contractScoped: true },
+    ordem_servico: { icon: ClipboardList, dataKey: 'ordem_servico_permissions', contractScoped: true },
+    medicao: { icon: Ruler, dataKey: 'medicao_permissions', contractScoped: true },
     users: { icon: UserCog, dataKey: 'user_permissions' },
     parametrizacao: { icon: SlidersHorizontal, dataKey: 'parametrizacao_permissions' },
 };
@@ -45,6 +50,11 @@ export default function PermissionsIndex({
     userPermissionsByUser,
     parametrizacaoPermissionsByUser,
     budgetPermissionsByUser,
+    documentationPermissionsByUserContract,
+    diarioObraPermissionsByUserContract,
+    ordemServicoPermissionsByUserContract,
+    medicaoPermissionsByUserContract,
+    contractPermissionsByUserContract,
     permissionGroups,
 }) {
     const page = usePage();
@@ -70,6 +80,11 @@ export default function PermissionsIndex({
         user_permissions: [],
         parametrizacao_permissions: [],
         budget_permissions: [],
+        documentation_permissions: [],
+        diario_obra_permissions: [],
+        ordem_servico_permissions: [],
+        medicao_permissions: [],
+        contract_permissions: [],
     });
 
     const filteredUsers = useMemo(() => {
@@ -99,12 +114,17 @@ export default function PermissionsIndex({
             user_permissions: userPermissionsByUser?.[selectedUserId] || [],
             parametrizacao_permissions: parametrizacaoPermissionsByUser?.[selectedUserId] || [],
             budget_permissions: budgetPermissionsByUser?.[selectedUserId] || [],
+            documentation_permissions: documentationPermissionsByUserContract?.[key] || [],
+            diario_obra_permissions: diarioObraPermissionsByUserContract?.[key] || [],
+            ordem_servico_permissions: ordemServicoPermissionsByUserContract?.[key] || [],
+            medicao_permissions: medicaoPermissionsByUserContract?.[key] || [],
+            contract_permissions: contractPermissionsByUserContract?.[key] || [],
         });
         form.clearErrors();
     }, [selectedUserId, selectedContractId]);
 
     const togglePermission = (dataKey, permission) => {
-        const contractScoped = ['activity_permissions', 'project_permissions', 'rnc_permissions'].includes(dataKey);
+        const contractScoped = ['activity_permissions', 'contract_permissions', 'project_permissions', 'rnc_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'medicao_permissions'].includes(dataKey);
 
         if (lockedOwner || (contractScoped && !selectedContractId)) {
             return;
@@ -305,13 +325,18 @@ export default function PermissionsIndex({
                             <Users size={14} />
                             <span className="eyebrow">Resumo</span>
                         </div>
-                        <div className="grid gap-2 text-sm text-[var(--ink-600)] md:grid-cols-6">
+                        <div className="grid gap-2 text-sm text-[var(--ink-600)] md:grid-cols-4 xl:grid-cols-7">
                             <Summary label="Atividades" value={form.data.activity_permissions.length} />
+                            <Summary label="Contratos" value={form.data.contract_permissions.length} />
                             <Summary label="Projetos" value={form.data.project_permissions.length} />
                             <Summary label="RNC" value={form.data.rnc_permissions.length} />
                             <Summary label="Usuarios" value={form.data.user_permissions.length} />
                             <Summary label="Parametrizacao" value={form.data.parametrizacao_permissions.length} />
                             <Summary label="Orçamentos" value={form.data.budget_permissions.length} />
+                            <Summary label="Documentação" value={form.data.documentation_permissions.length} />
+                            <Summary label="Diário de Obra" value={form.data.diario_obra_permissions.length} />
+                            <Summary label="Ordem de Serviço" value={form.data.ordem_servico_permissions.length} />
+                            <Summary label="Medição" value={form.data.medicao_permissions.length} />
                         </div>
                     </section>
                 </form>

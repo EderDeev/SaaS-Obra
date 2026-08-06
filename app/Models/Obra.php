@@ -33,6 +33,11 @@ class Obra extends Model
         return $this->hasMany(self::class, 'obra_pai_id');
     }
 
+    public function trechos(): HasMany
+    {
+        return $this->hasMany(Trecho::class);
+    }
+
     public function isPai(): bool
     {
         return $this->tipo === 'pai';

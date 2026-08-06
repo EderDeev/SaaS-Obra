@@ -8,6 +8,7 @@ use App\Models\Contract;
 use App\Models\ProjectDisciplineResponsavel;
 use App\Models\ProjectDocument;
 use App\Models\ProjectDocumentVersion;
+use App\Models\ProjectSubmissionBatch;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ProjectApprovedNotification;
@@ -33,15 +34,32 @@ class ProjectReviewController extends Controller
 
     public function index(Request $request, Tenant $tenant): Response
     {
-        abort_unless(ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW), 403);
+        $canReviewProjects = ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW);
+        $canReviewBatches = ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW_BATCH);
 
-        $contracts = $this->accessibleContracts($request, $tenant, ProjectPermissions::REVIEW)
-            ->orderBy('code')
-            ->get(['id', 'code', 'name', 'status']);
-        $contractIds = $contracts->pluck('id');
+        abort_unless($canReviewProjects || $canReviewBatches, 403);
+
+        $projectContracts = $canReviewProjects
+            ? $this->accessibleContracts($request, $tenant, ProjectPermissions::REVIEW)
+                ->orderBy('code')
+                ->get(['id', 'code', 'name', 'status'])
+            : collect();
+        $batchContracts = $canReviewBatches
+            ? $this->accessibleContracts($request, $tenant, ProjectPermissions::REVIEW_BATCH)
+                ->orderBy('code')
+                ->get(['id', 'code', 'name', 'status'])
+            : collect();
+        $contracts = $projectContracts
+            ->merge($batchContracts)
+            ->unique('id')
+            ->sortBy('code')
+            ->values();
+        $projectContractIds = $projectContracts->pluck('id');
+        $batchContractIds = $batchContracts->pluck('id');
 
         $documents = $tenant->projectDocuments()
-            ->whereIn('contract_id', $contractIds)
+            ->whereIn('contract_id', $projectContractIds)
+            ->whereDoesntHave('latestVersion', fn (Builder $query): Builder => $query->whereNotNull('project_submission_batch_id'))
             ->withExists(['versions as has_approved_version' => fn (Builder $query): Builder => $query->where('status', 'ativo')])
             ->when($this->mustRespectDisciplineResponsibles($request, $tenant), function (Builder $query) use ($request, $tenant): void {
                 $query->where(function (Builder $query) use ($request, $tenant): void {
@@ -69,6 +87,7 @@ class ProjectReviewController extends Controller
             ->with([
                 'contract:id,code,name,obra_id',
                 'obra:id,nome,codigo',
+                'trecho:id,obra_id,codigo,nome,is_default',
                 'disciplina:id,nome,sigla,cor',
                 'phase:id,name,code',
                 'creator:id,name,email',
@@ -82,17 +101,43 @@ class ProjectReviewController extends Controller
             ->latestSubmissionFirst()
             ->get();
 
+        $batches = $tenant->projectSubmissionBatches()
+            ->whereIn('contract_id', $batchContractIds)
+            ->with([
+                'contract:id,code,name,status',
+                'obra:id,nome,codigo',
+                'trecho:id,obra_id,codigo,nome,is_default',
+                'phase:id,name,code',
+                'submitter:id,name,email',
+                'reviewer:id,name,email',
+                'approver:id,name,email',
+                'versions' => fn ($query) => $query->with([
+                    'uploader:id,name,email',
+                    'document:id,tenant_id,contract_id,obra_id,trecho_id,disciplina_id,project_phase_id,title,code,document_number,document_type,status',
+                    'document.disciplina:id,nome,sigla,cor',
+                ])->orderBy('id'),
+            ])
+            ->latest('id')
+            ->get()
+            ->filter(fn (ProjectSubmissionBatch $batch): bool => $this->canSeeBatch($request, $tenant, $batch))
+            ->each(function (ProjectSubmissionBatch $batch) use ($request, $tenant): void {
+                $type = $batch->status === 'em_aprovacao' ? 'aprovacao' : 'analise';
+                $batch->setAttribute('can_act', $this->canReviewEveryBatchDiscipline($request, $tenant, $batch, $type));
+            })
+            ->values();
+
         return Inertia::render('Tenant/Projects/Review', [
             'tenant' => $tenant,
             'contracts' => $contracts,
             'documents' => $documents,
+            'batches' => $batches,
             'statusLabels' => self::STATUS_LABELS,
             'capImpactLabels' => ProjectCap::IMPACT_LABELS,
             'stats' => [
-                'pending' => $documents->where('status', 'em_analise')->count(),
-                'approval' => $documents->where('status', 'em_aprovacao')->count(),
-                'approved' => $documents->where('status', 'ativo')->count(),
-                'rejected' => $documents->where('status', 'reprovado')->count(),
+                'pending' => $documents->where('status', 'em_analise')->count() + $batches->where('status', 'em_analise')->count(),
+                'approval' => $documents->where('status', 'em_aprovacao')->count() + $batches->where('status', 'em_aprovacao')->count(),
+                'approved' => $documents->where('status', 'ativo')->count() + $batches->where('status', 'ativo')->count(),
+                'rejected' => $documents->where('status', 'reprovado')->count() + $batches->where('status', 'reprovado')->count(),
             ],
         ]);
     }
@@ -250,6 +295,45 @@ class ProjectReviewController extends Controller
             ->where('tipo', $tipo)
             ->where('status', 'active')
             ->exists();
+    }
+
+    private function canSeeBatch(Request $request, Tenant $tenant, ProjectSubmissionBatch $batch): bool
+    {
+        if (! $this->mustRespectDisciplineResponsibles($request, $tenant)) {
+            return true;
+        }
+
+        $type = $batch->status === 'em_aprovacao' ? 'aprovacao' : 'analise';
+        $disciplineIds = $batch->versions->pluck('document.disciplina_id')->filter()->unique();
+
+        return ProjectDisciplineResponsavel::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $batch->contract_id)
+            ->where('user_id', $request->user()->id)
+            ->where('tipo', $type)
+            ->where('status', 'active')
+            ->whereIn('disciplina_id', $disciplineIds)
+            ->exists();
+    }
+
+    private function canReviewEveryBatchDiscipline(Request $request, Tenant $tenant, ProjectSubmissionBatch $batch, string $type): bool
+    {
+        if (! $this->mustRespectDisciplineResponsibles($request, $tenant)) {
+            return true;
+        }
+
+        $disciplineIds = $batch->versions->pluck('document.disciplina_id')->filter()->unique();
+        $assignedIds = ProjectDisciplineResponsavel::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $batch->contract_id)
+            ->where('user_id', $request->user()->id)
+            ->where('tipo', $type)
+            ->where('status', 'active')
+            ->whereIn('disciplina_id', $disciplineIds)
+            ->pluck('disciplina_id')
+            ->unique();
+
+        return $disciplineIds->diff($assignedIds)->isEmpty();
     }
 
     private function responsavelScope(Builder $query, Request $request, Tenant $tenant, ?string $tipo = null): void

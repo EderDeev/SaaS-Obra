@@ -26,6 +26,12 @@ php artisan schedule:work &
 
 php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600 &
 
+# Dois workers APS permitem iniciar o processamento de dois projetos em paralelo.
+APS_QUEUE="${AUTODESK_APS_QUEUE:-aps}"
+APS_WORKER_TIMEOUT="${AUTODESK_APS_WORKER_TIMEOUT:-900}"
+php artisan queue:work database --queue="${APS_QUEUE}" --sleep=1 --tries=1 --timeout="${APS_WORKER_TIMEOUT}" &
+php artisan queue:work database --queue="${APS_QUEUE}" --sleep=1 --tries=1 --timeout="${APS_WORKER_TIMEOUT}" &
+
 # OCR/GED roda em processo separado para isolar a fila pesada, mas no mesmo servico
 # para continuar acessando o volume local do Railway.
 php artisan queue:work database --queue=ged --sleep=3 --tries=1 --timeout="${GED_OCR_WORKER_TIMEOUT:-3600}" &

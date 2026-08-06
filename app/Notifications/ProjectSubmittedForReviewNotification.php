@@ -48,21 +48,35 @@ class ProjectSubmittedForReviewNotification extends Notification
         $reviewUrl = route('tenant.projects.review.index', $this->document->tenant);
         $systemUrl = route('tenant.dashboard', $this->document->tenant);
 
+        $viewData = [
+            'headline' => 'Projeto aguardando análise',
+            'intro' => "{$this->actor->name} submeteu um projeto da sua disciplina para análise técnica.",
+            'tone' => 'info',
+            'notifiable' => $notifiable,
+            'details' => $this->projectDetails(),
+            'highlightTitle' => 'Próxima etapa',
+            'highlightBody' => 'Revise o arquivo, preencha o checklist e registre seu parecer técnico.',
+            'actionLabel' => 'Analisar projeto',
+            'url' => $reviewUrl,
+            'systemUrl' => $systemUrl,
+        ];
+
         return (new MailMessage)
-            ->subject("Projeto aguardando analise: {$this->document->title}")
-            ->view('emails.project-submitted-for-review', [
-                'document' => $this->document,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'url' => $reviewUrl,
-                'systemUrl' => $systemUrl,
-            ])
-            ->text('emails.project-submitted-for-review-text', [
-                'document' => $this->document,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'url' => $reviewUrl,
-                'systemUrl' => $systemUrl,
-            ]);
+            ->subject("Projeto aguardando análise: {$this->document->title}")
+            ->view('emails.project-event', $viewData)
+            ->text('emails.project-event-text', $viewData);
+    }
+
+    private function projectDetails(): array
+    {
+        return [
+            ['label' => 'EAP', 'value' => $this->document->eap($this->document->latestVersion?->revision) ?: 'Sem EAP'],
+            ['label' => 'Projeto', 'value' => $this->document->title],
+            ['label' => 'Contrato', 'value' => trim(($this->document->contract?->code ? $this->document->contract->code.' - ' : '').($this->document->contract?->name ?? '')) ?: 'Não informado'],
+            ['label' => 'Obra', 'value' => trim(($this->document->obra?->codigo ? $this->document->obra->codigo.' - ' : '').($this->document->obra?->nome ?? '')) ?: 'Não informada'],
+            ['label' => 'Disciplina', 'value' => trim(($this->document->disciplina?->sigla ? $this->document->disciplina->sigla.' - ' : '').($this->document->disciplina?->nome ?? '')) ?: 'Não informada'],
+            ['label' => 'Revisão', 'value' => $this->document->latestVersion?->revision ?: 'Não informada'],
+            ['label' => 'Submetido por', 'value' => $this->actor->name],
+        ];
     }
 }

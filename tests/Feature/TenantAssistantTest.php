@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Activity;
 use App\Models\AiConversation;
+use App\Models\AiMonthlyUsage;
 use App\Models\BoletimMedicao;
 use App\Models\Contract;
 use App\Models\FolhaRosto;
@@ -11,6 +12,7 @@ use App\Models\GedDocument;
 use App\Models\MedicaoItem;
 use App\Models\Orcamento;
 use App\Models\OrdemServico;
+use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Assistant\AssistantActionResolver;
@@ -18,6 +20,7 @@ use App\Services\Assistant\AssistantRetriever;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
 use App\Support\ProjectPermissions;
+use App\Support\RncPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -220,6 +223,39 @@ class TenantAssistantTest extends TestCase
         $this->assertStringContainsString('OCR', $guide['content']);
     }
 
+    public function test_operational_tutorials_are_retrieved_by_module_intent(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantUserAndContract('assistente-tutoriais-operacionais');
+        RelatorioNaoConformidadeResponsavel::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'user_id' => $user->id,
+            'created_by_id' => $user->id,
+            'status' => 'active',
+            'permissions' => [RncPermissions::VIEW],
+        ]);
+
+        $cases = [
+            ['Como abrir e conduzir uma RNC?', 'Fluxo de Qualidade / RNC', ['Nova RNC', 'Notificar', 'evidências']],
+            ['Como fazer um orcamento usando SINAPI e SICRO?', 'Fluxo de Orçamentos', ['SINAPI', 'SICRO', 'Novo orçamento']],
+            ['Explique o passo a passo do RDA e do RDO offline.', 'Fluxo de Diário de Obra', ['RDA', 'offline', 'assinatura digital']],
+            ['Como funciona a medicao simples e controlada?', 'Fluxo de Medição', ['Controlada', 'Simples', 'Folha de Rosto']],
+            ['Como funciona uma revisao de projeto?', 'Fluxo de Projetos', ['Submeter projeto', 'Em revisão', 'Lista Mestra']],
+            ['Como configurar a triagem de documentos?', 'Fluxo de Documentação', ['Anexos', 'Triagem', 'Lixeira']],
+            ['Explique o fluxo de analise de uma OS.', 'Fluxo de Ordem de Serviço', ['rascunho', 'fiscal', 'Medição Controlada']],
+        ];
+
+        foreach ($cases as [$question, $title, $expectedParts]) {
+            $sources = app(AssistantRetriever::class)->retrieve($user, $tenant, $question);
+            $guide = collect($sources)->firstWhere('title', $title);
+
+            $this->assertNotNull($guide, "Guia ausente para: {$question}");
+            foreach ($expectedParts as $part) {
+                $this->assertStringContainsString($part, $guide['content']);
+            }
+        }
+    }
+
     public function test_operational_summary_counts_only_visible_activity_and_budget_records(): void
     {
         [$tenant, $user, $contract] = $this->tenantUserAndContract('assistente-resumo');
@@ -420,6 +456,7 @@ class TenantAssistantTest extends TestCase
             ->assertJsonPath('assistant_message.role', 'assistant')
             ->assertJsonPath('assistant_message.content', "Sua conta:\nO contrato acessível é {$visibleContract->code}.\nConsulta autorizada.")
             ->assertJsonPath('assistant_message.links.0.id', 'S1')
+            ->assertJsonPath('quota.user.used', 120)
             ->assertJsonMissingPath('assistant_message.sources');
 
         Http::assertSent(function ($request): bool {
@@ -437,6 +474,14 @@ class TenantAssistantTest extends TestCase
         $this->assertDatabaseHas('ai_messages', [
             'role' => 'assistant',
             'model' => 'gpt-test',
+        ]);
+        $this->assertDatabaseHas('ai_monthly_usages', [
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'input_tokens' => 100,
+            'output_tokens' => 20,
+            'total_tokens' => 120,
+            'requests_count' => 1,
         ]);
     }
 
@@ -460,6 +505,66 @@ class TenantAssistantTest extends TestCase
             ->assertNotFound();
 
         $this->assertDatabaseHas('ai_conversations', ['id' => $conversation->id]);
+    }
+
+    public function test_user_monthly_quota_blocks_request_before_openai_call(): void
+    {
+        config()->set('services.openai.enabled', true);
+        config()->set('services.openai.key', 'test-key');
+        config()->set('services.openai.user_monthly_token_limit', 1000);
+        [$tenant, $user] = $this->tenantUserAndContract('assistente-cota-usuario');
+        AiMonthlyUsage::create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'period' => now()->startOfMonth()->toDateString(),
+            'total_tokens' => 1000,
+        ]);
+        Http::fake();
+
+        $this->actingAs($user)
+            ->postJson(route('tenant.assistant.messages.store', $tenant), ['message' => 'Teste de cota'])
+            ->assertStatus(429)
+            ->assertJsonPath('quota.allowed', false)
+            ->assertJsonPath('quota.exhausted_by', 'user');
+
+        Http::assertNothingSent();
+        $this->assertDatabaseCount('ai_conversations', 0);
+    }
+
+    public function test_tenant_monthly_quota_is_shared_between_users(): void
+    {
+        config()->set('services.openai.enabled', true);
+        config()->set('services.openai.key', 'test-key');
+        [$tenant, $user] = $this->tenantUserAndContract('assistente-cota-tenant');
+        $tenant->update(['ai_monthly_token_limit' => 1000]);
+        $otherUser = User::factory()->create();
+        AiMonthlyUsage::create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $otherUser->id,
+            'period' => now()->startOfMonth()->toDateString(),
+            'total_tokens' => 1000,
+        ]);
+        Http::fake();
+
+        $this->actingAs($user)
+            ->postJson(route('tenant.assistant.messages.store', $tenant), ['message' => 'Teste de cota'])
+            ->assertStatus(429)
+            ->assertJsonPath('quota.exhausted_by', 'tenant');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_user_custom_quota_cannot_exceed_global_user_ceiling(): void
+    {
+        config()->set('services.openai.user_monthly_token_limit', 60000);
+        [$tenant, $user] = $this->tenantUserAndContract('assistente-cota-maxima-usuario');
+        $tenant->memberships()
+            ->where('user_id', $user->id)
+            ->update(['ai_monthly_token_limit' => 200000]);
+
+        $quota = app(\App\Services\Assistant\AssistantQuotaService::class)->status($tenant, $user);
+
+        $this->assertSame(60000, $quota['user']['limit']);
     }
 
     public function test_assistant_prepares_authorized_activity_draft_without_creating_record(): void

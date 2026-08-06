@@ -290,6 +290,7 @@ export default function MedicaoItens({
 }) {
     const { props } = usePage();
     const flash = props?.flash || {};
+    const canManageItems = Boolean(props.medicaoPermissions?.can?.manage_measurement_items);
     const [importOptionsOpen, setImportOptionsOpen] = useState(false);
     const [activePanel, setActivePanel] = useState('orcamento');
     const [additiveOptionsOpen, setAdditiveOptionsOpen] = useState(false);
@@ -591,7 +592,7 @@ export default function MedicaoItens({
                     </div>
                 ) : null}
 
-                <div className="flex flex-wrap items-center gap-3">
+                {canManageItems && <div className="flex flex-wrap items-center gap-3">
                     <button
                         type="button"
                         onClick={() => {
@@ -618,7 +619,7 @@ export default function MedicaoItens({
                         </span>
                         {additiveOptionsOpen ? 'Ocultar aditivo' : 'Aditivo de itens'}
                     </button>
-                </div>
+                </div>}
 
                 {importOptionsOpen ? (
                     <>

@@ -57,7 +57,7 @@ function monthBounds(month) {
     };
 }
 
-export default function Calendar({ contracts, obras, filters, configuration, rdos, copyOptions = [], batch_download_url = null }) {
+export default function Calendar({ contracts, obras, filters, configuration, rdos, copyOptions = [], batch_download_url = null, can_generate = false }) {
     const { currentTenant } = usePage().props;
     const initialRender = useRef(true);
     const [createDate, setCreateDate] = useState(null);
@@ -137,12 +137,14 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                         <button type="button" className="sig-btn sig-btn-secondary" onClick={() => startRdoTour(currentTenant.slug)}>
                             <Plane size={17} /> Iniciar tour
                         </button>
-                        <Link
-                            href={route('tenant.diario-obra.rdo.settings', currentTenant.slug)}
-                            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 font-bold text-white"
-                        >
-                            <Settings size={17} /> Parametrizar RDO
-                        </Link>
+                        {can_generate && (
+                            <Link
+                                href={route('tenant.diario-obra.rdo.settings', currentTenant.slug)}
+                                className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 font-bold text-white"
+                            >
+                                <Settings size={17} /> Parametrizar RDO
+                            </Link>
+                        )}
                     </div>
                 </div>
 
@@ -222,7 +224,7 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                             const weekdayEnabled = configuration?.generation_weekdays?.includes(arg.date.getDay());
                             const withinStart = !configuration?.start_date || date >= configuration.start_date;
                             const withinEnd = !configuration?.end_date || date <= configuration.end_date;
-                            const canGenerate = !arg.isOther && configuration?.active && weekdayEnabled && withinStart && withinEnd && !rdoDates.has(date);
+                            const canGenerate = can_generate && !arg.isOther && configuration?.active && weekdayEnabled && withinStart && withinEnd && !rdoDates.has(date);
 
                             return (
                                 <div className="flex w-full items-start justify-between gap-2">

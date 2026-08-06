@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ProjectIdentity from '@/Components/ProjectIdentity';
 import { projectEap } from '@/Utils/projectEap';
 import { Head, router } from '@inertiajs/react';
 import { Check, ChevronDown, FileSpreadsheet, FileText, Filter, ListChecks, ListFilter, X } from 'lucide-react';
@@ -63,6 +64,7 @@ export default function ProjectMasterList({
     tenant,
     contracts,
     obras,
+    trechos = [],
     disciplinas,
     projectPhases,
     documents,
@@ -85,6 +87,7 @@ export default function ProjectMasterList({
     const [filterState, setFilterState] = useState({
         contract_ids: normalizeFilterArray(filters.contract_ids),
         obra_ids: normalizeFilterArray(filters.obra_ids),
+        trecho_ids: normalizeFilterArray(filters.trecho_ids),
         disciplina_ids: normalizeFilterArray(filters.disciplina_ids),
         project_phase_ids: normalizeFilterArray(filters.project_phase_ids),
         document_types: normalizeFilterArray(filters.document_types),
@@ -105,6 +108,13 @@ export default function ProjectMasterList({
         [disciplinas, filterState.contract_ids],
     );
 
+    const trechosForFilter = useMemo(
+        () => filterState.obra_ids.length === 0
+            ? trechos.filter((trecho) => obrasForFilter.some((obra) => String(obra.id) === String(trecho.obra_id)))
+            : trechos.filter((trecho) => filterState.obra_ids.includes(String(trecho.obra_id))),
+        [trechos, obrasForFilter, filterState.obra_ids],
+    );
+
     const appliedFilters = useMemo(() => cleanFilters(filters), [filters]);
     const hasAppliedFilters = Object.keys(appliedFilters).length > 0;
     const filtersAreDirty = filterSignature(filterState) !== filterSignature(filters);
@@ -122,8 +132,18 @@ export default function ProjectMasterList({
                 next.obra_ids = current.obra_ids.filter((obraId) => obras.some(
                     (obra) => String(obra.id) === String(obraId) && nextValues.includes(String(obra.contract_id)),
                 ));
+                next.trecho_ids = current.trecho_ids.filter((trechoId) => trechos.some((trecho) => {
+                    const obra = obras.find((item) => String(item.id) === String(trecho.obra_id));
+                    return String(trecho.id) === String(trechoId) && obra && nextValues.includes(String(obra.contract_id));
+                }));
                 next.disciplina_ids = current.disciplina_ids.filter((disciplinaId) => disciplinas.some(
                     (disciplina) => String(disciplina.id) === String(disciplinaId) && nextValues.includes(String(disciplina.contract_id)),
+                ));
+            }
+
+            if (key === 'obra_ids' && nextValues.length > 0) {
+                next.trecho_ids = current.trecho_ids.filter((trechoId) => trechos.some(
+                    (trecho) => String(trecho.id) === String(trechoId) && nextValues.includes(String(trecho.obra_id)),
                 ));
             }
 
@@ -197,6 +217,15 @@ export default function ProjectMasterList({
                                 selected={filterState.obra_ids}
                                 onToggle={(value) => toggleFilter('obra_ids', value)}
                                 onClear={() => clearFilter('obra_ids')}
+                            />
+
+                            <MultiFilter
+                                label="Trecho"
+                                allLabel="Todos os trechos"
+                                options={trechosForFilter.map((trecho) => ({ value: String(trecho.id), label: `${trecho.codigo} - ${trecho.nome}` }))}
+                                selected={filterState.trecho_ids}
+                                onToggle={(value) => toggleFilter('trecho_ids', value)}
+                                onClear={() => clearFilter('trecho_ids')}
                             />
 
                             <MultiFilter
@@ -304,70 +333,73 @@ export default function ProjectMasterList({
                         </div>
                     ) : rows.length > 0 ? (
                         <>
-                            <div className="projects-wide-only overflow-x-auto">
-                                <table className="sig-table sig-table-compact min-w-[1120px]">
+                            <div className="projects-wide-only">
+                                <table className="sig-table sig-table-compact w-full table-fixed">
+                                    <colgroup>
+                                        <col className="w-[24%]" />
+                                        <col className="w-[25%]" />
+                                        <col className="w-[22%]" />
+                                        <col className="w-[16%]" />
+                                        <col className="w-[13%]" />
+                                    </colgroup>
                                     <thead>
                                         <tr>
-                                            <th>Código</th>
+                                            <th>EAP</th>
                                             <th>Documento</th>
-                                            <th>Contrato</th>
-                                            <th>Obra</th>
-                                            <th>Disciplina</th>
-                                            <th>Fase</th>
-                                            <th>Tipo</th>
-                                            <th>Revisão</th>
+                                            <th>Vínculo</th>
+                                            <th>Classificação</th>
                                             <th>Status</th>
-                                            <th>Arquivo</th>
-                                            <th>Datas</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {rows.map((document) => (
                                             <tr key={document.id}>
-                                                <td className="mono text-xs font-semibold text-[var(--primary)]">{document.eap || projectEap(document, document.revision) || '-'}</td>
-                                                <td>
-                                                    <div className="max-w-[220px] truncate font-semibold text-[var(--ink-900)]" title={document.title || 'Sem título'}>{document.title || 'Sem título'}</div>
+                                                <td className="align-top">
+                                                    <div className="mono break-words text-sm font-bold leading-snug text-[var(--primary)]">
+                                                        {document.eap || projectEap(document, document.revision) || '-'}
+                                                    </div>
+                                                </td>
+                                                <td className="align-top">
+                                                    <div className="truncate font-semibold text-[var(--ink-900)]" title={document.title || 'Sem título'}>{document.title || 'Sem título'}</div>
                                                     <div className="text-xs text-[var(--ink-500)]">Sequencial {document.document_number || '-'}</div>
+                                                    <div className="mt-1 truncate text-xs font-medium text-[var(--ink-700)]" title={document.original_name || document.file_name || 'Sem arquivo'}>
+                                                        {document.original_name || document.file_name || 'Sem arquivo'}
+                                                    </div>
+                                                    <div className="text-xs text-[var(--ink-500)]">{document.file_size || '-'}</div>
                                                 </td>
-                                                <td>
-                                                    <div className="mono text-xs">{document.contract?.code || '-'}</div>
-                                                    <div className="max-w-[150px] truncate text-xs text-[var(--ink-500)]" title={document.contract?.name || 'Sem contrato'}>{document.contract?.name || 'Sem contrato'}</div>
+                                                <td className="align-top text-xs">
+                                                    <div className="truncate font-semibold text-[var(--ink-800)]" title={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`}>
+                                                        {document.contract?.code || '-'} · {document.contract?.name || 'Sem contrato'}
+                                                    </div>
+                                                    <div className="mt-1 truncate text-[var(--ink-600)]" title={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`}>
+                                                        Obra {document.obra?.codigo || '-'} · {document.obra?.nome || 'Sem obra'}
+                                                    </div>
+                                                    <div className="truncate text-[var(--ink-500)]" title={document.trecho ? `${document.trecho.codigo} - ${document.trecho.nome}` : 'Projeto legado'}>
+                                                        Trecho {document.trecho?.codigo || '-'} · {document.trecho?.nome || 'Projeto legado'}
+                                                    </div>
                                                 </td>
-                                                <td>
-                                                    <div className="mono text-xs">{document.obra?.codigo || '-'}</div>
-                                                    <div className="max-w-[150px] truncate text-xs text-[var(--ink-500)]" title={document.obra?.nome || 'Sem obra'}>{document.obra?.nome || 'Sem obra'}</div>
-                                                </td>
-                                                <td>
+                                                <td className="align-top">
                                                     <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ink-700)]">
                                                         <span className="h-3.5 w-3.5 rounded-full border border-[var(--border)]" style={{ backgroundColor: document.disciplina?.cor || '#2563eb' }} />
                                                         {document.disciplina?.sigla || '-'}
                                                     </span>
-                                                    <div className="max-w-[130px] truncate text-xs text-[var(--ink-500)]" title={document.disciplina?.nome || 'Sem disciplina'}>{document.disciplina?.nome || 'Sem disciplina'}</div>
+                                                    <div className="truncate text-xs text-[var(--ink-500)]" title={document.disciplina?.nome || 'Sem disciplina'}>{document.disciplina?.nome || 'Sem disciplina'}</div>
+                                                    <div className="mt-1 text-xs text-[var(--ink-600)]">
+                                                        {document.phase?.code || '-'} · {document.document_type_label || '-'}
+                                                    </div>
                                                 </td>
-                                                <td>
-                                                    <div className="mono text-xs">{document.phase?.code || '-'}</div>
-                                                    <div className="max-w-[120px] truncate text-xs text-[var(--ink-500)]" title={document.phase?.name || 'Sem fase'}>{document.phase?.name || 'Sem fase'}</div>
-                                                </td>
-                                                <td>{document.document_type_label || '-'}</td>
-                                                <td>
-                                                    <span className="sig-pill sig-pill-blue font-semibold">{document.revision || 'Sem revisão'}</span>
-                                                </td>
-                                                <td>
-                                                    <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
-                                                        {document.status_label || document.status}
-                                                    </span>
+                                                <td className="align-top">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        <span className="sig-pill sig-pill-blue font-semibold">{document.revision || 'Sem revisão'}</span>
+                                                        <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
+                                                            {document.status_label || document.status}
+                                                        </span>
+                                                    </div>
                                                     {document.open_rncs_count > 0 && (
                                                         <div className="mt-1 text-xs font-semibold text-[var(--red)]">
                                                             {document.open_rncs_count} RNC aberta(s)
                                                         </div>
                                                     )}
-                                                </td>
-                                                <td>
-                                                    <div className="max-w-[180px] truncate text-xs font-semibold" title={document.file_name || 'Sem arquivo'}>{document.file_name || 'Sem arquivo'}</div>
-                                                    <div className="text-xs text-[var(--ink-500)]">{document.file_size || '-'}</div>
-                                                </td>
-                                                <td>
-                                                    <DateStack document={document} />
                                                 </td>
                                             </tr>
                                         ))}
@@ -379,16 +411,21 @@ export default function ProjectMasterList({
                                 {rows.map((document) => (
                                     <article key={document.id} className="px-4 py-3">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className="mono break-all text-sm font-semibold text-[var(--primary)]">{document.eap || projectEap(document, document.revision) || '-'}</span>
                                             <span className="sig-pill sig-pill-blue">{document.revision || 'Sem revisão'}</span>
                                             <span className={`sig-pill ${statusClasses[document.status] || 'sig-pill-blue'}`}>
                                                 {document.status_label || document.status}
                                             </span>
                                         </div>
-                                        <h3 className="mt-1.5 truncate text-sm font-semibold text-[var(--ink-900)]" title={document.title || 'Sem título'}>{document.title || 'Sem título'}</h3>
+                                        <ProjectIdentity
+                                            className="mt-2"
+                                            eap={document.eap || projectEap(document, document.revision)}
+                                            fileName={document.original_name || document.file_name}
+                                            title={document.title || 'Sem título'}
+                                        />
                                         <div className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
                                             <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
                                             <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
+                                            <CompactInfo label="Trecho" value={document.trecho ? `${document.trecho.codigo} - ${document.trecho.nome}` : 'Projeto legado'} />
                                             <CompactInfo label="Disciplina" value={`${document.disciplina?.sigla || '-'} - ${document.disciplina?.nome || 'Sem disciplina'}`} />
                                             <CompactInfo label="Fase" value={document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'} />
                                             <CompactInfo label="Tipo" value={document.document_type_label || '-'} />
@@ -408,16 +445,6 @@ export default function ProjectMasterList({
                 </section>
             </section>
         </AuthenticatedLayout>
-    );
-}
-
-function DateStack({ document }) {
-    return (
-        <div className="space-y-1 text-xs text-[var(--ink-500)]">
-            <div><span className="font-semibold text-[var(--ink-700)]">Criado:</span> {document.created_at || '-'}</div>
-            <div><span className="font-semibold text-[var(--ink-700)]">Análise:</span> {document.reviewed_at || '-'}</div>
-            <div><span className="font-semibold text-[var(--ink-700)]">Aprovação:</span> {document.approved_at || '-'}</div>
-        </div>
     );
 }
 

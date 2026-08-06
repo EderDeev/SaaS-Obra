@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Models\User;
 use App\Support\ActivityPermissions;
+use App\Support\DocumentationPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
 use App\Support\TenantRoles;
@@ -88,19 +89,18 @@ class AssistantAccessScope
         );
     }
 
+    /** @return Collection<int, int> */
+    public function documentationContractIds(User $user, Tenant $tenant): Collection
+    {
+        return $this->moduleContractIds(
+            $this->contractIds($user, $tenant),
+            DocumentationPermissions::contractIdsFor($user, $tenant, DocumentationPermissions::VIEW)
+        );
+    }
+
     public function canReadDocument(User $user, Tenant $tenant, GedDocument $document): bool
     {
-        if ((int) $document->tenant_id !== (int) $tenant->id) {
-            return false;
-        }
-
-        return $this->canReadDocumentWithinScope(
-            $user,
-            $tenant,
-            $document,
-            $this->contractIds($user, $tenant),
-            $this->companyId($user, $tenant)
-        );
+        return DocumentationPermissions::canReadDocument($user, $tenant, $document);
     }
 
     /** @param Collection<int, int> $contractIds */
@@ -111,44 +111,8 @@ class AssistantAccessScope
         Collection $contractIds,
         ?int $companyId
     ): bool {
-        if ((int) $document->tenant_id !== (int) $tenant->id
-            || ! $contractIds->contains((int) $document->contract_id)) {
-            return false;
-        }
-
-        if ($this->isTenantAdministrator($user, $tenant)) {
-            return true;
-        }
-
-        $permissions = data_get($document->metadata, 'permissions');
-
-        if (! is_array($permissions)) {
-            return true;
-        }
-
-        $ownerId = (int) ($permissions['owner_user_id'] ?? $document->uploaded_by_id);
-        $viewUserIds = collect(data_get($permissions, 'view.user_ids', []));
-        $editUserIds = collect(data_get($permissions, 'edit.user_ids', []));
-        $viewCompanyIds = collect(data_get($permissions, 'view.empresa_ids', []));
-        $editCompanyIds = collect(data_get($permissions, 'edit.empresa_ids', []));
-        $hasExplicitRestrictions = $viewUserIds->isNotEmpty()
-            || $editUserIds->isNotEmpty()
-            || $viewCompanyIds->isNotEmpty()
-            || $editCompanyIds->isNotEmpty();
-
-        if (! $hasExplicitRestrictions || $ownerId === (int) $user->id) {
-            return true;
-        }
-
-        if ($viewUserIds->merge($editUserIds)->map(fn ($id): int => (int) $id)->contains((int) $user->id)) {
-            return true;
-        }
-
-        return $companyId !== null
-            && $viewCompanyIds
-                ->merge($editCompanyIds)
-                ->map(fn ($id): int => (int) $id)
-                ->contains($companyId);
+        return $contractIds->contains((int) $document->contract_id)
+            && DocumentationPermissions::canReadDocument($user, $tenant, $document);
     }
 
     public function companyId(User $user, Tenant $tenant): ?int

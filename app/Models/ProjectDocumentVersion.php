@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'tenant_id',
     'project_document_id',
+    'project_submission_batch_id',
     'uploaded_by_id',
     'reviewed_by_id',
     'approved_by_id',
@@ -33,6 +34,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'original_name',
     'stored_name',
     'file_path',
+    'storage_disk',
     'mime_type',
     'file_size',
     'aps_object_id',
@@ -69,6 +71,11 @@ class ProjectDocumentVersion extends Model
         return $this->belongsTo(ProjectDocument::class, 'project_document_id');
     }
 
+    public function submissionBatch(): BelongsTo
+    {
+        return $this->belongsTo(ProjectSubmissionBatch::class, 'project_submission_batch_id');
+    }
+
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by_id');
@@ -101,13 +108,25 @@ class ProjectDocumentVersion extends Model
 
     public function getUrlAttribute(): ?string
     {
-        $path = str_replace('\\', '/', ltrim((string) $this->file_path, '/'));
-
-        if ($path === '') {
+        if (blank($this->file_path)) {
             return null;
         }
 
-        return '/storage/'.$path;
+        $tenant = request()->route('tenant');
+
+        if (! $tenant instanceof Tenant || (int) $tenant->id !== (int) $this->tenant_id) {
+            return null;
+        }
+
+        return route('tenant.projects.versions.download', [
+            'tenant' => $tenant,
+            'version' => $this,
+        ], false);
+    }
+
+    public function storageDisk(): string
+    {
+        return $this->storage_disk ?: 'public';
     }
 
     public function getSizeLabelAttribute(): string

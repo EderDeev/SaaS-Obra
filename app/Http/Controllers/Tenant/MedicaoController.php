@@ -13,6 +13,7 @@ use App\Models\MedicaoItemReajusteIndice;
 use App\Models\MedicaoItemVersion;
 use App\Models\Orcamento;
 use App\Models\Tenant;
+use App\Support\MedicaoPermissions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -1433,13 +1434,15 @@ class MedicaoController extends Controller
     private function accessibleContracts(Request $request, Tenant $tenant)
     {
         $query = $tenant->contracts();
-        $tenantRole = $request->user()->tenantRole($tenant);
 
-        if (! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
-            $query->whereHas('participants', function (Builder $query) use ($request): void {
-                $query->where('user_id', $request->user()->id)
-                    ->where('status', 'active');
-            });
+        $contractIds = MedicaoPermissions::contractIdsFor(
+            $request->user(),
+            $tenant,
+            MedicaoPermissions::VIEW
+        );
+
+        if ($contractIds !== null) {
+            $query->whereKey($contractIds);
         }
 
         return $query;

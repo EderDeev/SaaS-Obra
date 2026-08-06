@@ -12,6 +12,7 @@ use App\Models\ProjectDocument;
 use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectPhase;
 use App\Models\Tenant;
+use App\Models\Trecho;
 use App\Models\User;
 use App\Notifications\ProjectSubmittedForReviewNotification;
 use App\Services\AutodeskApsService;
@@ -22,6 +23,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -54,7 +56,7 @@ class ProjectController extends Controller
         'em_analise' => 'Em analise',
         'em_aprovacao' => 'Em aprovacao',
         'ativo' => 'Aprovado',
-        'inativo' => 'Inativo',
+        'inativo' => 'Indisponivel',
         'reprovado' => 'Reprovado',
     ];
 
@@ -85,6 +87,7 @@ class ProjectController extends Controller
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
                 'obra:id,nome,codigo',
+                'trecho:id,obra_id,codigo,nome,is_default',
                 'disciplina:id,nome,sigla,cor',
                 'phase:id,name,code',
                 'creator:id,name,email',
@@ -96,10 +99,20 @@ class ProjectController extends Controller
                 'latestVersion.reviewer:id,name,email',
                 'latestVersion.approver:id,name,email',
                 'latestVersion.capRequester:id,name,email',
+                'latestVersion.submissionBatch:id,package_number,cap_number,status',
+                'submissionBatches:id,package_number,cap_number,status',
                 'latestCapVersion',
             ])
             ->latestSubmissionFirst()
             ->get();
+
+        $statusManageableContractIds = $contracts
+            ->filter(fn (Contract $contract): bool => ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::STATUS, $contract))
+            ->pluck('id');
+
+        $documents->each(function (ProjectDocument $document) use ($statusManageableContractIds): void {
+            $document->setAttribute('can_manage_status', $statusManageableContractIds->contains($document->contract_id));
+        });
 
         $disciplinas = $tenant->disciplinas()
             ->whereIn('contract_id', $contractIds)
@@ -110,6 +123,13 @@ class ProjectController extends Controller
             ->whereIn('contract_id', $contractIds)
             ->orderBy('nome')
             ->get(['id', 'contract_id', 'obra_pai_id', 'nome', 'codigo', 'tipo']);
+
+        $trechos = $tenant->trechos()
+            ->whereIn('obra_id', $obras->pluck('id'))
+            ->orderBy('obra_id')
+            ->orderByDesc('is_default')
+            ->orderBy('codigo')
+            ->get(['id', 'obra_id', 'codigo', 'nome', 'is_default']);
 
         $projectPhases = ProjectPhase::query()
             ->where('is_active', true)
@@ -133,6 +153,7 @@ class ProjectController extends Controller
                 'codigo' => $obra->codigo,
                 'tipo' => $obra->tipo,
             ])->values(),
+            'trechos' => $trechos,
             'disciplinas' => $disciplinas,
             'projectPhases' => $projectPhases,
             'documents' => $documents,
@@ -142,7 +163,9 @@ class ProjectController extends Controller
             'capImpactLabels' => ProjectCap::IMPACT_LABELS,
             'allowedExtensions' => self::ALLOWED_EXTENSIONS,
             'canUploadProjects' => $contracts->contains(fn (Contract $contract): bool => ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::UPLOAD, $contract)),
-            'canAnalyzeProjects' => ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW),
+            'canUploadProjectBatches' => $contracts->contains(fn (Contract $contract): bool => ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::UPLOAD_BATCH, $contract)),
+            'canAnalyzeProjects' => ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW)
+                || ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::REVIEW_BATCH),
             'canDeleteProjects' => ProjectPermissions::canAny($request->user(), $tenant, ProjectPermissions::DELETE),
         ]);
     }
@@ -164,6 +187,7 @@ class ProjectController extends Controller
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
                 'obra:id,nome,codigo',
+                'trecho:id,obra_id,codigo,nome,is_default',
                 'disciplina:id,nome,sigla,cor',
                 'phase:id,name,code',
                 'creator:id,name,email',
@@ -179,6 +203,7 @@ class ProjectController extends Controller
                             ->with([
                                 'creator:id,name,email',
                                 'assignee:id,name,email',
+                                'assignees:id,name,email',
                                 'replies' => fn ($query) => $query
                                     ->with('creator:id,name,email')
                                     ->oldest(),
@@ -192,6 +217,26 @@ class ProjectController extends Controller
             ->latest()
             ->get();
 
+        $batches = $tenant->projectSubmissionBatches()
+            ->whereIn('contract_id', $contractIds)
+            ->where('has_revisions', true)
+            ->with([
+                'contract:id,code,name,obra_id',
+                'obra:id,nome,codigo',
+                'trecho:id,obra_id,codigo,nome,is_default',
+                'phase:id,name,code',
+                'submitter:id,name,email',
+                'reviewer:id,name,email',
+                'approver:id,name,email',
+                'versions' => fn ($query) => $query->with([
+                    'uploader:id,name,email',
+                    'document:id,contract_id,obra_id,trecho_id,disciplina_id,project_phase_id,title,code,document_number,document_type',
+                    'document.disciplina:id,nome,sigla,cor',
+                ])->orderBy('id'),
+            ])
+            ->latest('id')
+            ->get();
+
         return Inertia::render('Tenant/Projects/Revisions', [
             'tenant' => $tenant,
             'contracts' => $contracts->map(fn (Contract $contract): array => [
@@ -201,6 +246,7 @@ class ProjectController extends Controller
                 'status' => $contract->status,
             ])->values(),
             'documents' => $documents,
+            'batches' => $batches,
             'documentTypes' => self::DOCUMENT_TYPES,
             'statusLabels' => self::STATUS_LABELS,
             'capImpactLabels' => ProjectCap::IMPACT_LABELS,
@@ -265,12 +311,14 @@ class ProjectController extends Controller
         $documents = $tenant->projectDocuments()
             ->whereIn('contract_id', $contractIds)
             ->whereNull('inactive_at')
+            ->where('status', '!=', 'inativo')
             ->whereHas('versions', fn (Builder $query) => $query->where('status', 'ativo'))
             ->withCount(['rncs as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta')])
             ->with([
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
                 'obra:id,nome,codigo',
+                'trecho:id,obra_id,codigo,nome,is_default',
                 'disciplina:id,nome,sigla,cor',
                 'phase:id,name,code',
                 'creator:id,name,email',
@@ -299,6 +347,12 @@ class ProjectController extends Controller
             ->orderBy('nome')
             ->get(['id', 'contract_id', 'nome', 'sigla', 'cor']);
 
+        $trechos = $tenant->trechos()
+            ->whereIn('id', $documents->pluck('trecho_id')->filter()->unique()->values())
+            ->orderBy('obra_id')
+            ->orderBy('codigo')
+            ->get(['id', 'obra_id', 'codigo', 'nome', 'is_default']);
+
         return Inertia::render('Tenant/Projects/Tree', [
             'tenant' => $tenant,
             'contracts' => $contracts->map(fn (Contract $contract): array => [
@@ -315,6 +369,7 @@ class ProjectController extends Controller
                 'codigo' => $obra->codigo,
                 'tipo' => $obra->tipo,
             ])->values(),
+            'trechos' => $trechos,
             'disciplinas' => $disciplinas,
             'documents' => $documents,
             'documentTypes' => self::DOCUMENT_TYPES,
@@ -359,6 +414,13 @@ class ProjectController extends Controller
             ->orderBy('nome')
             ->get(['id', 'contract_id', 'obra_pai_id', 'nome', 'codigo', 'tipo']);
 
+        $trechos = $tenant->trechos()
+            ->whereIn('obra_id', $obras->pluck('id'))
+            ->orderBy('obra_id')
+            ->orderByDesc('is_default')
+            ->orderBy('codigo')
+            ->get(['id', 'obra_id', 'codigo', 'nome', 'is_default']);
+
         $disciplinas = $tenant->disciplinas()
             ->whereIn('contract_id', $contractIds)
             ->orderBy('sigla')
@@ -387,6 +449,7 @@ class ProjectController extends Controller
                 'codigo' => $obra->codigo,
                 'tipo' => $obra->tipo,
             ])->values(),
+            'trechos' => $trechos,
             'disciplinas' => $disciplinas,
             'projectPhases' => $projectPhases,
             'documents' => $documents,
@@ -481,6 +544,10 @@ class ProjectController extends Controller
                 'required',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
+            'trecho_id' => [
+                'nullable',
+                Rule::exists('trechos', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
             'title' => ['nullable', 'string', 'max:255'],
             'document_type' => ['required', Rule::in(array_keys(self::DOCUMENT_TYPES))],
             'document_number' => ['required', 'string', 'regex:/^[0-9]{1,3}$/'],
@@ -505,6 +572,7 @@ class ProjectController extends Controller
 
         $contract = $tenant->contracts()->findOrFail($data['contract_id']);
         $obra = $tenant->obras()->findOrFail($data['obra_id']);
+        $trecho = $this->submissionTrecho($tenant, $obra, $data['trecho_id'] ?? null);
         $disciplina = $tenant->disciplinas()->findOrFail($data['disciplina_id']);
         $phase = ProjectPhase::query()
             ->where('is_active', true)
@@ -516,10 +584,10 @@ class ProjectController extends Controller
         abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::UPLOAD, $contract), 403);
 
         $documentNumber = $this->normalizeDocumentNumber($data['document_number']);
-        $code = $this->buildDocumentCode($contract, $obra, $disciplina, $phase, $data['document_type'], $documentNumber);
+        $code = $this->buildDocumentCode($contract, $obra, $trecho, $disciplina, $phase, $data['document_type'], $documentNumber);
         $file = $data['file'];
         $extension = mb_strtolower($file->getClientOriginalExtension());
-        $existingDocument = $this->findExistingDocumentForEap($tenant, $contract, $obra, $disciplina, $phase, $data['document_type'], $code, $documentNumber);
+        $existingDocument = $this->findExistingDocumentForEap($tenant, $contract, $obra, $trecho, $disciplina, $phase, $data['document_type'], $code, $documentNumber);
         $capImpacts = ProjectCap::normalizeImpacts($data['cap_impacts'] ?? []);
         $requiresCap = $existingDocument?->versions()->where('status', 'ativo')->exists() ?? false;
 
@@ -563,7 +631,11 @@ class ProjectController extends Controller
         $createdRevision = 'R00';
         $isRevision = (bool) $existingDocument;
 
-        $document = DB::transaction(function () use ($tenant, $contract, $obra, $disciplina, $phase, $request, $data, $file, $extension, $code, $documentNumber, $existingDocument, $isRevision, $requiresCap, $capImpacts, &$createdNewDocument, &$createdRevision): ProjectDocument {
+        $document = DB::transaction(function () use ($tenant, $contract, $obra, $trecho, $disciplina, $phase, $request, $data, $file, $extension, $code, $documentNumber, $existingDocument, $isRevision, $requiresCap, $capImpacts, &$createdNewDocument, &$createdRevision): ProjectDocument {
+            if ($requiresCap) {
+                Tenant::query()->whereKey($tenant->id)->lockForUpdate()->firstOrFail();
+            }
+
             $document = $existingDocument;
 
             if ($document) {
@@ -571,6 +643,7 @@ class ProjectController extends Controller
 
                 $document->forceFill([
                     'code' => $code,
+                    'trecho_id' => $trecho->id,
                     'document_number' => $documentNumber,
                     'project_phase_id' => $phase->id,
                     'status' => 'em_analise',
@@ -591,6 +664,7 @@ class ProjectController extends Controller
                 $document = $tenant->projectDocuments()->create([
                     'contract_id' => $contract->id,
                     'obra_id' => $obra->id,
+                    'trecho_id' => $trecho->id,
                     'disciplina_id' => $disciplina->id,
                     'project_phase_id' => $phase->id,
                     'created_by_id' => $request->user()->id,
@@ -603,7 +677,7 @@ class ProjectController extends Controller
             }
 
             $storedName = $this->storedFileName($code, $createdRevision, $extension);
-            $path = $file->storeAs("tenant-{$tenant->id}/projects/contract-{$contract->id}/obra-{$obra->id}", $storedName, 'public');
+            $path = $file->storeAs("tenant-{$tenant->id}/projects/contract-{$contract->id}/obra-{$obra->id}", $storedName, 'local');
             $capPayload = [];
 
             if ($requiresCap) {
@@ -631,6 +705,7 @@ class ProjectController extends Controller
                 'original_name' => $file->getClientOriginalName(),
                 'stored_name' => $storedName,
                 'file_path' => $path,
+                'storage_disk' => 'local',
                 'mime_type' => $file->getClientMimeType(),
                 'file_size' => $file->getSize(),
                 'derivative_status' => 'not_submitted',
@@ -666,30 +741,71 @@ class ProjectController extends Controller
 
     public function inactivate(Request $request, Tenant $tenant, ProjectDocument $document): RedirectResponse
     {
+        $request->merge(['project_status' => 'inativo']);
+
+        return $this->updateStatus($request, $tenant, $document);
+    }
+
+    public function updateStatus(Request $request, Tenant $tenant, ProjectDocument $document): RedirectResponse
+    {
         abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
         $contract = $document->contract()->firstOrFail();
 
         abort_unless($this->canAccessContract($request, $tenant, $contract), 403);
-        abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::DELETE, $contract), 403);
-
-        if ($document->status !== 'ativo' || $document->inactive_at !== null) {
-            return back()->with('error', 'Somente projetos aprovados e ativos na arvore podem ser inativados.');
-        }
+        abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::STATUS, $contract), 403);
 
         $data = $request->validate([
+            'project_status' => ['required', Rule::in(['ativo', 'inativo'])],
             'inactive_reason' => ['required', 'string', 'max:5000'],
         ], [
-            'inactive_reason.required' => 'Informe o motivo da inativacao do projeto.',
+            'project_status.required' => 'Escolha o novo status do projeto.',
+            'project_status.in' => 'O status escolhido nao e valido.',
+            'inactive_reason.required' => 'Informe o motivo da alteracao de status.',
         ]);
 
-        $document->forceFill([
-            'status' => 'inativo',
-            'inactive_at' => now(),
-            'inactive_by_id' => $request->user()->id,
-            'inactive_reason' => $data['inactive_reason'],
-        ])->save();
+        $targetStatus = $data['project_status'];
+        $isCurrentlyInactive = $document->status === 'inativo' || $document->inactive_at !== null;
 
-        return back()->with('success', 'Projeto inativado. Ele foi removido da arvore principal, mas permanece no historico.');
+        if ($targetStatus === 'inativo' && ($document->status !== 'ativo' || $isCurrentlyInactive)) {
+            return back()->with('error', 'Somente projetos aprovados e disponiveis na arvore podem ser indisponibilizados.');
+        }
+
+        if ($targetStatus === 'ativo' && ! $isCurrentlyInactive) {
+            return back()->with('error', 'Este projeto ja esta disponivel na arvore.');
+        }
+
+        if (! $document->versions()->where('status', 'ativo')->exists()) {
+            return back()->with('error', 'O projeto precisa ter uma revisao aprovada para ficar disponivel na arvore.');
+        }
+
+        DB::transaction(function () use ($document, $request, $data, $targetStatus): void {
+            $document->refresh();
+            $fromStatus = $document->status;
+
+            $document->statusChanges()->create([
+                'tenant_id' => $document->tenant_id,
+                'user_id' => $request->user()->id,
+                'from_status' => $fromStatus,
+                'to_status' => $targetStatus,
+                'reason' => $data['inactive_reason'],
+            ]);
+
+            $document->forceFill($targetStatus === 'inativo' ? [
+                'status' => 'inativo',
+                'inactive_at' => now(),
+                'inactive_by_id' => $request->user()->id,
+                'inactive_reason' => $data['inactive_reason'],
+            ] : [
+                'status' => 'ativo',
+                'inactive_at' => null,
+                'inactive_by_id' => null,
+                'inactive_reason' => null,
+            ])->save();
+        });
+
+        return back()->with('success', $targetStatus === 'inativo'
+            ? 'Projeto indisponibilizado e removido da arvore. O arquivo e o historico foram preservados.'
+            : 'Projeto reativado e novamente disponivel na arvore.');
     }
 
     private function accessibleContracts(Request $request, Tenant $tenant, ?string $permission = null)
@@ -731,6 +847,7 @@ class ProjectController extends Controller
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
                 'obra:id,nome,codigo',
+                'trecho:id,obra_id,codigo,nome,is_default',
                 'disciplina:id,nome,sigla,cor',
                 'phase:id,name,code',
                 'creator:id,name,email',
@@ -748,6 +865,10 @@ class ProjectController extends Controller
 
         if ($obraIds = $this->masterListFilterValues($request, 'obra_ids', 'obra_id')) {
             $query->whereIn('obra_id', $obraIds);
+        }
+
+        if ($trechoIds = $this->masterListFilterValues($request, 'trecho_ids', 'trecho_id')) {
+            $query->whereIn('trecho_id', $trechoIds);
         }
 
         if ($disciplinaIds = $this->masterListFilterValues($request, 'disciplina_ids', 'disciplina_id')) {
@@ -789,6 +910,11 @@ class ProjectController extends Controller
                             ->orWhereRaw('lower(name) like ?', [$term]);
                     })
                     ->orWhereHas('obra', function (Builder $query) use ($term): void {
+                        $query
+                            ->whereRaw('lower(codigo) like ?', [$term])
+                            ->orWhereRaw('lower(nome) like ?', [$term]);
+                    })
+                    ->orWhereHas('trecho', function (Builder $query) use ($term): void {
                         $query
                             ->whereRaw('lower(codigo) like ?', [$term])
                             ->orWhereRaw('lower(nome) like ?', [$term]);
@@ -840,6 +966,7 @@ class ProjectController extends Controller
         return [
             'contract_ids' => $this->masterListFilterValues($request, 'contract_ids', 'contract_id'),
             'obra_ids' => $this->masterListFilterValues($request, 'obra_ids', 'obra_id'),
+            'trecho_ids' => $this->masterListFilterValues($request, 'trecho_ids', 'trecho_id'),
             'disciplina_ids' => $this->masterListFilterValues($request, 'disciplina_ids', 'disciplina_id'),
             'project_phase_ids' => $this->masterListFilterValues($request, 'project_phase_ids', 'project_phase_id'),
             'document_types' => $this->masterListFilterValues($request, 'document_types', 'document_type'),
@@ -872,6 +999,11 @@ class ProjectController extends Controller
                 'codigo' => $document->obra?->codigo,
                 'nome' => $document->obra?->nome,
             ],
+            'trecho' => $document->trecho ? [
+                'id' => $document->trecho->id,
+                'codigo' => $document->trecho->codigo,
+                'nome' => $document->trecho->nome,
+            ] : null,
             'disciplina' => [
                 'id' => $document->disciplina?->id,
                 'sigla' => $document->disciplina?->sigla,
@@ -907,7 +1039,7 @@ class ProjectController extends Controller
         }
 
         try {
-            return \Illuminate\Support\Carbon::parse($value)
+            return Carbon::parse($value)
                 ->timezone(config('app.timezone', 'America/Sao_Paulo'))
                 ->format('d/m/Y H:i');
         } catch (\Throwable) {
@@ -947,11 +1079,24 @@ class ProjectController extends Controller
             ->exists();
     }
 
-    private function findExistingDocumentForEap(Tenant $tenant, Contract $contract, Obra $obra, Disciplina $disciplina, ProjectPhase $phase, string $documentType, string $code, string $documentNumber): ?ProjectDocument
+    private function submissionTrecho(Tenant $tenant, Obra $obra, mixed $trechoId): Trecho
+    {
+        if ($trechoId) {
+            $trecho = $tenant->trechos()->findOrFail($trechoId);
+            abort_unless((int) $trecho->obra_id === (int) $obra->id, 422);
+
+            return $trecho;
+        }
+
+        return Trecho::defaultForObra($obra);
+    }
+
+    private function findExistingDocumentForEap(Tenant $tenant, Contract $contract, Obra $obra, Trecho $trecho, Disciplina $disciplina, ProjectPhase $phase, string $documentType, string $code, string $documentNumber): ?ProjectDocument
     {
         $document = $tenant->projectDocuments()
             ->where('contract_id', $contract->id)
             ->where('obra_id', $obra->id)
+            ->where('trecho_id', $trecho->id)
             ->where('disciplina_id', $disciplina->id)
             ->where('project_phase_id', $phase->id)
             ->where('document_type', $documentType)
@@ -963,11 +1108,11 @@ class ProjectController extends Controller
         }
 
         $legacyCodes = collect([
-            $this->buildDocumentCode($contract, $obra, $disciplina, null, $documentType, $documentNumber),
+            $this->buildDocumentCode($contract, $obra, $trecho, $disciplina, null, $documentType, $documentNumber),
         ]);
 
         if ($documentNumber === '001') {
-            $legacyCodes->push($this->buildDocumentCode($contract, $obra, $disciplina, null, $documentType));
+            $legacyCodes->push($this->buildDocumentCode($contract, $obra, $trecho, $disciplina, null, $documentType));
         }
 
         $legacyCodes = $legacyCodes->unique()->values();
@@ -975,6 +1120,7 @@ class ProjectController extends Controller
         return $tenant->projectDocuments()
             ->where('contract_id', $contract->id)
             ->where('obra_id', $obra->id)
+            ->where('trecho_id', $trecho->id)
             ->where('disciplina_id', $disciplina->id)
             ->whereNull('project_phase_id')
             ->where('document_type', $documentType)
@@ -983,11 +1129,11 @@ class ProjectController extends Controller
             ->first();
     }
 
-    private function buildDocumentCode(Contract $contract, Obra $obra, Disciplina $disciplina, ?ProjectPhase $phase, string $documentType, ?string $documentNumber = null): string
+    private function buildDocumentCode(Contract $contract, Obra $obra, Trecho $trecho, Disciplina $disciplina, ?ProjectPhase $phase, string $documentType, ?string $documentNumber = null): string
     {
         $documentTypeCode = self::DOCUMENT_TYPE_CODES[$documentType] ?? $documentType;
 
-        return collect([$contract->code, $obra->codigo, $disciplina->sigla, $phase?->code, $documentTypeCode, $documentNumber])
+        return collect([$contract->code, $obra->codigo, $trecho->codigo, $disciplina->sigla, $phase?->code, $documentTypeCode, $documentNumber])
             ->map(fn (?string $part): string => mb_strtoupper((string) $part))
             ->map(fn (string $part): string => preg_replace('/\s+/', '', trim($part)) ?? '')
             ->map(fn (string $part): string => preg_replace('/[^A-Z0-9]/', '', $part) ?? '')

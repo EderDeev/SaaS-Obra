@@ -385,6 +385,7 @@ function PhotoSection({ form, disabled }) {
 
 export default function RdaShow({ rda, catalogs = {} }) {
     const published = rda.status === 'publicado';
+    const readOnly = published || !rda.can_edit;
     const form = useForm({
         dados: {
             clima: rda.dados?.clima || {},
@@ -426,7 +427,7 @@ export default function RdaShow({ rda, catalogs = {} }) {
                         </p>
                         <label className="mt-3 block max-w-xl">
                             <span className="eyebrow mb-1.5 block">Obra / frente preenchida</span>
-                            <select className="sig-input w-full" value={rda.obra?.id || ''} onChange={(event) => changeObra(event.target.value)}>
+                            <select className="sig-input w-full" value={rda.obra?.id || ''} onChange={(event) => changeObra(event.target.value)} disabled={readOnly}>
                                 {(rda.available_obras || []).map((obra) => <option key={obra.id} value={obra.id}>{obra.label}</option>)}
                             </select>
                         </label>
@@ -453,20 +454,20 @@ export default function RdaShow({ rda, catalogs = {} }) {
 
                 <div className="space-y-5">
                     <WeatherSection
-                        disabled={published}
+                        disabled={readOnly}
                         value={form.data.dados.clima || {}}
                         onChange={(value) => updateDados('clima', value)}
                     />
 
                     <ActivitySection
-                        disabled={published}
+                        disabled={readOnly}
                         items={form.data.dados.atividades}
                         onChange={(value) => updateDados('atividades', value)}
                     />
 
                     <ResourceSection
                         title="Mão de obra"
-                        disabled={published}
+                        disabled={readOnly}
                         catalog={catalogs.mao_obra || []}
                         items={form.data.dados.mao_obra}
                         onChange={(value) => updateDados('mao_obra', value)}
@@ -474,7 +475,7 @@ export default function RdaShow({ rda, catalogs = {} }) {
 
                     <ResourceSection
                         title="Equipamentos"
-                        disabled={published}
+                        disabled={readOnly}
                         catalog={catalogs.equipamentos || []}
                         items={form.data.dados.equipamentos}
                         onChange={(value) => updateDados('equipamentos', value)}
@@ -482,16 +483,16 @@ export default function RdaShow({ rda, catalogs = {} }) {
 
                     <ResourceSection
                         title="Subcontratadas"
-                        disabled={published}
+                        disabled={readOnly}
                         catalog={catalogs.subcontratadas || []}
                         items={form.data.dados.subcontratadas}
                         onChange={(value) => updateDados('subcontratadas', value)}
                     />
 
-                    <PhotoSection form={form} disabled={published} />
+                    <PhotoSection form={form} disabled={readOnly} />
                 </div>
 
-                {!published && (
+                {!readOnly && (
                     <div className="sticky bottom-0 mt-6 flex flex-wrap justify-end gap-3 border-t border-[var(--border)] bg-[var(--surface)] py-4">
                         <button type="button" onClick={save} disabled={form.processing} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-4 py-2.5 font-bold text-[var(--ink-800)]">
                             <Save size={17} /> Salvar rascunho

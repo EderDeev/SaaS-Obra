@@ -49,7 +49,7 @@ const stepsBySection = {
         {
             target: '[data-tour="project-submit-fields"]',
             title: 'Classificar o arquivo',
-            content: 'Informe contrato, obra, disciplina, fase, tipo e título. Esses dados formam a EAP e determinam o fluxo de análise.',
+            content: 'Informe contrato, obra, trecho, disciplina, fase, tipo e título. Esses dados formam a EAP e determinam o fluxo de análise.',
             placement: 'right',
         },
         {
@@ -57,6 +57,12 @@ const stepsBySection = {
             title: 'Revisar a submissão',
             content: 'Confira a EAP, a revisão e o arquivo selecionado. Ao confirmar, o projeto seguirá para a fila de análise.',
             placement: 'left',
+        },
+        {
+            target: '[data-tour="project-submit-batch"]',
+            title: 'Submeter um pacote',
+            content: 'Para entregas com dois ou mais arquivos, use a submissão em lote. O sistema calcula a EAP de cada projeto e mantém todos no mesmo fluxo.',
+            placement: 'bottom',
         },
     ],
     review: [
@@ -78,6 +84,12 @@ const stepsBySection = {
             content: 'Na aprovação, o projeto é liberado para a árvore oficial. Na reprovação, o motivo é obrigatório e o responsável pelo envio é notificado.',
             placement: 'top',
         },
+        {
+            target: '[data-tour="project-review-batch"]',
+            title: 'Analisar o pacote',
+            content: 'No lote, os projetos são verificados em conjunto. A decisão é atômica: o pacote inteiro avança, é aprovado ou volta para correção.',
+            placement: 'top',
+        },
     ],
     tree: [
         {
@@ -89,7 +101,7 @@ const stepsBySection = {
         {
             target: '[data-tour="projects-tree-project"]',
             title: 'Localizar na árvore',
-            content: 'O registro aprovado mostra código, revisão oficial, data de aprovação, situação APS e eventuais alertas vinculados.',
+            content: 'O registro aprovado mostra código, revisão oficial, situação APS e alertas vinculados. Em uma urgência, o status pode retirar temporariamente o projeto da árvore mediante justificativa.',
             placement: 'top',
         },
         {
@@ -127,7 +139,7 @@ const stepsBySection = {
         {
             target: '[data-tour="project-viewer-comment-form"]',
             title: 'Registrar comentário',
-            content: 'Selecione um ponto ou objeto, registre o comentário e atribua um responsável e uma prioridade.',
+            content: 'Selecione um ponto ou objeto, registre o comentário e atribua um ou mais responsáveis. Todos os selecionados são notificados e podem acompanhar a resolução.',
             placement: 'left',
         },
         {
@@ -141,7 +153,7 @@ const stepsBySection = {
         {
             target: '[data-tour="project-revisions"]',
             title: 'Recurso complementar: revisões',
-            content: 'Quando um projeto aprovado recebe uma nova revisão, acompanhe a CAP, consulte o histórico e compare a versão anterior com a atual.',
+            content: 'Quando um projeto aprovado recebe uma nova revisão, acompanhe a CAP, consulte o histórico e compare a versão anterior com a atual. Revisões em lote geram uma CAP consolidada para todo o pacote.',
             placement: 'top',
         },
     ],

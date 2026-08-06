@@ -333,7 +333,7 @@ function AddButton({ title, onClick }) {
     );
 }
 
-function DetailSection({ document, lookups = {}, quickStoreUrls = {} }) {
+function DetailSection({ document, lookups = {}, quickStoreUrls = {}, canEdit = false }) {
     const [modal, setModal] = useState(null);
     const contracts = lookups.contracts || [];
     const types = lookups.types || [];
@@ -370,6 +370,7 @@ function DetailSection({ document, lookups = {}, quickStoreUrls = {} }) {
 
     return (
         <form id="ged-detail-form" onSubmit={submit} className="space-y-4">
+            <fieldset disabled={!canEdit} className="space-y-4 disabled:opacity-75">
             <Field label="Título">
                 <input className="ged-control" value={form.data.title} onChange={(event) => form.setData('title', event.target.value)} />
                 {form.errors.title && <span className="text-xs font-semibold text-rose-600">{form.errors.title}</span>}
@@ -428,8 +429,9 @@ function DetailSection({ document, lookups = {}, quickStoreUrls = {} }) {
                     Salvar detalhes
                 </button>
             </div>
+            </fieldset>
 
-            {modal && <QuickCreateModal type={modal} urls={quickStoreUrls} contracts={contracts} currentContractId={form.data.contract_id} onClose={() => setModal(null)} />}
+            {modal && canEdit && <QuickCreateModal type={modal} urls={quickStoreUrls} contracts={contracts} currentContractId={form.data.contract_id} onClose={() => setModal(null)} />}
         </form>
     );
 }
@@ -540,7 +542,7 @@ function ContentSection({ document }) {
     );
 }
 
-function AttachmentsSection({ document }) {
+function AttachmentsSection({ document, canEdit = false }) {
     const attachments = document.attachments || [];
     const [previewAttachment, setPreviewAttachment] = useState(null);
     const form = useForm({
@@ -572,7 +574,7 @@ function AttachmentsSection({ document }) {
 
     return (
         <div className="space-y-5">
-            <form data-tour="ged-attachments-upload" onSubmit={submit} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            {canEdit && <form data-tour="ged-attachments-upload" onSubmit={submit} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="grid gap-4">
                     <Field label="Arquivos">
                         <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center hover:border-blue-300 hover:bg-blue-50/40">
@@ -627,7 +629,7 @@ function AttachmentsSection({ document }) {
                         </button>
                     </div>
                 </div>
-            </form>
+            </form>}
 
             <div data-tour="ged-attachments-list" className="space-y-3">
                 {attachments.length === 0 && (
@@ -739,12 +741,12 @@ function AttachmentRow({ attachment, onOpen, onDelete }) {
                     <a href={attachment.download_url} className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[var(--ink-700)] hover:bg-slate-50" title="Baixar">
                         <Download size={15} />
                     </a>
-                    <button data-tour="ged-attachment-edit" type="button" className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[var(--ink-700)] hover:bg-slate-50" onClick={() => setEditing(true)} title="Editar">
+                    {attachment.update_url && <button data-tour="ged-attachment-edit" type="button" className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[var(--ink-700)] hover:bg-slate-50" onClick={() => setEditing(true)} title="Editar">
                         <Pencil size={15} />
-                    </button>
-                    <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-100 text-rose-700 hover:bg-rose-50" onClick={onDelete} title="Excluir">
+                    </button>}
+                    {attachment.delete_url && <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-100 text-rose-700 hover:bg-rose-50" onClick={onDelete} title="Excluir">
                         <Trash2 size={15} />
-                    </button>
+                    </button>}
                 </div>
             </div>
         </div>
@@ -900,7 +902,7 @@ function formatPaperlessDate(value) {
     });
 }
 
-function NotesSection({ document }) {
+function NotesSection({ document, canEdit = false }) {
     const form = useForm({ body: '' });
     const notes = document.notes || [];
 
@@ -919,7 +921,7 @@ function NotesSection({ document }) {
 
     return (
         <div className="space-y-4">
-            <form onSubmit={submit} className="space-y-2 border-b border-slate-300 pb-4">
+            {canEdit && <form onSubmit={submit} className="space-y-2 border-b border-slate-300 pb-4">
                 <textarea
                     className="min-h-20 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-[var(--ink-800)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     value={form.data.body}
@@ -932,7 +934,7 @@ function NotesSection({ document }) {
                         Adicionar nota
                     </button>
                 </div>
-            </form>
+            </form>}
 
             <div className="space-y-3">
                 {notes.length === 0 && <div className="text-sm text-[var(--ink-500)]">Nenhuma nota adicionada.</div>}
@@ -1174,15 +1176,15 @@ function PermissionsSection({ document, users = [], permissionGroups = [] }) {
     );
 }
 
-function ActiveSection({ activeSection, document, users, permissionGroups, lookups, quickStoreUrls }) {
+function ActiveSection({ activeSection, document, users, permissionGroups, lookups, quickStoreUrls, capabilities = {} }) {
     if (activeSection === 'content') return <ContentSection document={document} />;
-    if (activeSection === 'attachments') return <AttachmentsSection document={document} />;
+    if (activeSection === 'attachments') return <AttachmentsSection document={document} canEdit={capabilities.edit} />;
     if (activeSection === 'metadata') return <MetadataSection document={document} />;
-    if (activeSection === 'notes') return <NotesSection document={document} />;
+    if (activeSection === 'notes') return <NotesSection document={document} canEdit={capabilities.edit} />;
     if (activeSection === 'history') return <HistorySection document={document} />;
     if (activeSection === 'permissions') return <PermissionsSection document={document} users={users} permissionGroups={permissionGroups} />;
 
-    return <DetailSection document={document} lookups={lookups} quickStoreUrls={quickStoreUrls} />;
+    return <DetailSection document={document} lookups={lookups} quickStoreUrls={quickStoreUrls} canEdit={capabilities.edit} />;
 }
 
 function DocumentViewer({ document }) {
@@ -1300,7 +1302,7 @@ function DocumentViewer({ document }) {
     );
 }
 
-export default function GedShow({ tenant, document, tabs = [], activeSection = 'details', navigation = {}, users = [], permissionGroups = [], lookups = {}, quickStoreUrls = {} }) {
+export default function GedShow({ tenant, document, tabs = [], activeSection = 'details', navigation = {}, users = [], permissionGroups = [], lookups = {}, quickStoreUrls = {}, capabilities = {} }) {
     const ActiveIcon = sectionIcons[activeSection] || FileText;
     const documentTourUrls = useMemo(() => Object.fromEntries(tabs.map((tab) => [tab.key, tab.url])), [tabs]);
 
@@ -1329,10 +1331,10 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        <button type="button" className="sig-btn sig-btn-danger !min-h-9 !px-3" onClick={destroyDocument}>
+                        {capabilities.delete && <button type="button" className="sig-btn sig-btn-danger !min-h-9 !px-3" onClick={destroyDocument}>
                             <Trash2 size={16} />
                             Excluir
-                        </button>
+                        </button>}
                         <a href={document.download_url} className="sig-btn sig-btn-secondary !min-h-9 !px-3">
                             <Download size={16} />
                             Baixar
@@ -1367,7 +1369,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                                 </Link>
                             </div>
 
-                            {activeSection === 'details' && (
+                            {activeSection === 'details' && capabilities.edit && (
                                 <div className="flex gap-1">
                                     <button type="submit" form="ged-detail-form" className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-3 py-2 text-sm font-semibold text-white">
                                         <Save size={15} />
@@ -1413,7 +1415,7 @@ export default function GedShow({ tenant, document, tabs = [], activeSection = '
                                 </div>
                             </div>
 
-                            <ActiveSection activeSection={activeSection} document={document} users={users} permissionGroups={permissionGroups} lookups={lookups} quickStoreUrls={quickStoreUrls} />
+                            <ActiveSection activeSection={activeSection} document={document} users={users} permissionGroups={permissionGroups} lookups={lookups} quickStoreUrls={quickStoreUrls} capabilities={capabilities} />
                         </div>
                     </div>
 
