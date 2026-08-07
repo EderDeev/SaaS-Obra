@@ -2,8 +2,8 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Tenant;
 use App\Models\GedEmailProcessedMessage;
+use App\Models\Tenant;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
 use App\Support\ContractPermissions;
@@ -65,7 +65,7 @@ class HandleInertiaRequests extends Middleware
                     'unread_count' => $request->user()->unreadNotifications()->count(),
                     'items' => $request->user()->notifications()
                         ->latest()
-                        ->limit(8)
+                        ->limit(50)
                         ->get()
                         ->map(fn ($notification): array => [
                             'id' => $notification->id,

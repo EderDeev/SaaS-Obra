@@ -1,6 +1,7 @@
 import SigLogo from '@/Components/SigLogo';
 import AiAssistantChat from '@/Components/AiAssistantChat';
 import { Link, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import {
     Activity,
@@ -138,10 +139,83 @@ export default function AuthenticatedLayout({ children }) {
         return window.localStorage.getItem('deming:sidebar-collapsed') === 'true';
     });
     const notificationsRef = useRef(null);
+    const pendingNotificationReadsRef = useRef(new Set());
+    const hiddenNotificationReadPendingRef = useRef(false);
     const mobileNavRef = useRef(null);
     const userMenuRef = useRef(null);
-    const notifications = props.notifications?.items || [];
-    const unreadNotificationsCount = props.notifications?.unread_count ?? notifications.filter((notification) => notification.unread).length;
+    const [locallyReadNotificationIds, setLocallyReadNotificationIds] = useState(() => new Set());
+    const notificationItems = props.notifications?.items || [];
+    const sourceUnreadNotificationsCount = props.notifications?.unread_count
+        ?? notificationItems.filter((notification) => notification.unread).length;
+    const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(sourceUnreadNotificationsCount);
+    const notifications = notificationItems.map((notification) => ({
+        ...notification,
+        unread: notification.unread && !locallyReadNotificationIds.has(notification.id),
+    }));
+
+    async function markNotificationAsRead(notification) {
+        if (!notification.unread || pendingNotificationReadsRef.current.has(notification.id)) {
+            return;
+        }
+
+        pendingNotificationReadsRef.current.add(notification.id);
+        setLocallyReadNotificationIds((current) => new Set(current).add(notification.id));
+        setUnreadNotificationsCount((current) => Math.max(0, current - 1));
+
+        try {
+            await axios.patch(route('notifications.read', notification.id));
+        } catch {
+            setLocallyReadNotificationIds((current) => {
+                const next = new Set(current);
+                next.delete(notification.id);
+
+                return next;
+            });
+            setUnreadNotificationsCount((current) => current + 1);
+        } finally {
+            pendingNotificationReadsRef.current.delete(notification.id);
+        }
+    }
+
+    async function markHiddenNotificationsAsRead() {
+        if (hiddenNotificationReadPendingRef.current) {
+            return;
+        }
+
+        const visibleUnreadCount = notifications.filter((notification) => notification.unread).length;
+        const hiddenUnreadCount = Math.max(0, unreadNotificationsCount - visibleUnreadCount);
+
+        if (hiddenUnreadCount === 0) {
+            return;
+        }
+
+        hiddenNotificationReadPendingRef.current = true;
+        setUnreadNotificationsCount((current) => Math.max(0, current - hiddenUnreadCount));
+
+        try {
+            await axios.patch(route('notifications.hidden.read'), {
+                visible_ids: notificationItems.map((notification) => notification.id),
+            });
+        } catch {
+            setUnreadNotificationsCount((current) => current + hiddenUnreadCount);
+        } finally {
+            hiddenNotificationReadPendingRef.current = false;
+        }
+    }
+
+    function toggleNotifications() {
+        if (notificationsOpen) {
+            setNotificationsOpen(false);
+            return;
+        }
+
+        setNotificationsOpen(true);
+        void markHiddenNotificationsAsRead();
+    }
+
+    useEffect(() => {
+        setUnreadNotificationsCount(sourceUnreadNotificationsCount);
+    }, [sourceUnreadNotificationsCount]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -940,7 +1014,7 @@ export default function AuthenticatedLayout({ children }) {
                             title="Notificações"
                             aria-haspopup="menu"
                             aria-expanded={notificationsOpen}
-                            onClick={() => setNotificationsOpen((open) => !open)}
+                            onClick={toggleNotifications}
                         >
                             <Bell size={18} />
                             {unreadNotificationsCount > 0 && (
@@ -996,16 +1070,21 @@ export default function AuthenticatedLayout({ children }) {
                                             <Link
                                                 key={notification.id}
                                                 href={notification.url}
-                                                className="flex gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--surface-muted)]"
+                                                className={`flex gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${notification.unread ? 'bg-[#eef4ff] hover:bg-[var(--surface-muted)]' : 'hover:bg-[var(--surface-muted)]'}`}
                                                 role="menuitem"
+                                                onMouseEnter={() => markNotificationAsRead(notification)}
+                                                onFocus={() => markNotificationAsRead(notification)}
                                             >
                                                 {content}
                                             </Link>
                                         ) : (
                                             <div
                                                 key={notification.id}
-                                                className="flex gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--surface-muted)]"
+                                                className={`flex gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ${notification.unread ? 'bg-[#eef4ff] hover:bg-[var(--surface-muted)]' : 'hover:bg-[var(--surface-muted)]'}`}
                                                 role="menuitem"
+                                                tabIndex={0}
+                                                onMouseEnter={() => markNotificationAsRead(notification)}
+                                                onFocus={() => markNotificationAsRead(notification)}
                                             >
                                                 {content}
                                             </div>
