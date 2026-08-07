@@ -14,6 +14,7 @@ import {
     Flag,
     Globe2,
     KanbanSquare,
+    ListChecks,
     LockKeyhole,
     MessageSquare,
     Paperclip,
@@ -30,7 +31,7 @@ import {
     Users,
     X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const statusColumns = [
     { value: 'todo', label: 'A fazer', icon: Circle, tone: 'var(--ink-500)' },
@@ -186,6 +187,11 @@ export default function ActivitiesIndex({
     const [categoryFilter, setCategoryFilter] = useState('todos');
     const [showCreate, setShowCreate] = useState(tourMode && tourScreen === 'create');
     const [draggedActivityId, setDraggedActivityId] = useState(null);
+    const [dragOverStatus, setDragOverStatus] = useState(null);
+    const [moveFeedback, setMoveFeedback] = useState(null);
+    const [celebration, setCelebration] = useState(null);
+    const moveFeedbackTimer = useRef(null);
+    const celebrationTimer = useRef(null);
     const [selectedActivityId, setSelectedActivityId] = useState(
         tourMode && tourScreen === 'detail' ? activities[0]?.id ?? null : null,
     );
@@ -200,6 +206,8 @@ export default function ActivitiesIndex({
     const form = useForm({
         contract_id: defaultContractId,
         assigned_to_ids: tourAssigneeIds,
+        activity_type: 'activity',
+        checklist_items: [''],
         title: tourMode ? 'Validar medição mensal da obra' : '',
         description: tourMode
             ? 'Conferir os quantitativos executados, validar a memória de cálculo e registrar as pendências antes do fechamento da medição.'
@@ -229,6 +237,11 @@ export default function ActivitiesIndex({
         setShowCreate(true);
     }, []);
 
+    useEffect(() => () => {
+        window.clearTimeout(moveFeedbackTimer.current);
+        window.clearTimeout(celebrationTimer.current);
+    }, []);
+
     const activitiesForBoard = useMemo(() => activities.map((activity) => (
         tourMode && tourScreen === 'flow' && activity._tourData
             ? { ...activity, status: tourFlowStatus || 'todo' }
@@ -240,7 +253,15 @@ export default function ActivitiesIndex({
         const q = assigneeQuery.trim().toLowerCase();
 
         if (!q) {
-            return assigneesForSelectedContract;
+            return assigneesForSelectedContract
+                .slice()
+                .sort((first, second) => {
+                    const assignmentDifference = Number(second.activity_assignment_count || 0)
+                        - Number(first.activity_assignment_count || 0);
+
+                    return assignmentDifference || first.name.localeCompare(second.name, 'pt-BR');
+                })
+                .slice(0, 6);
         }
 
         return assigneesForSelectedContract.filter((user) => [
@@ -309,6 +330,8 @@ export default function ActivitiesIndex({
                 form.setData({
                     contract_id: form.data.contract_id || defaultContractId,
                     assigned_to_ids: [],
+                    activity_type: 'activity',
+                    checklist_items: [''],
                     title: '',
                     description: '',
                     category: 'project',
@@ -339,7 +362,35 @@ export default function ActivitiesIndex({
             : [...form.data.assigned_to_ids, normalizedUserId]);
     };
 
+    const updateActivityType = (activityType) => {
+        form.setData((data) => ({
+            ...data,
+            activity_type: activityType,
+            checklist_items: activityType === 'checklist' && data.checklist_items.length === 0
+                ? ['']
+                : data.checklist_items,
+        }));
+    };
+
+    const updateChecklistItem = (index, value) => {
+        form.setData('checklist_items', form.data.checklist_items.map((item, itemIndex) => (
+            itemIndex === index ? value : item
+        )));
+    };
+
+    const addChecklistItem = () => {
+        form.setData('checklist_items', [...form.data.checklist_items, '']);
+    };
+
+    const removeChecklistItem = (index) => {
+        const remainingItems = form.data.checklist_items.filter((_, itemIndex) => itemIndex !== index);
+
+        form.setData('checklist_items', remainingItems.length > 0 ? remainingItems : ['']);
+    };
+
     const moveActivity = (status) => {
+        setDragOverStatus(null);
+
         if (tourMode) {
             return;
         }
@@ -357,11 +408,36 @@ export default function ActivitiesIndex({
             return;
         }
 
+        const movedActivityId = draggedActivityId;
+        const shouldCelebrate = status === 'done' && activity.status !== 'done';
+
         router.patch(
             route('tenant.activities.update', [tenant.slug, draggedActivityId]),
             { status },
-            { preserveScroll: true },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    window.clearTimeout(moveFeedbackTimer.current);
+                    setMoveFeedback({ activityId: movedActivityId, status, key: Date.now() });
+                    moveFeedbackTimer.current = window.setTimeout(() => setMoveFeedback(null), 850);
+
+                    if (shouldCelebrate) {
+                        window.clearTimeout(celebrationTimer.current);
+                        setCelebration({ activityId: movedActivityId, key: Date.now() });
+                        celebrationTimer.current = window.setTimeout(() => setCelebration(null), 1900);
+                    }
+                },
+            },
         );
+    };
+
+    const startDragging = (activityId) => {
+        setDraggedActivityId(activityId);
+    };
+
+    const finishDragging = () => {
+        setDraggedActivityId(null);
+        setDragOverStatus(null);
     };
 
     return (
@@ -452,7 +528,9 @@ export default function ActivitiesIndex({
                             <header data-tour="activities-create-header" className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
                                 <div>
                                     <div className="eyebrow">Nova atividade</div>
-                                    <h2 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">Criar atividade</h2>
+                                    <h2 className="mt-1 text-xl font-semibold text-[var(--ink-900)]">
+                                        {form.data.activity_type === 'checklist' ? 'Criar checklist' : 'Criar atividade'}
+                                    </h2>
                                     <p className="mt-1 text-[13px] text-[var(--ink-500)]">Defina o contrato, os responsáveis e quem poderá visualizar o card.</p>
                                 </div>
                                 <button className="sig-btn sig-btn-ghost !min-h-9 !px-2" type="button" onClick={() => !tourMode && setShowCreate(false)} title="Fechar">
@@ -460,6 +538,28 @@ export default function ActivitiesIndex({
                                 </button>
                             </header>
                             <form className="grid max-h-[calc(100vh-150px)] grid-cols-1 gap-4 overflow-y-auto p-6 md:grid-cols-2 xl:grid-cols-4" onSubmit={submit}>
+                        <div className="md:col-span-2 xl:col-span-4">
+                            <span className="eyebrow mb-2 block">Tipo</span>
+                            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-1">
+                                <button
+                                    type="button"
+                                    className={`sig-btn sig-btn-sm ${form.data.activity_type === 'activity' ? 'sig-btn-primary' : 'sig-btn-ghost'}`}
+                                    onClick={() => updateActivityType('activity')}
+                                >
+                                    <KanbanSquare size={15} />
+                                    Atividade
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`sig-btn sig-btn-sm ${form.data.activity_type === 'checklist' ? 'sig-btn-primary' : 'sig-btn-ghost'}`}
+                                    onClick={() => updateActivityType('checklist')}
+                                >
+                                    <ListChecks size={15} />
+                                    Checklist
+                                </button>
+                            </div>
+                            {form.errors.activity_type && <span className="mt-1 block text-xs text-[var(--red)]">{form.errors.activity_type}</span>}
+                        </div>
                         <div data-tour="activities-create-fields" className="grid gap-4 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-4">
                         <Field label="Título" error={form.errors.title}>
                             <input value={form.data.title} onChange={(event) => form.setData('title', event.target.value)} required placeholder="Ex: Validar diário de obra" />
@@ -501,6 +601,60 @@ export default function ActivitiesIndex({
                                 options={visibilities}
                             />
                         </div>
+                        <div className="md:col-span-2 xl:col-span-4">
+                            <Field label="Descrição" error={form.errors.description}>
+                                <textarea
+                                    value={form.data.description}
+                                    onChange={(event) => form.setData('description', event.target.value)}
+                                    rows={3}
+                                    placeholder="Detalhes da atividade"
+                                />
+                            </Field>
+                        </div>
+                        {form.data.activity_type === 'checklist' && (
+                            <div className="md:col-span-2 xl:col-span-4">
+                                <div className="mb-2 flex items-center justify-between gap-3">
+                                    <div>
+                                        <span className="eyebrow block">Etapas do checklist</span>
+                                        <span className="mt-1 block text-[12px] text-[var(--ink-500)]">Adicione as etapas na ordem em que devem ser executadas.</span>
+                                    </div>
+                                    <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={addChecklistItem}>
+                                        <Plus size={14} />
+                                        Adicionar etapa
+                                    </button>
+                                </div>
+                                <div className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                                    {form.data.checklist_items.map((item, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                            <span className="mono flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-[12px] font-semibold text-[var(--ink-500)]">
+                                                {index + 1}
+                                            </span>
+                                            <input
+                                                className="min-w-0 flex-1"
+                                                value={item}
+                                                onChange={(event) => updateChecklistItem(index, event.target.value)}
+                                                required
+                                                maxLength={500}
+                                                placeholder={`Etapa ${index + 1}`}
+                                            />
+                                            <button
+                                                className="sig-btn sig-btn-ghost !min-h-9 !px-2 text-[var(--red)]"
+                                                type="button"
+                                                onClick={() => removeChecklistItem(index)}
+                                                title="Remover etapa"
+                                            >
+                                                <Trash2 size={15} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {(form.errors.checklist_items || Object.entries(form.errors).find(([key]) => key.startsWith('checklist_items.'))?.[1]) && (
+                                    <span className="mt-1 block text-xs text-[var(--red)]">
+                                        {form.errors.checklist_items || Object.entries(form.errors).find(([key]) => key.startsWith('checklist_items.'))?.[1]}
+                                    </span>
+                                )}
+                            </div>
+                        )}
                         <div data-tour="activities-create-assignees" className="md:col-span-2 xl:col-span-4">
                             <div className="min-w-0">
                                 <span className="eyebrow mb-1 block">Responsáveis</span>
@@ -514,8 +668,15 @@ export default function ActivitiesIndex({
                                         />
                                     </label>
 
+                                    <div className="mt-3 flex items-center justify-between gap-3 text-[11.5px] text-[var(--ink-500)]">
+                                        <span>{assigneeQuery.trim() ? 'Resultados da busca' : 'Responsáveis mais atribuídos'}</span>
+                                        {!assigneeQuery.trim() && assigneesForSelectedContract.length > 6 && (
+                                            <span>Busque para encontrar outros usuários</span>
+                                        )}
+                                    </div>
+
                                     {selectedAssignees.length > 0 && (
-                                        <div className="mt-3 flex flex-wrap gap-2">
+                                        <div className="mt-2 flex flex-wrap gap-2">
                                             {selectedAssignees.map((user) => (
                                                 <button
                                                     key={user.id}
@@ -531,7 +692,7 @@ export default function ActivitiesIndex({
                                         </div>
                                     )}
 
-                                    <div className="mt-3 grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                                         {filteredAssigneesForSelectedContract.length > 0 ? filteredAssigneesForSelectedContract.map((user) => {
                                             const checked = form.data.assigned_to_ids.includes(user.id);
 
@@ -564,20 +725,10 @@ export default function ActivitiesIndex({
                                 {form.errors.assigned_to_ids && <span className="mt-1 block text-xs text-[var(--red)]">{form.errors.assigned_to_ids}</span>}
                             </div>
                         </div>
-                        <div className="md:col-span-2 xl:col-span-4">
-                            <Field label="Descrição" error={form.errors.description}>
-                                <textarea
-                                    value={form.data.description}
-                                    onChange={(event) => form.setData('description', event.target.value)}
-                                    rows={3}
-                                    placeholder="Detalhes da atividade"
-                                />
-                            </Field>
-                        </div>
                         <div className="flex flex-wrap items-center gap-2 md:col-span-2 xl:col-span-4">
                             <button data-tour="activities-create-action" className="sig-btn sig-btn-primary" disabled={form.processing}>
                                 <Plus size={15} />
-                                Criar atividade
+                                {form.data.activity_type === 'checklist' ? 'Criar checklist' : 'Criar atividade'}
                             </button>
                             <button className="sig-btn sig-btn-secondary" type="button" onClick={() => !tourMode && setShowCreate(false)}>
                                 Cancelar
@@ -592,13 +743,18 @@ export default function ActivitiesIndex({
                     {statusColumns.map((column) => {
                         const Icon = column.icon;
                         const columnActivities = filteredActivities.filter((activity) => activity.status === column.value);
+                        const isDropTarget = draggedActivityId !== null && dragOverStatus === column.value;
 
                         return (
                             <section
                                 key={column.value}
                                 data-tour={`activities-column-${column.value}`}
-                                className="min-w-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3"
-                                onDragOver={(event) => event.preventDefault()}
+                                className={`activity-drop-zone min-w-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 ${isDropTarget ? 'is-active' : ''} ${isDropTarget && column.value === 'done' ? 'is-completion-target' : ''}`}
+                                onDragEnter={() => draggedActivityId !== null && setDragOverStatus(column.value)}
+                                onDragOver={(event) => {
+                                    event.preventDefault();
+                                    event.dataTransfer.dropEffect = 'move';
+                                }}
                                 onDrop={() => moveActivity(column.value)}
                             >
                                 <header className="mb-3 flex items-center justify-between gap-3 px-1">
@@ -624,10 +780,12 @@ export default function ActivitiesIndex({
                                                 key={activity.id}
                                                 activity={activity}
                                                 dragging={draggedActivityId === activity.id}
+                                                recentlyMoved={moveFeedback?.activityId === activity.id}
+                                                completed={moveFeedback?.activityId === activity.id && moveFeedback?.status === 'done'}
                                                 onClick={() => setSelectedActivityId(activity.id)}
                                                 canEditActivities={canMoveActivity}
-                                                onDragStart={() => canMoveActivity && setDraggedActivityId(activity.id)}
-                                                onDragEnd={() => setDraggedActivityId(null)}
+                                                onDragStart={() => canMoveActivity && startDragging(activity.id)}
+                                                onDragEnd={finishDragging}
                                                 tourTarget={activity._tourData
                                                     ? (tourScreen === 'flow' ? 'activities-flow-card' : 'activities-card')
                                                     : undefined}
@@ -662,12 +820,14 @@ export default function ActivitiesIndex({
                 />
             )}
 
+            {celebration && <ActivityCompletionCelebration key={celebration.key} />}
+
             {tourMode && <ActivityTour section={tourScreen} tenantSlug={tenant.slug} />}
         </AuthenticatedLayout>
     );
 }
 
-function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragStart, onDragEnd, tourTarget }) {
+function ActivityCard({ activity, dragging, recentlyMoved, completed, canEditActivities, onClick, onDragStart, onDragEnd, tourTarget }) {
     const priority = priorityMeta[activity.priority] || priorityMeta.normal;
     const category = categoryMeta[activity.category || 'project'] || categoryMeta.project;
     const visibility = visibilityMeta[activity.visibility || 'public'] || visibilityMeta.public;
@@ -676,18 +836,34 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
     const dueDate = shortDate(activity.due_date);
     const contractName = activity.contract?.obra?.nome || activity.contract?.name;
     const assignees = activityAssignees(activity);
+    const isChecklist = activity.activity_type === 'checklist';
+    const checklistItems = activity.checklist_items || [];
+    const completedChecklistItems = checklistItems.filter((item) => item.is_completed).length;
+    const checklistProgress = checklistItems.length > 0
+        ? Math.round((completedChecklistItems / checklistItems.length) * 100)
+        : 0;
 
     return (
         <article
             data-tour={tourTarget}
             draggable={canEditActivities}
             onClick={onClick}
-            onDragStart={onDragStart}
+            onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', String(activity.id));
+                onDragStart?.(event);
+            }}
             onDragEnd={onDragEnd}
-            className={`sig-card min-w-0 max-w-full overflow-hidden p-4 transition hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] ${canEditActivities ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${dragging ? 'opacity-60 ring-2 ring-[var(--primary-100)]' : ''}`}
+            className={`activity-board-card sig-card min-w-0 max-w-full overflow-hidden p-4 transition hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] ${canEditActivities ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${dragging ? 'is-dragging' : ''} ${recentlyMoved ? 'is-settled' : ''} ${completed ? 'is-completed' : ''}`}
         >
             <div className="mb-3 flex min-w-0 flex-wrap items-start justify-between gap-2">
                 <span className="flex flex-wrap gap-2">
+                    {isChecklist && (
+                        <span className="sig-pill sig-pill-green">
+                            <ListChecks size={12} />
+                            Checklist
+                        </span>
+                    )}
                     <span className={`sig-pill ${category.className}`}>
                         <Tag size={12} />
                         {category.label}
@@ -710,6 +886,20 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
             <h3 className="text-[14px] font-semibold leading-5 text-[var(--ink-900)]">{activity.title}</h3>
             {activity.description && (
                 <p className="mt-2 line-clamp-3 text-[12.5px] leading-5 text-[var(--ink-500)]">{activity.description}</p>
+            )}
+            {isChecklist && (
+                <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5">
+                    <div className="mb-2 flex items-center justify-between gap-3 text-[11.5px]">
+                        <span className="font-semibold text-[var(--ink-700)]">{completedChecklistItems} de {checklistItems.length} etapas</span>
+                        <span className="mono text-[var(--green)]">{checklistProgress}%</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-white">
+                        <span
+                            className="block h-full rounded-full bg-[var(--green)] transition-[width] duration-300"
+                            style={{ width: `${checklistProgress}%` }}
+                        />
+                    </div>
+                </div>
             )}
 
             <div className="mt-3 flex flex-wrap gap-2 text-[11.5px] text-[var(--ink-500)]">
@@ -760,10 +950,55 @@ function ActivityCard({ activity, dragging, canEditActivities, onClick, onDragSt
     );
 }
 
+const confettiColors = ['#2463eb', '#17a673', '#f4b740', '#ef476f', '#20a4f3', '#7c5cff'];
+const confettiPieces = Array.from({ length: 34 }, (_, index) => {
+    const angle = (index / 34) * Math.PI * 2;
+    const distance = 150 + ((index * 37) % 220);
+
+    return {
+        id: index,
+        color: confettiColors[index % confettiColors.length],
+        x: Math.round(Math.cos(angle) * distance),
+        y: Math.round(Math.sin(angle) * distance + 95),
+        rotation: 180 + ((index * 97) % 540),
+        delay: (index % 7) * 18,
+    };
+});
+
+function ActivityCompletionCelebration() {
+    return (
+        <div className="activity-celebration" aria-live="polite" aria-label="Atividade concluída">
+            <div className="activity-completion-message">
+                <span className="activity-completion-icon"><CheckCircle2 size={18} /></span>
+                <span>
+                    <strong>Atividade concluída</strong>
+                    <small>Ótimo trabalho. O andamento foi atualizado.</small>
+                </span>
+            </div>
+            <div className="activity-confetti" aria-hidden="true">
+                {confettiPieces.map((piece) => (
+                    <span
+                        key={piece.id}
+                        className="activity-confetti-piece"
+                        style={{
+                            '--confetti-color': piece.color,
+                            '--confetti-x': `${piece.x}px`,
+                            '--confetti-y': `${piece.y}px`,
+                            '--confetti-rotation': `${piece.rotation}deg`,
+                            '--confetti-delay': `${piece.delay}ms`,
+                        }}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function ActivityModal({ activity, tenant, assigneesByContract, priorities, categories, visibilities, canEditActivities, canDeleteActivities, onClose, tourMode = false }) {
     const commentForm = useForm({ body: '' });
     const fileForm = useForm({ file: null });
     const [editing, setEditing] = useState(false);
+    const [updatingChecklistItemId, setUpdatingChecklistItemId] = useState(null);
     const editForm = useForm({
         title: activity.title || '',
         description: activity.description || '',
@@ -782,6 +1017,12 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
     const contractName = activity.contract?.obra?.nome || activity.contract?.name;
     const assignableUsers = assigneesByContract?.[String(activity.contract_id)] || [];
     const canInteract = activity.can_interact ?? tourMode;
+    const isChecklist = activity.activity_type === 'checklist';
+    const checklistItems = activity.checklist_items || [];
+    const completedChecklistItems = checklistItems.filter((item) => item.is_completed).length;
+    const checklistProgress = checklistItems.length > 0
+        ? Math.round((completedChecklistItems / checklistItems.length) * 100)
+        : 0;
 
     const toggleEditAssignee = (userId) => {
         const normalizedUserId = Number(userId);
@@ -846,12 +1087,29 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
         });
     };
 
+    const toggleChecklistItem = (item) => {
+        if (tourMode || !canInteract || updatingChecklistItemId !== null) {
+            return;
+        }
+
+        setUpdatingChecklistItemId(item.id);
+        router.patch(
+            route('tenant.activities.checklist.update', [tenant.slug, activity.id, item.id]),
+            { is_completed: !item.is_completed },
+            {
+                preserveScroll: true,
+                onFinish: () => setUpdatingChecklistItemId(null),
+            },
+        );
+    };
+
     return (
         <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-[rgba(11,16,32,0.45)] px-4 py-6" onMouseDown={onClose}>
             <section data-tour="activities-detail-modal" className="w-full max-w-5xl rounded-xl bg-white shadow-[0_24px_80px_rgba(11,16,32,0.25)]" onMouseDown={(event) => event.stopPropagation()}>
                 <header data-tour="activities-detail-header" className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
                     <div className="min-w-0">
                         <div data-tour="activities-detail-status" className="mb-2 flex flex-wrap items-center gap-2">
+                            {isChecklist && <span className="sig-pill sig-pill-green"><ListChecks size={12} />Checklist</span>}
                             <span className={`sig-pill ${category.className}`}><Tag size={12} />{category.label}</span>
                             <span className={`sig-pill ${priority.className}`}><span className="sig-pill-dot" />{priority.label}</span>
                             <span className={`sig-pill ${visibility.className}`}><VisibilityIcon size={12} />{visibility.label}</span>
@@ -962,6 +1220,57 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                                 {activity.description || 'Sem descrição.'}
                             </p>
                         </section>
+
+                        {isChecklist && (
+                            <section className="rounded-lg border border-[var(--border)] bg-white p-4">
+                                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <h3 className="flex items-center gap-2 text-[14px] font-semibold text-[var(--ink-900)]">
+                                            <ListChecks size={16} />
+                                            Etapas do checklist
+                                        </h3>
+                                        <p className="mt-1 text-[12px] text-[var(--ink-500)]">Marque cada etapa conforme a execução.</p>
+                                    </div>
+                                    <span className="sig-pill sig-pill-green">{completedChecklistItems} de {checklistItems.length}</span>
+                                </div>
+
+                                <div className="mb-4 h-2 overflow-hidden rounded-full bg-[var(--surface-muted)]">
+                                    <span
+                                        className="block h-full rounded-full bg-[var(--green)] transition-[width] duration-300"
+                                        style={{ width: `${checklistProgress}%` }}
+                                    />
+                                </div>
+
+                                <div className="grid gap-2">
+                                    {checklistItems.map((item) => {
+                                        const updating = updatingChecklistItemId === item.id;
+
+                                        return (
+                                            <button
+                                                key={item.id}
+                                                type="button"
+                                                className={`group flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${item.is_completed ? 'border-[var(--green)] bg-[var(--green-50)]' : 'border-[var(--border)] bg-white hover:bg-[var(--surface-muted)]'} ${!canInteract ? 'cursor-default' : ''}`}
+                                                onClick={() => toggleChecklistItem(item)}
+                                                disabled={!canInteract || updatingChecklistItemId !== null}
+                                            >
+                                                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${item.is_completed ? 'border-[var(--green)] bg-[var(--green)] text-white' : 'border-[var(--border-strong)] bg-white'}`}>
+                                                    {item.is_completed && <CheckCircle2 size={14} />}
+                                                </span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className={`block text-[13px] font-medium leading-5 ${item.is_completed ? 'text-[var(--green)] line-through decoration-[var(--green)] decoration-2' : 'text-[var(--ink-800)]'}`}>
+                                                        {item.label}
+                                                    </span>
+                                                    {item.is_completed && item.completed_by && (
+                                                        <span className="mt-1 block text-[11px] text-[var(--green)]">Concluída por {item.completed_by.name}</span>
+                                                    )}
+                                                </span>
+                                                {updating && <span className="mt-1 h-4 w-4 animate-spin rounded-full border-2 border-[var(--green-50)] border-t-[var(--green)]" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        )}
 
                         <section>
                             <div className="mb-3 flex items-center justify-between gap-3">

@@ -48,6 +48,8 @@ class TenantActivityTest extends TestCase
             ->post(route('tenant.activities.store', $tenant), [
                 'contract_id' => $contract->id,
                 'assigned_to_ids' => [$engineer->id, $manager->id],
+                'activity_type' => Activity::TYPE_ACTIVITY,
+                'checklist_items' => [''],
                 'title' => 'Validar RDO',
                 'category' => 'construction_diary',
                 'visibility' => 'restricted',
@@ -977,6 +979,203 @@ class TenantActivityTest extends TestCase
         Notification::assertSentTo($engineer, ActivityFileUploadedNotification::class, function ($notification, array $channels): bool {
             return in_array('database', $channels, true) && in_array('mail', $channels, true);
         });
+    }
+
+    public function test_assignable_users_are_prioritized_by_assignment_count_without_double_counting_primary_assignee(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $frequentUser = User::factory()->create(['name' => 'Usuário frequente']);
+        $occasionalUser = User::factory()->create(['name' => 'Usuário ocasional']);
+
+        foreach ([$frequentUser, $occasionalUser] as $user) {
+            $tenant->memberships()->create([
+                'user_id' => $user->id,
+                'role' => 'engineer',
+                'status' => 'active',
+            ]);
+            $contract->participants()->create([
+                'tenant_id' => $tenant->id,
+                'user_id' => $user->id,
+                'side' => 'manager',
+                'role' => 'team_member',
+                'status' => 'active',
+            ]);
+        }
+
+        foreach (range(1, 3) as $sequence) {
+            $activity = $tenant->activities()->create([
+                'contract_id' => $contract->id,
+                'assigned_to_id' => $frequentUser->id,
+                'created_by_id' => $admin->id,
+                'title' => "Atividade frequente {$sequence}",
+                'status' => 'todo',
+                'priority' => 'normal',
+            ]);
+            $activity->assignees()->sync([$frequentUser->id]);
+        }
+
+        $occasionalActivity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'assigned_to_id' => $occasionalUser->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Atividade ocasional',
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+        $occasionalActivity->assignees()->sync([$occasionalUser->id]);
+
+        $this->actingAs($admin)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where("assigneesByContract.{$contract->id}.0.id", $frequentUser->id)
+                ->where("assigneesByContract.{$contract->id}.0.activity_assignment_count", 3)
+                ->where("assigneesByContract.{$contract->id}.1.id", $occasionalUser->id)
+                ->where("assigneesByContract.{$contract->id}.1.activity_assignment_count", 1)
+            );
+    }
+
+    public function test_tenant_admin_can_create_checklist_with_ordered_items(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+
+        $this->actingAs($admin)
+            ->post(route('tenant.activities.store', $tenant), [
+                'contract_id' => $contract->id,
+                'activity_type' => Activity::TYPE_CHECKLIST,
+                'title' => 'Checklist de fechamento',
+                'description' => 'Conferir o fechamento mensal.',
+                'category' => 'measurement',
+                'visibility' => Activity::VISIBILITY_PUBLIC,
+                'priority' => 'high',
+                'checklist_items' => [
+                    'Validar quantitativos',
+                    'Conferir memoria de calculo',
+                    'Registrar aprovacao',
+                ],
+            ])
+            ->assertRedirect();
+
+        $activity = Activity::where('title', 'Checklist de fechamento')->firstOrFail();
+
+        $this->assertSame(Activity::TYPE_CHECKLIST, $activity->activity_type);
+        $this->assertSame(
+            ['Validar quantitativos', 'Conferir memoria de calculo', 'Registrar aprovacao'],
+            $activity->checklistItems()->pluck('label')->all(),
+        );
+
+        $this->actingAs($admin)
+            ->get(route('tenant.activities.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('activities.0.activity_type', Activity::TYPE_CHECKLIST)
+                ->has('activities.0.checklist_items', 3)
+            );
+    }
+
+    public function test_assigned_user_can_complete_and_reopen_checklist_item(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $assignee = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $assignee->id,
+            'role' => 'engineer',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+        ]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $assignee->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+        ]);
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'activity_type' => Activity::TYPE_CHECKLIST,
+            'title' => 'Checklist operacional',
+            'visibility' => Activity::VISIBILITY_RESTRICTED,
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+        $activity->assignees()->sync([$assignee->id]);
+        $item = $activity->checklistItems()->create([
+            'label' => 'Executar vistoria',
+            'position' => 0,
+        ]);
+
+        $this->actingAs($assignee)
+            ->patch(route('tenant.activities.checklist.update', [$tenant, $activity, $item]), [
+                'is_completed' => true,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'id' => $item->id,
+            'is_completed' => true,
+            'completed_by_id' => $assignee->id,
+        ]);
+        $this->assertNotNull($item->fresh()->completed_at);
+
+        $this->actingAs($assignee)
+            ->patch(route('tenant.activities.checklist.update', [$tenant, $activity, $item]), [
+                'is_completed' => false,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'id' => $item->id,
+            'is_completed' => false,
+            'completed_by_id' => null,
+            'completed_at' => null,
+        ]);
+    }
+
+    public function test_unassigned_user_cannot_change_public_checklist_item(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $viewer = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $viewer->id,
+            'role' => 'engineer',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+        ]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $viewer->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+        ]);
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'activity_type' => Activity::TYPE_CHECKLIST,
+            'title' => 'Checklist publico',
+            'visibility' => Activity::VISIBILITY_PUBLIC,
+            'status' => 'todo',
+            'priority' => 'normal',
+        ]);
+        $item = $activity->checklistItems()->create([
+            'label' => 'Etapa protegida',
+            'position' => 0,
+        ]);
+
+        $this->actingAs($viewer)
+            ->patch(route('tenant.activities.checklist.update', [$tenant, $activity, $item]), [
+                'is_completed' => true,
+            ])
+            ->assertForbidden();
+
+        $this->assertFalse($item->fresh()->is_completed);
     }
 
     /**

@@ -178,6 +178,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/atividades/tour-preview', [ActivityController::class, 'tourPreview'])->name('activities.tour-preview');
         Route::post('/atividades', [ActivityController::class, 'store'])->name('activities.store');
         Route::patch('/atividades/{activity}', [ActivityController::class, 'update'])->name('activities.update');
+        Route::patch('/atividades/{activity}/checklist/{checklistItem}', [ActivityController::class, 'updateChecklistItem'])->name('activities.checklist.update');
         Route::delete('/atividades/{activity}', [ActivityController::class, 'destroy'])->name('activities.destroy');
         Route::post('/atividades/{activity}/comentarios', [ActivityController::class, 'storeComment'])->name('activities.comments.store');
         Route::post('/atividades/{activity}/arquivos', [ActivityController::class, 'storeFile'])->name('activities.files.store');
