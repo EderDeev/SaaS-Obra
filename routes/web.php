@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Platform\ApsUsageController as PlatformApsUsageController;
 use App\Http\Controllers\Platform\DashboardController as PlatformDashboardController;
 use App\Http\Controllers\Platform\TenantController as PlatformTenantController;
@@ -7,8 +8,8 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Tenant\ActivityController;
 use App\Http\Controllers\Tenant\AssistantController;
 use App\Http\Controllers\Tenant\BoletimMedicaoController;
-use App\Http\Controllers\Tenant\ContractController;
 use App\Http\Controllers\Tenant\ContractAdditiveController;
+use App\Http\Controllers\Tenant\ContractController;
 use App\Http\Controllers\Tenant\ContractParticipantController;
 use App\Http\Controllers\Tenant\DashboardController as TenantDashboardController;
 use App\Http\Controllers\Tenant\FolhaRostoController;
@@ -29,21 +30,20 @@ use App\Http\Controllers\Tenant\ProjectReviewController;
 use App\Http\Controllers\Tenant\ProjectReviewWorkspaceController;
 use App\Http\Controllers\Tenant\ProjectSubmissionBatchController;
 use App\Http\Controllers\Tenant\ProjectViewerController;
-use App\Http\Controllers\Tenant\RdoController;
-use App\Http\Controllers\Tenant\RdoCadastroController;
-use App\Http\Controllers\Tenant\RdoResponsavelController;
-use App\Http\Controllers\Tenant\RdoSignatureController;
-use App\Http\Controllers\Tenant\RdaController;
-use App\Http\Controllers\Tenant\RdaResponsavelController;
 use App\Http\Controllers\Tenant\Qualidade\RelatorioNaoConformidadeController;
 use App\Http\Controllers\Tenant\Qualidade\RncAcaoCorretivaController;
 use App\Http\Controllers\Tenant\Qualidade\RncEvidenciaController;
 use App\Http\Controllers\Tenant\Qualidade\RncResponsavelController;
+use App\Http\Controllers\Tenant\RdaController;
+use App\Http\Controllers\Tenant\RdaResponsavelController;
+use App\Http\Controllers\Tenant\RdoCadastroController;
+use App\Http\Controllers\Tenant\RdoController;
+use App\Http\Controllers\Tenant\RdoResponsavelController;
+use App\Http\Controllers\Tenant\RdoSignatureController;
 use App\Http\Controllers\Tenant\TutorialController;
 use App\Http\Controllers\Tenant\UserController as TenantUserController;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 Route::get('/', function () {
     return auth()->check()
@@ -87,6 +87,8 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::patch('/notificacoes/{notification}/lida', [NotificationController::class, 'read'])->name('notifications.read');
+    Route::patch('/notificacoes-ocultas/lidas', [NotificationController::class, 'readHidden'])->name('notifications.hidden.read');
 });
 
 Route::middleware(['auth', 'verified', 'password.changed', 'platform.admin'])
