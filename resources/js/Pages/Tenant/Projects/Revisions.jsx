@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ProjectIdentity from '@/Components/ProjectIdentity';
 import { projectEap } from '@/Utils/projectEap';
 import { Head, Link } from '@inertiajs/react';
 import { ChevronDown, ClipboardList, Columns2, Download, Eye, FileText, Filter, GitBranch, History, MessageSquare, Search, UserRound, X } from 'lucide-react';
@@ -65,6 +66,10 @@ function fileDisplayName(version) {
     return version?.stored_name || version?.original_name || 'arquivo';
 }
 
+function originalFileName(version) {
+    return version?.original_name || version?.stored_name || 'arquivo';
+}
+
 function viewerUrl(tenant, version, workspace = 'view') {
     return `${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=${workspace}`;
 }
@@ -90,6 +95,7 @@ export default function ProjectRevisions({
     tenant,
     contracts,
     documents,
+    batches = [],
     documentTypes,
     statusLabels,
     capImpactLabels = {},
@@ -102,18 +108,49 @@ export default function ProjectRevisions({
     const [currentPage, setCurrentPage] = useState(1);
     const revisionsListRef = useRef(null);
 
-    const rows = useMemo(() => documents.flatMap((document) => (
-        (document.versions || []).filter((version) => version.cap_number).map((version) => ({
+    const batchVersionIds = useMemo(() => new Set(
+        batches.flatMap((batch) => (batch.versions || []).map((version) => Number(version.id))),
+    ), [batches]);
+
+    const standaloneRows = useMemo(() => documents.flatMap((document) => (
+        (document.versions || [])
+            .filter((version) => version.cap_number && !batchVersionIds.has(Number(version.id)))
+            .map((version) => ({
             id: `${document.id}-${version.id}`,
             document,
             version,
+            batch: null,
         }))
-    )), [documents]);
+    )), [documents, batchVersionIds]);
+
+    const batchRows = useMemo(() => batches.flatMap((batch) => (
+        (batch.versions || []).map((version) => ({
+            id: `batch-${batch.id}-${version.id}`,
+            batch,
+            document: {
+                ...version.document,
+                contract: batch.contract,
+                obra: batch.obra,
+                trecho: batch.trecho,
+                phase: batch.phase,
+            },
+            version: {
+                ...version,
+                status: batch.status,
+                cap_number: batch.cap_number,
+                cap_requested_at: batch.created_at,
+                cap_requester: batch.submitter,
+            },
+        }))
+    )), [batches]);
+
+    const rows = useMemo(() => [...batchRows, ...standaloneRows], [batchRows, standaloneRows]);
+    const registeredCapsCount = standaloneRows.length + batches.length;
 
     const filteredRows = useMemo(() => {
         const term = query.trim().toLowerCase();
 
-        return rows.filter(({ document, version }) => {
+        return rows.filter(({ document, version, batch }) => {
             if (contractFilter !== 'todos' && String(document.contract_id) !== String(contractFilter)) {
                 return false;
             }
@@ -122,7 +159,7 @@ export default function ProjectRevisions({
                 return true;
             }
 
-            return `${version.cap_number || ''} ${document.title} ${projectEap(document, version)} ${document.contract?.code || ''} ${document.obra?.nome || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''}`
+            return `${version.cap_number || ''} ${batch?.package_number || ''} ${batch?.title || ''} ${document.title} ${projectEap(document, version)} ${document.contract?.code || ''} ${document.obra?.nome || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''}`
                 .toLowerCase()
                 .includes(term);
         });
@@ -172,7 +209,7 @@ export default function ProjectRevisions({
                     </div>
                     <div className="sig-card px-4 py-3">
                         <div className="eyebrow">CAPs registradas</div>
-                        <div className="mt-1 text-lg font-semibold text-[var(--ink-900)]">{rows.length}</div>
+                        <div className="mt-1 text-lg font-semibold text-[var(--ink-900)]">{registeredCapsCount}</div>
                     </div>
                 </header>
 
@@ -214,26 +251,33 @@ export default function ProjectRevisions({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {paginatedRows.map(({ id, document, version }) => {
-                                        const previousVersion = previousVersionFor(document, version);
-                                        const latestVersion = latestVersionFor(document);
-                                        const commentsCount = versionComments(version).length;
+                                    {paginatedRows.map(({ id, document, version, batch }) => {
+                                        const previousVersion = batch ? null : previousVersionFor(document, version);
+                                        const latestVersion = batch ? version : latestVersionFor(document);
+                                        const commentsCount = batch ? 0 : versionComments(version).length;
                                         const comparisonAvailable = canCompareVersions(version, previousVersion);
 
                                         return (
                                         <tr key={id}>
                                             <td>
                                                 <div className="font-semibold">{version.cap_number}</div>
+                                                {batch && <div className="mt-1 mono text-xs font-semibold text-[var(--primary)]">{batch.package_number}</div>}
                                                 <div className="mt-1 text-xs text-[var(--ink-500)]">{formatDateTime(version.cap_requested_at || version.created_at)}</div>
                                             </td>
                                             <td>
-                                                <div className="font-semibold">{document.title}</div>
-                                                <div className="mono mt-1 text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem EAP'}</div>
+                                                <ProjectIdentity
+                                                    eap={projectEap(document, version)}
+                                                    fileName={originalFileName(version)}
+                                                    title={document.title}
+                                                />
+                                                {batch && <span className="mt-2 inline-flex sig-pill sig-pill-blue">CAP consolidada</span>}
                                                 <div className="mt-1 text-xs text-[var(--ink-500)]">{documentTypes[document.document_type] || document.document_type}</div>
                                             </td>
                                             <td>
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    {previousVersion ? (
+                                                    {batch ? (
+                                                        <span className="font-semibold text-[var(--ink-700)]">{batch.title}</span>
+                                                    ) : previousVersion ? (
                                                         <>
                                                             <span className="sig-pill sig-pill-muted">{previousVersion.revision}</span>
                                                             <GitBranch size={13} className="text-[var(--ink-400)]" />
@@ -243,12 +287,12 @@ export default function ProjectRevisions({
                                                     )}
                                                     <span className="sig-pill sig-pill-blue font-semibold">{version.revision}</span>
                                                 </div>
-                                                <div className="mt-2 text-xs text-[var(--ink-500)]">
+                                                {!batch && <><div className="mt-2 text-xs text-[var(--ink-500)]">
                                                     Atual: {latestVersion?.revision || version.revision}
-                                                </div>
-                                                <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                </div></>}
+                                                {!batch && <div className="mt-1 text-xs text-[var(--ink-500)]">
                                                     {commentsCount} comentário(s) nesta revisão
-                                                </div>
+                                                </div>}
                                             </td>
                                             <td>
                                                 <div className="mono text-xs">{document.contract?.code}</div>
@@ -273,16 +317,18 @@ export default function ProjectRevisions({
                                             </td>
                                             <td>
                                                 <div className="flex flex-wrap gap-2">
-                                                    <button
+                                                    {!batch && <button
                                                         type="button"
                                                         className="sig-btn sig-btn-primary sig-btn-sm"
                                                         onClick={() => setHistoryRow({ document, version })}
                                                     >
                                                         <History size={13} />
                                                         Histórico
-                                                    </button>
+                                                    </button>}
                                                     <a
-                                                        href={capPdfUrl(tenant, version)}
+                                                        href={batch
+                                                            ? route('tenant.projects.batches.cap.pdf', [tenant.slug, batch.id])
+                                                            : capPdfUrl(tenant, version)}
                                                         target="_blank"
                                                         rel="noreferrer"
                                                         className="sig-btn sig-btn-secondary sig-btn-sm"
@@ -290,7 +336,7 @@ export default function ProjectRevisions({
                                                         <FileText size={13} />
                                                         CAP PDF
                                                     </a>
-                                                    {previousVersion && (comparisonAvailable ? (
+                                                    {!batch && previousVersion && (comparisonAvailable ? (
                                                         <Link href={comparisonUrl(tenant, version, previousVersion)} className="sig-btn sig-btn-secondary sig-btn-sm">
                                                             <Columns2 size={13} />
                                                             Comparar
@@ -310,10 +356,10 @@ export default function ProjectRevisions({
                             </table>
                         </div>
                         <div className="projects-compact-only">
-                            {paginatedRows.map(({ id, document, version }) => {
-                                const previousVersion = previousVersionFor(document, version);
-                                const latestVersion = latestVersionFor(document);
-                                const commentsCount = versionComments(version).length;
+                            {paginatedRows.map(({ id, document, version, batch }) => {
+                                const previousVersion = batch ? null : previousVersionFor(document, version);
+                                const latestVersion = batch ? version : latestVersionFor(document);
+                                const commentsCount = batch ? 0 : versionComments(version).length;
                                 const expanded = expandedRowIds.includes(id);
                                 const comparisonAvailable = canCompareVersions(version, previousVersion);
 
@@ -327,18 +373,23 @@ export default function ProjectRevisions({
                                         >
                                             <span className="min-w-0 flex-1">
                                                 <span className="flex flex-wrap items-center gap-2">
-                                                    <span className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</span>
                                                     <span className="sig-pill sig-pill-amber">{version.cap_number}</span>
+                                                    {batch && <span className="sig-pill sig-pill-blue">{batch.package_number}</span>}
                                                     <span className={`sig-pill ${statusClasses[version.status] || 'sig-pill-blue'}`}>
                                                         {statusLabels[version.status] || version.status}
                                                     </span>
                                                 </span>
-                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem EAP'}</span>
+                                                <ProjectIdentity
+                                                    className="mt-2"
+                                                    eap={projectEap(document, version)}
+                                                    fileName={originalFileName(version)}
+                                                    title={document.title}
+                                                />
                                                 <span className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
                                                     <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
                                                     <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
                                                     <CompactInfo label="Disciplina" value={`${document.disciplina?.sigla || '-'} - ${document.disciplina?.nome || 'Sem disciplina'}`} />
-                                                    <CompactInfo label="Revisao" value={`${previousVersion?.revision || 'Inicial'} -> ${version.revision}`} />
+                                                    <CompactInfo label={batch ? 'Lote' : 'Revisao'} value={batch ? batch.title : `${previousVersion?.revision || 'Inicial'} -> ${version.revision}`} />
                                                 </span>
                                             </span>
                                             <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -350,18 +401,18 @@ export default function ProjectRevisions({
                                                     <CompactInfo label="Solicitante" value={personName(version.cap_requester || version.uploader)} />
                                                     <CompactInfo label="CAP registrada em" value={formatDateTime(version.cap_requested_at || version.created_at)} />
                                                     <CompactInfo label="Projeto atual" value={latestVersion?.revision || version.revision} />
-                                                    <CompactInfo label="Comentarios nesta revisao" value={`${commentsCount} comentario(s)`} />
+                                                    {!batch && <CompactInfo label="Comentarios nesta revisao" value={`${commentsCount} comentario(s)`} />}
                                                 </div>
                                                 <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
-                                                    <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={() => setHistoryRow({ document, version })}>
+                                                    {!batch && <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={() => setHistoryRow({ document, version })}>
                                                         <History size={13} />
                                                         Historico
-                                                    </button>
-                                                    <a href={capPdfUrl(tenant, version)} target="_blank" rel="noreferrer" className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                    </button>}
+                                                    <a href={batch ? route('tenant.projects.batches.cap.pdf', [tenant.slug, batch.id]) : capPdfUrl(tenant, version)} target="_blank" rel="noreferrer" className="sig-btn sig-btn-secondary sig-btn-sm">
                                                         <FileText size={13} />
                                                         CAP PDF
                                                     </a>
-                                                    {previousVersion && (comparisonAvailable ? (
+                                                    {!batch && previousVersion && (comparisonAvailable ? (
                                                         <Link href={comparisonUrl(tenant, version, previousVersion)} className="sig-btn sig-btn-secondary sig-btn-sm">
                                                             <Columns2 size={13} />
                                                             Comparar
@@ -447,7 +498,7 @@ function RevisionsPagination({ currentPage, totalPages, totalItems, onPageChange
     return (
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-5 py-4">
             <div className="text-sm text-[var(--ink-500)]">
-                Exibindo {from} a {to} de {totalItems} CAP(s).
+                Exibindo {from} a {to} de {totalItems} projeto(s) revisado(s).
             </div>
             <div className="flex flex-wrap items-center gap-2">
                 <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" disabled={currentPage === 1} onClick={() => onPageChange(currentPage - 1)}>
@@ -497,10 +548,13 @@ function RevisionHistoryModal({ tenant, document, currentVersion, statusLabels, 
                             <History size={15} />
                             <span className="eyebrow">Histórico de revisões</span>
                         </div>
-                        <h2 id="project-revision-history-title" className="mt-1 truncate text-[17px] font-semibold text-[var(--ink-900)]">
-                            {document.title}
-                        </h2>
-                        <p className="mono mt-1 text-[12.5px] text-[var(--ink-500)]">{projectEap(document, currentVersion) || 'Sem EAP'}</p>
+                        <ProjectIdentity
+                            className="mt-2"
+                            eap={projectEap(document, currentVersion)}
+                            fileName={originalFileName(currentVersion)}
+                            title={document.title}
+                            eapClassName="text-[17px]"
+                        />
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
                         <X size={18} />
@@ -562,7 +616,12 @@ function RevisionHistoryItem({ tenant, document, version, active, latest, status
                             {statusLabels[version.status] || version.status}
                         </span>
                     </div>
-                    <div className="mt-2 text-sm font-semibold text-[var(--ink-900)]">{fileDisplayName(version)}</div>
+                    <ProjectIdentity
+                        className="mt-2"
+                        eap={projectEap(version.document, version)}
+                        fileName={originalFileName(version)}
+                        title={version.document?.title}
+                    />
                     <div className="mt-1 text-xs text-[var(--ink-500)]">
                         Enviado em {formatDateTime(version.created_at)} por {personName(version.uploader)}
                     </div>

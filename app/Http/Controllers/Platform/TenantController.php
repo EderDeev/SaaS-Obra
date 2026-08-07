@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiMonthlyUsage;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\UserTemporaryPasswordNotification;
@@ -19,13 +20,28 @@ class TenantController extends Controller
 {
     public function index(): Response
     {
+        $usageByTenant = AiMonthlyUsage::query()
+            ->whereDate('period', now()->startOfMonth()->toDateString())
+            ->selectRaw('tenant_id, SUM(total_tokens) AS total_tokens')
+            ->groupBy('tenant_id')
+            ->pluck('total_tokens', 'tenant_id');
+        $tenants = Tenant::query()
+            ->withCount(['users', 'contracts'])
+            ->latest()
+            ->get()
+            ->each(function (Tenant $tenant) use ($usageByTenant): void {
+                $tenant->setAttribute('ai_tokens_used_current_month', (int) ($usageByTenant[$tenant->id] ?? 0));
+                $tenant->setAttribute(
+                    'ai_effective_monthly_token_limit',
+                    $tenant->ai_monthly_token_limit ?? (int) config('services.openai.tenant_monthly_token_limit')
+                );
+            });
+
         return Inertia::render('Platform/Tenants/Index', [
-            'tenants' => Tenant::query()
-                ->withCount(['users', 'contracts'])
-                ->latest()
-                ->get(),
+            'tenants' => $tenants,
             'plans' => ['starter', 'growth', 'enterprise'],
             'statuses' => ['trial', 'active', 'suspended'],
+            'defaultAiTenantTokenLimit' => (int) config('services.openai.tenant_monthly_token_limit'),
         ]);
     }
 
@@ -39,6 +55,7 @@ class TenantController extends Controller
             'status' => ['required', Rule::in(['trial', 'active', 'suspended'])],
             'owner_name' => ['required', 'string', 'max:255'],
             'owner_email' => ['required', 'email', 'max:255'],
+            'ai_monthly_token_limit' => ['nullable', 'integer', 'min:1000', 'max:1000000000'],
         ]);
 
         $data['cnpj'] = $this->formatCnpj($data['cnpj'] ?? null);
@@ -89,6 +106,7 @@ class TenantController extends Controller
             'cnpj' => ['nullable', 'string', 'max:18'],
             'plan' => ['required', Rule::in(['starter', 'growth', 'enterprise'])],
             'status' => ['required', Rule::in(['trial', 'active', 'suspended'])],
+            'ai_monthly_token_limit' => ['nullable', 'integer', 'min:1000', 'max:1000000000'],
         ]);
 
         $data['cnpj'] = $this->formatCnpj($data['cnpj'] ?? null);
@@ -96,6 +114,19 @@ class TenantController extends Controller
         $tenant->update($data);
 
         return back()->with('success', 'Tenant atualizado.');
+    }
+
+    public function updateAssistantQuota(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $data = $request->validate([
+            'ai_monthly_token_limit' => ['nullable', 'integer', 'min:1000', 'max:1000000000'],
+        ]);
+
+        $tenant->update([
+            'ai_monthly_token_limit' => $data['ai_monthly_token_limit'] ?? null,
+        ]);
+
+        return back()->with('success', 'Cota mensal do agente atualizada.');
     }
 
     private function formatCnpj(?string $cnpj): ?string

@@ -29,6 +29,7 @@ export default function BoletimMedicaoIndex({
 }) {
     const page = usePage();
     const tenant = page.props.currentTenant;
+    const canManageBulletins = Boolean(page.props.medicaoPermissions?.can?.manage_measurement_bulletins);
     const [showCreate, setShowCreate] = useState(false);
     const [openManageId, setOpenManageId] = useState(null);
     const [openReportId, setOpenReportId] = useState(null);
@@ -124,14 +125,14 @@ export default function BoletimMedicaoIndex({
                         </p>
                     </div>
 
-                    <button
+                    {canManageBulletins && <button
                         type="button"
                         onClick={() => setShowCreate((current) => !current)}
                         className="sig-btn sig-btn-primary justify-center"
                     >
                         {showCreate ? <X size={16} /> : <Plus size={16} />}
                         {showCreate ? 'Fechar cadastro' : 'Cadastrar Boletim'}
-                    </button>
+                    </button>}
                 </section>
 
                 {page.props.flash?.success && (
@@ -335,23 +336,23 @@ export default function BoletimMedicaoIndex({
                                                 >
                                                     Acessar Folhas de Rosto
                                                 </Link>
-                                                <button
+                                                {canManageBulletins && <button
                                                     type="button"
                                                     disabled={boletim.status === 'finalizado'}
                                                     onClick={() => freezeBoletim(boletim)}
                                                     className="block w-full px-4 py-3 text-left text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
                                                     Congelar boletim
-                                                </button>
-                                                <button
+                                                </button>}
+                                                {canManageBulletins && <button
                                                     type="button"
                                                     disabled={boletim.status === 'finalizado'}
                                                     onClick={() => finishBoletim(boletim)}
                                                     className="block w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
                                                     Finalizar boletim
-                                                </button>
-                                                {boletim.status !== 'aberto_lancamento' && (
+                                                </button>}
+                                                {canManageBulletins && boletim.status !== 'aberto_lancamento' && (
                                                     <button
                                                         type="button"
                                                         onClick={() => reopenBoletim(boletim)}

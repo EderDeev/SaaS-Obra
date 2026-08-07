@@ -685,9 +685,10 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
         return null;
     }
 
-    const canSend = digitalEnabled && rdo.status === 'arquivado' && (!signature || ['failed', 'cancelled'].includes(signature.status));
-    const canManualUpload = !digitalEnabled && rdo.status === 'arquivado' && (!signature || !signature.signed_download_url);
-    const canRefresh = digitalEnabled && signature && ['sent', 'pending', 'completed'].includes(signature.status) && (!signature.signed_download_url || (signature.signers || []).some((signer) => signer.status !== 'completed'));
+    const canManage = Boolean(rdo.can_manage_signatures);
+    const canSend = canManage && digitalEnabled && rdo.status === 'arquivado' && (!signature || ['failed', 'cancelled'].includes(signature.status));
+    const canManualUpload = canManage && !digitalEnabled && rdo.status === 'arquivado' && (!signature || !signature.signed_download_url);
+    const canRefresh = canManage && digitalEnabled && signature && ['sent', 'pending', 'completed'].includes(signature.status) && (!signature.signed_download_url || (signature.signers || []).some((signer) => signer.status !== 'completed'));
 
     return (
         <section className="mt-5 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">

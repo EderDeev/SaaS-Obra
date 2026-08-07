@@ -15,24 +15,56 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class ProjectViewerController extends Controller
 {
     private const DEFAULT_REVIEW_CHECKLIST = [
-        'Verificar se a EAP está correta (contrato-obra-disciplina-fase-tipo-sequencial-revisão)',
+        'Verificar se a EAP está correta (contrato-obra-trecho-disciplina-fase-tipo-sequencial-revisão)',
         'Verificar se o arquivo abre e carrega corretamente no APS',
         'Verificar se há marcações e pendências técnicas.',
     ];
 
     private const OBSOLETE_REVIEW_CHECKLIST = [
         'Conferir EAP, revisao e sequencial do arquivo',
-        'Confirmar contrato, obra, disciplina, fase e tipo do projeto',
+        'Confirmar contrato, obra, trecho, disciplina, fase e tipo do projeto',
         'Conferir compatibilidade com o escopo do contrato',
         'Registrar conclusao da analise/aprovacao',
     ];
+
+    public function download(Request $request, Tenant $tenant, ProjectDocumentVersion $version): StreamedResponse
+    {
+        abort_unless((int) $version->tenant_id === (int) $tenant->id, 404);
+
+        $version->loadMissing('document.contract');
+        abort_unless($version->document, 404);
+
+        $canView = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::VIEW, $version->document->contract);
+        $canReview = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $version->document->contract);
+        $canManageStatus = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::STATUS, $version->document->contract);
+
+        abort_unless($canView || $canReview || $canManageStatus, 403);
+        abort_if($version->status === 'reprovado' && ! $canReview, 403);
+        abort_if(
+            ($version->document->status === 'inativo' || $version->document->inactive_at !== null)
+            && ! $canReview
+            && ! $canManageStatus,
+            403,
+        );
+
+        $disk = Storage::disk($version->storageDisk());
+
+        abort_unless($disk->exists($version->file_path), 404);
+
+        return $disk->download(
+            $version->file_path,
+            $version->original_name ?: $version->stored_name ?: basename($version->file_path),
+        );
+    }
 
     private const RENAMED_REVIEW_CHECKLIST = [
         'Registrar marcacoes tecnicas nas pendencias encontradas' => 'Verificar se há marcações e pendências técnicas.',
@@ -44,6 +76,7 @@ class ProjectViewerController extends Controller
         $contract = $version->document->contract;
         $canViewProjects = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::VIEW, $contract);
         $canReviewProjects = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $contract);
+        $canManageProjectComments = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::COMMENTS, $contract);
         $workspaceMode = $this->workspaceMode($request, $version, $canReviewProjects);
         $showChecklistPanel = $workspaceMode === 'review' && $canReviewProjects;
         $showCommentsPanel = in_array($workspaceMode, ['comments', 'review'], true);
@@ -53,6 +86,7 @@ class ProjectViewerController extends Controller
             $version->load([
                 'document.contract:id,tenant_id,code,name,obra_id',
                 'document.obra:id,nome,codigo',
+                'document.trecho:id,obra_id,codigo,nome,is_default',
                 'document.disciplina:id,nome,sigla,cor',
                 'document.phase:id,name,code',
             ]);
@@ -66,6 +100,7 @@ class ProjectViewerController extends Controller
             ->with([
                 'creator:id,name,email',
                 'assignee:id,name,email,avatar_url',
+                'assignees:id,name,email,avatar_url',
                 'closer:id,name,email',
                 'replies' => fn ($query) => $query
                     ->with('creator:id,name,email,avatar_url')
@@ -73,10 +108,13 @@ class ProjectViewerController extends Controller
             ])
             ->latest()
             ->get()
-            ->each(function ($markup) use ($canReviewProjects, $request): void {
+            ->each(function ($markup) use ($canReviewProjects, $canManageProjectComments, $request): void {
+                $isAssignee = $markup->assignees->contains('id', $request->user()->id)
+                    || (int) $markup->assigned_to_id === (int) $request->user()->id;
+
                 $markup->setAttribute(
                     'can_resolve',
-                    $canReviewProjects || (int) $markup->assigned_to_id === (int) $request->user()->id
+                    $canReviewProjects || $canManageProjectComments || $isAssignee
                 );
             });
 
@@ -86,7 +124,8 @@ class ProjectViewerController extends Controller
             'apsConfigured' => $aps->isConfigured(),
             'apsViewerApi' => $aps->viewerApi(),
             'canReviewProjects' => $canReviewProjects,
-            'canReplyToMarkups' => $canViewProjects || $canReviewProjects,
+            'canManageProjectComments' => $canManageProjectComments,
+            'canReplyToMarkups' => $canViewProjects || $canReviewProjects || $canManageProjectComments,
             'workspaceMode' => $workspaceMode,
             'projectListContext' => $request->query('origin') === 'visualizar' ? 'visualizar' : 'review',
             'showCommentsPanel' => $showCommentsPanel,
@@ -198,6 +237,7 @@ class ProjectViewerController extends Controller
             'document.latestVersion',
             'document.latestApprovedVersion',
             'document.obra:id,nome,codigo',
+            'document.trecho:id,obra_id,codigo,nome,is_default',
             'document.disciplina:id,nome,sigla,cor',
             'document.phase:id,name,code',
         ]);
@@ -206,14 +246,22 @@ class ProjectViewerController extends Controller
         abort_if($version->status === 'reprovado' || blank($version->file_path), 410, 'A visualização APS desta versão foi desativada após a reprovação.');
 
         if ($request->query('origin') === 'visualizar') {
+            abort_if($version->document->status === 'inativo' || $version->document->inactive_at !== null, 403);
             abort_if($this->hasPendingRevision($version), 403);
         }
 
         $canView = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::VIEW, $version->document->contract);
         $canReview = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $version->document->contract);
+        $canManageStatus = ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::STATUS, $version->document->contract);
 
-        abort_unless($canView || $canReview, 403);
+        abort_unless($canView || $canReview || $canManageStatus, 403);
         abort_if($this->hasPendingRevision($version) && ! $canReview, 403);
+        abort_if(
+            ($version->document->status === 'inativo' || $version->document->inactive_at !== null)
+            && ! $canReview
+            && ! $canManageStatus,
+            403
+        );
 
         if ($version->status !== 'ativo') {
             abort_unless($canReview, 403);

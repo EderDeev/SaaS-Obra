@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Activity, Check, ChevronRight, Copy, FileWarning, FolderOpen, KeyRound, Link2, Pencil, Plus, ShieldCheck, SlidersHorizontal, UserCog, UserX, Users, X } from 'lucide-react';
+import { Activity, Calculator, CalendarDays, Check, ChevronRight, ClipboardList, Copy, FileKey2, FileText, FileWarning, FolderOpen, KeyRound, Link2, Pencil, Plus, Ruler, ShieldCheck, SlidersHorizontal, UserCog, UserX, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const contractRoleLabels = {
@@ -21,10 +21,16 @@ const sideLabels = {
 
 const permissionGroupMeta = {
     activity_permissions: { icon: Activity },
+    contract_permissions: { icon: FileKey2 },
     rnc_permissions: { icon: FileWarning },
     project_permissions: { icon: FolderOpen },
+    documentation_permissions: { icon: FileText },
+    diario_obra_permissions: { icon: CalendarDays },
+    ordem_servico_permissions: { icon: ClipboardList },
+    medicao_permissions: { icon: Ruler },
     user_permissions: { icon: UserCog },
     parametrizacao_permissions: { icon: SlidersHorizontal },
+    budget_permissions: { icon: Calculator },
 };
 
 function empresaLabel(empresa) {
@@ -71,6 +77,8 @@ function emptyFormData(defaultEmpresaId, defaultRole) {
         role: defaultRole,
         user_permissions: [],
         parametrizacao_permissions: [],
+        budget_permissions: [],
+        ai_monthly_token_limit: '',
         contract_accesses: [],
     };
 }
@@ -85,9 +93,11 @@ export default function TenantUsersIndex({
     defaultRole = 'engenheiro_planejamento',
     userPermissionOptions = {},
     parametrizacaoPermissionOptions = {},
+    budgetPermissionOptions = {},
     contractPermissionGroups = {},
     contractRolesBySide = {},
     userPermissionCan,
+    defaultAiUserTokenLimit,
 }) {
     const page = usePage();
     const currentUser = page.props.auth.user;
@@ -106,6 +116,8 @@ export default function TenantUsersIndex({
         role: defaultRole,
         user_permissions: [],
         parametrizacao_permissions: [],
+        budget_permissions: [],
+        ai_monthly_token_limit: '',
         contract_accesses: [],
     });
     const selectedEmpresa = empresas.find((empresa) => Number(empresa.id) === Number(form.data.empresa_id));
@@ -145,6 +157,8 @@ export default function TenantUsersIndex({
             role: membership.role ?? defaultRole,
             user_permissions: membership.user_permissions ?? [],
             parametrizacao_permissions: membership.parametrizacao_permissions ?? [],
+            budget_permissions: membership.budget_permissions ?? [],
+            ai_monthly_token_limit: membership.ai_monthly_token_limit ?? '',
             contract_accesses: membership.contract_accesses ?? [],
         });
     };
@@ -161,6 +175,8 @@ export default function TenantUsersIndex({
             role: membership.role ?? defaultRole,
             user_permissions: membership.user_permissions ?? [],
             parametrizacao_permissions: membership.parametrizacao_permissions ?? [],
+            budget_permissions: membership.budget_permissions ?? [],
+            ai_monthly_token_limit: membership.ai_monthly_token_limit ?? '',
             contract_accesses: membership.contract_accesses ?? [],
         });
     };
@@ -188,8 +204,13 @@ export default function TenantUsersIndex({
             side: firstSide,
             role: firstRole,
             activity_permissions: currentTemplate.activity_permissions || [],
+            contract_permissions: currentTemplate.contract_permissions || [],
             project_permissions: currentTemplate.project_permissions || [],
             rnc_permissions: currentTemplate.rnc_permissions || [],
+            documentation_permissions: currentTemplate.documentation_permissions || [],
+            diario_obra_permissions: currentTemplate.diario_obra_permissions || [],
+            ordem_servico_permissions: currentTemplate.ordem_servico_permissions || [],
+            medicao_permissions: currentTemplate.medicao_permissions || [],
         };
     };
 
@@ -279,7 +300,7 @@ export default function TenantUsersIndex({
     };
 
     const toggleUnifiedPermission = (field, permission) => {
-        if (field === 'user_permissions' || field === 'parametrizacao_permissions') {
+        if (field === 'user_permissions' || field === 'parametrizacao_permissions' || field === 'budget_permissions') {
             togglePermission(field, permission);
             return;
         }
@@ -328,16 +349,14 @@ export default function TenantUsersIndex({
 
     const firstContractAccess = form.data.contract_accesses?.[0] || {};
     const unifiedPermissionGroups = {
-        activity_permissions: contractPermissionGroups.activity_permissions || { label: 'Atividades', permissions: {} },
-        rnc_permissions: contractPermissionGroups.rnc_permissions || { label: 'RNC', permissions: {} },
-        project_permissions: contractPermissionGroups.project_permissions || { label: 'Projetos', permissions: {} },
+        ...contractPermissionGroups,
+        budget_permissions: { label: 'Orçamentos', permissions: budgetPermissionOptions },
         user_permissions: { label: 'Usuários', permissions: userPermissionOptions },
         parametrizacao_permissions: { label: 'Parametrização', permissions: parametrizacaoPermissionOptions },
     };
     const unifiedSelectedPermissions = {
-        activity_permissions: firstContractAccess.activity_permissions || [],
-        rnc_permissions: firstContractAccess.rnc_permissions || [],
-        project_permissions: firstContractAccess.project_permissions || [],
+        ...Object.fromEntries(Object.keys(contractPermissionGroups).map((field) => [field, firstContractAccess[field] || []])),
+        budget_permissions: form.data.budget_permissions || [],
         user_permissions: form.data.user_permissions || [],
         parametrizacao_permissions: form.data.parametrizacao_permissions || [],
     };
@@ -409,6 +428,17 @@ export default function TenantUsersIndex({
                                         </optgroup>
                                     ))}
                                 </select>
+                            </Field>
+                            <Field label="Cota mensal do agente" error={form.errors.ai_monthly_token_limit}>
+                                <input
+                                    type="number"
+                                    min="1000"
+                                    max={defaultAiUserTokenLimit || 60000}
+                                    value={form.data.ai_monthly_token_limit}
+                                    onChange={(event) => form.setData('ai_monthly_token_limit', event.target.value)}
+                                    placeholder={`Padrão: ${new Intl.NumberFormat('pt-BR').format(defaultAiUserTokenLimit || 0)} tokens`}
+                                />
+                                <span className="mt-1 block text-xs text-[var(--ink-500)]">Deixe vazio para herdar o limite padrão por usuário.</span>
                             </Field>
                         </div>
                         )}
@@ -571,7 +601,7 @@ export default function TenantUsersIndex({
                                 />
                                 {form.data.contract_accesses.length === 0 && (
                                     <p className="mt-2 text-xs text-[var(--ink-500)]">
-                                        Selecione ao menos um contrato acima para aplicar permissões de Atividades, RNC e Projetos.
+                                        Selecione ao menos um contrato acima para aplicar as permissões dos módulos vinculados ao contrato.
                                     </p>
                                 )}
                             </div>
@@ -650,6 +680,9 @@ export default function TenantUsersIndex({
                                             {membership.user.must_change_password && (
                                                 <span className="sig-pill sig-pill-blue ml-2">Senha provisoria</span>
                                             )}
+                                            <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                Agente: {new Intl.NumberFormat('pt-BR').format(membership.ai_tokens_used_current_month || 0)} / {new Intl.NumberFormat('pt-BR').format(membership.ai_monthly_token_limit || defaultAiUserTokenLimit || 0)} tokens no mês
+                                            </div>
                                         </td>
                                         <td>
                                             <div className="flex flex-wrap justify-end gap-2">

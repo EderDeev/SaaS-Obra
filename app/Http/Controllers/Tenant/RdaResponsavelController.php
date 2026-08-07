@@ -9,6 +9,7 @@ use App\Models\RdoResponsavel;
 use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Models\User;
+use App\Support\DiarioObraPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -23,10 +24,14 @@ class RdaResponsavelController extends Controller
 
     public function index(Request $request, Tenant $tenant): Response
     {
-        $contracts = $tenant->contracts()
+        $contractIds = DiarioObraPermissions::contractIdsFor($request->user(), $tenant, DiarioObraPermissions::RESPONSIBLES);
+        $contractsQuery = $tenant->contracts()
             ->with(['construtoraEmpresa:id,nome', 'gerenciadoraEmpresa:id,nome', 'clienteEmpresa:id,nome'])
-            ->orderBy('code')
-            ->get(['id', 'code', 'name', 'construtora_empresa_id', 'fiscalizadora_empresa_id', 'cliente_empresa_id']);
+            ->orderBy('code');
+        if ($contractIds !== null) {
+            $contractsQuery->whereIn('contracts.id', $contractIds);
+        }
+        $contracts = $contractsQuery->get(['id', 'code', 'name', 'construtora_empresa_id', 'fiscalizadora_empresa_id', 'cliente_empresa_id']);
         $selectedContractId = $request->integer('contract_id') ?: (int) ($contracts->first()?->id ?? 0);
         $contract = $contracts->firstWhere('id', $selectedContractId);
 

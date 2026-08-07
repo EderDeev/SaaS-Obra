@@ -1,0 +1,43 @@
+name: Post-deploy smoke check
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Base URL to verify, for example https://homolog.deming.com.br
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.event.deployment.environment || inputs.url }}
+  cancel-in-progress: true
+
+jobs:
+  healthcheck:
+    name: Public healthcheck
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TARGET_URL: ${{ inputs.url || github.event.deployment_status.environment_url }}
+
+    steps:
+      - name: Validate deployment URL
+        run: |
+          if [ -z "$TARGET_URL" ]; then
+            echo "Deployment did not provide an environment URL."
+            exit 1
+          fi
+
+      - name: Check Laravel health endpoint
+        run: |
+          BASE_URL="${TARGET_URL%/}"
+          curl --fail --silent --show-error \
+            --retry 10 --retry-all-errors --retry-delay 6 \
+            "$BASE_URL/up"

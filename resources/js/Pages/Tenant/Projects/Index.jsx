@@ -1,8 +1,10 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
+import ProjectBatchSubmissionModal from '@/Components/ProjectBatchSubmissionModal';
+import ProjectIdentity from '@/Components/ProjectIdentity';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArchiveX, CheckCircle2, ChevronDown, Download, Eye, FileDown, FileUp, Filter, FolderOpen, MessageSquare, Search, Send, Trash2, TriangleAlert, UploadCloud, X } from 'lucide-react';
+import { ArchiveX, CheckCircle2, ChevronDown, Download, Eye, FileDown, Files, FileUp, Filter, FolderOpen, MessageSquare, RefreshCw, Search, Send, Trash2, TriangleAlert, UploadCloud, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const PROJECT_SEQUENCE_LENGTH = 3;
@@ -20,10 +22,10 @@ function normalizeCodePart(value) {
         .replace(/[^A-Z0-9]/g, '');
 }
 
-function buildProjectCode(contract, obra, disciplina, projectPhase, documentType, documentTypeCodes, documentNumber) {
+function buildProjectCode(contract, obra, trecho, disciplina, projectPhase, documentType, documentTypeCodes, documentNumber) {
     const documentTypeCode = documentTypeCodes?.[documentType] || documentType;
 
-    return [contract?.code, obra?.codigo, disciplina?.sigla, projectPhase?.code, documentTypeCode, documentNumber]
+    return [contract?.code, obra?.codigo, trecho?.codigo, disciplina?.sigla, projectPhase?.code, documentTypeCode, documentNumber]
         .map(normalizeCodePart)
         .filter(Boolean)
         .join('-');
@@ -59,8 +61,8 @@ function fileDisplayName(version) {
     return version?.stored_name || version?.original_name || '';
 }
 
-function shouldShowOriginalName(version) {
-    return Boolean(version?.original_name && version?.stored_name && version.original_name !== version.stored_name);
+function originalFileName(version) {
+    return version?.original_name || version?.stored_name || '';
 }
 
 function isManuallyInactiveDocument(document) {
@@ -121,6 +123,45 @@ function capPdfUrl(tenant, version) {
     return route('tenant.projects.cap.pdf', [tenant.slug, version.id]);
 }
 
+function batchCapPdfUrl(tenant, batch) {
+    return route('tenant.projects.batches.cap.pdf', [tenant.slug, batch.id]);
+}
+
+function documentSubmissionBatches(document) {
+    const batches = Array.isArray(document?.submission_batches) ? document.submission_batches : [];
+    const currentBatch = document?.latest_version?.submission_batch;
+    const uniqueBatches = new Map();
+
+    if (currentBatch?.id) {
+        uniqueBatches.set(String(currentBatch.id), currentBatch);
+    }
+
+    batches.forEach((batch) => {
+        if (batch?.id) uniqueBatches.set(String(batch.id), batch);
+    });
+
+    return [...uniqueBatches.values()];
+}
+
+function ProjectBatchBadge({ document }) {
+    const currentBatch = document?.latest_version?.submission_batch;
+    const batch = currentBatch || documentSubmissionBatches(document)[0];
+
+    if (!batch) return null;
+
+    const label = currentBatch ? `Lote ${batch.package_number}` : `Origem: ${batch.package_number}`;
+
+    return (
+        <span
+            className="sig-pill sig-pill-green inline-flex items-center gap-1"
+            title={currentBatch ? 'A versão atual foi submetida neste lote.' : 'Uma versão anterior deste projeto foi submetida neste lote.'}
+        >
+            <Files size={12} />
+            {label}
+        </span>
+    );
+}
+
 const derivativeLabels = {
     not_submitted: 'Aguardando APS',
     queued: 'Na fila APS',
@@ -161,6 +202,7 @@ export default function ProjectsIndex({
     tenant,
     contracts,
     obras,
+    trechos = [],
     disciplinas,
     documents,
     projectPhases = [],
@@ -170,6 +212,7 @@ export default function ProjectsIndex({
     capImpactLabels = {},
     allowedExtensions,
     canUploadProjects,
+    canUploadProjectBatches,
     canAnalyzeProjects,
     canDeleteProjects,
 }) {
@@ -178,6 +221,8 @@ export default function ProjectsIndex({
     const defaultContractId = defaultContract?.id ?? '';
     const defaultObra = obras.find((obra) => String(obra.contract_id) === String(defaultContractId)) ?? null;
     const defaultObraId = defaultObra?.id ?? '';
+    const defaultTrecho = trechos.find((trecho) => String(trecho.obra_id) === String(defaultObraId)) ?? null;
+    const defaultTrechoId = defaultTrecho?.id ?? '';
     const defaultDisciplina = disciplinas.find((disciplina) => String(disciplina.contract_id) === String(defaultContractId)) ?? null;
     const defaultDisciplinaId = defaultDisciplina?.id ?? '';
     const defaultProjectPhase = projectPhases[0] ?? null;
@@ -193,24 +238,28 @@ export default function ProjectsIndex({
     );
     const [contractFilter, setContractFilter] = useState('todos');
     const [obraFilter, setObraFilter] = useState('todos');
+    const [trechoFilter, setTrechoFilter] = useState('todos');
     const [disciplinaFilter, setDisciplinaFilter] = useState('todos');
     const [statusFilter, setStatusFilter] = useState('todos');
+    const [batchFilter, setBatchFilter] = useState('todos');
     const [query, setQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
-    const [inactivateDocument, setInactivateDocument] = useState(null);
+    const [batchPanelOpen, setBatchPanelOpen] = useState(false);
+    const [statusDocument, setStatusDocument] = useState(null);
     const [expandedDocumentIds, setExpandedDocumentIds] = useState([]);
     const confirmedSubmitRef = useRef(false);
     const projectsListRef = useRef(null);
     const form = useForm({
         contract_id: defaultContractId,
         obra_id: defaultObraId,
+        trecho_id: defaultTrechoId,
         disciplina_id: defaultDisciplinaId,
         project_phase_id: defaultProjectPhaseId,
         title: '',
         document_number: '001',
-        code: buildProjectCode(defaultContract, defaultObra, defaultDisciplina, defaultProjectPhase, defaultDocumentType, documentTypeCodes, '001'),
+        code: buildProjectCode(defaultContract, defaultObra, defaultTrecho, defaultDisciplina, defaultProjectPhase, defaultDocumentType, documentTypeCodes, '001'),
         document_type: defaultDocumentType,
         revision: 'Automatica',
         revision_change_summary: '',
@@ -219,7 +268,8 @@ export default function ProjectsIndex({
         cap_impacts: [],
         file: null,
     });
-    const inactivateForm = useForm({
+    const statusForm = useForm({
+        project_status: 'inativo',
         inactive_reason: '',
     });
 
@@ -231,6 +281,11 @@ export default function ProjectsIndex({
     const selectedObra = useMemo(
         () => obras.find((obra) => String(obra.id) === String(form.data.obra_id)) ?? null,
         [obras, form.data.obra_id],
+    );
+
+    const selectedTrecho = useMemo(
+        () => trechos.find((trecho) => String(trecho.id) === String(form.data.trecho_id)) ?? null,
+        [trechos, form.data.trecho_id],
     );
 
     const selectedDisciplina = useMemo(
@@ -248,8 +303,8 @@ export default function ProjectsIndex({
     const normalizedSequential = normalizeDocumentNumber(form.data.document_number);
     const existingDocumentForEap = useMemo(
         () => {
-            const legacyCodeWithNumber = buildProjectCode(selectedContract, selectedObra, selectedDisciplina, null, form.data.document_type, documentTypeCodes, normalizedSequential);
-            const legacyCodeWithoutNumber = buildProjectCode(selectedContract, selectedObra, selectedDisciplina, null, form.data.document_type, documentTypeCodes);
+            const legacyCodeWithNumber = buildProjectCode(selectedContract, selectedObra, selectedTrecho, selectedDisciplina, null, form.data.document_type, documentTypeCodes, normalizedSequential);
+            const legacyCodeWithoutNumber = buildProjectCode(selectedContract, selectedObra, selectedTrecho, selectedDisciplina, null, form.data.document_type, documentTypeCodes);
 
             return documents.find((document) => {
                 const documentCode = String(document.code || '');
@@ -262,7 +317,7 @@ export default function ProjectsIndex({
                     && (documentCode === legacyCodeWithNumber || (normalizedSequential === '001' && documentCode === legacyCodeWithoutNumber));
             }) ?? null;
         },
-        [documents, form.data.code, form.data.document_type, selectedContract, selectedObra, selectedDisciplina, documentTypeCodes, normalizedSequential],
+        [documents, form.data.code, form.data.document_type, selectedContract, selectedObra, selectedTrecho, selectedDisciplina, documentTypeCodes, normalizedSequential],
     );
     const isRevision = Boolean(existingDocumentForEap);
     const requiresCap = isRevision && Boolean(Number(existingDocumentForEap?.has_approved_version || 0));
@@ -283,10 +338,15 @@ export default function ProjectsIndex({
         () => obras.filter((obra) => String(obra.contract_id) === String(form.data.contract_id)),
         [obras, form.data.contract_id],
     );
+    const trechosForForm = useMemo(
+        () => trechos.filter((trecho) => String(trecho.obra_id) === String(form.data.obra_id)),
+        [trechos, form.data.obra_id],
+    );
     const canTrySubmit = Boolean(
         canUploadProjects
         && contracts.length > 0
         && obrasForForm.length > 0
+        && trechosForForm.length > 0
         && disciplinasForForm.length > 0
         && projectPhases.length > 0
         && !form.processing,
@@ -299,12 +359,37 @@ export default function ProjectsIndex({
         [obras, contractFilter],
     );
 
+    const trechosForFilter = useMemo(
+        () => obraFilter === 'todos'
+            ? trechos.filter((trecho) => obrasForFilter.some((obra) => String(obra.id) === String(trecho.obra_id)))
+            : trechos.filter((trecho) => String(trecho.obra_id) === String(obraFilter)),
+        [trechos, obrasForFilter, obraFilter],
+    );
+
     const disciplinasForFilter = useMemo(
         () => contractFilter === 'todos'
             ? disciplinas
             : disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(contractFilter)),
         [disciplinas, contractFilter],
     );
+
+    const batchesForFilter = useMemo(() => {
+        const batches = new Map();
+
+        documents
+            .filter((document) => contractFilter === 'todos' || String(document.contract_id) === String(contractFilter))
+            .forEach((document) => {
+                documentSubmissionBatches(document).forEach((batch) => {
+                    batches.set(String(batch.id), batch);
+                });
+            });
+
+        return [...batches.values()].sort((first, second) => String(second.package_number || '').localeCompare(
+            String(first.package_number || ''),
+            'pt-BR',
+            { numeric: true },
+        ));
+    }, [documents, contractFilter]);
 
     const filteredDocuments = useMemo(() => {
         const term = query.trim().toLowerCase();
@@ -315,6 +400,10 @@ export default function ProjectsIndex({
             }
 
             if (obraFilter !== 'todos' && String(document.obra_id) !== String(obraFilter)) {
+                return false;
+            }
+
+            if (trechoFilter !== 'todos' && String(document.trecho_id) !== String(trechoFilter)) {
                 return false;
             }
 
@@ -330,15 +419,29 @@ export default function ProjectsIndex({
                 return false;
             }
 
+            const documentBatches = documentSubmissionBatches(document);
+
+            if (batchFilter === 'com_lote' && documentBatches.length === 0) {
+                return false;
+            }
+
+            if (batchFilter === 'sem_lote' && documentBatches.length > 0) {
+                return false;
+            }
+
+            if (batchFilter.startsWith('lote:') && !documentBatches.some((batch) => `lote:${batch.id}` === batchFilter)) {
+                return false;
+            }
+
             if (!term) {
                 return true;
             }
 
-            return `${document.title} ${projectEap(document)} ${fileDisplayName(document.latest_version)} ${document.latest_version?.original_name || ''} ${document.obra?.nome || ''} ${document.obra?.codigo || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''} ${document.phase?.code || ''}`
+            return `${document.title} ${projectEap(document)} ${fileDisplayName(document.latest_version)} ${document.latest_version?.original_name || ''} ${document.obra?.nome || ''} ${document.obra?.codigo || ''} ${document.trecho?.nome || ''} ${document.trecho?.codigo || ''} ${document.disciplina?.nome || ''} ${document.phase?.name || ''} ${document.phase?.code || ''} ${documentBatches.map((batch) => batch.package_number).join(' ')}`
                 .toLowerCase()
                 .includes(term);
         });
-    }, [documents, contractFilter, obraFilter, disciplinaFilter, statusFilter, query]);
+    }, [documents, contractFilter, obraFilter, trechoFilter, disciplinaFilter, statusFilter, batchFilter, query]);
 
     const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / PROJECTS_PER_PAGE));
     const paginatedDocuments = useMemo(() => {
@@ -349,7 +452,7 @@ export default function ProjectsIndex({
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [contractFilter, obraFilter, disciplinaFilter, statusFilter, query]);
+    }, [contractFilter, obraFilter, trechoFilter, disciplinaFilter, statusFilter, batchFilter, query]);
 
     useEffect(() => {
         setCurrentPage((pageNumber) => Math.min(pageNumber, totalPages));
@@ -365,26 +468,43 @@ export default function ProjectsIndex({
     const updateContract = (contractId) => {
         const nextContract = contracts.find((contract) => String(contract.id) === String(contractId)) ?? null;
         const nextObra = obras.find((obra) => String(obra.contract_id) === String(contractId)) ?? null;
+        const nextTrecho = trechos.find((trecho) => String(trecho.obra_id) === String(nextObra?.id)) ?? null;
         const nextDisciplina = disciplinas.find((disciplina) => String(disciplina.contract_id) === String(contractId)) ?? null;
 
         form.setData({
             ...form.data,
             contract_id: contractId,
             obra_id: nextObra?.id ?? '',
+            trecho_id: nextTrecho?.id ?? '',
             disciplina_id: nextDisciplina?.id ?? '',
-            code: buildProjectCode(nextContract, nextObra, nextDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+            code: buildProjectCode(nextContract, nextObra, nextTrecho, nextDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
         });
     };
 
     const updateObra = (obraId) => {
         const currentContract = contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null;
         const nextObra = obras.find((obra) => String(obra.id) === String(obraId)) ?? null;
+        const nextTrecho = trechos.find((trecho) => String(trecho.obra_id) === String(obraId)) ?? null;
         const currentDisciplina = disciplinas.find((disciplina) => String(disciplina.id) === String(form.data.disciplina_id)) ?? null;
 
         form.setData({
             ...form.data,
             obra_id: obraId,
-            code: buildProjectCode(currentContract, nextObra, currentDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+            trecho_id: nextTrecho?.id ?? '',
+            code: buildProjectCode(currentContract, nextObra, nextTrecho, currentDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+        });
+    };
+
+    const updateTrecho = (trechoId) => {
+        const currentContract = contracts.find((contract) => String(contract.id) === String(form.data.contract_id)) ?? null;
+        const currentObra = obras.find((obra) => String(obra.id) === String(form.data.obra_id)) ?? null;
+        const nextTrecho = trechos.find((trecho) => String(trecho.id) === String(trechoId)) ?? null;
+        const currentDisciplina = disciplinas.find((disciplina) => String(disciplina.id) === String(form.data.disciplina_id)) ?? null;
+
+        form.setData({
+            ...form.data,
+            trecho_id: trechoId,
+            code: buildProjectCode(currentContract, currentObra, nextTrecho, currentDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
         });
     };
 
@@ -396,7 +516,7 @@ export default function ProjectsIndex({
         form.setData({
             ...form.data,
             disciplina_id: disciplinaId,
-            code: buildProjectCode(currentContract, currentObra, nextDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+            code: buildProjectCode(currentContract, currentObra, selectedTrecho, nextDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
         });
     };
 
@@ -409,7 +529,7 @@ export default function ProjectsIndex({
         form.setData({
             ...form.data,
             project_phase_id: projectPhaseId,
-            code: buildProjectCode(currentContract, currentObra, currentDisciplina, nextProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+            code: buildProjectCode(currentContract, currentObra, selectedTrecho, currentDisciplina, nextProjectPhase, form.data.document_type, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
         });
     };
 
@@ -421,7 +541,7 @@ export default function ProjectsIndex({
         form.setData({
             ...form.data,
             document_type: documentType,
-            code: buildProjectCode(currentContract, currentObra, currentDisciplina, selectedProjectPhase, documentType, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
+            code: buildProjectCode(currentContract, currentObra, selectedTrecho, currentDisciplina, selectedProjectPhase, documentType, documentTypeCodes, normalizeDocumentNumber(form.data.document_number)),
         });
     };
 
@@ -435,7 +555,7 @@ export default function ProjectsIndex({
         form.setData({
             ...form.data,
             document_number: documentNumber,
-            code: buildProjectCode(currentContract, currentObra, currentDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, codeDocumentNumber),
+            code: buildProjectCode(currentContract, currentObra, selectedTrecho, currentDisciplina, selectedProjectPhase, form.data.document_type, documentTypeCodes, codeDocumentNumber),
         });
     };
 
@@ -455,7 +575,9 @@ export default function ProjectsIndex({
     const updateContractFilter = (contractId) => {
         setContractFilter(contractId);
         setObraFilter('todos');
+        setTrechoFilter('todos');
         setDisciplinaFilter('todos');
+        setBatchFilter('todos');
     };
 
     const toggleDocumentDetails = (documentId) => {
@@ -592,30 +714,33 @@ export default function ProjectsIndex({
         });
     };
 
-    const openInactivateModal = (document) => {
-        inactivateForm.clearErrors();
-        inactivateForm.setData('inactive_reason', '');
-        setInactivateDocument(document);
+    const openStatusModal = (document) => {
+        statusForm.clearErrors();
+        statusForm.setData({
+            project_status: isManuallyInactiveDocument(document) ? 'ativo' : 'inativo',
+            inactive_reason: '',
+        });
+        setStatusDocument(document);
     };
 
-    const closeInactivateModal = () => {
-        if (inactivateForm.processing) {
+    const closeStatusModal = () => {
+        if (statusForm.processing) {
             return;
         }
 
-        setInactivateDocument(null);
-        inactivateForm.reset();
-        inactivateForm.clearErrors();
+        setStatusDocument(null);
+        statusForm.reset();
+        statusForm.clearErrors();
     };
 
-    const submitInactivation = () => {
-        if (!inactivateDocument) {
+    const submitStatusChange = () => {
+        if (!statusDocument) {
             return;
         }
 
-        inactivateForm.patch(route('tenant.projects.inactivate', [tenant.slug, inactivateDocument.id]), {
+        statusForm.patch(route('tenant.projects.status.update', [tenant.slug, statusDocument.id]), {
             preserveScroll: true,
-            onSuccess: closeInactivateModal,
+            onSuccess: closeStatusModal,
         });
     };
 
@@ -672,7 +797,7 @@ export default function ProjectsIndex({
                             </div>
                             <h1 className="mt-2 text-xl font-semibold text-[var(--ink-900)]">Submeter projeto</h1>
                             <p className="mt-1 text-sm text-[var(--ink-500)]">
-                                Envie arquivos tecnicos por contrato, obra, disciplina e revisao. Todo envio passa por analise e aprovacao antes de aparecer na arvore principal.
+                                Envie arquivos tecnicos por contrato, obra, trecho, disciplina e revisao. Todo envio passa por analise e aprovacao antes de aparecer na arvore principal.
                             </p>
                         </div>
                         <button
@@ -715,6 +840,17 @@ export default function ProjectsIndex({
                                 {obrasForForm.map((obra) => (
                                     <option key={obra.id} value={obra.id}>
                                         {obra.codigo} - {obra.nome}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
+                        <Field label="Trecho" error={form.errors.trecho_id}>
+                            <select value={form.data.trecho_id} onChange={(event) => updateTrecho(event.target.value)} required>
+                                <option value="">Selecione o trecho</option>
+                                {trechosForForm.map((trecho) => (
+                                    <option key={trecho.id} value={trecho.id}>
+                                        {trecho.codigo} - {trecho.nome}
                                     </option>
                                 ))}
                             </select>
@@ -867,6 +1003,16 @@ export default function ProjectsIndex({
                             <h2 className="mt-1 text-[15px] font-semibold">{filteredDocuments.length} de {documents.length} documentos</h2>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
+                            {canUploadProjectBatches && (
+                                <button
+                                    type="button"
+                                    className="sig-btn sig-btn-success sig-btn-sm"
+                                    onClick={() => setBatchPanelOpen(true)}
+                                >
+                                    <Files size={13} />
+                                    Submeter em lote
+                                </button>
+                            )}
                             {canUploadProjects && (
                                 <button
                                     type="button"
@@ -886,7 +1032,7 @@ export default function ProjectsIndex({
                         </div>
                     </header>
 
-                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 xl:grid-cols-5">
+                    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 lg:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
                         <FilterSelect label="Contrato" value={contractFilter} onChange={updateContractFilter}>
                             <option value="todos">Todos os contratos</option>
                             {contracts.map((contract) => (
@@ -894,10 +1040,17 @@ export default function ProjectsIndex({
                             ))}
                         </FilterSelect>
 
-                        <FilterSelect label="Obra" value={obraFilter} onChange={setObraFilter}>
+                        <FilterSelect label="Obra" value={obraFilter} onChange={(value) => { setObraFilter(value); setTrechoFilter('todos'); }}>
                             <option value="todos">Todas as obras</option>
                             {obrasForFilter.map((obra) => (
                                 <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>
+                            ))}
+                        </FilterSelect>
+
+                        <FilterSelect label="Trecho" value={trechoFilter} onChange={setTrechoFilter}>
+                            <option value="todos">Todos os trechos</option>
+                            {trechosForFilter.map((trecho) => (
+                                <option key={trecho.id} value={trecho.id}>{trecho.codigo} - {trecho.nome}</option>
                             ))}
                         </FilterSelect>
 
@@ -910,8 +1063,17 @@ export default function ProjectsIndex({
 
                         <FilterSelect label="Situacao" value={statusFilter} onChange={setStatusFilter}>
                             <option value="todos">Ativos e inativos</option>
-                            <option value="ativo">Ativos na arvore</option>
-                            <option value="inativo">Inativos na arvore</option>
+                            <option value="ativo">Disponiveis na arvore</option>
+                            <option value="inativo">Fora da arvore</option>
+                        </FilterSelect>
+
+                        <FilterSelect label="Lote" value={batchFilter} onChange={setBatchFilter}>
+                            <option value="todos">Todos os envios</option>
+                            <option value="com_lote">Todos os lotes</option>
+                            <option value="sem_lote">Somente avulsos</option>
+                            {batchesForFilter.map((batch) => (
+                                <option key={batch.id} value={`lote:${batch.id}`}>{batch.package_number}</option>
+                            ))}
                         </FilterSelect>
 
                         <label>
@@ -953,11 +1115,20 @@ export default function ProjectsIndex({
                                     return (
                                         <tr key={document.id}>
                                             <td>
-                                                <div className="font-semibold">{document.title}</div>
+                                                <ProjectIdentity
+                                                    eap={projectEap(document, version)}
+                                                    fileName={originalFileName(version)}
+                                                    title={document.title}
+                                                />
+                                                 {documentSubmissionBatches(document).length > 0 && (
+                                                     <div className="mt-2">
+                                                         <ProjectBatchBadge document={document} />
+                                                     </div>
+                                                 )}
                                                  <div className="mt-1 text-xs text-[var(--ink-500)]">
                                                      Fase: {document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'}
                                                  </div>
-                                                 <div className="mono mt-1 text-xs text-[var(--ink-500)]">{projectEap(document) || 'Sem codigo'} · {documentTypes[document.document_type] || document.document_type}</div>
+                                                 <div className="mt-1 text-xs text-[var(--ink-500)]">{documentTypes[document.document_type] || document.document_type}</div>
                                                  {Number(document.open_rncs_count || 0) > 0 && (
                                                      <div className="mt-2">
                                                          <OpenRncBadge tenant={tenant} document={document} />
@@ -985,7 +1156,7 @@ export default function ProjectsIndex({
                                                 </span>
                                                 {inactive && document.inactive_at && (
                                                     <div className="mt-1 text-xs text-[var(--ink-500)]">
-                                                        Inativado por {document.inactive_by?.name || 'usuario'} em {new Date(document.inactive_at).toLocaleDateString('pt-BR')}
+                                                        Indisponibilizado por {document.inactive_by?.name || 'usuario'} em {new Date(document.inactive_at).toLocaleDateString('pt-BR')}
                                                     </div>
                                                 )}
                                                 {inactive && !manuallyInactive && (
@@ -1006,9 +1177,6 @@ export default function ProjectsIndex({
                                             </td>
                                             <td>
                                                 <div className="max-w-[260px] truncate text-sm font-semibold">{fileDisplayName(version)}</div>
-                                                {shouldShowOriginalName(version) && (
-                                                    <div className="max-w-[260px] truncate text-xs text-[var(--ink-500)]">Original: {version.original_name}</div>
-                                                )}
                                                 <div className="text-xs text-[var(--ink-500)]">{version?.size_label}</div>
                                             </td>
                                             <td>
@@ -1057,14 +1225,20 @@ export default function ProjectsIndex({
                                                             Baixar CAP
                                                         </a>
                                                     )}
-                                                    {canDeleteProjects && treeActive && (
+                                                    {version?.submission_batch?.cap_number && (
+                                                        <a href={batchCapPdfUrl(tenant, version.submission_batch)} target="_blank" rel="noreferrer" className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                            <FileDown size={13} />
+                                                            CAP do pacote
+                                                        </a>
+                                                    )}
+                                                    {Boolean(document.can_manage_status) && (treeActive || manuallyInactive) && (
                                                         <button
                                                             type="button"
                                                             className="sig-btn sig-btn-secondary sig-btn-sm"
-                                                            onClick={() => openInactivateModal(document)}
+                                                            onClick={() => openStatusModal(document)}
                                                         >
-                                                            <ArchiveX size={13} />
-                                                            Inativar
+                                                            <RefreshCw size={13} />
+                                                            Alterar status
                                                         </button>
                                                     )}
                                                     {canDeleteProjects && (
@@ -1106,19 +1280,23 @@ export default function ProjectsIndex({
                                         >
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    <h3 className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</h3>
                                                     <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
                                                         {projectStatusLabel(displayStatus, statusLabels)}
                                                     </span>
+                                                    <ProjectBatchBadge document={document} />
                                                 </div>
 
-                                                <div className="mono mt-1 break-all text-xs text-[var(--ink-500)]">
-                                                    {projectEap(document, version) || 'Sem codigo'}
-                                                </div>
+                                                <ProjectIdentity
+                                                    className="mt-2"
+                                                    eap={projectEap(document, version)}
+                                                    fileName={originalFileName(version)}
+                                                    title={document.title}
+                                                />
 
                                                 <div className="mt-3 grid gap-x-4 gap-y-2 text-xs text-[var(--ink-500)] sm:grid-cols-2 lg:grid-cols-4">
                                                     <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
                                                     <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
+                                                    <CompactInfo label="Trecho" value={document.trecho ? `${document.trecho.codigo} - ${document.trecho.nome}` : 'Projeto legado'} />
                                                     <CompactInfo label="Disciplina" value={`${document.disciplina?.sigla || '-'} - ${document.disciplina?.nome || 'Sem disciplina'}`} />
                                                     <CompactInfo label="Fase" value={document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'} />
                                                 </div>
@@ -1127,7 +1305,7 @@ export default function ProjectsIndex({
                                             <ChevronDown size={18} className={`mt-1 shrink-0 text-[var(--ink-500)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
                                         </button>
 
-                                        {(Number(document.open_rncs_count || 0) > 0 || document.latest_cap_version?.cap_number) && (
+                                        {(Number(document.open_rncs_count || 0) > 0 || document.latest_cap_version?.cap_number || version?.submission_batch?.cap_number) && (
                                             <div className="flex flex-wrap items-center justify-end gap-2 px-5 pb-4">
                                                 <OpenRncBadge tenant={tenant} document={document} />
                                                 {document.latest_cap_version?.cap_number && (
@@ -1138,6 +1316,12 @@ export default function ProjectsIndex({
                                                     >
                                                         <FileDown size={13} />
                                                         Baixar CAP
+                                                    </a>
+                                                )}
+                                                {version?.submission_batch?.cap_number && (
+                                                    <a href={batchCapPdfUrl(tenant, version.submission_batch)} target="_blank" rel="noreferrer" className="sig-btn sig-btn-secondary sig-btn-sm">
+                                                        <FileDown size={13} />
+                                                        CAP do pacote
                                                     </a>
                                                 )}
                                             </div>
@@ -1152,12 +1336,6 @@ export default function ProjectsIndex({
                                                     <CompactInfo label="Status APS" value={derivativeLabels[version?.derivative_status] || version?.derivative_status || '-'} />
                                                 </div>
 
-                                                {shouldShowOriginalName(version) && (
-                                                    <div className="mt-3 break-all text-xs text-[var(--ink-500)]">
-                                                        Original: {version.original_name}
-                                                    </div>
-                                                )}
-
                                                 <ProjectStatusDetails document={document} inactive={inactive} manuallyInactive={manuallyInactive} />
 
                                                 <div className="mt-4 border-t border-[var(--border)] pt-4">
@@ -1169,7 +1347,7 @@ export default function ProjectsIndex({
                                                         canAnalyzeProjects={canAnalyzeProjects}
                                                         canDeleteProjects={canDeleteProjects}
                                                         onProcessVersion={processVersion}
-                                                        onOpenInactivateModal={openInactivateModal}
+                                                        onOpenStatusModal={openStatusModal}
                                                         onDeleteDocument={deleteDocument}
                                                     />
                                                 </div>
@@ -1201,6 +1379,7 @@ export default function ProjectsIndex({
                     fileName={form.data.file?.name}
                     contractLabel={selectedContract ? contractLabel(selectedContract) : 'Contrato nao informado'}
                     obraLabel={selectedObra ? `${selectedObra.codigo} - ${selectedObra.nome}` : 'Obra nao informada'}
+                    trechoLabel={selectedTrecho ? `${selectedTrecho.codigo} - ${selectedTrecho.nome}` : 'Trecho nao informado'}
                     disciplinaLabel={selectedDisciplina ? `${selectedDisciplina.sigla} - ${selectedDisciplina.nome}` : 'Disciplina nao informada'}
                     projectPhaseLabel={selectedProjectPhaseLabel}
                     documentTypeLabel={selectedDocumentTypeLabel}
@@ -1220,15 +1399,33 @@ export default function ProjectsIndex({
                 />
             )}
 
-            {inactivateDocument && (
-                <InactivateProjectModal
-                    document={inactivateDocument}
-                    reason={inactivateForm.data.inactive_reason}
-                    error={inactivateForm.errors.inactive_reason}
-                    processing={inactivateForm.processing}
-                    onReasonChange={(value) => inactivateForm.setData('inactive_reason', value)}
-                    onClose={closeInactivateModal}
-                    onConfirm={submitInactivation}
+            {batchPanelOpen && (
+                <ProjectBatchSubmissionModal
+                    tenant={tenant}
+                    contracts={contracts}
+                    obras={obras}
+                    trechos={trechos}
+                    disciplinas={disciplinas}
+                    documents={documents}
+                    projectPhases={projectPhases}
+                    documentTypes={documentTypes}
+                    documentTypeCodes={documentTypeCodes}
+                    allowedExtensions={allowedExtensions}
+                    capImpactLabels={capImpactLabels}
+                    onClose={() => setBatchPanelOpen(false)}
+                />
+            )}
+
+            {statusDocument && (
+                <ProjectStatusModal
+                    document={statusDocument}
+                    targetStatus={statusForm.data.project_status}
+                    reason={statusForm.data.inactive_reason}
+                    error={statusForm.errors.inactive_reason}
+                    processing={statusForm.processing}
+                    onReasonChange={(value) => statusForm.setData('inactive_reason', value)}
+                    onClose={closeStatusModal}
+                    onConfirm={submitStatusChange}
                 />
             )}
         </AuthenticatedLayout>
@@ -1244,7 +1441,7 @@ function EapPreview({ fullEap }) {
                     className="mono font-semibold"
                     value={fullEap || ''}
                     readOnly
-                    placeholder="Contrato-Obra-Disciplina-Fase-Tipo-Sequencial-Revisao"
+                    placeholder="Contrato-Obra-Trecho-Disciplina-Fase-Tipo-Sequencial-Revisao"
                 />
             </span>
         </label>
@@ -1350,6 +1547,7 @@ function ConfirmProjectSubmitModal({
     fileName,
     contractLabel,
     obraLabel,
+    trechoLabel,
     disciplinaLabel,
     projectPhaseLabel,
     documentTypeLabel,
@@ -1399,16 +1597,16 @@ function ConfirmProjectSubmitModal({
                 </header>
 
                 <div className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-x-hidden overflow-y-auto px-4 py-4 sm:grid-cols-2 sm:px-5 sm:py-5">
+                    <div className="sm:col-span-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+                        <ProjectIdentity eap={eap} fileName={fileName} title={title} eapClassName="text-base" />
+                    </div>
                     <ConfirmInfo label="Titulo" value={title} />
-                    <ConfirmInfo label="Arquivo" value={fileName} />
                     <ConfirmInfo label="Contrato" value={contractLabel} />
                     <ConfirmInfo label="Obra" value={obraLabel} />
+                    <ConfirmInfo label="Trecho" value={trechoLabel} />
                     <ConfirmInfo label="Disciplina" value={disciplinaLabel} />
                     <ConfirmInfo label="Fase" value={projectPhaseLabel} />
                     <ConfirmInfo label="Tipo" value={documentTypeLabel} />
-                    <div className="sm:col-span-2">
-                        <ConfirmInfo label="EAP da revisao" value={eap} mono />
-                    </div>
                     {requiresCap && (
                         <div className="grid gap-3 sm:col-span-2">
                             <ConfirmInfo label="Número CAP" value={capNumber} mono />
@@ -1441,8 +1639,9 @@ function ConfirmProjectSubmitModal({
     );
 }
 
-function InactivateProjectModal({
+function ProjectStatusModal({
     document,
+    targetStatus,
     reason,
     error,
     processing,
@@ -1451,6 +1650,7 @@ function InactivateProjectModal({
     onConfirm,
 }) {
     const canConfirm = reason.trim().length > 0 && !processing;
+    const activating = targetStatus === 'ativo';
 
     return (
         <div
@@ -1462,20 +1662,22 @@ function InactivateProjectModal({
                 className="w-full max-w-xl overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_24px_80px_rgba(11,16,32,0.24)]"
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby="inactivate-project-title"
+                aria-labelledby="project-status-title"
                 onClick={(event) => event.stopPropagation()}
             >
                 <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                            <ArchiveX size={15} />
-                            <span className="eyebrow">Inativar projeto</span>
+                            {activating ? <RefreshCw size={15} /> : <ArchiveX size={15} />}
+                            <span className="eyebrow">Alterar status</span>
                         </div>
-                        <h2 id="inactivate-project-title" className="mt-1 text-[17px] font-semibold text-[var(--ink-900)]">
-                            Remover projeto da arvore principal
+                        <h2 id="project-status-title" className="mt-1 text-[17px] font-semibold text-[var(--ink-900)]">
+                            {activating ? 'Reativar projeto na arvore' : 'Tornar projeto indisponivel'}
                         </h2>
                         <p className="mt-1 text-[13px] text-[var(--ink-500)]">
-                            O registro, as revisoes e os arquivos continuam preservados no historico.
+                            {activating
+                                ? 'A ultima revisao aprovada voltara a ficar disponivel para os usuarios do contrato.'
+                                : 'O projeto deixara de ser visualizado na arvore imediatamente. Arquivos e revisoes serao preservados.'}
                         </p>
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
@@ -1484,15 +1686,20 @@ function InactivateProjectModal({
                 </header>
 
                 <div className="grid gap-4 px-5 py-5">
-                    <ConfirmInfo label="Projeto" value={document.title} />
-                    <ConfirmInfo label="EAP" value={projectEap(document)} mono />
+                    <ProjectIdentity
+                        eap={projectEap(document, document.latest_version)}
+                        fileName={originalFileName(document.latest_version)}
+                        title={document.title}
+                    />
                     <label>
-                        <span className="eyebrow mb-1 block">Motivo da decisao</span>
+                        <span className="eyebrow mb-1 block">Motivo da alteracao</span>
                         <textarea
                             className="min-h-32 w-full resize-y rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[rgba(37,99,235,0.16)]"
                             value={reason}
                             onChange={(event) => onReasonChange(event.target.value)}
-                            placeholder="Explique por que este projeto sera inativado"
+                            placeholder={activating
+                                ? 'Informe por que o projeto pode voltar a ficar disponivel'
+                                : 'Descreva o problema que exige a indisponibilidade imediata'}
                             autoFocus
                         />
                         {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
@@ -1503,9 +1710,14 @@ function InactivateProjectModal({
                     <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose} disabled={processing}>
                         Cancelar
                     </button>
-                    <button type="button" className="sig-btn sig-btn-primary" onClick={onConfirm} disabled={!canConfirm}>
-                        <ArchiveX size={15} />
-                        Inativar projeto
+                    <button
+                        type="button"
+                        className={`sig-btn ${activating ? 'sig-btn-success' : 'sig-btn-primary'}`}
+                        onClick={onConfirm}
+                        disabled={!canConfirm}
+                    >
+                        {activating ? <RefreshCw size={15} /> : <ArchiveX size={15} />}
+                        {activating ? 'Reativar projeto' : 'Tornar indisponivel'}
                     </button>
                 </footer>
             </section>
@@ -1614,7 +1826,7 @@ function ProjectStatusDetails({ document, inactive, manuallyInactive }) {
         <>
             {inactive && document.inactive_at && (
                 <div className="mt-3 text-xs text-[var(--ink-500)]">
-                    Inativado por {document.inactive_by?.name || 'usuario'} em {new Date(document.inactive_at).toLocaleDateString('pt-BR')}
+                    Indisponibilizado por {document.inactive_by?.name || 'usuario'} em {new Date(document.inactive_at).toLocaleDateString('pt-BR')}
                 </div>
             )}
             {inactive && !manuallyInactive && (
@@ -1644,7 +1856,7 @@ function ProjectDocumentActions({
     canAnalyzeProjects,
     canDeleteProjects,
     onProcessVersion,
-    onOpenInactivateModal,
+    onOpenStatusModal,
     onDeleteDocument,
 }) {
     return (
@@ -1680,14 +1892,14 @@ function ProjectDocumentActions({
                     Baixar
                 </a>
             )}
-            {canDeleteProjects && treeActive && (
+            {Boolean(document.can_manage_status) && (treeActive || isManuallyInactiveDocument(document)) && (
                 <button
                     type="button"
                     className="sig-btn sig-btn-secondary sig-btn-sm"
-                    onClick={() => onOpenInactivateModal(document)}
+                    onClick={() => onOpenStatusModal(document)}
                 >
-                    <ArchiveX size={13} />
-                    Inativar
+                    <RefreshCw size={13} />
+                    Alterar status
                 </button>
             )}
             {canDeleteProjects && (

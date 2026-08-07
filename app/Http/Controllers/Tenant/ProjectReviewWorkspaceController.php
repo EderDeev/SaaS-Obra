@@ -22,19 +22,22 @@ class ProjectReviewWorkspaceController extends Controller
 {
     public function storeMarkup(Request $request, Tenant $tenant, ProjectDocumentVersion $version): RedirectResponse
     {
-        $version = $this->authorizedVersionForReview($request, $tenant, $version);
+        $version = $this->authorizedVersionForCommentManagement($request, $tenant, $version);
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'assigned_to_id' => ['nullable', 'integer'],
+            'assigned_to_ids' => ['nullable', 'array', 'max:50'],
+            'assigned_to_ids.*' => ['integer', 'distinct'],
             'priority' => ['required', Rule::in(['baixa', 'normal', 'alta', 'critica'])],
             'due_date' => ['nullable', 'date'],
             'viewer_state' => ['nullable', 'array'],
             'markup_payload' => ['nullable', 'array'],
         ]);
 
-        $this->ensureAssignableUser($tenant, $version->document->contract_id, $data['assigned_to_id'] ?? null);
+        $assigneeIds = $this->normalizedAssigneeIds($data);
+        $this->ensureAssignableUsers($tenant, $version->document->contract_id, $assigneeIds);
 
         $markup = ProjectReviewMarkup::create([
             'tenant_id' => $tenant->id,
@@ -42,7 +45,7 @@ class ProjectReviewWorkspaceController extends Controller
             'project_document_id' => $version->document->id,
             'project_document_version_id' => $version->id,
             'created_by_id' => $request->user()->id,
-            'assigned_to_id' => $data['assigned_to_id'] ?? null,
+            'assigned_to_id' => $assigneeIds[0] ?? null,
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
             'markup_type' => 'pin',
@@ -53,7 +56,9 @@ class ProjectReviewWorkspaceController extends Controller
             'due_date' => $data['due_date'] ?? null,
         ]);
 
-        $notified = $this->notifyMarkupAssignee($markup, $request->user());
+        $this->syncMarkupAssignees($markup, $tenant, $assigneeIds);
+
+        $notified = $this->notifyMarkupAssignees($markup, $request->user()) > 0;
 
         return back()->with('success', $notified
             ? 'Comentário visual registrado. Responsável notificado no sistema e por e-mail.'
@@ -62,19 +67,26 @@ class ProjectReviewWorkspaceController extends Controller
 
     public function updateMarkup(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): RedirectResponse
     {
-        $this->authorizedMarkupForReview($request, $tenant, $markup);
+        $this->authorizedMarkupForCommentManagement($request, $tenant, $markup);
 
         $data = $request->validate([
             'status' => ['nullable', Rule::in(['open', 'in_progress', 'resolved'])],
             'assigned_to_id' => ['nullable', 'integer'],
+            'assigned_to_ids' => ['nullable', 'array', 'max:50'],
+            'assigned_to_ids.*' => ['integer', 'distinct'],
         ]);
 
-        $this->ensureAssignableUser($tenant, $markup->contract_id, $data['assigned_to_id'] ?? null);
+        $hasAssigneePayload = array_key_exists('assigned_to_ids', $data) || array_key_exists('assigned_to_id', $data);
+        $assigneeIds = $hasAssigneePayload ? $this->normalizedAssigneeIds($data) : [];
+
+        if ($hasAssigneePayload) {
+            $this->ensureAssignableUsers($tenant, $markup->contract_id, $assigneeIds);
+        }
 
         $updates = [];
 
-        if (array_key_exists('assigned_to_id', $data)) {
-            $updates['assigned_to_id'] = $data['assigned_to_id'];
+        if ($hasAssigneePayload) {
+            $updates['assigned_to_id'] = $assigneeIds[0] ?? null;
         }
 
         if (array_key_exists('status', $data)) {
@@ -89,17 +101,21 @@ class ProjectReviewWorkspaceController extends Controller
             }
         }
 
-        $previousAssigneeId = $markup->assigned_to_id;
+        $previousAssigneeIds = $markup->assignees()
+            ->pluck('users.id')
+            ->push($markup->assigned_to_id)
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
         $markup->update($updates);
 
-        $assigneeChanged = array_key_exists('assigned_to_id', $updates)
-            && $markup->assigned_to_id
-            && (int) $markup->assigned_to_id !== (int) $previousAssigneeId;
-
-        if ($assigneeChanged) {
-            $markup->refresh();
-            $this->notifyMarkupAssignee($markup, $request->user());
+        if ($hasAssigneePayload) {
+            $this->syncMarkupAssignees($markup, $tenant, $assigneeIds);
+            $newAssigneeIds = array_values(array_diff($assigneeIds, $previousAssigneeIds));
+            $this->notifyMarkupAssignees($markup->refresh(), $request->user(), $newAssigneeIds);
         }
 
         return back()->with('success', 'Comentário visual atualizado.');
@@ -122,7 +138,7 @@ class ProjectReviewWorkspaceController extends Controller
                 $tenant,
                 ProjectPermissions::REVIEW,
                 $markup->version->document->contract
-            ) || (int) $markup->assigned_to_id === (int) $request->user()->id;
+            ) || $this->markupHasAssignee($markup, $request->user()->id);
 
             abort_unless($canResolve, 403);
         }
@@ -152,7 +168,7 @@ class ProjectReviewWorkspaceController extends Controller
 
     public function destroyMarkup(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): RedirectResponse
     {
-        $this->authorizedMarkupForReview($request, $tenant, $markup);
+        $this->authorizedMarkupForCommentManagement($request, $tenant, $markup);
 
         $markup->delete();
 
@@ -181,7 +197,7 @@ class ProjectReviewWorkspaceController extends Controller
         return back();
     }
 
-    private function authorizedVersionForReview(Request $request, Tenant $tenant, ProjectDocumentVersion $version): ProjectDocumentVersion
+    private function authorizedVersionForCommentManagement(Request $request, Tenant $tenant, ProjectDocumentVersion $version): ProjectDocumentVersion
     {
         abort_unless((int) $version->tenant_id === (int) $tenant->id, 404);
 
@@ -190,18 +206,18 @@ class ProjectReviewWorkspaceController extends Controller
         ]);
 
         abort_unless($version->document, 404);
-        abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $version->document->contract), 403);
+        abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::COMMENTS, $version->document->contract), 403);
 
         return $version;
     }
 
-    private function authorizedMarkupForReview(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): ProjectReviewMarkup
+    private function authorizedMarkupForCommentManagement(Request $request, Tenant $tenant, ProjectReviewMarkup $markup): ProjectReviewMarkup
     {
         abort_unless((int) $markup->tenant_id === (int) $tenant->id, 404);
 
         $markup->load('version.document.contract');
         abort_unless($markup->version?->document, 404);
-        abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::REVIEW, $markup->version->document->contract), 403);
+        abort_unless(ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::COMMENTS, $markup->version->document->contract), 403);
 
         return $markup;
     }
@@ -222,19 +238,59 @@ class ProjectReviewWorkspaceController extends Controller
         return $markup;
     }
 
-    private function ensureAssignableUser(Tenant $tenant, int $contractId, mixed $userId): void
+    /**
+     * @return array<int, int>
+     */
+    private function normalizedAssigneeIds(array $data): array
     {
-        if (! $userId) {
+        $ids = $data['assigned_to_ids'] ?? [];
+
+        if ($ids === [] && ! empty($data['assigned_to_id'])) {
+            $ids = [$data['assigned_to_id']];
+        }
+
+        return collect($ids)
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, int>  $userIds
+     */
+    private function ensureAssignableUsers(Tenant $tenant, int $contractId, array $userIds): void
+    {
+        if ($userIds === []) {
             return;
         }
 
         $allowedIds = $this->contractUserIds($tenant, $contractId);
 
-        if (! in_array((int) $userId, $allowedIds, true)) {
+        if (array_diff($userIds, $allowedIds) !== []) {
             throw ValidationException::withMessages([
-                'assigned_to_id' => 'Selecione um usuário vinculado a este contrato.',
+                'assigned_to_ids' => 'Selecione apenas usuários vinculados a este contrato.',
             ]);
         }
+    }
+
+    /**
+     * @param  array<int, int>  $userIds
+     */
+    private function syncMarkupAssignees(ProjectReviewMarkup $markup, Tenant $tenant, array $userIds): void
+    {
+        $syncData = collect($userIds)
+            ->mapWithKeys(fn (int $userId): array => [$userId => ['tenant_id' => $tenant->id]])
+            ->all();
+
+        $markup->assignees()->sync($syncData);
+    }
+
+    private function markupHasAssignee(ProjectReviewMarkup $markup, int $userId): bool
+    {
+        return (int) $markup->assigned_to_id === $userId
+            || $markup->assignees()->where('users.id', $userId)->exists();
     }
 
     /**
@@ -260,20 +316,27 @@ class ProjectReviewWorkspaceController extends Controller
             ->all();
     }
 
-    private function notifyMarkupAssignee(ProjectReviewMarkup $markup, User $actor): bool
+    /**
+     * @param  array<int, int>|null  $userIds
+     */
+    private function notifyMarkupAssignees(ProjectReviewMarkup $markup, User $actor, ?array $userIds = null): int
     {
-        if (! $markup->assigned_to_id) {
-            return false;
+        $markup->loadMissing(['tenant', 'contract', 'document', 'version', 'assignees', 'assignee']);
+
+        $assignees = $markup->assignees;
+
+        if ($assignees->isEmpty() && $markup->assignee) {
+            $assignees = collect([$markup->assignee]);
         }
 
-        $markup->loadMissing(['tenant', 'contract', 'document', 'version', 'assignee']);
-
-        if (! $markup->assignee) {
-            return false;
+        if ($userIds !== null) {
+            $assignees = $assignees->whereIn('id', $userIds);
         }
 
-        $markup->assignee->notify(new ProjectReviewMarkupCreatedNotification($markup, $actor));
+        $assignees->unique('id')->each(
+            fn (User $user) => $user->notify(new ProjectReviewMarkupCreatedNotification($markup, $actor))
+        );
 
-        return true;
+        return $assignees->unique('id')->count();
     }
 }

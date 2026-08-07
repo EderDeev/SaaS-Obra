@@ -48,10 +48,9 @@ function ProjectViewerTourPreview({ tenant }) {
                             <Eye size={15} />
                             <span className="eyebrow">Projetos</span>
                         </div>
-                        <h1 className="mt-1 truncate text-xl font-semibold text-[var(--ink-900)]">Planta do pavimento tipo</h1>
-                        <p className="mt-1 truncate text-sm text-[var(--ink-500)]">
-                            CT001-001-ARQ-EXE-PRJ-001-R02 - CT001-001-ARQ-EXE-PRJ-001-R02.dwg - Pronto para visualizacao
-                        </p>
+                        <h1 className="mono mt-1 break-all text-xl font-bold text-[var(--primary)]">CT001-001-GER-ARQ-EXE-PRJ-001-R02</h1>
+                        <p className="mt-1 break-all text-sm font-medium text-[var(--ink-700)]">planta-pavimento-tipo-r02.dwg</p>
+                        <p className="mt-1 text-xs text-[var(--ink-500)]">Planta do pavimento tipo - Pronto para visualizacao</p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
@@ -155,8 +154,12 @@ function ProjectViewerTourPreview({ tenant }) {
                                 <ChevronDown size={15} />
                             </button>
                             <p className="mt-3 text-xs leading-5 text-[var(--ink-500)]">
-                                Abra o formulario para criar uma marcacao no modelo, definir responsavel e registrar a prioridade.
+                                Abra o formulário para criar uma marcação, definir vários responsáveis e registrar a prioridade.
                             </p>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                                <span className="sig-pill sig-pill-blue">Marina Costa</span>
+                                <span className="sig-pill sig-pill-blue">Ederson Moreira</span>
+                            </div>
                         </section>
 
                         <section data-tour="project-viewer-comment-list" className="border-b border-[var(--border)] p-4">

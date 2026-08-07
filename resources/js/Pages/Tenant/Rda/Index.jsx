@@ -73,6 +73,8 @@ export default function RdaIndex({
     existingRdos = [],
     apontamentos = [],
     summary = {},
+    can_fill = false,
+    can_manage_settings = false,
 }) {
     const { currentTenant } = usePage().props;
     const initialRender = useRef(true);
@@ -186,9 +188,11 @@ export default function RdaIndex({
                         <p className="mt-2 text-sm">
                             Este contrato ainda não possui parametrização ativa de RDO para gerar os apontamentos de RDA. Configure o RDO primeiro para definir prazo, frentes e calendário de geração.
                         </p>
-                        <Link className="mt-3 inline-flex rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white" href={route('tenant.diario-obra.rdo.settings', currentTenant.slug)}>
-                            Abrir parametrização do RDO
-                        </Link>
+                        {can_manage_settings && (
+                            <Link className="mt-3 inline-flex rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white" href={route('tenant.diario-obra.rdo.settings', currentTenant.slug)}>
+                                Abrir parametrização do RDO
+                            </Link>
+                        )}
                     </div>
                 )}
 
@@ -244,7 +248,7 @@ export default function RdaIndex({
                                 const canOpenRda = Boolean(
                                     rda?.status === 'publicado'
                                     || rdaCanFill
-                                    || (!rda && rdoCanFill)
+                                    || (!rda && rdoCanFill && can_fill)
                                 );
                                 const rdaStatusLabel = rda
                                     ? (rda.status === 'publicado'

@@ -1,9 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ProjectCapModal from '@/Components/ProjectCapModal';
+import ProjectIdentity from '@/Components/ProjectIdentity';
 import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, router } from '@inertiajs/react';
-import { AlertTriangle, CheckCircle2, ChevronDown, Download, Eye, FileSearch, Filter, Play, Search, Send, X, XCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Download, Eye, FileText, Files, FileSearch, Filter, LoaderCircle, Play, Search, Send, X, XCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 const statusClasses = {
     em_analise: 'sig-pill-blue',
@@ -53,8 +54,8 @@ function fileDisplayName(version) {
     return version?.stored_name || version?.original_name || '';
 }
 
-function shouldShowOriginalName(version) {
-    return Boolean(version?.original_name && version?.stored_name && version.original_name !== version.stored_name);
+function originalFileName(version) {
+    return version?.original_name || version?.stored_name || '';
 }
 
 function isApsWaiting(version) {
@@ -69,7 +70,7 @@ function noteKey(document) {
     return `${document.id}:${document.status}`;
 }
 
-export default function ProjectReview({ tenant, contracts, documents, statusLabels, capImpactLabels = {}, stats }) {
+export default function ProjectReview({ tenant, contracts, documents, batches = [], statusLabels, capImpactLabels = {}, stats }) {
     const [contractFilter, setContractFilter] = useState('todos');
     const [statusFilter, setStatusFilter] = useState('todos');
     const [query, setQuery] = useState('');
@@ -81,6 +82,56 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
     const [rejectionReason, setRejectionReason] = useState('');
     const [rejectionError, setRejectionError] = useState('');
     const [rejecting, setRejecting] = useState(false);
+    const [batchNotes, setBatchNotes] = useState({});
+    const [rejectionBatch, setRejectionBatch] = useState(null);
+    const [batchRejectionReason, setBatchRejectionReason] = useState('');
+    const [batchRejectionError, setBatchRejectionError] = useState('');
+
+    const apsPendingVersionIds = useMemo(() => [
+        ...documents.map((document) => document.latest_version).filter(isApsWaiting).map((version) => version.id),
+        ...batches.flatMap((batch) => (batch.versions || []).filter(isApsWaiting).map((version) => version.id)),
+    ].filter((id, index, ids) => id && ids.indexOf(id) === index), [documents, batches]);
+    const apsPendingVersionKey = apsPendingVersionIds.join(',');
+
+    useEffect(() => {
+        if (!apsPendingVersionKey) return undefined;
+
+        let active = true;
+        let polling = false;
+
+        const syncApsStatuses = async () => {
+            if (polling) return;
+            polling = true;
+
+            await Promise.allSettled(apsPendingVersionIds.map((versionId) => fetch(
+                route('tenant.projects.aps-status', [tenant.slug, versionId]),
+                {
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                },
+            )));
+
+            if (active) {
+                router.reload({
+                    only: ['documents', 'batches'],
+                    preserveScroll: true,
+                    preserveState: true,
+                });
+            }
+
+            polling = false;
+        };
+
+        const interval = window.setInterval(syncApsStatuses, 8000);
+
+        return () => {
+            active = false;
+            window.clearInterval(interval);
+        };
+    }, [apsPendingVersionKey, tenant.slug]);
 
     const filteredDocuments = useMemo(() => {
         const term = query.trim().toLowerCase();
@@ -103,6 +154,19 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                 .includes(term);
         });
     }, [documents, contractFilter, statusFilter, query]);
+
+    const filteredBatches = useMemo(() => {
+        const term = query.trim().toLowerCase();
+
+        return batches.filter((batch) => {
+            if (contractFilter !== 'todos' && String(batch.contract_id) !== String(contractFilter)) return false;
+            if (statusFilter !== 'todos' && batch.status !== statusFilter) return false;
+            if (!term) return true;
+
+            return `${batch.package_number} ${batch.cap_number} ${batch.title} ${batch.contract?.code || ''} ${(batch.versions || []).map((version) => `${version.document?.title || ''} ${projectEap(version.document, version)}`).join(' ')}`
+                .toLowerCase().includes(term);
+        });
+    }, [batches, contractFilter, statusFilter, query]);
 
     const reviewDocument = (document, action) => {
         const key = noteKey(document);
@@ -175,6 +239,23 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
             : [...currentIds, documentId]);
     };
 
+    const reviewBatch = (batch, action, reason = null) => {
+        router.patch(route('tenant.projects.batches.review.update', [tenant.slug, batch.id]), {
+            action,
+            review_notes: reason ?? batchNotes[batch.id] ?? '',
+        }, {
+            preserveScroll: true,
+            onStart: () => setRejecting(true),
+            onSuccess: () => {
+                setBatchNotes((current) => ({ ...current, [batch.id]: '' }));
+                setRejectionBatch(null);
+                setBatchRejectionReason('');
+            },
+            onError: (errors) => setBatchRejectionError(errors.review_notes || 'Não foi possível atualizar o pacote.'),
+            onFinish: () => setRejecting(false),
+        });
+    };
+
     return (
         <AuthenticatedLayout>
             <Head title="Analisar projeto" />
@@ -233,6 +314,27 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                         </label>
                     </div>
 
+                    {filteredBatches.length > 0 && (
+                        <div className="grid gap-3 border-b border-[var(--border)] p-4 sm:p-5">
+                            {filteredBatches.map((batch) => (
+                                <BatchReviewCard
+                                    key={batch.id}
+                                    tenant={tenant}
+                                    batch={batch}
+                                    statusLabels={statusLabels}
+                                    note={batchNotes[batch.id] || ''}
+                                    onNoteChange={(value) => setBatchNotes((current) => ({ ...current, [batch.id]: value }))}
+                                    onApprove={() => reviewBatch(batch, 'aprovar')}
+                                    onReject={() => {
+                                        setRejectionBatch(batch);
+                                        setBatchRejectionReason(batchNotes[batch.id] || '');
+                                        setBatchRejectionError('');
+                                    }}
+                                />
+                            ))}
+                        </div>
+                    )}
+
                     {filteredDocuments.length > 0 ? (
                         <>
                         <div className="projects-wide-only overflow-x-auto">
@@ -263,8 +365,11 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                         return (
                                             <tr key={document.id}>
                                                 <td>
-                                                    <div className="font-semibold">{document.title}</div>
-                                                    <div className="mono mt-1 text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem codigo'}</div>
+                                                    <ProjectIdentity
+                                                        eap={projectEap(document, version)}
+                                                        fileName={originalFileName(version)}
+                                                        title={document.title}
+                                                    />
                                                     <div className="mt-1 text-xs text-[var(--ink-500)]">
                                                         Fase: {document.phase ? `${document.phase.code} - ${document.phase.name}` : 'Sem fase'}
                                                     </div>
@@ -309,9 +414,6 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                 </td>
                                                 <td>
                                                     <div className="max-w-[240px] truncate text-sm font-semibold">{fileDisplayName(version)}</div>
-                                                    {shouldShowOriginalName(version) && (
-                                                        <div className="max-w-[240px] truncate text-xs text-[var(--ink-500)]">Original: {version.original_name}</div>
-                                                    )}
                                                     <div className="text-xs text-[var(--ink-500)]">{version?.size_label}</div>
                                                     <div className="mt-2 flex flex-wrap gap-2">
                                                         {version?.url && (
@@ -329,15 +431,16 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                                                 Original preservado
                                                             </span>
                                                         ) : version?.file_path ? (
-                                                            version.aps_urn ? (
+                                                            isApsWaiting(version) ? (
+                                                                <span className="sig-pill inline-flex items-center gap-1.5 bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                                                                    <LoaderCircle size={13} className="animate-spin" />
+                                                                    Processando APS
+                                                                </span>
+                                                            ) : version.aps_urn ? (
                                                                  <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm">
                                                                      <Eye size={13} />
                                                                      Checklist
                                                                  </Link>
-                                                            ) : isApsWaiting(version) ? (
-                                                                <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">
-                                                                    Processando APS
-                                                                </span>
                                                             ) : (
                                                                 <button
                                                                     type="button"
@@ -429,13 +532,17 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                                         >
                                             <span className="min-w-0 flex-1">
                                                 <span className="flex flex-wrap items-center gap-2">
-                                                    <span className="text-sm font-semibold text-[var(--ink-900)]">{document.title}</span>
                                                     <span className="sig-pill sig-pill-blue font-semibold">{version?.revision || 'Sem revisao'}</span>
                                                     <span className={`sig-pill ${statusClasses[displayStatus] || 'sig-pill-blue'}`}>
                                                         {projectStatusLabel(document, statusLabels)}
                                                     </span>
                                                 </span>
-                                                <span className="mono mt-1 block break-all text-xs text-[var(--ink-500)]">{projectEap(document, version) || 'Sem codigo'}</span>
+                                                <ProjectIdentity
+                                                    className="mt-2"
+                                                    eap={projectEap(document, version)}
+                                                    fileName={originalFileName(version)}
+                                                    title={document.title}
+                                                />
                                                 <span className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
                                                     <CompactInfo label="Contrato" value={`${document.contract?.code || '-'} - ${document.contract?.name || 'Sem contrato'}`} />
                                                     <CompactInfo label="Obra" value={`${document.obra?.codigo || '-'} - ${document.obra?.nome || 'Sem obra'}`} />
@@ -488,11 +595,11 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                             })}
                         </div>
                         </>
-                    ) : (
+                    ) : filteredBatches.length === 0 ? (
                         <div className="p-12 text-center text-sm text-[var(--ink-500)]">
                             Nenhum projeto encontrado para analise.
                         </div>
-                    )}
+                    ) : null}
                 </section>
             </section>
 
@@ -513,6 +620,26 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                     onConfirm={submitRejection}
                 />
             )}
+            {rejectionBatch && (
+                <BatchRejectionModal
+                    batch={rejectionBatch}
+                    reason={batchRejectionReason}
+                    error={batchRejectionError}
+                    processing={rejecting}
+                    onReasonChange={(value) => {
+                        setBatchRejectionReason(value);
+                        if (value.trim()) setBatchRejectionError('');
+                    }}
+                    onCancel={() => !rejecting && setRejectionBatch(null)}
+                    onConfirm={() => {
+                        if (!batchRejectionReason.trim()) {
+                            setBatchRejectionError('Informe o motivo da devolução.');
+                            return;
+                        }
+                        reviewBatch(rejectionBatch, 'reprovar', batchRejectionReason.trim());
+                    }}
+                />
+            )}
             {capDocument && (
                 <ProjectCapModal
                     document={capDocument}
@@ -522,6 +649,136 @@ export default function ProjectReview({ tenant, contracts, documents, statusLabe
                 />
             )}
         </AuthenticatedLayout>
+    );
+}
+
+function BatchReviewCard({ tenant, batch, statusLabels, note, onNoteChange, onApprove, onReject }) {
+    const actionable = ['em_analise', 'em_aprovacao'].includes(batch.status);
+    const isApproval = batch.status === 'em_aprovacao';
+    const versions = batch.versions || [];
+    const [expanded, setExpanded] = useState(false);
+
+    return (
+        <article className="overflow-hidden rounded-lg border border-[var(--primary-200)] bg-white">
+            <header className="flex flex-wrap items-start justify-between gap-3 bg-[var(--primary-50)] px-4 py-3">
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Files size={15} className="text-[var(--primary)]" />
+                        <span className="mono text-sm font-semibold text-[var(--primary)]">{batch.package_number}</span>
+                        <span className={`sig-pill ${statusClasses[batch.status] || 'sig-pill-blue'}`}>{statusLabels[batch.status] || batch.status}</span>
+                        <span className="sig-pill sig-pill-blue">{versions.length} projetos</span>
+                    </div>
+                    <h3 className="mt-1 font-semibold">{batch.title}</h3>
+                    <p className="mt-1 text-xs text-[var(--ink-500)]">{batch.contract?.code} · {batch.obra?.codigo} - {batch.obra?.nome}{batch.cap_number ? ` · CAP ${batch.cap_number}` : ' · Primeira submissão'}</p>
+                </div>
+                <button
+                    type="button"
+                    className="sig-btn sig-btn-secondary sig-btn-sm"
+                    aria-expanded={expanded}
+                    onClick={() => setExpanded((current) => !current)}
+                >
+                    {expanded ? 'Recolher' : 'Expandir'}
+                    <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+            </header>
+
+            {expanded && (
+                <>
+                    <div className="divide-y divide-[var(--border)]">
+                        {versions.map((version) => (
+                            <div key={version.id} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1.5fr)_150px_auto] md:items-center">
+                                <ProjectIdentity
+                                    eap={projectEap(version.document, version)}
+                                    fileName={originalFileName(version)}
+                                    title={version.document?.title}
+                                />
+                                <div className="text-xs"><span className="font-semibold">{version.document?.disciplina?.sigla}</span><div className="text-[var(--ink-500)]">{version.revision} · {version.size_label}</div></div>
+                                <BatchProjectActions tenant={tenant} batch={batch} version={version} />
+                            </div>
+                        ))}
+                    </div>
+
+                    {actionable && (
+                        <footer className="grid gap-4 border-t border-[var(--border)] bg-[var(--surface-muted)] p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                            <label className="min-w-0">
+                                <span className="eyebrow mb-1 block">Análise do pacote</span>
+                                <textarea
+                                    rows={4}
+                                    className="min-h-[120px] w-full resize-y"
+                                    value={note}
+                                    onChange={(event) => onNoteChange(event.target.value)}
+                                    placeholder={isApproval ? 'Observação da aprovação do pacote' : 'Observação da análise do pacote'}
+                                />
+                            </label>
+                            <div className="flex flex-wrap justify-end gap-2">
+                                {!batch.can_act && <span className="max-w-[260px] text-xs text-[var(--ink-500)]">A decisão exige responsabilidade em todas as disciplinas deste pacote.</span>}
+                                <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]" onClick={onReject} disabled={!batch.can_act}><XCircle size={13} />Reprovar pacote</button>
+                                <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={onApprove} disabled={!batch.can_act}><CheckCircle2 size={13} />{isApproval ? 'Aprovar pacote' : 'Enviar pacote para aprovação'}</button>
+                            </div>
+                        </footer>
+                    )}
+                </>
+            )}
+        </article>
+    );
+}
+
+function BatchProjectActions({ tenant, batch, version }) {
+    const revisionNumber = Number.parseInt(String(version?.revision || '').replace(/\D+/g, ''), 10);
+    const isRevision = Number.isFinite(revisionNumber) && revisionNumber > 0;
+
+    return (
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            {version?.url && (
+                <a href={version.url} download={fileDisplayName(version)} className="sig-btn sig-btn-secondary sig-btn-sm">
+                    <Download size={13} />
+                    Baixar
+                </a>
+            )}
+            {isApsWaiting(version) ? (
+                <span className="sig-pill inline-flex items-center gap-1.5 bg-[var(--surface-muted)] text-[var(--ink-600)]">
+                    <LoaderCircle size={13} className="animate-spin" />
+                    {derivativeLabels[version.derivative_status] || 'Processando APS'}
+                </span>
+            ) : version?.aps_urn ? (
+                <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm">
+                    <Eye size={13} />
+                    Checklist
+                </Link>
+            ) : version?.file_path ? (
+                <button
+                    type="button"
+                    className="sig-btn sig-btn-secondary sig-btn-sm"
+                    onClick={() => router.post(route('tenant.projects.process-aps', [tenant.slug, version.id]), {}, { preserveScroll: true })}
+                >
+                    <Play size={13} />
+                    Processar APS
+                </button>
+            ) : null}
+            {isRevision && batch.cap_number && (
+                <a
+                    href={route('tenant.projects.batches.cap.pdf', [tenant.slug, batch.id])}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="sig-btn sig-btn-secondary sig-btn-sm"
+                >
+                    <FileText size={13} />
+                    CAP
+                </a>
+            )}
+        </div>
+    );
+}
+
+function BatchRejectionModal({ batch, reason, error, processing, onReasonChange, onCancel, onConfirm }) {
+    return (
+        <div className="fixed inset-0 z-[130] grid place-items-center bg-[rgba(11,16,32,0.45)] p-4" onMouseDown={onCancel}>
+            <div className="w-full max-w-[520px] rounded-lg border border-[var(--border)] bg-white shadow-xl" onMouseDown={(event) => event.stopPropagation()}>
+                <header className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4"><div><span className="eyebrow">{batch.package_number}</span><h2 className="mt-1 text-lg font-semibold">Reprovar pacote completo</h2></div><button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" onClick={onCancel}><X size={17} /></button></header>
+                <div className="p-5"><p className="text-sm text-[var(--ink-600)]">Todos os {batch.versions?.length || 0} projetos voltarão para correção e nenhum será liberado isoladamente.</p><label className="mt-4 block"><span className="eyebrow mb-1 block">Motivo</span><textarea rows={4} value={reason} onChange={(event) => onReasonChange(event.target.value)} autoFocus /></label>{error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}</div>
+                <footer className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4"><button type="button" className="sig-btn sig-btn-secondary" onClick={onCancel} disabled={processing}>Cancelar</button><button type="button" className="sig-btn bg-[var(--red)] text-white" onClick={onConfirm} disabled={processing}><XCircle size={14} />Devolver pacote</button></footer>
+            </div>
+        </div>
     );
 }
 
@@ -552,15 +809,16 @@ function ReviewFileActions({ tenant, version }) {
                     Original preservado
                 </span>
             ) : version?.file_path ? (
-                version.aps_urn ? (
+                isApsWaiting(version) ? (
+                    <span className="sig-pill inline-flex items-center gap-1.5 bg-white text-[var(--ink-600)]">
+                        <LoaderCircle size={13} className="animate-spin" />
+                        Processando APS
+                    </span>
+                ) : version.aps_urn ? (
                     <Link href={`${route('tenant.projects.viewer', [tenant.slug, version.id])}?workspace=review`} className="sig-btn sig-btn-primary sig-btn-sm">
                         <Eye size={13} />
                         Checklist
                     </Link>
-                ) : isApsWaiting(version) ? (
-                    <span className="sig-pill bg-white text-[var(--ink-600)]">
-                        Processando APS
-                    </span>
                 ) : (
                     <button
                         type="button"
@@ -656,7 +914,12 @@ function ProjectRejectionModal({ document, reason, error, processing, onReasonCh
                             <span className="eyebrow">Confirmação</span>
                         </div>
                         <h2 id="project-rejection-title" className="mt-1 text-lg font-semibold text-[var(--ink-900)]">Reprovar projeto</h2>
-                        <p className="mt-1 truncate text-sm text-[var(--ink-500)]">{document.title}</p>
+                        <ProjectIdentity
+                            className="mt-2"
+                            eap={projectEap(document, document.latest_version)}
+                            fileName={originalFileName(document.latest_version)}
+                            title={document.title}
+                        />
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" aria-label="Fechar" onClick={onCancel} disabled={processing}>
                         <X size={18} />
@@ -718,12 +981,14 @@ function AnalysisModal({ document, onClose }) {
                             <FileSearch size={14} />
                             <span className="eyebrow">Analise do responsavel</span>
                         </div>
-                        <h2 id="project-analysis-title" className="mt-1 truncate text-[17px] font-semibold text-[var(--ink-900)]">
-                            {document.title}
-                        </h2>
-                        <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">
-                            {projectEap(document) || 'Sem codigo'} · {document.contract?.code} - {document.contract?.name}
-                        </p>
+                        <ProjectIdentity
+                            className="mt-2"
+                            eap={projectEap(document, document.latest_version)}
+                            fileName={originalFileName(document.latest_version)}
+                            title={document.title}
+                            eapClassName="text-[17px]"
+                        />
+                        <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">{document.contract?.code} - {document.contract?.name}</p>
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
                         <X size={18} />

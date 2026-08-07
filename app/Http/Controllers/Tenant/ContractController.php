@@ -7,9 +7,9 @@ use App\Models\Contract;
 use App\Models\Tenant;
 use App\Models\TipoEmpresa;
 use App\Support\ActivityPermissions;
+use App\Support\ContractPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
-use App\Support\TenantRoles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,8 +30,7 @@ class ContractController extends Controller
     public function index(Request $request, Tenant $tenant): Response
     {
         $contracts = $this->accessibleContracts($request, $tenant);
-        $canManageContracts = $request->user()->is_platform_admin
-            || TenantRoles::canManageContracts($request->user()->tenantRole($tenant));
+        $canCreateContracts = ContractPermissions::canAny($request->user(), $tenant, ContractPermissions::CREATE);
         $contractCollection = $contracts
             ->with([
                 'obra',
@@ -62,8 +61,13 @@ class ContractController extends Controller
             'tenant' => $tenant,
             'contracts' => $contractCollection,
             'statuses' => ['planning', 'active', 'paused', 'completed', 'cancelled'],
-            'canCreateContracts' => $canManageContracts,
-            'canManageContracts' => $canManageContracts,
+            'canCreateContracts' => $canCreateContracts,
+            'contractCapabilities' => $contractCollection->mapWithKeys(fn (Contract $contract): array => [
+                $contract->id => [
+                    'parametrize' => ContractPermissions::can($request->user(), $tenant, ContractPermissions::PARAMETRIZE, $contract),
+                    'additives' => ContractPermissions::can($request->user(), $tenant, ContractPermissions::ADDITIVES, $contract),
+                ],
+            ]),
             'parametrizacao' => [
                 'empresas' => $tenant->empresas()
                     ->whereIn('contract_id', $contractIds)
@@ -76,6 +80,14 @@ class ContractController extends Controller
                     ->orderBy('codigo')
                     ->get(['id', 'tenant_id', 'contract_id', 'obra_pai_id', 'codigo', 'nome', 'tipo'])
                     ->groupBy('contract_id'),
+                'trechos' => $tenant->trechos()
+                    ->whereHas('obra', fn (Builder $query): Builder => $query->whereIn('contract_id', $contractIds))
+                    ->with('obra:id,contract_id,codigo,nome')
+                    ->orderBy('obra_id')
+                    ->orderByDesc('is_default')
+                    ->orderBy('codigo')
+                    ->get(['id', 'tenant_id', 'obra_id', 'codigo', 'nome', 'is_default'])
+                    ->groupBy(fn ($trecho) => $trecho->obra->contract_id),
                 'disciplinas' => $tenant->disciplinas()
                     ->whereIn('contract_id', $contractIds)
                     ->orderBy('nome')
@@ -95,7 +107,7 @@ class ContractController extends Controller
 
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
-        $this->authorizeManageContracts($request, $tenant);
+        $this->authorizeManageContracts($request, $tenant, ContractPermissions::CREATE);
 
         $request->merge([
             'code' => mb_strtoupper((string) $request->input('code', '')),
@@ -168,8 +180,9 @@ class ContractController extends Controller
     {
         abort_unless((int) $contract->tenant_id === (int) $tenant->id, 404);
         abort_unless($this->canAccessContract($request, $tenant, $contract), 403);
-        $canManageContracts = $request->user()->is_platform_admin
-            || TenantRoles::canManageContracts($request->user()->tenantRole($tenant));
+        $canParametrize = ContractPermissions::can($request->user(), $tenant, ContractPermissions::PARAMETRIZE, $contract);
+        $canManageAdditives = ContractPermissions::can($request->user(), $tenant, ContractPermissions::ADDITIVES, $contract);
+        $canManageParticipants = ContractPermissions::can($request->user(), $tenant, ContractPermissions::PARTICIPANTS, $contract);
 
         $contract->load([
             'participants.user',
@@ -230,7 +243,10 @@ class ContractController extends Controller
                 'uploadProject' => ProjectPermissions::can($request->user(), $tenant, ProjectPermissions::UPLOAD, $contract),
                 'viewRncs' => RncPermissions::can($request->user(), $tenant, RncPermissions::VIEW, $contract),
                 'createRnc' => RncPermissions::can($request->user(), $tenant, RncPermissions::CREATE, $contract),
-                'manageContracts' => $canManageContracts,
+                'manageContracts' => $canParametrize || $canManageAdditives,
+                'parametrizeContract' => $canParametrize,
+                'manageAdditives' => $canManageAdditives,
+                'manageParticipants' => $canManageParticipants,
             ],
             'parametrizacao' => [
                 'empresas' => $contract->empresas()
@@ -240,6 +256,13 @@ class ContractController extends Controller
                 'obras' => $contract->obras()
                     ->orderBy('codigo')
                     ->get(['id', 'tenant_id', 'contract_id', 'obra_pai_id', 'codigo', 'nome', 'tipo']),
+                'trechos' => $tenant->trechos()
+                    ->whereHas('obra', fn ($query) => $query->where('contract_id', $contract->id))
+                    ->with('obra:id,contract_id,codigo,nome')
+                    ->orderBy('obra_id')
+                    ->orderByDesc('is_default')
+                    ->orderBy('codigo')
+                    ->get(['id', 'tenant_id', 'obra_id', 'codigo', 'nome', 'is_default']),
                 'disciplinas' => $tenant->disciplinas()
                     ->where('contract_id', $contract->id)
                     ->orderBy('nome')
@@ -253,7 +276,7 @@ class ContractController extends Controller
     {
         abort_unless((int) $contract->tenant_id === (int) $tenant->id, 404);
         abort_unless($this->canAccessContract($request, $tenant, $contract), 403);
-        $this->authorizeManageContracts($request, $tenant);
+        $this->authorizeManageContracts($request, $tenant, ContractPermissions::PARAMETRIZE, $contract);
 
         $clienteTipoIds = TipoEmpresa::query()->whereIn('nome', ['cliente'])->pluck('id');
         $construtoraTipoIds = TipoEmpresa::query()->whereIn('nome', ['construtora'])->pluck('id');
@@ -344,12 +367,10 @@ class ContractController extends Controller
     private function accessibleContracts(Request $request, Tenant $tenant)
     {
         $query = $tenant->contracts();
-        $tenantRole = $request->user()->tenantRole($tenant);
+        $contractIds = ContractPermissions::contractIdsFor($request->user(), $tenant, ContractPermissions::VIEW);
 
-        if (! $request->user()->is_platform_admin && ! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
-            $query->whereHas('participants', function ($query) use ($request): void {
-                $query->where('user_id', $request->user()->id)->where('status', 'active');
-            });
+        if ($contractIds !== null) {
+            $query->whereKey($contractIds);
         }
 
         return $query;
@@ -357,23 +378,14 @@ class ContractController extends Controller
 
     private function canAccessContract(Request $request, Tenant $tenant, Contract $contract): bool
     {
-        if ($request->user()->is_platform_admin || in_array($request->user()->tenantRole($tenant), ['tenant_owner', 'tenant_admin'], true)) {
-            return true;
-        }
-
-        return $contract->participants()
-            ->where('user_id', $request->user()->id)
-            ->where('status', 'active')
-            ->exists();
+        return ContractPermissions::can($request->user(), $tenant, ContractPermissions::VIEW, $contract);
     }
 
-    private function authorizeManageContracts(Request $request, Tenant $tenant): void
+    private function authorizeManageContracts(Request $request, Tenant $tenant, string $permission, ?Contract $contract = null): void
     {
-        abort_unless(
-            $request->user()->is_platform_admin
-                || TenantRoles::canManageContracts($request->user()->tenantRole($tenant)),
-            403,
-        );
+        abort_unless($contract
+            ? ContractPermissions::can($request->user(), $tenant, $permission, $contract)
+            : ContractPermissions::canAny($request->user(), $tenant, $permission), 403);
     }
 
     private function empresaNome(Tenant $tenant, ?int $empresaId): ?string

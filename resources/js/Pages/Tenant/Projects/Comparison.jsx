@@ -243,8 +243,9 @@ export default function Comparison({ tenant, baseVersion, currentVersion, apsVie
                                 <Columns2 size={15} />
                                 <span className="eyebrow">Comparacao de revisoes</span>
                             </div>
-                            <h1 className="mt-1 truncate text-xl font-semibold text-[var(--ink-900)]">{currentVersion.document.title}</h1>
-                            <p className="mono mt-1 truncate text-xs text-[var(--ink-500)]">{projectEap(currentVersion.document, currentVersion)}</p>
+                            <h1 className="mono mt-1 break-all text-xl font-bold text-[var(--primary)]">{projectEap(currentVersion.document, currentVersion)}</h1>
+                            <p className="mt-1 break-all text-sm font-medium text-[var(--ink-700)]">{currentVersion.original_name || fileName(currentVersion)}</p>
+                            <p className="mt-1 text-xs text-[var(--ink-500)]">{currentVersion.document.title}</p>
                         </div>
                     </div>
                     <button type="button" className={`sig-btn ${syncEnabled ? 'sig-btn-primary' : 'sig-btn-secondary'}`} onClick={toggleSynchronization}>

@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 
 export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obrasPai }) {
     const page = usePage();
+    const canManage = Boolean(page.props.parametrizacaoPermissions?.can?.manage_parametrizacao_obras);
     const defaultContractId = contracts[0]?.id ?? '';
     const [editingObra, setEditingObra] = useState(null);
     const [contractFilter, setContractFilter] = useState('todos');
@@ -121,7 +122,7 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
             <Head title="Parametrizacao - Obras" />
 
             <section className={`sig-content grid gap-6 ${formOpen ? 'xl:grid-cols-[380px_minmax(0,1fr)]' : ''}`}>
-                {formOpen && (
+                {formOpen && canManage && (
                 <form className="sig-card p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <SlidersHorizontal size={14} />
@@ -251,10 +252,10 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                                 {filteredObras.length} de {obras.length} obras
                             </h2>
                         </div>
-                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={openCreateForm}>
+                        {canManage && <button type="button" className="sig-btn sig-btn-primary sig-btn-sm" onClick={openCreateForm}>
                             <Plus size={13} />
                             Criar obra
-                        </button>
+                        </button>}
                     </header>
 
                     {!formOpen && page.props.flash.success && (
@@ -342,7 +343,7 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                                             )}
                                         </td>
                                         <td>
-                                            <div className="flex flex-wrap justify-end gap-2">
+                                            {canManage && <div className="flex flex-wrap justify-end gap-2">
                                                 <button
                                                     type="button"
                                                     className="sig-btn sig-btn-secondary sig-btn-sm"
@@ -360,7 +361,7 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                                                     <Trash2 size={14} />
                                                     Deletar
                                                 </ConfirmActionButton>
-                                            </div>
+                                            </div>}
                                         </td>
                                     </tr>
                                 ))}
@@ -391,7 +392,7 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                                         />
                                     </div>
 
-                                    <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                                    {canManage && <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
                                         <button
                                             type="button"
                                             className="sig-btn sig-btn-secondary sig-btn-sm"
@@ -409,7 +410,7 @@ export default function ParametrizacaoObrasIndex({ tenant, obras, contracts, obr
                                             <Trash2 size={14} />
                                             Deletar
                                         </ConfirmActionButton>
-                                    </div>
+                                    </div>}
                                 </article>
                             ))}
                         </div>

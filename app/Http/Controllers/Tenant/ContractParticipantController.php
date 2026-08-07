@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\UserTemporaryPasswordNotification;
 use App\Support\PasswordPolicy;
+use App\Support\ContractPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -87,17 +88,6 @@ class ContractParticipantController extends Controller
 
     private function canManageParticipants(Request $request, Tenant $tenant, Contract $contract): bool
     {
-        $tenantRole = $request->user()->tenantRole($tenant);
-
-        if (in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
-            return true;
-        }
-
-        return $contract->participants()
-            ->where('user_id', $request->user()->id)
-            ->where('side', 'manager')
-            ->where('role', 'manager')
-            ->where('status', 'active')
-            ->exists();
+        return ContractPermissions::can($request->user(), $tenant, ContractPermissions::PARTICIPANTS, $contract);
     }
 }

@@ -21,17 +21,11 @@ class ProjectRejectedNotification extends Notification
         $this->document->loadMissing(['tenant', 'contract', 'obra', 'disciplina', 'latestVersion']);
     }
 
-    /**
-     * @return array<int, string>
-     */
     public function via(object $notifiable): array
     {
         return ['database', 'mail'];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function toArray(object $notifiable): array
     {
         return [
@@ -49,26 +43,33 @@ class ProjectRejectedNotification extends Notification
     {
         $projectUrl = route('tenant.projects.index', $this->document->tenant);
         $systemUrl = route('tenant.dashboard', $this->document->tenant);
+        $stageLabel = $this->stage === 'approval' ? 'Aprovação final' : 'Análise técnica';
+
+        $viewData = [
+            'headline' => 'Projeto devolvido para correção',
+            'intro' => "{$this->actor->name} reprovou o projeto durante a etapa de ".mb_strtolower($stageLabel).'.',
+            'tone' => 'danger',
+            'notifiable' => $notifiable,
+            'details' => [
+                ['label' => 'EAP', 'value' => $this->document->eap($this->document->latestVersion?->revision) ?: 'Sem EAP'],
+                ['label' => 'Projeto', 'value' => $this->document->title],
+                ['label' => 'Contrato', 'value' => trim(($this->document->contract?->code ? $this->document->contract->code.' - ' : '').($this->document->contract?->name ?? '')) ?: 'Não informado'],
+                ['label' => 'Revisão', 'value' => $this->document->latestVersion?->revision ?: 'Não informada'],
+                ['label' => 'Etapa', 'value' => $stageLabel],
+                ['label' => 'Decisão registrada por', 'value' => $this->actor->name],
+            ],
+            'highlightTitle' => 'Motivo da reprovação',
+            'highlightBody' => $this->reason,
+            'reason' => $this->reason,
+            'stageLabel' => $stageLabel,
+            'actionLabel' => 'Corrigir projeto',
+            'url' => $projectUrl,
+            'systemUrl' => $systemUrl,
+        ];
 
         return (new MailMessage)
             ->subject("Projeto reprovado: {$this->document->title}")
-            ->view('emails.project-rejected', [
-                'document' => $this->document,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'reason' => $this->reason,
-                'stageLabel' => $this->stage === 'approval' ? 'Aprovação final' : 'Análise técnica',
-                'url' => $projectUrl,
-                'systemUrl' => $systemUrl,
-            ])
-            ->text('emails.project-rejected-text', [
-                'document' => $this->document,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'reason' => $this->reason,
-                'stageLabel' => $this->stage === 'approval' ? 'Aprovação final' : 'Análise técnica',
-                'url' => $projectUrl,
-                'systemUrl' => $systemUrl,
-            ]);
+            ->view('emails.project-event', $viewData)
+            ->text('emails.project-event-text', $viewData);
     }
 }

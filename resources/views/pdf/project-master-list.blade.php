@@ -234,16 +234,17 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th style="width: 13%;">Código</th>
+                <th style="width: 13%;">EAP</th>
                 <th style="width: 18%;">Documento</th>
-                <th style="width: 11%;">Contrato</th>
-                <th style="width: 12%;">Obra</th>
-                <th style="width: 10%;">Disciplina</th>
-                <th style="width: 9%;">Fase</th>
-                <th style="width: 7%;">Tipo</th>
-                <th style="width: 6%;">Rev.</th>
+                <th style="width: 10%;">Contrato</th>
+                <th style="width: 10%;">Obra</th>
+                <th style="width: 8%;">Trecho</th>
+                <th style="width: 8%;">Disciplina</th>
+                <th style="width: 7%;">Fase</th>
+                <th style="width: 6%;">Tipo</th>
+                <th style="width: 5%;">Rev.</th>
                 <th style="width: 7%;">Status</th>
-                <th style="width: 7%;">Datas</th>
+                <th style="width: 8%;">Datas</th>
             </tr>
         </thead>
         <tbody>
@@ -260,7 +261,8 @@
                     <td class="code">{{ $document['eap'] ?: '-' }}</td>
                     <td>
                         <div class="primary">{{ $document['title'] ?: 'Sem título' }}</div>
-                        <div class="muted">{{ $document['file_name'] ?: 'Sem arquivo' }}</div>
+                        <div class="muted">Sequencial {{ $document['document_number'] ?: '-' }}</div>
+                        <div class="muted">{{ $document['file_name'] ?: 'Sem arquivo' }} · {{ $document['file_size'] ?: '-' }}</div>
                     </td>
                     <td>
                         <div class="primary">{{ $document['contract']['code'] ?: '-' }}</div>
@@ -269,6 +271,10 @@
                     <td>
                         <div class="primary">{{ $document['obra']['codigo'] ?: '-' }}</div>
                         <div class="muted">{{ $document['obra']['nome'] ?: '-' }}</div>
+                    </td>
+                    <td>
+                        <div class="primary">{{ data_get($document, 'trecho.codigo') ?: '-' }}</div>
+                        <div class="muted">{{ data_get($document, 'trecho.nome') ?: 'Projeto legado' }}</div>
                     </td>
                     <td>
                         <div class="primary">{{ $document['disciplina']['sigla'] ?: '-' }}</div>
@@ -288,12 +294,13 @@
                     </td>
                     <td>
                         <div>{{ $document['created_at'] ?: '-' }}</div>
+                        <div class="muted">Análise {{ $document['reviewed_at'] ?: '-' }}</div>
                         <div class="muted">Aprov. {{ $document['approved_at'] ?: '-' }}</div>
                     </td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10">Nenhum projeto encontrado para os filtros selecionados.</td>
+                    <td colspan="11">Nenhum projeto encontrado para os filtros selecionados.</td>
                 </tr>
             @endforelse
         </tbody>

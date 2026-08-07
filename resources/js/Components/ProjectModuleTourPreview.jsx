@@ -1,4 +1,5 @@
 import ProjectTour from '@/Components/ProjectTour';
+import ProjectIdentity from '@/Components/ProjectIdentity';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head } from '@inertiajs/react';
 import {
@@ -12,6 +13,7 @@ import {
     FileSearch,
     FileText,
     FileUp,
+    Files,
     Filter,
     GitCompareArrows,
     History,
@@ -87,7 +89,7 @@ function SubmitPreview() {
                         <div>
                             <div className="flex items-center gap-2 text-[var(--ink-500)]"><FileUp size={14} /><span className="eyebrow">Projetos</span></div>
                             <h1 className="mt-2 text-xl font-semibold">Submeter projeto</h1>
-                            <p className="mt-1 text-sm leading-5 text-[var(--ink-500)]">Envie arquivos técnicos por contrato, obra, disciplina e revisão. Todo envio passa por análise e aprovação.</p>
+                            <p className="mt-1 text-sm leading-5 text-[var(--ink-500)]">Envie arquivos técnicos por contrato, obra, trecho, disciplina e revisão. Todo envio passa por análise e aprovação.</p>
                         </div>
                         <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar"><X size={18} /></button>
                     </header>
@@ -103,11 +105,18 @@ function SubmitPreview() {
                             <DemoField label="Sequencial" value="001" />
                             <DemoField label="Próxima revisão" value="R02" />
                         </div>
-                        <div className="sm:col-span-2"><DemoField label="EAP prevista" value="CT001-001-ARQ-EXE-PRJ-001-R02" /></div>
+                        <div className="sm:col-span-2"><DemoField label="EAP prevista" value="CT001-001-GER-ARQ-EXE-PRJ-001-R02" /></div>
                         <div className="sm:col-span-2">
                             <span className="eyebrow mb-1 block">Arquivo</span>
                             <button type="button" className="sig-btn sig-btn-secondary w-full justify-start"><UploadCloud size={15} /> Selecionar arquivo</button>
                             <p className="mt-1 text-xs text-[var(--ink-400)]">.dwg, .ifc, .rvt, .pdf, .dwfx ou .dwf. Máximo 50 MB.</p>
+                        </div>
+                        <div data-tour="project-submit-batch" className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-800">
+                            <Files className="mt-0.5 shrink-0" size={16} />
+                            <div>
+                                <strong className="text-sm">Submissão em lote</strong>
+                                <p className="mt-1 text-xs leading-5">Envie dois ou mais projetos em um pacote único, mantendo a EAP individual e uma decisão conjunta na análise.</p>
+                            </div>
                         </div>
                         <div className="flex justify-end sm:col-span-2">
                             <button type="button" className="sig-btn sig-btn-primary mt-1"><Send size={15} /> Revisar e confirmar</button>
@@ -141,17 +150,17 @@ function ReviewPreview() {
                 <article data-tour="project-review-project">
                     <div className="border-b-2 border-blue-500 px-5 py-4">
                         <div className="flex items-center justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-2"><strong>Planta do pavimento tipo</strong><span className="sig-pill sig-pill-blue">R02</span><span className="sig-pill sig-pill-amber">Em aprovação</span></div>
+                            <div className="flex flex-wrap items-center gap-2"><span className="sig-pill sig-pill-blue">R02</span><span className="sig-pill sig-pill-amber">Em aprovação</span></div>
                             <ChevronUp size={16} />
                         </div>
-                        <p className="mt-1 text-xs text-[var(--ink-500)]">CT001-001-ARQ-EXE-PRJ-001-R02</p>
+                        <ProjectIdentity className="mt-2" eap="CT001-001-GER-ARQ-EXE-PRJ-001-R02" fileName="planta-pavimento-tipo-r02.dwg" title="Planta do pavimento tipo" />
                         <ProjectMetadata />
                     </div>
 
                     <div className="bg-[var(--surface-muted)] px-5 py-4">
                         <div className="grid gap-3 border-b border-[var(--border)] pb-4 md:grid-cols-4">
                             <Info label="Submetido por" value="Marina Costa - 22/07/2026" />
-                            <Info label="Arquivo" value="CT001-001-ARQ-EXE-PRJ-001-R02.dwg" />
+                            <Info label="Arquivo" value="CT001-001-GER-ARQ-EXE-PRJ-001-R02.dwg" />
                             <Info label="Tamanho" value="2,4 MB" />
                             <Info label="Status APS" value="Pronto para visualização" />
                         </div>
@@ -169,6 +178,16 @@ function ReviewPreview() {
                         </div>
                     </div>
                 </article>
+                <article data-tour="project-review-batch" className="border-b border-[var(--border)] bg-blue-50/60 px-5 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <div className="flex items-center gap-2"><span className="mono text-sm font-semibold text-[var(--primary)]">LOT-004-2026</span><span className="sig-pill sig-pill-blue">3 projetos</span></div>
+                            <h3 className="mt-1 text-sm font-semibold">Pacote executivo - Bloco B</h3>
+                            <p className="mt-1 text-xs text-[var(--ink-500)]">Análise conjunta, decisão atômica e CAP única quando houver revisão.</p>
+                        </div>
+                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm"><Check size={14} /> Analisar pacote</button>
+                    </div>
+                </article>
             </section>
         </>
     );
@@ -184,14 +203,14 @@ function RevisionsPreview() {
                     <SelectField label="Contrato" value="Todos os contratos" />
                     <TextField label="Busca" value="Buscar por CAP, EAP, obra ou disciplina" />
                 </div>
-                <RevisionRow title="Planta do pavimento tipo" cap="CT001-001-ARQ-EXE-CAP-001-R02" from="R01" to="R02" />
+                <RevisionRow title="Planta do pavimento tipo" cap="CT001-001-GER-ARQ-EXE-CAP-001-R02" from="R01" to="R02" />
                 <article data-tour="project-revisions">
                     <div className="border-b-2 border-blue-500 px-5 py-4">
                         <div className="flex items-center justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-2"><strong>Projeto estrutural - Bloco A</strong><span className="sig-pill sig-pill-amber">CT001-001-EST-EXE-CAP-002-R03</span><span className="sig-pill sig-pill-green">Aprovado</span></div>
+                            <div className="flex flex-wrap items-center gap-2"><span className="sig-pill sig-pill-amber">CT001-001-EST-EXE-CAP-002-R03</span><span className="sig-pill sig-pill-green">Aprovado</span></div>
                             <ChevronUp size={16} />
                         </div>
-                        <p className="mt-1 text-xs text-[var(--ink-500)]">CT001-001-EST-EXE-PRJ-002-R03</p>
+                        <ProjectIdentity className="mt-2" eap="CT001-001-GER-EST-EXE-PRJ-002-R03" fileName="estrutura-bloco-a-r03.dwg" title="Projeto estrutural - Bloco A" />
                         <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Info label="Contrato" value="CT-001 - Jardim Central" /><Info label="Obra" value="001 - Jardim Central" /><Info label="Disciplina" value="EST - Estruturas" /><Info label="Revisão" value="R02 → R03" /></div>
                     </div>
                     <div className="bg-[var(--surface-muted)] px-5 py-4">
@@ -238,7 +257,7 @@ function MasterListPreview() {
                     <div><h2 className="text-base font-semibold">Projetos encontrados</h2><p className="text-sm text-[var(--ink-500)]">24 resultados filtrados.</p></div>
                     <div className="flex gap-2"><button type="button" className="sig-btn sig-btn-secondary sig-btn-sm"><FileText size={14} /> Baixar PDF</button><button type="button" className="sig-btn sig-btn-primary sig-btn-sm"><Download size={14} /> Baixar Excel</button></div>
                 </header>
-                <div className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[1.4fr_1fr_1fr_0.7fr]"><strong>CT001-001-ARQ-EXE-PRJ-001-R02</strong><span>001 - Jardim Central</span><span>ARQ - Arquitetura</span><span className="sig-pill sig-pill-green justify-self-start">Aprovado</span></div>
+                <div className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[1.4fr_1fr_1fr_0.7fr]"><strong>CT001-001-GER-ARQ-EXE-PRJ-001-R02</strong><span>001 - Jardim Central</span><span>ARQ - Arquitetura</span><span className="sig-pill sig-pill-green justify-self-start">Aprovado</span></div>
             </section>
         </div>
     );
@@ -304,8 +323,8 @@ function ModuleHeader({ icon: Icon, title, description, action = null, metricLab
 function ProjectRow({ title, status, revision }) {
     return (
         <article className="border-b border-[var(--border)] px-5 py-4">
-            <div className="flex items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><strong>{title}</strong><span className={status === 'Aprovado' ? 'sig-pill sig-pill-green' : 'sig-pill sig-pill-amber'}>{status}</span></div><ChevronDown size={16} /></div>
-            <p className="mt-1 text-xs text-[var(--ink-500)]">CT001-001-ARQ-EXE-PRJ-001-{revision}</p>
+            <div className="flex items-center justify-between gap-3"><span className={status === 'Aprovado' ? 'sig-pill sig-pill-green' : 'sig-pill sig-pill-amber'}>{status}</span><ChevronDown size={16} /></div>
+            <ProjectIdentity className="mt-2" eap={`CT001-001-GER-ARQ-EXE-PRJ-001-${revision}`} fileName={`${title.toLowerCase().replace(/\s+/g, '-')}.dwg`} title={title} />
             <ProjectMetadata />
         </article>
     );
@@ -318,8 +337,8 @@ function ProjectMetadata() {
 function RevisionRow({ title, cap, from, to }) {
     return (
         <article className="border-b border-[var(--border)] px-5 py-4">
-            <div className="flex items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><strong>{title}</strong><span className="sig-pill sig-pill-amber">{cap}</span><span className="sig-pill sig-pill-green">Aprovado</span></div><ChevronDown size={16} /></div>
-            <p className="mt-1 text-xs text-[var(--ink-500)]">CT001-001-ARQ-EXE-PRJ-001-{to}</p>
+            <div className="flex items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><span className="sig-pill sig-pill-amber">{cap}</span><span className="sig-pill sig-pill-green">Aprovado</span></div><ChevronDown size={16} /></div>
+            <ProjectIdentity className="mt-2" eap={`CT001-001-GER-ARQ-EXE-PRJ-001-${to}`} fileName={`${title.toLowerCase().replace(/\s+/g, '-')}.dwg`} title={title} />
             <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Info label="Contrato" value="CT-001 - Jardim Central" /><Info label="Obra" value="001 - Jardim Central" /><Info label="Disciplina" value="ARQ - Arquitetura" /><Info label="Revisão" value={`${from} → ${to}`} /></div>
         </article>
     );

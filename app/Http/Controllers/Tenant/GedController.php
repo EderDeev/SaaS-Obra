@@ -20,6 +20,7 @@ use App\Models\GedEmailRule;
 use App\Models\GedTag;
 use App\Models\Tenant;
 use App\Models\TenantUser;
+use App\Support\DocumentationPermissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -68,18 +69,7 @@ class GedController extends Controller
     public function index(Request $request, Tenant $tenant): Response
     {
         $user = $request->user();
-        $tenantRole = $user?->tenantRole($tenant);
-        $canSeeAllContracts = $user?->is_platform_admin || in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true);
-
-        $accessibleContracts = Contract::query()
-            ->where('tenant_id', $tenant->id)
-            ->when(! $canSeeAllContracts, function ($query) use ($user): void {
-                $query->whereHas('participants', function ($query) use ($user): void {
-                    $query->where('user_id', $user->id)->where('status', 'active');
-                });
-            })
-            ->orderBy('code')
-            ->get(['id', 'code', 'name']);
+        $accessibleContracts = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::VIEW);
 
         $accessibleContractIds = $accessibleContracts->pluck('id');
 
@@ -101,7 +91,7 @@ class GedController extends Controller
         $allowedSorts = ['nsa', 'correspondent', 'title', 'type', 'created', 'added', 'modified', 'notes', 'owner', 'pages'];
         $sort = in_array($sort, $allowedSorts, true) ? $sort : 'added';
 
-        $documents = GedDocument::query()
+        $documents = DocumentationPermissions::scopeReadableDocuments(GedDocument::query(), $user, $tenant)
             ->select('ged_documents.*')
             ->where('ged_documents.tenant_id', $tenant->id)
             ->whereIn('ged_documents.contract_id', $accessibleContractIds)
@@ -211,21 +201,21 @@ class GedController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'contract_id', 'name']),
             'stats' => [
-                'total' => GedDocument::where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->count(),
-                'uploaded' => GedDocument::where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->where('status', 'uploaded')->count(),
-                'indexed' => GedDocument::where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->where('status', 'indexed')->count(),
-                'processing' => GedDocument::where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->where('status', 'processing')->count(),
-                'trash' => GedDocument::onlyTrashed()->where('tenant_id', $tenant->id)->whereIn('contract_id', $accessibleContractIds)->count(),
+                'total' => $this->visibleGedDocumentsQuery($request, $tenant, $accessibleContractIds)->count(),
+                'uploaded' => $this->visibleGedDocumentsQuery($request, $tenant, $accessibleContractIds)->where('status', 'uploaded')->count(),
+                'indexed' => $this->visibleGedDocumentsQuery($request, $tenant, $accessibleContractIds)->where('status', 'indexed')->count(),
+                'processing' => $this->visibleGedDocumentsQuery($request, $tenant, $accessibleContractIds)->where('status', 'processing')->count(),
+                'trash' => $this->visibleGedDocumentsQuery($request, $tenant, $accessibleContractIds, true)->count(),
             ],
         ]);
     }
 
     public function trash(Request $request, Tenant $tenant): Response
     {
-        $accessibleContracts = $this->accessibleGedContracts($request, $tenant);
+        $accessibleContracts = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::TRASH);
         $accessibleContractIds = $accessibleContracts->pluck('id');
 
-        $documents = GedDocument::onlyTrashed()
+        $documents = DocumentationPermissions::scopeReadableDocuments(GedDocument::onlyTrashed(), $request->user(), $tenant)
             ->select('ged_documents.*')
             ->where('tenant_id', $tenant->id)
             ->whereIn('contract_id', $accessibleContractIds)
@@ -271,10 +261,10 @@ class GedController extends Controller
             'document_ids.*' => ['integer'],
         ]);
 
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id');
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::TRASH)->pluck('id');
         $ids = collect($data['document_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->unique()->values();
 
-        $documentsQuery = GedDocument::onlyTrashed()
+        $documentsQuery = DocumentationPermissions::scopeReadableDocuments(GedDocument::onlyTrashed(), $request->user(), $tenant)
             ->where('tenant_id', $tenant->id)
             ->whereIn('contract_id', $accessibleContractIds)
             ->when($ids->isNotEmpty(), fn ($query) => $query->whereIn('id', $ids));
@@ -308,7 +298,7 @@ class GedController extends Controller
 
     public function triage(Request $request, Tenant $tenant): Response
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id');
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id');
 
         $messages = GedEmailProcessedMessage::query()
             ->where('tenant_id', $tenant->id)
@@ -367,7 +357,7 @@ class GedController extends Controller
         $message->load(['account', 'rule']);
         abort_unless($message->account && $message->rule, 404);
 
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
         abort_unless($accessibleContractIds->contains((int) $message->rule->contract_id), 403);
 
         $result = $this->resolveEmailTriageMessage($tenant, $message, $data['main_pdf']);
@@ -379,26 +369,28 @@ class GedController extends Controller
         return back()->with('success', $result['message'] ?? 'Triagem resolvida.');
     }
 
-    public function settings(Tenant $tenant): Response
+    public function settings(Request $request, Tenant $tenant): Response
     {
+        $accessibleContracts = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::SETTINGS);
+        $accessibleContractIds = $accessibleContracts->pluck('id');
+
         return Inertia::render('Tenant/Ged/Settings', [
             'tenant' => [
                 'id' => $tenant->id,
                 'name' => $tenant->name,
                 'slug' => $tenant->slug,
             ],
-            'contracts' => Contract::query()
-                ->where('tenant_id', $tenant->id)
-                ->orderBy('code')
-                ->get(['id', 'code', 'name']),
+            'contracts' => $accessibleContracts,
             'types' => GedDocumentType::query()
                 ->where('tenant_id', $tenant->id)
+                ->whereIn('contract_id', $accessibleContractIds)
                 ->with('contract:id,code,name')
                 ->withCount('documents')
                 ->orderBy('name')
                 ->get(['id', 'contract_id', 'name', 'description', 'created_at']),
             'tags' => GedTag::query()
                 ->where('tenant_id', $tenant->id)
+                ->whereIn('contract_id', $accessibleContractIds)
                 ->with('contract:id,code,name')
                 ->withCount('documents')
                 ->orderBy('name')
@@ -408,7 +400,7 @@ class GedController extends Controller
 
     public function email(Request $request, Tenant $tenant): Response
     {
-        $accessibleContracts = $this->accessibleGedContracts($request, $tenant);
+        $accessibleContracts = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL);
         $accessibleContractIds = $accessibleContracts->pluck('id');
 
         $accounts = GedEmailAccount::query()
@@ -544,7 +536,7 @@ class GedController extends Controller
 
     public function storeEmailAccount(Request $request, Tenant $tenant): RedirectResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
 
         $data = $request->validate([
             'contract_id' => ['required', 'integer'],
@@ -586,7 +578,7 @@ class GedController extends Controller
 
     public function updateEmailAccount(Request $request, Tenant $tenant, GedEmailAccount $account): RedirectResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
         $this->authorizeGedEmailAccount($account, $tenant, $accessibleContractIds);
 
         $data = $request->validate([
@@ -632,7 +624,7 @@ class GedController extends Controller
 
     public function destroyEmailAccount(Request $request, Tenant $tenant, GedEmailAccount $account): RedirectResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
         $this->authorizeGedEmailAccount($account, $tenant, $accessibleContractIds);
 
         $account->delete();
@@ -642,7 +634,7 @@ class GedController extends Controller
 
     public function processEmailAccount(Request $request, Tenant $tenant, GedEmailAccount $account): RedirectResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
         $this->authorizeGedEmailAccount($account, $tenant, $accessibleContractIds);
 
         $result = $this->processImapMessages($tenant, $account);
@@ -694,7 +686,7 @@ class GedController extends Controller
 
     public function testEmailAccount(Request $request, Tenant $tenant): JsonResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
 
         $data = $request->validate([
             'contract_id' => ['required', 'integer'],
@@ -720,7 +712,7 @@ class GedController extends Controller
 
     public function storeEmailRule(Request $request, Tenant $tenant): RedirectResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
 
         $data = $request->validate([
             'account_id' => ['required', 'integer', 'exists:ged_email_accounts,id'],
@@ -800,7 +792,7 @@ class GedController extends Controller
 
     public function updateEmailRule(Request $request, Tenant $tenant, GedEmailRule $rule): RedirectResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
         $this->authorizeGedEmailRule($rule, $tenant, $accessibleContractIds);
 
         $data = $this->validateEmailRulePayload($request, $tenant, $accessibleContractIds);
@@ -812,7 +804,7 @@ class GedController extends Controller
 
     public function destroyEmailRule(Request $request, Tenant $tenant, GedEmailRule $rule): RedirectResponse
     {
-        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant)->pluck('id')->map(fn ($id) => (int) $id);
+        $accessibleContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EMAIL)->pluck('id')->map(fn ($id) => (int) $id);
         $this->authorizeGedEmailRule($rule, $tenant, $accessibleContractIds);
 
         $rule->delete();
@@ -946,7 +938,7 @@ class GedController extends Controller
             $attachment = GedDocumentAttachment::create([
                 'document_id' => $document->id,
                 'uploaded_by_id' => auth()->id(),
-                'title' => $data['title'] ?: null,
+                'title' => $data['title'] ?? null,
                 'original_filename' => $file->getClientOriginalName(),
                 'mime_type' => $file->getMimeType(),
                 'extension' => $extension,
@@ -954,7 +946,7 @@ class GedController extends Controller
                 'checksum' => $checksum,
                 'storage_disk' => $storageDisk,
                 'path' => $path,
-                'notes' => $data['notes'] ?: null,
+                'notes' => $data['notes'] ?? null,
             ]);
 
             $this->queueAttachmentOcrIfNeeded($attachment, 'Anexo PDF enviado para fila de OCR.');
@@ -1274,7 +1266,9 @@ class GedController extends Controller
             'tag_ids' => $document->tags()->pluck('ged_tags.id')->map(fn ($id) => (int) $id)->sort()->values()->all(),
         ];
 
-        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($contractId)->exists(), 422);
+        $targetContract = Contract::where('tenant_id', $tenant->id)->find($contractId);
+        abort_unless($targetContract, 422);
+        abort_unless(DocumentationPermissions::can($request->user(), $tenant, DocumentationPermissions::EDIT, $targetContract), 403);
 
         if ($typeId) {
             abort_unless(GedDocumentType::where('tenant_id', $tenant->id)->where('contract_id', $contractId)->whereKey($typeId)->exists(), 422);
@@ -1370,6 +1364,11 @@ class GedController extends Controller
             'tag_ids.*' => ['integer', 'exists:ged_tags,id'],
         ]);
 
+        $uploadContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::UPLOAD)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id);
+        abort_unless($uploadContractIds->contains((int) $data['contract_id']), 403);
+
         $file = $request->file('file');
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
 
@@ -1445,7 +1444,7 @@ class GedController extends Controller
                 'document_type_id' => $data['document_type_id'] ?? null,
                 'correspondent_id' => $correspondent?->id,
                 'uploaded_by_id' => auth()->id(),
-                'title' => $data['title'] ?: pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME),
+                'title' => ($data['title'] ?? null) ?: pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME),
                 'document_number' => $sequence['document_number'],
                 'sequence_year' => $sequence['sequence_year'],
                 'sequence_number' => $sequence['sequence_number'],
@@ -1544,7 +1543,8 @@ class GedController extends Controller
 
         $contractId = $data['contract_id'] ?? null;
 
-        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($contractId)->exists(), 422);
+        $settingsContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::SETTINGS)->pluck('id');
+        abort_unless($settingsContractIds->contains((int) $contractId), 403);
 
         GedDocumentType::firstOrCreate(
             ['tenant_id' => $tenant->id, 'contract_id' => $contractId, 'name' => $data['name']],
@@ -1563,7 +1563,8 @@ class GedController extends Controller
             'contract_id' => ['required', 'integer'],
         ]);
 
-        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($data['contract_id'])->exists(), 422);
+        $settingsContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::SETTINGS)->pluck('id');
+        abort_unless($settingsContractIds->contains((int) $data['contract_id']), 403);
 
         $type->update([
             'name' => $data['name'],
@@ -1597,7 +1598,8 @@ class GedController extends Controller
 
         $contractId = $data['contract_id'] ?? null;
 
-        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($contractId)->exists(), 422);
+        $settingsContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::SETTINGS)->pluck('id');
+        abort_unless($settingsContractIds->contains((int) $contractId), 403);
 
         GedCorrespondent::firstOrCreate(
             ['tenant_id' => $tenant->id, 'contract_id' => $contractId, 'name' => $data['name']],
@@ -1618,7 +1620,8 @@ class GedController extends Controller
             'contract_id' => ['required', 'integer'],
         ]);
 
-        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($data['contract_id'])->exists(), 422);
+        $settingsContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::SETTINGS)->pluck('id');
+        abort_unless($settingsContractIds->contains((int) $data['contract_id']), 403);
 
         GedTag::firstOrCreate(
             ['tenant_id' => $tenant->id, 'contract_id' => $data['contract_id'], 'name' => $data['name']],
@@ -1638,7 +1641,8 @@ class GedController extends Controller
             'contract_id' => ['required', 'integer'],
         ]);
 
-        abort_unless(Contract::where('tenant_id', $tenant->id)->whereKey($data['contract_id'])->exists(), 422);
+        $settingsContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::SETTINGS)->pluck('id');
+        abort_unless($settingsContractIds->contains((int) $data['contract_id']), 403);
 
         $tag->update([
             'name' => $data['name'],
@@ -1881,6 +1885,14 @@ class GedController extends Controller
         abort_unless((int) $document->tenant_id === (int) $tenant->id, 404);
         abort_unless(array_key_exists($section, self::SECTIONS), 404);
 
+        $request = request();
+        $user = $request->user();
+        $canEdit = DocumentationPermissions::canEditDocument($user, $tenant, $document);
+        $canDelete = DocumentationPermissions::canEditDocument($user, $tenant, $document, DocumentationPermissions::DELETE);
+        $canRunOcr = DocumentationPermissions::canEditDocument($user, $tenant, $document, DocumentationPermissions::OCR);
+        $canManagePermissions = DocumentationPermissions::canEditDocument($user, $tenant, $document, DocumentationPermissions::MANAGE_PERMISSIONS);
+        $canManageSettings = DocumentationPermissions::can($user, $tenant, DocumentationPermissions::SETTINGS, $document->contract);
+
         $this->markStalledOcrIfNeeded($document);
 
         $document->load([
@@ -1895,25 +1907,28 @@ class GedController extends Controller
             'notes.user:id,name,email',
         ]);
 
-        $previous = GedDocument::query()
+        $viewContractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::VIEW)->pluck('id');
+        $previous = $this->visibleGedDocumentsQuery($request, $tenant, $viewContractIds)
             ->where('tenant_id', $tenant->id)
             ->where('id', '<', $document->id)
             ->orderByDesc('id')
             ->first(['id']);
 
-        $next = GedDocument::query()
+        $next = $this->visibleGedDocumentsQuery($request, $tenant, $viewContractIds)
             ->where('tenant_id', $tenant->id)
             ->where('id', '>', $document->id)
             ->orderBy('id')
             ->first(['id']);
 
-        $tabs = collect(self::SECTIONS)->map(fn (string $label, string $key) => [
-            'key' => $key,
-            'label' => $label,
-            'url' => route("tenant.ged.{$key}", [$tenant->slug, $document]),
-        ])->values();
+        $tabs = collect(self::SECTIONS)
+            ->reject(fn (string $label, string $key): bool => $key === 'permissions' && ! $canManagePermissions)
+            ->map(fn (string $label, string $key) => [
+                'key' => $key,
+                'label' => $label,
+                'url' => route("tenant.ged.{$key}", [$tenant->slug, $document]),
+            ])->values();
 
-        $permissionCompanies = $this->gedPermissionCompanies($tenant, $document);
+        $permissionCompanies = $canManagePermissions ? $this->gedPermissionCompanies($tenant, $document) : collect();
         $permissionCompanyUserCounts = TenantUser::query()
             ->where('tenant_id', $tenant->id)
             ->where('status', 'active')
@@ -1922,21 +1937,25 @@ class GedController extends Controller
             ->groupBy('empresa_id')
             ->pluck('users_count', 'empresa_id');
 
-        $activeUsers = $tenant->users()
-            ->wherePivot('status', 'active')
-            ->orderBy('name')
-            ->get(['users.id', 'users.name', 'users.email'])
-            ->map(fn ($user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'empresa_id' => $user->pivot?->empresa_id,
-                'empresa_name' => $user->pivot?->empresa_id
-                    ? optional($permissionCompanies->firstWhere('id', (int) $user->pivot->empresa_id))->nome
-                    : null,
-            ]);
+        $activeUsers = $canManagePermissions
+            ? $tenant->users()
+                ->wherePivot('status', 'active')
+                ->orderBy('name')
+                ->get(['users.id', 'users.name', 'users.email'])
+                ->map(fn ($permissionUser) => [
+                    'id' => $permissionUser->id,
+                    'name' => $permissionUser->name,
+                    'email' => $permissionUser->email,
+                    'empresa_id' => $permissionUser->pivot?->empresa_id,
+                    'empresa_name' => $permissionUser->pivot?->empresa_id
+                        ? optional($permissionCompanies->firstWhere('id', (int) $permissionUser->pivot->empresa_id))->nome
+                        : null,
+                ])
+            : collect();
 
         $storedPermissions = $document->metadata['permissions'] ?? [];
+        $editableContracts = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::EDIT);
+        $editableContractIds = $editableContracts->pluck('id');
 
         return Inertia::render('Tenant/Ged/Show', [
             'tenant' => [
@@ -1946,6 +1965,13 @@ class GedController extends Controller
             ],
             'activeSection' => $section,
             'tabs' => $tabs,
+            'capabilities' => [
+                'edit' => $canEdit,
+                'delete' => $canDelete,
+                'ocr' => $canRunOcr,
+                'manage_permissions' => $canManagePermissions,
+                'manage_settings' => $canManageSettings,
+            ],
             'document' => [
                 'id' => $document->id,
                 'title' => $document->title,
@@ -1968,12 +1994,12 @@ class GedController extends Controller
                 'metadata' => $document->metadata ?: [],
                 'download_url' => route('tenant.ged.download', [$tenant->slug, $document]),
                 'preview_url' => route('tenant.ged.preview', [$tenant->slug, $document]),
-                'ocr_url' => route('tenant.ged.ocr', [$tenant->slug, $document]),
-                'notes_store_url' => route('tenant.ged.notes.store', [$tenant->slug, $document]),
-                'attachment_store_url' => route('tenant.ged.attachments.store', [$tenant->slug, $document]),
-                'permissions_update_url' => route('tenant.ged.permissions.update', [$tenant->slug, $document]),
-                'update_url' => route('tenant.ged.update', [$tenant->slug, $document]),
-                'delete_url' => route('tenant.ged.destroy', [$tenant->slug, $document]),
+                'ocr_url' => $canRunOcr ? route('tenant.ged.ocr', [$tenant->slug, $document]) : null,
+                'notes_store_url' => $canEdit ? route('tenant.ged.notes.store', [$tenant->slug, $document]) : null,
+                'attachment_store_url' => $canEdit ? route('tenant.ged.attachments.store', [$tenant->slug, $document]) : null,
+                'permissions_update_url' => $canManagePermissions ? route('tenant.ged.permissions.update', [$tenant->slug, $document]) : null,
+                'update_url' => $canEdit ? route('tenant.ged.update', [$tenant->slug, $document]) : null,
+                'delete_url' => $canDelete ? route('tenant.ged.destroy', [$tenant->slug, $document]) : null,
                 'index_url' => route('tenant.ged.index', $tenant->slug),
                 'contract' => $document->contract ? [
                     'id' => $document->contract->id,
@@ -2032,9 +2058,9 @@ class GedController extends Controller
                     'created_at' => $attachment->created_at?->format('Y-m-d H:i:s'),
                     'download_url' => route('tenant.ged.attachments.download', [$tenant->slug, $document, $attachment]),
                     'preview_url' => $attachment->isPdf() ? route('tenant.ged.attachments.preview', [$tenant->slug, $document, $attachment]) : null,
-                    'ocr_url' => $attachment->isPdf() ? route('tenant.ged.attachments.ocr', [$tenant->slug, $document, $attachment]) : null,
-                    'update_url' => route('tenant.ged.attachments.update', [$tenant->slug, $document, $attachment]),
-                    'delete_url' => route('tenant.ged.attachments.destroy', [$tenant->slug, $document, $attachment]),
+                    'ocr_url' => $attachment->isPdf() && $canRunOcr ? route('tenant.ged.attachments.ocr', [$tenant->slug, $document, $attachment]) : null,
+                    'update_url' => $canEdit ? route('tenant.ged.attachments.update', [$tenant->slug, $document, $attachment]) : null,
+                    'delete_url' => $canEdit ? route('tenant.ged.attachments.destroy', [$tenant->slug, $document, $attachment]) : null,
                     'uploader' => $attachment->uploader ? [
                         'id' => $attachment->uploader->id,
                         'name' => $attachment->uploader->name,
@@ -2081,28 +2107,28 @@ class GedController extends Controller
                 'next_url' => $next ? route('tenant.ged.details', [$tenant->slug, $next]) : null,
             ],
             'lookups' => [
-                'contracts' => Contract::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->orderBy('code')
-                    ->get(['id', 'code', 'name']),
+                'contracts' => $editableContracts,
                 'types' => GedDocumentType::query()
                     ->where('tenant_id', $tenant->id)
+                    ->whereIn('contract_id', $editableContractIds)
                     ->orderBy('name')
                     ->get(['id', 'contract_id', 'name']),
                 'tags' => GedTag::query()
                     ->where('tenant_id', $tenant->id)
+                    ->whereIn('contract_id', $editableContractIds)
                     ->orderBy('name')
                     ->get(['id', 'contract_id', 'name', 'color']),
                 'correspondents' => GedCorrespondent::query()
                     ->where('tenant_id', $tenant->id)
+                    ->whereIn('contract_id', $editableContractIds)
                     ->orderBy('name')
                     ->get(['id', 'contract_id', 'name', 'email', 'document']),
             ],
-            'quickStoreUrls' => [
+            'quickStoreUrls' => $canManageSettings ? [
                 'correspondent' => route('tenant.ged.correspondents.store', $tenant->slug),
                 'type' => route('tenant.ged.types.store', $tenant->slug),
                 'tag' => route('tenant.ged.tags.store', $tenant->slug),
-            ],
+            ] : [],
             'users' => $activeUsers,
             'permissionGroups' => $permissionCompanies
                 ->map(fn (Empresa $empresa) => [
@@ -2149,10 +2175,20 @@ class GedController extends Controller
             'document_ids.*' => ['integer'],
         ]);
 
-        $documents = GedDocument::query()
+        $requiredPermission = match ($data['action']) {
+            'trash' => DocumentationPermissions::DELETE,
+            'reprocess' => DocumentationPermissions::OCR,
+            default => DocumentationPermissions::EDIT,
+        };
+        $requestedIds = collect($data['document_ids'])->map(fn ($id) => (int) $id)->unique()->values();
+        $contractIds = $this->accessibleGedContracts($request, $tenant, $requiredPermission)->pluck('id');
+        $documents = DocumentationPermissions::scopeReadableDocuments(GedDocument::query(), $request->user(), $tenant)
             ->where('tenant_id', $tenant->id)
-            ->whereIn('id', collect($data['document_ids'])->map(fn ($id) => (int) $id)->unique())
+            ->whereIn('contract_id', $contractIds)
+            ->whereIn('id', $requestedIds)
             ->get();
+
+        abort_unless($documents->count() === $requestedIds->count(), 403);
 
         abort_if($documents->isEmpty(), 422, 'Nenhum documento válido selecionado.');
 
@@ -2348,11 +2384,15 @@ class GedController extends Controller
 
         abort_unless($includeArchive || $includeOriginal, 422, 'Selecione ao menos um tipo de arquivo para baixar.');
 
-        $documents = GedDocument::query()
+        $contractIds = $this->accessibleGedContracts($request, $tenant, DocumentationPermissions::VIEW)->pluck('id');
+        $documents = DocumentationPermissions::scopeReadableDocuments(GedDocument::query(), $request->user(), $tenant)
             ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds)
             ->whereIn('id', $ids)
             ->orderBy('id')
             ->get();
+
+        abort_unless($documents->count() === $ids->count(), 403);
 
         abort_if($documents->isEmpty(), 404);
 
@@ -2410,21 +2450,25 @@ class GedController extends Controller
             ->toString();
     }
 
-    private function accessibleGedContracts(Request $request, Tenant $tenant)
+    private function accessibleGedContracts(Request $request, Tenant $tenant, string $permission = DocumentationPermissions::VIEW)
     {
         $user = $request->user();
-        $tenantRole = $user?->tenantRole($tenant);
-        $canSeeAllContracts = $user?->is_platform_admin || in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true);
+        $permissionContractIds = DocumentationPermissions::contractIdsFor($user, $tenant, $permission);
 
         return Contract::query()
             ->where('tenant_id', $tenant->id)
-            ->when(! $canSeeAllContracts, function ($query) use ($user): void {
-                $query->whereHas('participants', function ($query) use ($user): void {
-                    $query->where('user_id', $user->id)->where('status', 'active');
-                });
-            })
+            ->when($permissionContractIds !== null, fn ($query) => $query->whereIn('id', $permissionContractIds))
             ->orderBy('code')
             ->get(['id', 'code', 'name']);
+    }
+
+    private function visibleGedDocumentsQuery(Request $request, Tenant $tenant, $contractIds, bool $onlyTrashed = false)
+    {
+        $query = $onlyTrashed ? GedDocument::onlyTrashed() : GedDocument::query();
+
+        return DocumentationPermissions::scopeReadableDocuments($query, $request->user(), $tenant)
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds);
     }
 
     private function assertGedReferenceBelongsToContract(string $modelClass, mixed $id, Tenant $tenant, int $contractId): void

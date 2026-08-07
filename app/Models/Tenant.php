@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['slug', 'name', 'cnpj', 'plan', 'status', 'branding', 'settings', 'trial_ends_at'])]
+#[Fillable(['slug', 'name', 'cnpj', 'plan', 'status', 'branding', 'settings', 'ai_monthly_token_limit', 'trial_ends_at'])]
 class Tenant extends Model
 {
     /** @use \Illuminate\Database\Eloquent\Factories\HasFactory<TenantFactory> */
@@ -19,6 +19,7 @@ class Tenant extends Model
         return [
             'branding' => 'array',
             'settings' => 'array',
+            'ai_monthly_token_limit' => 'integer',
             'trial_ends_at' => 'datetime',
         ];
     }
@@ -26,7 +27,7 @@ class Tenant extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'tenant_users')
-            ->withPivot(['empresa_id', 'role', 'status', 'invited_at', 'joined_at'])
+            ->withPivot(['empresa_id', 'role', 'status', 'ai_monthly_token_limit', 'invited_at', 'joined_at'])
             ->withTimestamps();
     }
 
@@ -75,6 +76,11 @@ class Tenant extends Model
         return $this->hasMany(Obra::class);
     }
 
+    public function trechos(): HasMany
+    {
+        return $this->hasMany(Trecho::class);
+    }
+
     public function rdoResponsaveis(): HasMany
     {
         return $this->hasMany(RdoResponsavel::class);
@@ -88,6 +94,11 @@ class Tenant extends Model
     public function projectDocuments(): HasMany
     {
         return $this->hasMany(ProjectDocument::class);
+    }
+
+    public function projectSubmissionBatches(): HasMany
+    {
+        return $this->hasMany(ProjectSubmissionBatch::class);
     }
 
     public function projectDisciplineResponsaveis(): HasMany

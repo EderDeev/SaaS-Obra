@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -68,6 +69,13 @@ class ProjectReviewMarkup extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to_id');
+    }
+
+    public function assignees(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'project_review_markup_assignees')
+            ->withPivot('tenant_id')
+            ->withTimestamps();
     }
 
     public function closer(): BelongsTo

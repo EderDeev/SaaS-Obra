@@ -4,12 +4,19 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\ContractParticipant;
+use App\Models\AiMonthlyUsage;
 use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Models\User;
 use App\Notifications\UserTemporaryPasswordNotification;
 use App\Support\ActivityPermissions;
+use App\Support\BudgetPermissions;
+use App\Support\ContractPermissions;
+use App\Support\DiarioObraPermissions;
+use App\Support\DocumentationPermissions;
+use App\Support\MedicaoPermissions;
+use App\Support\OrdemServicoPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\PasswordPolicy;
 use App\Support\ProjectPermissions;
@@ -50,8 +57,12 @@ class UserController extends Controller
             ->where('status', 'active')
             ->get()
             ->keyBy(fn (RelatorioNaoConformidadeResponsavel $responsavel): string => "{$responsavel->user_id}:{$responsavel->contract_id}");
+        $aiUsageByUser = AiMonthlyUsage::query()
+            ->where('tenant_id', $tenant->id)
+            ->whereDate('period', now()->startOfMonth()->toDateString())
+            ->pluck('total_tokens', 'user_id');
 
-        $memberships->each(function (TenantUser $membership) use ($participantsByUser, $rncPermissionsByUserContract): void {
+        $memberships->each(function (TenantUser $membership) use ($participantsByUser, $rncPermissionsByUserContract, $aiUsageByUser): void {
             $userPermissions = $membership->role === 'tenant_owner'
                 ? UserPermissions::all()
                 : UserPermissions::normalize(
@@ -59,12 +70,21 @@ class UserController extends Controller
                 );
 
             $membership->setAttribute('user_permissions', $userPermissions);
+            $membership->setAttribute('ai_tokens_used_current_month', (int) ($aiUsageByUser[$membership->user_id] ?? 0));
             $membership->setAttribute(
                 'parametrizacao_permissions',
                 $membership->role === 'tenant_owner'
                     ? ParametrizacaoPermissions::all()
                     : ParametrizacaoPermissions::normalize(
                         $membership->parametrizacao_permissions ?? ParametrizacaoPermissions::defaultForRole($membership->role),
+                    ),
+            );
+            $membership->setAttribute(
+                'budget_permissions',
+                $membership->role === 'tenant_owner'
+                    ? BudgetPermissions::all()
+                    : BudgetPermissions::normalize(
+                        $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
                     ),
             );
             $membership->setAttribute(
@@ -76,7 +96,12 @@ class UserController extends Controller
                         'side' => $participant->side,
                         'role' => $participant->role,
                         'activity_permissions' => ActivityPermissions::normalize($participant->activity_permissions ?? []),
+                        'contract_permissions' => ContractPermissions::normalize($participant->contract_permissions ?? []),
                         'project_permissions' => ProjectPermissions::normalize($participant->project_permissions ?? []),
+                        'documentation_permissions' => DocumentationPermissions::normalize($participant->documentation_permissions ?? []),
+                        'diario_obra_permissions' => DiarioObraPermissions::normalize($participant->diario_obra_permissions ?? []),
+                        'ordem_servico_permissions' => OrdemServicoPermissions::normalize($participant->ordem_servico_permissions ?? []),
+                        'medicao_permissions' => MedicaoPermissions::normalize($participant->medicao_permissions ?? []),
                         'rnc_permissions' => RncPermissions::normalize(
                             $rncPermissionsByUserContract
                                 ->get("{$membership->user_id}:{$participant->contract_id}")
@@ -112,10 +137,15 @@ class UserController extends Controller
             'defaultRole' => TenantRoles::defaultRole(),
             'userPermissionOptions' => UserPermissions::labels(),
             'parametrizacaoPermissionOptions' => ParametrizacaoPermissions::labels(),
+            'budgetPermissionOptions' => BudgetPermissions::labels(),
             'contractPermissionGroups' => [
                 'activity_permissions' => [
                     'label' => 'Atividades',
                     'permissions' => ActivityPermissions::labels(),
+                ],
+                'contract_permissions' => [
+                    'label' => 'Contratos',
+                    'permissions' => ContractPermissions::labels(),
                 ],
                 'project_permissions' => [
                     'label' => 'Projetos',
@@ -125,6 +155,22 @@ class UserController extends Controller
                     'label' => 'RNC',
                     'permissions' => RncPermissions::labels(),
                 ],
+                'documentation_permissions' => [
+                    'label' => 'Documentação',
+                    'permissions' => DocumentationPermissions::labels(),
+                ],
+                'diario_obra_permissions' => [
+                    'label' => 'Diário de Obra',
+                    'permissions' => DiarioObraPermissions::labels(),
+                ],
+                'ordem_servico_permissions' => [
+                    'label' => 'Ordem de Serviço',
+                    'permissions' => OrdemServicoPermissions::labels(),
+                ],
+                'medicao_permissions' => [
+                    'label' => 'Medição',
+                    'permissions' => MedicaoPermissions::labels(),
+                ],
             ],
             'contractRolesBySide' => self::CONTRACT_ROLES_BY_SIDE,
             'userPermissionCan' => [
@@ -132,6 +178,7 @@ class UserController extends Controller
                 'edit_user' => UserPermissions::can(request()->user(), $tenant, UserPermissions::EDIT),
                 'deactivate_user' => UserPermissions::can(request()->user(), $tenant, UserPermissions::DEACTIVATE),
             ],
+            'defaultAiUserTokenLimit' => (int) config('services.openai.user_monthly_token_limit'),
         ]);
     }
 
@@ -147,10 +194,13 @@ class UserController extends Controller
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'role' => ['required', Rule::in(TenantRoles::all())],
+            'ai_monthly_token_limit' => ['nullable', 'integer', 'min:1000', 'max:'.max(1000, (int) config('services.openai.user_monthly_token_limit'))],
             'user_permissions' => ['nullable', 'array'],
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
             'parametrizacao_permissions' => ['nullable', 'array'],
             'parametrizacao_permissions.*' => ['required', 'string', Rule::in(ParametrizacaoPermissions::all())],
+            'budget_permissions' => ['nullable', 'array'],
+            'budget_permissions.*' => ['required', 'string', Rule::in(BudgetPermissions::all())],
             'contract_accesses' => ['nullable', 'array'],
             'contract_accesses.*.contract_id' => [
                 'required',
@@ -161,10 +211,20 @@ class UserController extends Controller
             'contract_accesses.*.role' => ['required', 'string'],
             'contract_accesses.*.activity_permissions' => ['nullable', 'array'],
             'contract_accesses.*.activity_permissions.*' => ['required', 'string', Rule::in(ActivityPermissions::all())],
+            'contract_accesses.*.contract_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.contract_permissions.*' => ['required', 'string', Rule::in(ContractPermissions::all())],
             'contract_accesses.*.project_permissions' => ['nullable', 'array'],
             'contract_accesses.*.project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
             'contract_accesses.*.rnc_permissions' => ['nullable', 'array'],
             'contract_accesses.*.rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
+            'contract_accesses.*.documentation_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.documentation_permissions.*' => ['required', 'string', Rule::in(DocumentationPermissions::all())],
+            'contract_accesses.*.diario_obra_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.diario_obra_permissions.*' => ['required', 'string', Rule::in(DiarioObraPermissions::all())],
+            'contract_accesses.*.ordem_servico_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.ordem_servico_permissions.*' => ['required', 'string', Rule::in(OrdemServicoPermissions::all())],
+            'contract_accesses.*.medicao_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.medicao_permissions.*' => ['required', 'string', Rule::in(MedicaoPermissions::all())],
         ], [
             'empresa_id.required' => 'Selecione a empresa do usuario.',
             'empresa_id.exists' => 'A empresa selecionada nao pertence a este tenant.',
@@ -184,17 +244,44 @@ class UserController extends Controller
         );
 
         DB::transaction(function () use ($tenant, $user, $data, $request): void {
+            $firstContractAccess = collect($data['contract_accesses'] ?? [])->first() ?? [];
+
             $tenant->memberships()->updateOrCreate(
                 ['user_id' => $user->id],
                 [
                     'empresa_id' => $data['empresa_id'],
                     'role' => $data['role'],
                     'status' => 'active',
+                    'ai_monthly_token_limit' => $data['ai_monthly_token_limit'] ?? null,
                     'user_permissions' => UserPermissions::normalize(
                         $data['user_permissions'] ?? UserPermissions::defaultForRole($data['role']),
                     ),
                     'parametrizacao_permissions' => ParametrizacaoPermissions::normalize(
                         $data['parametrizacao_permissions'] ?? ParametrizacaoPermissions::defaultForRole($data['role']),
+                    ),
+                    'budget_permissions' => BudgetPermissions::normalize(
+                        $data['budget_permissions'] ?? BudgetPermissions::defaultForRole($data['role']),
+                    ),
+                    'activity_permissions' => ActivityPermissions::normalize(
+                        $firstContractAccess['activity_permissions'] ?? ActivityPermissions::defaultForRole($data['role']),
+                    ),
+                    'contract_permissions' => ContractPermissions::normalize(
+                        $firstContractAccess['contract_permissions'] ?? ContractPermissions::defaultForRole($data['role']),
+                    ),
+                    'project_permissions' => ProjectPermissions::normalize(
+                        $firstContractAccess['project_permissions'] ?? ProjectPermissions::defaultForRole($data['role']),
+                    ),
+                    'documentation_permissions' => DocumentationPermissions::normalize(
+                        $firstContractAccess['documentation_permissions'] ?? DocumentationPermissions::defaultForRole($data['role']),
+                    ),
+                    'diario_obra_permissions' => DiarioObraPermissions::normalize(
+                        $firstContractAccess['diario_obra_permissions'] ?? DiarioObraPermissions::defaultForRole($data['role']),
+                    ),
+                    'ordem_servico_permissions' => OrdemServicoPermissions::normalize(
+                        $firstContractAccess['ordem_servico_permissions'] ?? OrdemServicoPermissions::defaultForRole($data['role']),
+                    ),
+                    'medicao_permissions' => MedicaoPermissions::normalize(
+                        $firstContractAccess['medicao_permissions'] ?? MedicaoPermissions::defaultForRole($data['role']),
                     ),
                     'invited_at' => now(),
                     'joined_at' => now(),
@@ -226,10 +313,13 @@ class UserController extends Controller
                 Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'role' => ['required', Rule::in(TenantRoles::all())],
+            'ai_monthly_token_limit' => ['nullable', 'integer', 'min:1000', 'max:'.max(1000, (int) config('services.openai.user_monthly_token_limit'))],
             'user_permissions' => ['nullable', 'array'],
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
             'parametrizacao_permissions' => ['nullable', 'array'],
             'parametrizacao_permissions.*' => ['required', 'string', Rule::in(ParametrizacaoPermissions::all())],
+            'budget_permissions' => ['nullable', 'array'],
+            'budget_permissions.*' => ['required', 'string', Rule::in(BudgetPermissions::all())],
             'contract_accesses' => ['nullable', 'array'],
             'contract_accesses.*.contract_id' => [
                 'required',
@@ -240,10 +330,20 @@ class UserController extends Controller
             'contract_accesses.*.role' => ['required', 'string'],
             'contract_accesses.*.activity_permissions' => ['nullable', 'array'],
             'contract_accesses.*.activity_permissions.*' => ['required', 'string', Rule::in(ActivityPermissions::all())],
+            'contract_accesses.*.contract_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.contract_permissions.*' => ['required', 'string', Rule::in(ContractPermissions::all())],
             'contract_accesses.*.project_permissions' => ['nullable', 'array'],
             'contract_accesses.*.project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
             'contract_accesses.*.rnc_permissions' => ['nullable', 'array'],
             'contract_accesses.*.rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
+            'contract_accesses.*.documentation_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.documentation_permissions.*' => ['required', 'string', Rule::in(DocumentationPermissions::all())],
+            'contract_accesses.*.diario_obra_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.diario_obra_permissions.*' => ['required', 'string', Rule::in(DiarioObraPermissions::all())],
+            'contract_accesses.*.ordem_servico_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.ordem_servico_permissions.*' => ['required', 'string', Rule::in(OrdemServicoPermissions::all())],
+            'contract_accesses.*.medicao_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.medicao_permissions.*' => ['required', 'string', Rule::in(MedicaoPermissions::all())],
         ], [
             'empresa_id.required' => 'Selecione a empresa do usuario.',
             'empresa_id.exists' => 'A empresa selecionada nao pertence a este tenant.',
@@ -258,6 +358,7 @@ class UserController extends Controller
             $membershipData = [
                 'empresa_id' => $data['empresa_id'],
                 'role' => $data['role'],
+                'ai_monthly_token_limit' => $data['ai_monthly_token_limit'] ?? null,
             ];
 
             if (array_key_exists('user_permissions', $data)) {
@@ -266,6 +367,10 @@ class UserController extends Controller
 
             if (array_key_exists('parametrizacao_permissions', $data)) {
                 $membershipData['parametrizacao_permissions'] = ParametrizacaoPermissions::normalize($data['parametrizacao_permissions'] ?? []);
+            }
+
+            if (array_key_exists('budget_permissions', $data)) {
+                $membershipData['budget_permissions'] = BudgetPermissions::normalize($data['budget_permissions'] ?? []);
             }
 
             $membership->update($membershipData);
@@ -402,7 +507,12 @@ class UserController extends Controller
                 'role' => $role,
                 'status' => 'active',
                 'activity_permissions' => ActivityPermissions::normalize($access['activity_permissions'] ?? []),
+                'contract_permissions' => ContractPermissions::normalize($access['contract_permissions'] ?? []),
                 'project_permissions' => ProjectPermissions::normalize($access['project_permissions'] ?? []),
+                'documentation_permissions' => DocumentationPermissions::normalize($access['documentation_permissions'] ?? []),
+                'diario_obra_permissions' => DiarioObraPermissions::normalize($access['diario_obra_permissions'] ?? []),
+                'ordem_servico_permissions' => OrdemServicoPermissions::normalize($access['ordem_servico_permissions'] ?? []),
+                'medicao_permissions' => MedicaoPermissions::normalize($access['medicao_permissions'] ?? []),
                 'invited_at' => now(),
                 'joined_at' => now(),
             ]);

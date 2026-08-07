@@ -42,30 +42,30 @@ class ProjectMasterListExportService
         $sheet->setShowGridlines(false);
         $spreadsheet->getDefaultStyle()->getFont()->setName('Aptos')->setSize(9);
 
-        $sheet->mergeCells('A1:R1');
+        $sheet->mergeCells('A1:V1');
         $sheet->setCellValue('A1', 'LISTA MESTRA DE PROJETOS');
-        $sheet->getStyle('A1:R1')->applyFromArray([
+        $sheet->getStyle('A1:V1')->applyFromArray([
             'font' => ['bold' => true, 'size' => 18, 'color' => ['rgb' => '111827']],
             'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
         ]);
         $sheet->getRowDimension(1)->setRowHeight(28);
 
-        $sheet->mergeCells('A2:R2');
+        $sheet->mergeCells('A2:V2');
         $sheet->setCellValue('A2', sprintf(
             '%s  |  Gerado em %s  |  %d projeto(s)',
             $tenant->name,
             $generatedAt->timezone(config('app.timezone'))->format('d/m/Y H:i'),
             $documents->count(),
         ));
-        $sheet->getStyle('A2:R2')->applyFromArray([
+        $sheet->getStyle('A2:V2')->applyFromArray([
             'font' => ['size' => 9, 'color' => ['rgb' => '64748B']],
             'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
         ]);
         $sheet->getRowDimension(2)->setRowHeight(18);
 
-        $this->applyBrandBlock($sheet, 'A', 'B', 'C', 'F', $branding['gerenciadora']);
-        $this->applyBrandBlock($sheet, 'G', 'H', 'I', 'L', $branding['cliente']);
-        $this->applyBrandBlock($sheet, 'M', 'N', 'O', 'R', $branding['construtora']);
+        $this->applyBrandBlock($sheet, 'A', 'B', 'C', 'G', $branding['gerenciadora']);
+        $this->applyBrandBlock($sheet, 'H', 'I', 'J', 'O', $branding['cliente']);
+        $this->applyBrandBlock($sheet, 'P', 'Q', 'R', 'V', $branding['construtora']);
 
         $headers = [
             'Codigo',
@@ -75,6 +75,8 @@ class ProjectMasterListExportService
             'Nome do contrato',
             'Cod. obra',
             'Obra',
+            'Cod. trecho',
+            'Trecho',
             'Disciplina',
             'Nome da disciplina',
             'Fase',
@@ -85,10 +87,12 @@ class ProjectMasterListExportService
             'Arquivo',
             'Tamanho',
             'Criado em',
+            'Analisado em',
             'Aprovado em',
+            'RNCs abertas',
         ];
         $sheet->fromArray($headers, null, 'A9');
-        $sheet->getStyle('A9:R9')->applyFromArray([
+        $sheet->getStyle('A9:V9')->applyFromArray([
             'font' => ['bold' => true, 'size' => 9, 'color' => ['rgb' => '334155']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF2F7']],
             'borders' => ['bottom' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
@@ -106,6 +110,8 @@ class ProjectMasterListExportService
                 $document['contract']['name'] ?: '-',
                 $document['obra']['codigo'] ?: '-',
                 $document['obra']['nome'] ?: '-',
+                data_get($document, 'trecho.codigo') ?: '-',
+                data_get($document, 'trecho.nome') ?: '-',
                 $document['disciplina']['sigla'] ?: '-',
                 $document['disciplina']['nome'] ?: '-',
                 $document['phase']['code'] ?: '-',
@@ -116,36 +122,39 @@ class ProjectMasterListExportService
                 $document['file_name'] ?: '-',
                 $document['file_size'] ?: '-',
                 $document['created_at'] ?: '-',
+                $document['reviewed_at'] ?: '-',
                 $document['approved_at'] ?: '-',
+                (int) ($document['open_rncs_count'] ?? 0),
             ];
 
             $sheet->fromArray($values, null, "A{$row}");
-            foreach (['A', 'C', 'D', 'F', 'H', 'J', 'M'] as $column) {
+            foreach (['A', 'C', 'D', 'F', 'H', 'J', 'L', 'O'] as $column) {
                 $sheet->setCellValueExplicit("{$column}{$row}", (string) $sheet->getCell("{$column}{$row}")->getValue(), DataType::TYPE_STRING);
             }
 
             $fill = $row % 2 === 0 ? 'FFFFFF' : 'F8FAFC';
-            $sheet->getStyle("A{$row}:R{$row}")->applyFromArray([
+            $sheet->getStyle("A{$row}:V{$row}")->applyFromArray([
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fill]],
                 'borders' => ['bottom' => ['borderStyle' => Border::BORDER_HAIR, 'color' => ['rgb' => 'E2E8F0']]],
                 'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
             ]);
-            $this->applyStatusStyle($sheet, "N{$row}", $document['status']);
+            $this->applyStatusStyle($sheet, "P{$row}", $document['status']);
             $sheet->getRowDimension($row)->setRowHeight(20);
             $row++;
         }
 
         $lastRow = max($row - 1, 9);
         $sheet->freezePane('A10');
-        $sheet->setAutoFilter("A9:R{$lastRow}");
+        $sheet->setAutoFilter("A9:V{$lastRow}");
         if ($lastRow >= 10) {
-            $sheet->getStyle("A10:R{$lastRow}")->getAlignment()->setWrapText(false);
+            $sheet->getStyle("A10:V{$lastRow}")->getAlignment()->setWrapText(false);
         }
 
         $widths = [
             'A' => 24, 'B' => 34, 'C' => 14, 'D' => 13, 'E' => 24, 'F' => 12,
-            'G' => 22, 'H' => 12, 'I' => 22, 'J' => 10, 'K' => 20, 'L' => 16,
-            'M' => 11, 'N' => 16, 'O' => 34, 'P' => 13, 'Q' => 18, 'R' => 18,
+            'G' => 22, 'H' => 12, 'I' => 22, 'J' => 12, 'K' => 22, 'L' => 10,
+            'M' => 20, 'N' => 16, 'O' => 11, 'P' => 16, 'Q' => 34, 'R' => 13,
+            'S' => 18, 'T' => 18, 'U' => 18, 'V' => 13,
         ];
         foreach ($widths as $column => $width) {
             $sheet->getColumnDimension($column)->setWidth($width);

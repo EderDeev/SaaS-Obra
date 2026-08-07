@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\ActivityChecklistItem;
 use App\Models\Contract;
 use App\Models\Tenant;
 use App\Models\User;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -64,6 +66,7 @@ class ActivityController extends Controller
             ->get();
 
         $contractIds = $contracts->pluck('id');
+        $assignmentCounts = $this->activityAssignmentCounts($tenant, $contracts);
 
         $activities = $tenant->activities()
             ->whereIn('contract_id', $contractIds)
@@ -82,6 +85,7 @@ class ActivityController extends Controller
                 'creator:id,name,email,avatar_url',
                 'comments.user:id,name,email,avatar_url',
                 'files.user:id,name,email,avatar_url',
+                'checklistItems.completedBy:id,name,email,avatar_url',
             ])
             ->orderBy('position')
             ->latest()
@@ -105,7 +109,7 @@ class ActivityController extends Controller
                 'status' => $contract->status,
             ])->values(),
             'activities' => $activities,
-            'assigneesByContract' => $this->assignableUsersByContract($tenant, $contracts),
+            'assigneesByContract' => $this->assignableUsersByContract($tenant, $contracts, $assignmentCounts),
             'statuses' => self::STATUSES,
             'priorities' => self::PRIORITIES,
             'categories' => self::CATEGORIES,
@@ -300,6 +304,9 @@ class ActivityController extends Controller
             'assigned_to_ids.*' => ['integer', 'exists:users,id'],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
+            'activity_type' => ['sometimes', Rule::in(Activity::TYPES)],
+            'checklist_items' => ['required_if:activity_type,'.Activity::TYPE_CHECKLIST, 'array', 'max:50'],
+            'checklist_items.*' => ['required_if:activity_type,'.Activity::TYPE_CHECKLIST, 'nullable', 'string', 'max:500'],
             'category' => ['nullable', Rule::in(array_keys(self::CATEGORIES))],
             'visibility' => ['sometimes', Rule::in(array_keys(self::VISIBILITIES))],
             'priority' => ['required', Rule::in(self::PRIORITIES)],
@@ -328,21 +335,37 @@ class ActivityController extends Controller
             ]);
         }
 
-        $activity = $tenant->activities()->create([
-            'contract_id' => $contract->id,
-            'assigned_to_id' => $assignedUserIds->first(),
-            'created_by_id' => $request->user()->id,
-            'title' => $data['title'],
-            'description' => $data['description'] ?? null,
-            'category' => $data['category'] ?? 'project',
-            'visibility' => $data['visibility'] ?? Activity::VISIBILITY_PUBLIC,
-            'status' => 'todo',
-            'priority' => $data['priority'],
-            'due_date' => $data['due_date'] ?? null,
-            'position' => $this->nextPosition($contract, 'todo'),
-        ]);
+        $activity = DB::transaction(function () use ($assignedUserIds, $contract, $data, $request, $tenant): Activity {
+            $activity = $tenant->activities()->create([
+                'contract_id' => $contract->id,
+                'assigned_to_id' => $assignedUserIds->first(),
+                'created_by_id' => $request->user()->id,
+                'title' => $data['title'],
+                'description' => $data['description'] ?? null,
+                'activity_type' => $data['activity_type'] ?? Activity::TYPE_ACTIVITY,
+                'category' => $data['category'] ?? 'project',
+                'visibility' => $data['visibility'] ?? Activity::VISIBILITY_PUBLIC,
+                'status' => 'todo',
+                'priority' => $data['priority'],
+                'due_date' => $data['due_date'] ?? null,
+                'position' => $this->nextPosition($contract, 'todo'),
+            ]);
 
-        $activity->assignees()->sync($assignedUserIds);
+            $activity->assignees()->sync($assignedUserIds);
+
+            if ($activity->activity_type === Activity::TYPE_CHECKLIST) {
+                $activity->checklistItems()->createMany(
+                    collect($data['checklist_items'] ?? [])
+                        ->map(fn (string $label, int $position): array => [
+                            'label' => trim($label),
+                            'position' => $position,
+                        ])
+                        ->all(),
+                );
+            }
+
+            return $activity;
+        });
 
         User::query()
             ->whereIn('id', $assignedUserIds)
@@ -409,6 +432,30 @@ class ActivityController extends Controller
         $activity->assignees()->sync($assignedUserIds);
 
         return back()->with('success', 'Atividade atualizada.');
+    }
+
+    public function updateChecklistItem(
+        Request $request,
+        Tenant $tenant,
+        Activity $activity,
+        ActivityChecklistItem $checklistItem,
+    ): RedirectResponse {
+        abort_unless((int) $checklistItem->activity_id === (int) $activity->id, 404);
+        abort_unless($activity->activity_type === Activity::TYPE_CHECKLIST, 404);
+        $this->authorizeActivityAccess($request->user(), $tenant, $activity);
+
+        $data = $request->validate([
+            'is_completed' => ['required', 'boolean'],
+        ]);
+        $isCompleted = (bool) $data['is_completed'];
+
+        $checklistItem->update([
+            'is_completed' => $isCompleted,
+            'completed_by_id' => $isCompleted ? $request->user()->id : null,
+            'completed_at' => $isCompleted ? now() : null,
+        ]);
+
+        return back()->with('success', $isCompleted ? 'Etapa concluída.' : 'Etapa reaberta.');
     }
 
     public function destroy(Request $request, Tenant $tenant, Activity $activity): RedirectResponse
@@ -586,8 +633,10 @@ class ActivityController extends Controller
      * @param  Collection<int, Contract>  $contracts
      * @return array<int, array<int, array<string, mixed>>>
      */
-    private function assignableUsersByContract(Tenant $tenant, Collection $contracts): array
+    private function assignableUsersByContract(Tenant $tenant, Collection $contracts, ?Collection $assignmentCounts = null): array
     {
+        $assignmentCounts ??= $this->activityAssignmentCounts($tenant, $contracts);
+
         $globalUsers = $tenant->memberships()
             ->where('status', 'active')
             ->whereIn('role', ['tenant_owner', 'tenant_admin'])
@@ -596,7 +645,7 @@ class ActivityController extends Controller
             ->pluck('user')
             ->filter();
 
-        return $contracts->mapWithKeys(function (Contract $contract) use ($globalUsers): array {
+        return $contracts->mapWithKeys(function (Contract $contract) use ($globalUsers, $assignmentCounts): array {
             $participants = $contract->participants()
                 ->where('status', 'active')
                 ->with('user:id,name,email,avatar_url')
@@ -614,11 +663,58 @@ class ActivityController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'avatar_url' => $user->avatar_url,
+                    'activity_assignment_count' => (int) $assignmentCounts->get($contract->id.':'.$user->id, 0),
                 ])
+                ->sortByDesc('activity_assignment_count')
+                ->values()
                 ->all();
 
             return [$contract->id => $users];
         })->all();
+    }
+
+    /**
+     * @param  Collection<int, Contract>  $contracts
+     * @return Collection<string, int>
+     */
+    private function activityAssignmentCounts(Tenant $tenant, Collection $contracts): Collection
+    {
+        $contractIds = $contracts->pluck('id');
+
+        if ($contractIds->isEmpty()) {
+            return collect();
+        }
+
+        $pivotAssignments = DB::table('activities')
+            ->join('activity_user', 'activity_user.activity_id', '=', 'activities.id')
+            ->where('activities.tenant_id', $tenant->id)
+            ->whereIn('activities.contract_id', $contractIds)
+            ->whereNull('activities.deleted_at')
+            ->select([
+                'activities.contract_id',
+                'activity_user.user_id',
+                'activities.id as activity_id',
+            ]);
+
+        $legacyAssignments = DB::table('activities')
+            ->where('tenant_id', $tenant->id)
+            ->whereIn('contract_id', $contractIds)
+            ->whereNotNull('assigned_to_id')
+            ->whereNull('deleted_at')
+            ->select([
+                'contract_id',
+                'assigned_to_id as user_id',
+                'id as activity_id',
+            ]);
+
+        return DB::query()
+            ->fromSub($pivotAssignments->union($legacyAssignments), 'activity_assignments')
+            ->select(['contract_id', 'user_id', DB::raw('COUNT(*) as assignment_count')])
+            ->groupBy('contract_id', 'user_id')
+            ->get()
+            ->mapWithKeys(fn (object $row): array => [
+                $row->contract_id.':'.$row->user_id => (int) $row->assignment_count,
+            ]);
     }
 
     private function nextPosition(Contract $contract, string $status): int
@@ -843,12 +939,14 @@ class ActivityController extends Controller
                 'name' => 'Marina Costa',
                 'email' => 'marina.costa@empresa.com',
                 'avatar_url' => null,
+                'activity_assignment_count' => 12,
             ],
             [
                 'id' => -202,
                 'name' => 'Carlos Mendes',
                 'email' => 'carlos.mendes@empresa.com',
                 'avatar_url' => null,
+                'activity_assignment_count' => 8,
             ],
         ];
         $contract = [
@@ -866,6 +964,7 @@ class ActivityController extends Controller
             'created_by_id' => -203,
             'title' => 'Validar medição mensal da obra',
             'description' => 'Conferir os quantitativos executados, validar a memória de cálculo e registrar as pendências antes do fechamento da medição.',
+            'activity_type' => Activity::TYPE_ACTIVITY,
             'category' => 'measurement',
             'visibility' => Activity::VISIBILITY_RESTRICTED,
             'status' => 'todo',
@@ -907,6 +1006,7 @@ class ActivityController extends Controller
                     'user' => $responsibles[1],
                 ],
             ],
+            'checklist_items' => [],
             '_tourData' => true,
         ];
 

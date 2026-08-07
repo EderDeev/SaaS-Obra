@@ -16,6 +16,7 @@ use App\Models\Obra;
 use App\Models\OrdemServico;
 use App\Models\OrdemServicoItem;
 use App\Models\Tenant;
+use App\Support\MedicaoPermissions;
 use App\Models\TipoEmpresa;
 use App\Models\User;
 use App\Notifications\FolhaRostoSubmittedForAnalysisNotification;
@@ -1320,13 +1321,15 @@ class FolhaRostoController extends Controller
     private function accessibleContracts(Request $request, Tenant $tenant)
     {
         $query = $tenant->contracts();
-        $tenantRole = $request->user()->tenantRole($tenant);
 
-        if (! $request->user()->is_platform_admin && ! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
-            $query->whereHas('participants', function (Builder $query) use ($request): void {
-                $query->where('user_id', $request->user()->id)
-                    ->where('status', 'active');
-            });
+        $contractIds = MedicaoPermissions::contractIdsFor(
+            $request->user(),
+            $tenant,
+            MedicaoPermissions::VIEW
+        );
+
+        if ($contractIds !== null) {
+            $query->whereKey($contractIds);
         }
 
         return $query;

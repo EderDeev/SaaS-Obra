@@ -86,6 +86,7 @@ export default function FolhaRostoShow({
 }) {
     const page = usePage();
     const tenant = page.props.currentTenant;
+    const canManageClaims = Boolean(page.props.medicaoPermissions?.can?.manage_measurement_claims);
     const [showForm, setShowForm] = useState(false);
     const [editingFolha, setEditingFolha] = useState(null);
     const [expandedFrId, setExpandedFrId] = useState(null);
@@ -261,7 +262,7 @@ export default function FolhaRostoShow({
                         </p>
                     </div>
 
-                    {ordem.can_create && (
+                    {ordem.can_create && canManageClaims && (
                         <button
                             type="button"
                             onClick={() => {
@@ -628,7 +629,7 @@ export default function FolhaRostoShow({
                                 </div>
                                 <strong>{formatCurrency(folha.valor_total)}</strong>
                                 <div>
-                                    {['rascunho', 'retornada'].includes(folha.status) ? (
+                                    {canManageClaims && ['rascunho', 'retornada'].includes(folha.status) ? (
                                         <div className="flex items-center gap-2">
                                             <button
                                                 type="button"

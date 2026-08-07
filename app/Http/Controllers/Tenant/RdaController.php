@@ -11,6 +11,7 @@ use App\Models\RdoEquipamentoCadastro;
 use App\Models\RdoMaoObraCadastro;
 use App\Models\RdoSubcontratadaCadastro;
 use App\Models\Tenant;
+use App\Support\DiarioObraPermissions;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,7 +26,14 @@ class RdaController extends Controller
     public function index(Request $request, Tenant $tenant): Response
     {
         [$contracts, $selectedContractId, $month, $configurations, $obras, $selectedObraId, $configuration] = $this->context($request, $tenant);
-        [$validDays, $existingRdos, $apontamentos] = $this->calendarData($tenant, $configuration, $selectedContractId, $month);
+        $selectedContract = $contracts->firstWhere('id', $selectedContractId);
+        $canFill = $selectedContract && DiarioObraPermissions::can(
+            $request->user(),
+            $tenant,
+            DiarioObraPermissions::FILL_RDA,
+            $selectedContract
+        );
+        [$validDays, $existingRdos, $apontamentos] = $this->calendarData($tenant, $configuration, $selectedContractId, $month, $canFill);
 
         return Inertia::render('Tenant/Rda/Index', [
             'contracts' => $contracts,
@@ -39,6 +47,13 @@ class RdaController extends Controller
             'validDays' => $validDays,
             'existingRdos' => $existingRdos,
             'apontamentos' => $apontamentos,
+            'can_fill' => $canFill,
+            'can_manage_settings' => $selectedContractId > 0 && DiarioObraPermissions::can(
+                $request->user(),
+                $tenant,
+                DiarioObraPermissions::SETTINGS,
+                $contracts->firstWhere('id', $selectedContractId)
+            ),
             'summary' => [
                 'month_label' => ucfirst($month->translatedFormat('F/Y')),
                 'days_in_month' => $month->daysInMonth,
@@ -189,17 +204,24 @@ class RdaController extends Controller
             'month' => ['nullable', 'date_format:Y-m'],
         ]);
 
-        $contracts = Contract::query()
+        $contractIds = DiarioObraPermissions::contractIdsFor($request->user(), $tenant, DiarioObraPermissions::VIEW);
+        $contractsQuery = Contract::query()
             ->where('tenant_id', $tenant->id)
             ->whereHas('rdoConfiguracoes')
-            ->orderBy('code')
-            ->get(['id', 'code', 'name']);
+            ->orderBy('code');
+        if ($contractIds !== null) {
+            $contractsQuery->whereIn('id', $contractIds);
+        }
+        $contracts = $contractsQuery->get(['id', 'code', 'name']);
 
         if ($contracts->isEmpty()) {
-            $contracts = Contract::query()
+            $contractsQuery = Contract::query()
                 ->where('tenant_id', $tenant->id)
-                ->orderBy('code')
-                ->get(['id', 'code', 'name']);
+                ->orderBy('code');
+            if ($contractIds !== null) {
+                $contractsQuery->whereIn('id', $contractIds);
+            }
+            $contracts = $contractsQuery->get(['id', 'code', 'name']);
         }
 
         $selectedContractId = (int) ($filters['contract_id'] ?? $contracts->first()?->id ?? 0);
@@ -227,7 +249,7 @@ class RdaController extends Controller
         return [$contracts, $selectedContractId, $month, $configurations, $obras, $selectedObraId, $configuration];
     }
 
-    private function calendarData(Tenant $tenant, ?RdoConfiguracao $configuration, int $contractId, CarbonImmutable $month): array
+    private function calendarData(Tenant $tenant, ?RdoConfiguracao $configuration, int $contractId, CarbonImmutable $month, bool $canFill): array
     {
         $validDays = [];
         $existingRdos = collect();
@@ -257,7 +279,8 @@ class RdaController extends Controller
                 'reference_date' => $rdo->reference_date?->format('Y-m-d'),
                 'status' => $rdo->status,
                 'can_fill' => in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)
-                    && $this->rdoFillWindowOpen($rdo),
+                    && $this->rdoFillWindowOpen($rdo)
+                    && $canFill,
                 'url' => route('tenant.diario-obra.rdo.show', [$tenant->slug, $rdo->id]),
             ]);
 
@@ -279,7 +302,8 @@ class RdaController extends Controller
                 'status_label' => $rda->status === 'publicado' ? 'Publicado' : 'Rascunho',
                 'can_fill' => $rda->status !== 'publicado'
                     && $rda->rdo
-                    && $this->rdoFillWindowOpen($rda->rdo),
+                    && $this->rdoFillWindowOpen($rda->rdo)
+                    && $canFill,
                 'url' => route('tenant.diario-obra.rda.show', [$tenant->slug, $rda->id]),
             ]);
 
@@ -369,6 +393,12 @@ class RdaController extends Controller
             'reference_date_formatted' => $rda->reference_date?->format('d/m/Y'),
             'status' => $rda->status,
             'status_label' => $rda->status === 'publicado' ? 'Publicado' : 'Rascunho',
+            'can_edit' => $rda->status !== 'publicado' && DiarioObraPermissions::can(
+                request()->user(),
+                $tenant,
+                DiarioObraPermissions::FILL_RDA,
+                $rda->contract
+            ),
             'published_at' => $rda->published_at?->format('d/m/Y H:i'),
             'dados' => $rda->dados ?: $this->emptyData(),
             'contract' => $rda->contract ? ['id' => $rda->contract->id, 'label' => "{$rda->contract->code} - {$rda->contract->name}"] : null,

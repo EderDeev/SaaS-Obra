@@ -1,4 +1,5 @@
 import { ClipboardList, X } from 'lucide-react';
+import ProjectIdentity from '@/Components/ProjectIdentity';
 import { projectEap } from '@/Utils/projectEap';
 
 function formatDateTime(value) {
@@ -66,9 +67,12 @@ export default function ProjectCapModal({ document, version, capImpactLabels = {
                         <h2 id="project-cap-title" className="mt-1 truncate text-[17px] font-semibold text-[var(--ink-900)]">
                             {capVersion.cap_number || 'CAP sem numero'}
                         </h2>
-                        <p className="mt-1 text-[12.5px] text-[var(--ink-500)]">
-                            {projectEap(document, capVersion) || 'Sem EAP'}
-                        </p>
+                        <ProjectIdentity
+                            className="mt-2"
+                            eap={projectEap(document, capVersion)}
+                            fileName={capVersion.original_name || capVersion.stored_name}
+                            title={document.title}
+                        />
                     </div>
                     <button type="button" className="sig-btn sig-btn-ghost !min-h-9 !px-2" title="Fechar" onClick={onClose}>
                         <X size={18} />

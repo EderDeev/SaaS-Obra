@@ -10,18 +10,24 @@ class ParametrizacaoPermissions
 {
     public const VIEW = 'view_parametrizacao';
     public const EMPRESAS = 'view_parametrizacao_empresas';
+    public const MANAGE_EMPRESAS = 'manage_parametrizacao_empresas';
     public const OBRAS = 'view_parametrizacao_obras';
-    public const CONTRATO = 'view_parametrizacao_contrato';
-    public const USUARIOS_CONTRATOS = 'view_parametrizacao_usuarios_contratos';
+    public const MANAGE_OBRAS = 'manage_parametrizacao_obras';
+    public const TRECHOS = 'view_parametrizacao_trechos';
+    public const MANAGE_TRECHOS = 'manage_parametrizacao_trechos';
     public const DISCIPLINAS = 'view_parametrizacao_disciplinas';
+    public const MANAGE_DISCIPLINAS = 'manage_parametrizacao_disciplinas';
 
     public const LABELS = [
-        self::VIEW => 'Visualizar Parametrizacao',
-        self::EMPRESAS => 'Empresas',
-        self::OBRAS => 'Obras',
-        self::CONTRATO => 'Contrato',
-        self::USUARIOS_CONTRATOS => 'Usuarios x Contratos',
-        self::DISCIPLINAS => 'Disciplinas',
+        self::VIEW => 'Visualizar parametrização',
+        self::EMPRESAS => 'Visualizar empresas',
+        self::MANAGE_EMPRESAS => 'Criar, editar e excluir empresas',
+        self::OBRAS => 'Visualizar obras',
+        self::MANAGE_OBRAS => 'Criar, editar e excluir obras',
+        self::TRECHOS => 'Visualizar trechos',
+        self::MANAGE_TRECHOS => 'Criar, editar e excluir trechos',
+        self::DISCIPLINAS => 'Visualizar disciplinas',
+        self::MANAGE_DISCIPLINAS => 'Criar, editar e excluir disciplinas',
     ];
 
     public static function all(): array
@@ -43,6 +49,19 @@ class ParametrizacaoPermissions
 
         if ($normalized->contains(fn ($permission): bool => $permission !== self::VIEW)) {
             $normalized->prepend(self::VIEW);
+        }
+
+        $dependencies = [
+            self::MANAGE_EMPRESAS => self::EMPRESAS,
+            self::MANAGE_OBRAS => self::OBRAS,
+            self::MANAGE_TRECHOS => self::TRECHOS,
+            self::MANAGE_DISCIPLINAS => self::DISCIPLINAS,
+        ];
+
+        foreach ($dependencies as $manage => $view) {
+            if ($normalized->contains($manage) && ! $normalized->contains($view)) {
+                $normalized->push($view);
+            }
         }
 
         return $normalized

@@ -110,6 +110,7 @@ export default function OrdemServicoIndex({
     contracts = [],
     ordens = [],
     options = {},
+    can = {},
 }) {
     const page = usePage();
     const tenant = page.props.currentTenant;
@@ -472,14 +473,16 @@ export default function OrdemServicoIndex({
                         </p>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={openCreateForm}
-                        className="sig-btn sig-btn-primary"
-                    >
-                        <Plus size={16} />
-                        Nova OS
-                    </button>
+                    {can.manage_drafts && (
+                        <button
+                            type="button"
+                            onClick={openCreateForm}
+                            className="sig-btn sig-btn-primary"
+                        >
+                            <Plus size={16} />
+                            Nova OS
+                        </button>
+                    )}
                 </section>
 
                 {page.props.flash?.success && (
@@ -1162,7 +1165,7 @@ export default function OrdemServicoIndex({
                                             {ordem.documentos_count} documento(s)
                                         </div>
 
-                                        {ordem.status === 'rascunho' && (
+                                        {ordem.status === 'rascunho' && can.manage_drafts && (
                                             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                                                 <button
                                                     type="button"

@@ -17,6 +17,7 @@ import {
     Info,
     Layers,
     MapPin,
+    MapPinned,
     Plus,
     Save,
     Settings,
@@ -357,8 +358,8 @@ function Metric({ icon: Icon, label, value, attention = false }) {
 
 function QuickActions({ tenant, capabilities, onParametrize, onAdditive }) {
     const actions = [
-        capabilities.manageContracts && { label: 'Parametrizar', icon: Settings, onClick: onParametrize },
-        capabilities.manageContracts && { label: 'Aditivo', icon: FilePlus2, onClick: onAdditive },
+        capabilities.parametrizeContract && { label: 'Parametrizar', icon: Settings, onClick: onParametrize },
+        capabilities.manageAdditives && { label: 'Aditivo', icon: FilePlus2, onClick: onAdditive },
         capabilities.createActivity && { label: 'Nova atividade', icon: Plus, href: route('tenant.activities.index', tenant.slug) },
         capabilities.uploadProject && { label: 'Submeter projeto', icon: Upload, href: route('tenant.projects.index', tenant.slug) },
         capabilities.createRnc && { label: 'Nova RNC', icon: ClipboardCheck, href: route('tenant.qualidade.rnc.create', tenant.slug) },
@@ -770,6 +771,7 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
     const tabs = [
         { id: 'empresas', label: 'Empresas', icon: Building2 },
         { id: 'obras', label: 'Obras', icon: MapPin },
+        { id: 'trechos', label: 'Trechos', icon: MapPinned },
         { id: 'disciplinas', label: 'Disciplinas', icon: Layers },
         { id: 'vinculos', label: 'Vínculos', icon: Settings },
         { id: 'medicao', label: 'Medição', icon: ClipboardCheck },
@@ -807,6 +809,7 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
                     {tab === 'vinculos' && <ContractLinksTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
                     {tab === 'empresas' && <EmpresaQuickTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
                     {tab === 'obras' && <ObraQuickTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
+                    {tab === 'trechos' && <TrechoQuickTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
                     {tab === 'disciplinas' && <DisciplinaQuickTab tenant={tenant} contract={contract} parametrizacao={parametrizacao} />}
                     {tab === 'medicao' && <ContractMeasurementTab tenant={tenant} contract={contract} />}
                 </div>
@@ -1230,6 +1233,50 @@ function ObraQuickTab({ tenant, contract, parametrizacao }) {
                 id: obra.id,
                 title: `${obra.codigo} - ${obra.nome}`,
                 meta: obra.tipo === 'filha' ? 'Subfrente' : 'Frente principal',
+            }))} />
+        </div>
+    );
+}
+
+function TrechoQuickTab({ tenant, contract, parametrizacao }) {
+    const obras = parametrizacao.obras || [];
+    const [saved, setSaved] = useState(false);
+    const form = useForm({
+        obra_id: obras[0]?.id ? String(obras[0].id) : '',
+        codigo: '',
+        nome: '',
+    });
+
+    const submit = (event) => {
+        event.preventDefault();
+        form.post(route('tenant.parametrizacao.trechos.store', tenant.slug), {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset('codigo', 'nome');
+                setSaved(true);
+            },
+        });
+    };
+
+    return (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(280px,1fr)]">
+            <form className="grid gap-4" onSubmit={submit}>
+                <SelectField label="Obra" value={form.data.obra_id} onChange={(value) => form.setData('obra_id', value)} error={form.errors.obra_id}>
+                    <option value="">Selecione</option>
+                    {obras.map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}
+                </SelectField>
+                <InputField label="Código" value={form.data.codigo} onChange={(value) => form.setData('codigo', value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3))} error={form.errors.codigo} placeholder="T01" maxLength={3} pattern="[A-Za-z0-9]{3}" required />
+                <InputField label="Nome" value={form.data.nome} onChange={(value) => form.setData('nome', value)} error={form.errors.nome} placeholder="Ex: km 0+000 ao km 12+500" required />
+                <button className="sig-btn sig-btn-primary" disabled={form.processing || obras.length === 0}>
+                    <Plus size={14} />
+                    Criar trecho
+                </button>
+                {saved && !form.isDirty && <SaveSuccessNotice />}
+            </form>
+            <MiniList title="Trechos vinculados" items={(parametrizacao.trechos || []).map((trecho) => ({
+                id: trecho.id,
+                title: `${trecho.codigo} - ${trecho.nome}`,
+                meta: `${trecho.obra?.codigo || '-'} - ${trecho.obra?.nome || 'Sem obra'}${trecho.is_default ? ' · Padrão' : ''}`,
             }))} />
         </div>
     );

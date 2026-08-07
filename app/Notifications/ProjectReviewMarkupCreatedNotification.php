@@ -20,17 +20,11 @@ class ProjectReviewMarkupCreatedNotification extends Notification
         $this->markup->loadMissing(['tenant', 'contract', 'document', 'version', 'creator']);
     }
 
-    /**
-     * @return array<int, string>
-     */
     public function via(object $notifiable): array
     {
         return ['database', 'mail'];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function toArray(object $notifiable): array
     {
         return [
@@ -52,26 +46,32 @@ class ProjectReviewMarkupCreatedNotification extends Notification
         $systemUrl = route('tenant.dashboard', $this->markup->tenant);
         $description = Str::limit(trim(strip_tags((string) $this->markup->description)), 650);
 
+        $viewData = [
+            'headline' => 'Novo comentário visual de projeto',
+            'intro' => "{$this->actor->name} registrou um comentário visual e atribuiu o acompanhamento a você.",
+            'tone' => $this->markup->priority === 'critica' ? 'danger' : ($this->markup->priority === 'alta' ? 'warning' : 'info'),
+            'notifiable' => $notifiable,
+            'details' => [
+                ['label' => 'EAP', 'value' => $this->markup->version?->eap ?: 'Sem EAP'],
+                ['label' => 'Projeto', 'value' => $this->markup->document?->title ?: 'Não informado'],
+                ['label' => 'Comentário', 'value' => $this->markup->title],
+                ['label' => 'Contrato', 'value' => trim(($this->markup->contract?->code ? $this->markup->contract->code.' - ' : '').($this->markup->contract?->name ?? '')) ?: 'Não informado'],
+                ['label' => 'Revisão', 'value' => $this->markup->version?->revision ?: 'Não informada'],
+                ['label' => 'Prioridade', 'value' => $this->priorityLabel($this->markup->priority)],
+                ['label' => 'Prazo', 'value' => $this->markup->due_date?->format('d/m/Y') ?: 'Sem prazo'],
+                ['label' => 'Criado por', 'value' => $this->actor->name],
+            ],
+            'highlightTitle' => 'Descrição',
+            'highlightBody' => $description ?: 'Sem descrição informada.',
+            'actionLabel' => 'Abrir comentário',
+            'url' => $viewerUrl,
+            'systemUrl' => $systemUrl,
+        ];
+
         return (new MailMessage)
             ->subject("Novo comentário visual de projeto: {$this->markup->title}")
-            ->view('emails.project-review-markup-created', [
-                'markup' => $this->markup,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'description' => $description,
-                'priorityLabel' => $this->priorityLabel($this->markup->priority),
-                'url' => $viewerUrl,
-                'systemUrl' => $systemUrl,
-            ])
-            ->text('emails.project-review-markup-created-text', [
-                'markup' => $this->markup,
-                'actor' => $this->actor,
-                'notifiable' => $notifiable,
-                'description' => $description,
-                'priorityLabel' => $this->priorityLabel($this->markup->priority),
-                'url' => $viewerUrl,
-                'systemUrl' => $systemUrl,
-            ]);
+            ->view('emails.project-event', $viewData)
+            ->text('emails.project-event-text', $viewData);
     }
 
     private function priorityLabel(string $priority): string

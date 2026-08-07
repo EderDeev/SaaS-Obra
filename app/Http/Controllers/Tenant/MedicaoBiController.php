@@ -7,6 +7,7 @@ use App\Models\BoletimMedicao;
 use App\Models\Contract;
 use App\Models\FolhaRosto;
 use App\Models\Tenant;
+use App\Support\MedicaoPermissions;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -24,9 +25,11 @@ class MedicaoBiController extends Controller
 
         $contractId = $filters['contract_id'] ?? null;
         $boletimId = $filters['boletim_id'] ?? null;
+        $contractIds = MedicaoPermissions::contractIdsFor($request->user(), $tenant, MedicaoPermissions::REPORTS);
 
         $contracts = Contract::query()
             ->where('tenant_id', $tenant->id)
+            ->when($contractIds !== null, fn ($query) => $query->whereKey($contractIds))
             ->orderBy('code')
             ->get(['id', 'code', 'name'])
             ->map(fn (Contract $contract): array => [
@@ -38,6 +41,7 @@ class MedicaoBiController extends Controller
 
         $boletins = BoletimMedicao::query()
             ->where('tenant_id', $tenant->id)
+            ->when($contractIds !== null, fn ($query) => $query->whereIn('contract_id', $contractIds))
             ->when($contractId, fn ($query) => $query->where('contract_id', $contractId))
             ->orderByDesc('periodo')
             ->orderByDesc('sequencial')
@@ -54,6 +58,7 @@ class MedicaoBiController extends Controller
 
         $folhas = FolhaRosto::query()
             ->where('tenant_id', $tenant->id)
+            ->when($contractIds !== null, fn ($query) => $query->whereIn('contract_id', $contractIds))
             ->when($contractId, fn ($query) => $query->where('contract_id', $contractId))
             ->when($boletimId, fn ($query) => $query->where('boletim_medicao_id', $boletimId))
             ->with([

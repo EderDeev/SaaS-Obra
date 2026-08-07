@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessProjectVersionApsJob;
+use App\Jobs\RemoveRejectedProjectVersionFromApsJob;
+use App\Models\Contract;
 use App\Models\Disciplina;
 use App\Models\Empresa;
 use App\Models\Obra;
@@ -11,18 +14,18 @@ use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectPhase;
 use App\Models\ProjectReviewChecklistItem;
 use App\Models\ProjectReviewMarkup;
+use App\Models\ProjectSubmissionBatch;
 use App\Models\Tenant;
 use App\Models\TipoEmpresa;
+use App\Models\Trecho;
 use App\Models\User;
-use App\Jobs\RemoveRejectedProjectVersionFromApsJob;
-use App\Jobs\ProcessProjectVersionApsJob;
 use App\Notifications\ProjectApprovedNotification;
 use App\Notifications\ProjectRejectedNotification;
 use App\Notifications\ProjectReviewMarkupCreatedNotification;
 use App\Notifications\ProjectSubmittedForReviewNotification;
 use App\Notifications\ProjectVerifiedForApprovalNotification;
-use App\Support\ProjectPermissions;
 use App\Services\AutodeskApsService;
+use App\Support\ProjectPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
@@ -36,6 +39,13 @@ use ZipArchive;
 class TenantProjectTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('local');
+    }
 
     public function test_user_with_project_permission_can_open_projects_page(): void
     {
@@ -91,7 +101,7 @@ class TenantProjectTest extends TestCase
             'project_phase_id' => $phase->id,
             'created_by_id' => $user->id,
             'title' => 'Envio antigo',
-            'code' => '001-001-ARQ-PB-PRJ-001',
+            'code' => '001-001-GER-ARQ-PB-PRJ-001',
             'document_number' => '001',
             'document_type' => 'projeto',
             'status' => 'em_analise',
@@ -204,7 +214,7 @@ class TenantProjectTest extends TestCase
             'disciplina_id' => $disciplina->id,
             'project_phase_id' => $phase->id,
             'title' => 'Projeto Arquitetonico',
-            'code' => '001-001-ARQ-PB-PRJ-001',
+            'code' => '001-001-GER-ARQ-PB-PRJ-001',
             'document_number' => '001',
             'document_type' => 'projeto',
             'status' => 'em_analise',
@@ -212,10 +222,169 @@ class TenantProjectTest extends TestCase
         $this->assertSame('R00', $document->latestVersion->revision);
         $this->assertSame('em_analise', $document->latestVersion->status);
         $this->assertSame('planta.pdf', $document->latestVersion->original_name);
-        $this->assertSame('001-001-ARQ-PB-PRJ-001-R00.pdf', $document->latestVersion->stored_name);
+        $this->assertSame('001-001-GER-ARQ-PB-PRJ-001-R00.pdf', $document->latestVersion->stored_name);
         $this->assertSame('not_submitted', $document->latestVersion->derivative_status);
-        Storage::disk('public')->assertExists($document->latestVersion->file_path);
-        $this->assertStringEndsWith('/001-001-ARQ-PB-PRJ-001-R00.pdf', str_replace('\\', '/', $document->latestVersion->file_path));
+        $this->assertSame('local', $document->latestVersion->storage_disk);
+        Storage::disk('local')->assertExists($document->latestVersion->file_path);
+        $this->assertStringEndsWith('/001-001-GER-ARQ-PB-PRJ-001-R00.pdf', str_replace('\\', '/', $document->latestVersion->file_path));
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.versions.download', [$tenant, $document->latestVersion]))
+            ->assertOk()
+            ->assertDownload('planta.pdf');
+    }
+
+    public function test_project_download_rechecks_contract_permission(): void
+    {
+        [$tenant, $owner, $contract] = $this->tenantScenario('tenant_admin');
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $owner->id,
+            'title' => 'Projeto protegido',
+            'document_type' => 'projeto',
+            'status' => 'aprovado',
+        ]);
+        $version = $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $owner->id,
+            'revision' => 'R00',
+            'status' => 'ativo',
+            'original_name' => 'protegido.dwg',
+            'stored_name' => 'protegido.dwg',
+            'file_path' => 'tenant-protected/projects/protegido.dwg',
+            'storage_disk' => 'local',
+            'mime_type' => 'application/octet-stream',
+            'file_size' => 7,
+        ]);
+        Storage::disk('local')->put($version->file_path, 'arquivo');
+
+        $unauthorized = User::factory()->create();
+        $tenant->memberships()->create([
+            'user_id' => $unauthorized->id,
+            'role' => 'viewer',
+            'status' => 'active',
+            'project_permissions' => [],
+        ]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $unauthorized->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'project_permissions' => [],
+        ]);
+
+        $this->actingAs($unauthorized)
+            ->get(route('tenant.projects.versions.download', [$tenant, $version]))
+            ->assertForbidden();
+    }
+
+    public function test_project_submission_uses_selected_trecho_in_eap(): void
+    {
+        Storage::fake('public');
+
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $disciplina = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Pavimentacao',
+            'sigla' => 'PAV',
+            'cor' => '#2563eb',
+        ]);
+        $obra = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Rodovia Norte',
+            'codigo' => '100',
+            'tipo' => 'pai',
+        ]);
+        $trecho = Trecho::create([
+            'tenant_id' => $tenant->id,
+            'obra_id' => $obra->id,
+            'codigo' => 'T01',
+            'nome' => 'Km 0 ao Km 10',
+        ]);
+        $phase = $this->projectPhase('PE');
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.store', $tenant), [
+                'contract_id' => $contract->id,
+                'obra_id' => $obra->id,
+                'trecho_id' => $trecho->id,
+                'disciplina_id' => $disciplina->id,
+                'project_phase_id' => $phase->id,
+                'title' => 'Projeto do trecho norte',
+                'document_type' => 'projeto',
+                'document_number' => '003',
+                'file' => UploadedFile::fake()->create('trecho-norte.pdf', 120, 'application/pdf'),
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('project_documents', [
+            'tenant_id' => $tenant->id,
+            'trecho_id' => $trecho->id,
+            'code' => '001-100-T01-PAV-PE-PRJ-003',
+        ]);
+        $this->assertDatabaseHas('project_document_versions', [
+            'stored_name' => '001-100-T01-PAV-PE-PRJ-003-R00.pdf',
+        ]);
+    }
+
+    public function test_trecho_management_validates_code_and_protects_linked_records(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $obra = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Rodovia Sul',
+            'codigo' => '200',
+            'tipo' => 'pai',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('tenant.parametrizacao.trechos.index', $tenant))
+            ->post(route('tenant.parametrizacao.trechos.store', $tenant), [
+                'obra_id' => $obra->id,
+                'codigo' => 't02',
+                'nome' => 'Km 10 ao Km 20',
+            ])
+            ->assertRedirect();
+
+        $trecho = Trecho::query()->where('obra_id', $obra->id)->where('codigo', 'T02')->firstOrFail();
+        $this->assertSame('Km 10 ao Km 20', $trecho->nome);
+
+        ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'trecho_id' => $trecho->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto vinculado ao trecho',
+            'code' => '001-200-T02-PAV-PE-PRJ-001',
+            'document_number' => '001',
+            'document_type' => 'projeto',
+            'status' => 'em_analise',
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('tenant.parametrizacao.trechos.destroy', [$tenant, $trecho]))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseHas('trechos', [
+            'id' => $trecho->id,
+            'deleted_at' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('tenant.parametrizacao.trechos.index', $tenant))
+            ->post(route('tenant.parametrizacao.trechos.store', $tenant), [
+                'obra_id' => $obra->id,
+                'codigo' => 'LONGO',
+                'nome' => 'Codigo invalido',
+            ])
+            ->assertSessionHasErrors('codigo');
     }
 
     public function test_project_submission_queues_aps_processing_when_configured(): void
@@ -267,7 +436,55 @@ class TenantProjectTest extends TestCase
         $document = ProjectDocument::with('latestVersion')->firstOrFail();
 
         $this->assertSame('queued', $document->latestVersion->derivative_status);
-        Queue::assertPushed(ProcessProjectVersionApsJob::class);
+        Queue::assertPushed(ProcessProjectVersionApsJob::class, fn (ProcessProjectVersionApsJob $job): bool => $job->queue === 'aps');
+    }
+
+    public function test_aps_processing_retries_before_marking_version_as_failed(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto APS',
+            'document_type' => 'projeto',
+            'status' => 'em_analise',
+        ]);
+        $version = $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'em_analise',
+            'original_name' => 'aps.rvt',
+            'stored_name' => 'aps.rvt',
+            'file_path' => 'tenant-aps/projects/aps.rvt',
+            'storage_disk' => 'local',
+            'mime_type' => 'application/octet-stream',
+            'file_size' => 7,
+            'derivative_status' => 'queued',
+        ]);
+
+        $aps = Mockery::mock(AutodeskApsService::class);
+        $aps->shouldReceive('isConfigured')->once()->andReturnTrue();
+        $aps->shouldReceive('submitVersion')->once()->andThrow(new \RuntimeException('APS indisponivel'));
+
+        $job = new ProcessProjectVersionApsJob($version->id);
+        $this->assertSame(3, $job->tries);
+        $this->assertSame([30, 120], $job->backoff);
+
+        try {
+            $job->handle($aps);
+            $this->fail('A falha temporaria da APS deveria ser devolvida para a fila.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('APS indisponivel', $exception->getMessage());
+        }
+
+        $this->assertSame('queued', $version->fresh()->derivative_status);
+
+        $job->failed(null);
+
+        $this->assertSame('failed', $version->fresh()->derivative_status);
+        $this->assertNotNull($version->fresh()->processed_at);
     }
 
     public function test_project_submission_reuses_same_eap_and_creates_next_revision(): void
@@ -337,11 +554,11 @@ class TenantProjectTest extends TestCase
         $this->assertDatabaseCount('project_documents', 1);
         $this->assertSame('em_analise', $document->status);
         $this->assertSame('Projeto Arquitetonico', $document->title);
-        $this->assertSame('001-001-ARQ-PB-PRJ-001', $document->code);
+        $this->assertSame('001-001-GER-ARQ-PB-PRJ-001', $document->code);
         $this->assertSame(['R00', 'R01'], $document->versions->pluck('revision')->all());
-        $this->assertSame(['001-001-ARQ-PB-PRJ-001-R00.pdf', '001-001-ARQ-PB-PRJ-001-R01.pdf'], $document->versions->pluck('stored_name')->all());
+        $this->assertSame(['001-001-GER-ARQ-PB-PRJ-001-R00.pdf', '001-001-GER-ARQ-PB-PRJ-001-R01.pdf'], $document->versions->pluck('stored_name')->all());
         $this->assertSame('Alteracao de layout e compatibilizacao com estrutura.', $document->versions->last()->revision_change_summary);
-        $this->assertSame('001-001-ARQ-PB-CAP-001-R01', $document->versions->last()->cap_number);
+        $this->assertSame('001-001-GER-ARQ-PB-CAP-001-R01', $document->versions->last()->cap_number);
         $this->assertSame('Compatibilizacao com estrutura.', $document->versions->last()->cap_reason);
         $this->assertSame(['custo', 'prazo'], $document->versions->last()->cap_impacts);
     }
@@ -898,7 +1115,7 @@ class TenantProjectTest extends TestCase
             'status' => 'reprovado',
             'review_notes' => 'Corrigir interferências.',
         ]);
-        $this->assertSame('/storage/projects/projeto-rejeitado.rvt', $version->fresh()->url);
+        $this->assertNull($version->fresh()->url);
     }
 
     public function test_tenant_admin_can_manage_project_discipline_responsibles(): void
@@ -1206,19 +1423,34 @@ class TenantProjectTest extends TestCase
     {
         Notification::fake();
 
-        [$tenant, $user, $contract] = $this->tenantScenario('engineer', [ProjectPermissions::REVIEW]);
+        [$tenant, $user, $contract] = $this->tenantScenario('engineer', [
+            ProjectPermissions::REVIEW,
+            ProjectPermissions::COMMENTS,
+        ]);
         $contract->participants()->create([
             'tenant_id' => $tenant->id,
             'user_id' => $user->id,
             'side' => 'manager',
             'role' => 'team_member',
             'status' => 'active',
-            'project_permissions' => [ProjectPermissions::REVIEW],
+            'project_permissions' => [
+                ProjectPermissions::REVIEW,
+                ProjectPermissions::COMMENTS,
+            ],
         ]);
         $assignee = User::factory()->create();
         $contract->participants()->create([
             'tenant_id' => $tenant->id,
             'user_id' => $assignee->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'project_permissions' => [ProjectPermissions::VIEW],
+        ]);
+        $secondaryAssignee = User::factory()->create();
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $secondaryAssignee->id,
             'side' => 'manager',
             'role' => 'team_member',
             'status' => 'active',
@@ -1275,6 +1507,7 @@ class TenantProjectTest extends TestCase
                 ->where('workspaceMode', 'review')
                 ->where('showCommentsPanel', true)
                 ->where('showChecklistPanel', true)
+                ->where('canManageProjectComments', true)
             );
 
         $this->actingAs($user)
@@ -1303,7 +1536,7 @@ class TenantProjectTest extends TestCase
         ]);
         $this->assertDatabaseCount('project_review_checklist_items', 3);
         $this->assertDatabaseHas('project_review_checklist_items', [
-            'label' => 'Verificar se a EAP está correta (contrato-obra-disciplina-fase-tipo-sequencial-revisão)',
+            'label' => 'Verificar se a EAP está correta (contrato-obra-trecho-disciplina-fase-tipo-sequencial-revisão)',
         ]);
         $this->assertDatabaseHas('project_review_checklist_items', [
             'label' => 'Verificar se o arquivo abre e carrega corretamente no APS',
@@ -1316,7 +1549,7 @@ class TenantProjectTest extends TestCase
             ->post(route('tenant.projects.markups.store', [$tenant, $version]), [
                 'title' => 'Ajustar detalhe',
                 'description' => 'Conferir detalhe no corte.',
-                'assigned_to_id' => $user->id,
+                'assigned_to_ids' => [$user->id, $secondaryAssignee->id],
                 'priority' => 'alta',
                 'viewer_state' => ['viewport' => ['name' => 'teste']],
                 'markup_payload' => [
@@ -1339,9 +1572,18 @@ class TenantProjectTest extends TestCase
             'priority' => 'alta',
             'status' => 'open',
         ]);
+        $this->assertDatabaseHas('project_review_markup_assignees', [
+            'project_review_markup_id' => ProjectReviewMarkup::where('title', 'Ajustar detalhe')->value('id'),
+            'user_id' => $user->id,
+        ]);
+        $this->assertDatabaseHas('project_review_markup_assignees', [
+            'project_review_markup_id' => ProjectReviewMarkup::where('title', 'Ajustar detalhe')->value('id'),
+            'user_id' => $secondaryAssignee->id,
+        ]);
         Notification::assertSentTo($user, ProjectReviewMarkupCreatedNotification::class, function ($notification, array $channels): bool {
             return in_array('database', $channels, true) && in_array('mail', $channels, true);
         });
+        Notification::assertSentTo($secondaryAssignee, ProjectReviewMarkupCreatedNotification::class);
 
         $markup = ProjectReviewMarkup::where('title', 'Ajustar detalhe')->firstOrFail();
         $this->assertSame('aps_viewer', $markup->markup_payload['source']);
@@ -1351,9 +1593,18 @@ class TenantProjectTest extends TestCase
 
         $this->actingAs($user)
             ->patch(route('tenant.projects.markups.update', [$tenant, $markup]), [
-                'assigned_to_id' => $assignee->id,
+                'assigned_to_ids' => [$assignee->id, $secondaryAssignee->id],
             ])
             ->assertRedirect();
+
+        $this->assertDatabaseMissing('project_review_markup_assignees', [
+            'project_review_markup_id' => $markup->id,
+            'user_id' => $user->id,
+        ]);
+        $this->assertDatabaseHas('project_review_markup_assignees', [
+            'project_review_markup_id' => $markup->id,
+            'user_id' => $assignee->id,
+        ]);
 
         Notification::assertSentTo($assignee, ProjectReviewMarkupCreatedNotification::class, function ($notification, array $channels): bool {
             return in_array('database', $channels, true) && in_array('mail', $channels, true);
@@ -1456,10 +1707,10 @@ class TenantProjectTest extends TestCase
         $this->assertDatabaseHas('project_documents', [
             'tenant_id' => $tenant->id,
             'document_number' => '007',
-            'code' => '001-001-ARQ-PE-PRJ-007',
+            'code' => '001-001-GER-ARQ-PE-PRJ-007',
         ]);
         $this->assertDatabaseHas('project_document_versions', [
-            'stored_name' => '001-001-ARQ-PE-PRJ-007-R00.pdf',
+            'stored_name' => '001-001-GER-ARQ-PE-PRJ-007-R00.pdf',
         ]);
 
         $this->actingAs($user)
@@ -1766,7 +2017,7 @@ class TenantProjectTest extends TestCase
         $temporaryFile = tempnam(sys_get_temp_dir(), 'master-list-');
         file_put_contents($temporaryFile, $excelResponse->streamedContent());
 
-        $archive = new ZipArchive();
+        $archive = new ZipArchive;
         $this->assertTrue($archive->open($temporaryFile) === true);
         $entries = collect(range(0, $archive->numFiles - 1))
             ->map(fn (int $index): string => (string) $archive->getNameIndex($index));
@@ -1808,6 +2059,16 @@ class TenantProjectTest extends TestCase
             'document_type' => 'projeto',
             'status' => 'ativo',
         ]);
+        $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'ativo',
+            'original_name' => 'projeto.pdf',
+            'file_path' => 'tenant-1/projects/projeto.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+        ]);
 
         $this->actingAs($user)
             ->patch(route('tenant.projects.inactivate', [$tenant, $document]), [
@@ -1824,13 +2085,465 @@ class TenantProjectTest extends TestCase
         $this->assertNotNull($document->fresh()->inactive_at);
     }
 
+    public function test_project_status_can_be_changed_with_reason_and_controls_tree_access(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantScenario('tenant_admin');
+        $viewer = User::factory()->create();
+        $tenant->memberships()->create([
+            'user_id' => $viewer->id,
+            'role' => 'team_member',
+            'status' => 'active',
+            'project_permissions' => [ProjectPermissions::VIEW],
+        ]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $viewer->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'project_permissions' => [ProjectPermissions::VIEW],
+        ]);
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'title' => 'Projeto com bloqueio operacional',
+            'code' => '001-001-GER-ARQ-PE-PRJ-001',
+            'document_number' => '001',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+        $version = $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $admin->id,
+            'revision' => 'R00',
+            'status' => 'ativo',
+            'original_name' => 'projeto.pdf',
+            'file_path' => 'tenant-1/projects/projeto.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('tenant.projects.status.update', [$tenant, $document]), [
+                'project_status' => 'inativo',
+                'inactive_reason' => 'Erro tecnico identificado antes da correcao.',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('project_documents', [
+            'id' => $document->id,
+            'status' => 'inativo',
+            'inactive_reason' => 'Erro tecnico identificado antes da correcao.',
+        ]);
+        $this->assertDatabaseHas('project_document_status_changes', [
+            'project_document_id' => $document->id,
+            'user_id' => $admin->id,
+            'from_status' => 'ativo',
+            'to_status' => 'inativo',
+            'reason' => 'Erro tecnico identificado antes da correcao.',
+        ]);
+
+        $this->actingAs($viewer)
+            ->get(route('tenant.projects.visualizar.index', $tenant))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Tree')
+                ->has('documents', 0));
+
+        $this->actingAs($viewer)
+            ->get(route('tenant.projects.viewer', [$tenant, $version]))
+            ->assertForbidden();
+
+        $this->actingAs($admin)
+            ->patch(route('tenant.projects.status.update', [$tenant, $document]), [
+                'project_status' => 'ativo',
+                'inactive_reason' => 'Correcao validada pela equipe tecnica.',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('project_documents', [
+            'id' => $document->id,
+            'status' => 'ativo',
+            'inactive_at' => null,
+            'inactive_by_id' => null,
+            'inactive_reason' => null,
+        ]);
+        $this->assertDatabaseHas('project_document_status_changes', [
+            'project_document_id' => $document->id,
+            'from_status' => 'inativo',
+            'to_status' => 'ativo',
+            'reason' => 'Correcao validada pela equipe tecnica.',
+        ]);
+    }
+
+    public function test_project_status_change_requires_macro_permission(): void
+    {
+        [$tenant, $user, $contract] = $this->tenantScenario('team_member', [ProjectPermissions::VIEW]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'project_permissions' => [ProjectPermissions::VIEW],
+        ]);
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto sem permissao de status',
+            'document_type' => 'projeto',
+            'status' => 'ativo',
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('tenant.projects.status.update', [$tenant, $document]), [
+                'project_status' => 'inativo',
+                'inactive_reason' => 'Tentativa sem permissao.',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('ativo', $document->fresh()->status);
+    }
+
+    public function test_initial_project_batch_has_independent_versions_without_cap(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $obra = Obra::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Lote A', 'codigo' => '001', 'tipo' => 'pai']);
+        $arquitetura = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Arquitetura', 'sigla' => 'ARQ', 'cor' => '#2563eb']);
+        $estrutura = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Estrutura', 'sigla' => 'EST', 'cor' => '#16a34a']);
+        $phase = $this->projectPhase('PE');
+
+        $this->actingAs($user)->post(route('tenant.projects.batches.store', $tenant), [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Pacote executivo 01',
+            'items' => [
+                ['disciplina_id' => $arquitetura->id, 'document_number' => '001', 'title' => 'Arquitetura geral', 'file' => UploadedFile::fake()->create('arquitetura.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $estrutura->id, 'document_number' => '001', 'title' => 'Estrutura geral', 'file' => UploadedFile::fake()->create('estrutura.pdf', 100, 'application/pdf')],
+            ],
+        ])->assertRedirect();
+
+        $batch = ProjectSubmissionBatch::with('versions.document')->firstOrFail();
+        $this->assertSame('LOT-001-'.now()->year, $batch->package_number);
+        $this->assertNull($batch->cap_number);
+        $this->assertNull($batch->cap_sequence);
+        $this->assertFalse($batch->has_revisions);
+        $this->assertCount(2, $batch->versions);
+        $this->assertSame(2, $batch->versions->pluck('project_document_id')->unique()->count());
+        $this->assertSame([$batch->id], $batch->versions->pluck('project_submission_batch_id')->unique()->all());
+        $this->assertSame(['001'], $batch->versions->pluck('document.document_number')->unique()->values()->all());
+        foreach ($batch->versions as $version) {
+            $this->assertSame('local', $version->storage_disk);
+            Storage::disk('local')->assertExists($version->file_path);
+        }
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.index', $tenant))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Projects/Index')
+                ->has('documents', 2)
+                ->where('documents.0.submission_batches.0.package_number', $batch->package_number)
+                ->where('documents.1.submission_batches.0.package_number', $batch->package_number));
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.batches.cap.pdf', [$tenant, $batch]))
+            ->assertNotFound();
+    }
+
+    public function test_revision_project_batch_creates_one_consolidated_cap(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $obra = Obra::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Lote revisado', 'codigo' => '004', 'tipo' => 'pai']);
+        $arquitetura = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Arquitetura', 'sigla' => 'ARQ', 'cor' => '#2563eb']);
+        $estrutura = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Estrutura', 'sigla' => 'EST', 'cor' => '#16a34a']);
+        $phase = $this->projectPhase('PE');
+
+        $this->actingAs($user)->post(route('tenant.projects.batches.store', $tenant), [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Primeira entrega',
+            'items' => [
+                ['disciplina_id' => $arquitetura->id, 'document_number' => '001', 'title' => 'Arquitetura geral', 'file' => UploadedFile::fake()->create('arquitetura-r00.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $estrutura->id, 'document_number' => '001', 'title' => 'Estrutura geral', 'file' => UploadedFile::fake()->create('estrutura-r00.pdf', 100, 'application/pdf')],
+            ],
+        ])->assertRedirect();
+
+        $initialBatch = ProjectSubmissionBatch::firstOrFail();
+        $this->actingAs($user)->patch(route('tenant.projects.batches.review.update', [$tenant, $initialBatch]), ['action' => 'aprovar']);
+        $this->actingAs($user)->patch(route('tenant.projects.batches.review.update', [$tenant, $initialBatch->fresh()]), ['action' => 'aprovar']);
+
+        $this->actingAs($user)->post(route('tenant.projects.batches.store', $tenant), [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Revisão executiva 01',
+            'cap_reason' => 'Compatibilização entre arquitetura e estrutura.',
+            'cap_description' => 'Ajustes coordenados nos dois projetos do pacote.',
+            'cap_impacts' => ['compatibilidade'],
+            'items' => [
+                ['disciplina_id' => $arquitetura->id, 'document_number' => '001', 'file' => UploadedFile::fake()->create('arquitetura-r01.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $estrutura->id, 'document_number' => '001', 'file' => UploadedFile::fake()->create('estrutura-r01.pdf', 100, 'application/pdf')],
+            ],
+        ])->assertRedirect();
+
+        $batch = ProjectSubmissionBatch::with('versions.document')->latest('id')->firstOrFail();
+        $this->assertTrue($batch->has_revisions);
+        $this->assertStringContainsString('-MUL-PE-CAP-001-R01', $batch->cap_number);
+        $this->assertSame(1, ProjectSubmissionBatch::query()->whereNotNull('cap_number')->count());
+        $this->assertSame(['R01'], $batch->versions->pluck('revision')->unique()->all());
+        $this->assertCount(2, $batch->versions);
+
+        $this->actingAs($user)
+            ->get(route('tenant.projects.batches.cap.pdf', [$tenant, $batch]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_project_batch_review_is_atomic_across_all_projects(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $obra = Obra::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Lote B', 'codigo' => '002', 'tipo' => 'pai']);
+        $disciplina = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Arquitetura', 'sigla' => 'ARQ', 'cor' => '#2563eb']);
+        $phase = $this->projectPhase('PB');
+
+        $this->actingAs($user)->post(route('tenant.projects.batches.store', $tenant), [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Pacote para aprovação',
+            'items' => [
+                ['disciplina_id' => $disciplina->id, 'document_number' => '010', 'title' => 'Projeto 10', 'file' => UploadedFile::fake()->create('10.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $disciplina->id, 'document_number' => '011', 'title' => 'Projeto 11', 'file' => UploadedFile::fake()->create('11.pdf', 100, 'application/pdf')],
+            ],
+        ])->assertRedirect();
+
+        $batch = ProjectSubmissionBatch::firstOrFail();
+        $this->actingAs($user)->patch(route('tenant.projects.batches.review.update', [$tenant, $batch]), [
+            'action' => 'aprovar',
+            'review_notes' => 'Pacote verificado.',
+        ])->assertRedirect();
+
+        $this->assertSame('em_aprovacao', $batch->fresh()->status);
+        $this->assertSame(['em_aprovacao'], ProjectDocument::pluck('status')->unique()->all());
+        $this->assertSame(['em_aprovacao'], ProjectDocumentVersion::pluck('status')->unique()->all());
+
+        $this->actingAs($user)->patch(route('tenant.projects.batches.review.update', [$tenant, $batch->fresh()]), [
+            'action' => 'aprovar',
+            'review_notes' => 'Pacote aprovado.',
+        ])->assertRedirect();
+
+        $this->assertSame('ativo', $batch->fresh()->status);
+        $this->assertSame(['ativo'], ProjectDocument::pluck('status')->unique()->all());
+        $this->assertSame(['ativo'], ProjectDocumentVersion::pluck('status')->unique()->all());
+    }
+
+    public function test_project_batch_rejects_duplicate_eap_inside_package(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $obra = Obra::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Lote C', 'codigo' => '003', 'tipo' => 'pai']);
+        $disciplina = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Arquitetura', 'sigla' => 'ARQ', 'cor' => '#2563eb']);
+        $phase = $this->projectPhase('PE');
+
+        $this->actingAs($user)->from(route('tenant.projects.index', $tenant))->post(route('tenant.projects.batches.store', $tenant), [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Pacote inválido',
+            'items' => [
+                ['disciplina_id' => $disciplina->id, 'document_number' => '001', 'title' => 'Projeto A', 'file' => UploadedFile::fake()->create('a.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $disciplina->id, 'document_number' => '001', 'title' => 'Projeto B', 'file' => UploadedFile::fake()->create('b.pdf', 100, 'application/pdf')],
+            ],
+        ])->assertRedirect(route('tenant.projects.index', $tenant))->assertSessionHasErrors('items.1.document_number');
+
+        $this->assertDatabaseCount('project_submission_batches', 0);
+        $this->assertDatabaseCount('project_documents', 0);
+    }
+
+    public function test_project_batch_requires_shared_sequence_for_single_projects_from_different_disciplines(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $obra = Obra::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Lote D', 'codigo' => '004', 'tipo' => 'pai']);
+        $arquitetura = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Arquitetura', 'sigla' => 'ARQ', 'cor' => '#2563eb']);
+        $estrutura = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Estrutura', 'sigla' => 'EST', 'cor' => '#16a34a']);
+        $phase = $this->projectPhase('PE');
+
+        $this->actingAs($user)->from(route('tenant.projects.index', $tenant))->post(route('tenant.projects.batches.store', $tenant), [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Pacote com sequenciais inconsistentes',
+            'items' => [
+                ['disciplina_id' => $arquitetura->id, 'document_number' => '001', 'title' => 'Arquitetura', 'file' => UploadedFile::fake()->create('arquitetura.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $estrutura->id, 'document_number' => '002', 'title' => 'Estrutura', 'file' => UploadedFile::fake()->create('estrutura.pdf', 100, 'application/pdf')],
+            ],
+        ])->assertRedirect(route('tenant.projects.index', $tenant))->assertSessionHasErrors('items.1.document_number');
+
+        $this->assertDatabaseCount('project_submission_batches', 0);
+        $this->assertDatabaseCount('project_documents', 0);
+    }
+
+    public function test_project_batch_requires_exactly_three_digits_in_sequence(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin');
+        $obra = Obra::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Lote E', 'codigo' => '005', 'tipo' => 'pai']);
+        $disciplina = Disciplina::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'nome' => 'Arquitetura', 'sigla' => 'ARQ', 'cor' => '#2563eb']);
+        $phase = $this->projectPhase('PE');
+
+        $this->actingAs($user)->from(route('tenant.projects.index', $tenant))->post(route('tenant.projects.batches.store', $tenant), [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Pacote com sequencial incompleto',
+            'items' => [
+                ['disciplina_id' => $disciplina->id, 'document_number' => '01', 'title' => 'Projeto A', 'file' => UploadedFile::fake()->create('a.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $disciplina->id, 'document_number' => '002', 'title' => 'Projeto B', 'file' => UploadedFile::fake()->create('b.pdf', 100, 'application/pdf')],
+            ],
+        ])->assertRedirect(route('tenant.projects.index', $tenant))->assertSessionHasErrors('items.0.document_number');
+
+        $this->assertDatabaseCount('project_submission_batches', 0);
+        $this->assertDatabaseCount('project_documents', 0);
+    }
+
+    public function test_batch_submission_and_review_have_independent_macro_permissions(): void
+    {
+        Notification::fake();
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin', [
+            ProjectPermissions::VIEW,
+            ProjectPermissions::UPLOAD,
+        ]);
+        $obra = Obra::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Obra pacote',
+            'codigo' => '009',
+            'tipo' => 'pai',
+        ]);
+        $disciplina = Disciplina::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'nome' => 'Arquitetura',
+            'sigla' => 'ARQ',
+            'cor' => '#2563eb',
+        ]);
+        $phase = $this->projectPhase('PE');
+        $payload = [
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'project_phase_id' => $phase->id,
+            'document_type' => 'projeto',
+            'title' => 'Pacote protegido por permissao',
+            'items' => [
+                ['disciplina_id' => $disciplina->id, 'document_number' => '001', 'title' => 'Projeto 1', 'file' => UploadedFile::fake()->create('projeto-1.pdf', 100, 'application/pdf')],
+                ['disciplina_id' => $disciplina->id, 'document_number' => '002', 'title' => 'Projeto 2', 'file' => UploadedFile::fake()->create('projeto-2.pdf', 100, 'application/pdf')],
+            ],
+        ];
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.batches.store', $tenant), $payload)
+            ->assertForbidden();
+
+        $tenant->memberships()->where('user_id', $user->id)->update([
+            'project_permissions' => [ProjectPermissions::VIEW, ProjectPermissions::UPLOAD_BATCH],
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.batches.store', $tenant), $payload)
+            ->assertRedirect();
+
+        $batch = ProjectSubmissionBatch::firstOrFail();
+        $tenant->memberships()->where('user_id', $user->id)->update([
+            'project_permissions' => [ProjectPermissions::VIEW, ProjectPermissions::REVIEW],
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('tenant.projects.batches.review.update', [$tenant, $batch]), ['action' => 'aprovar'])
+            ->assertForbidden();
+
+        $tenant->memberships()->where('user_id', $user->id)->update([
+            'project_permissions' => [ProjectPermissions::VIEW, ProjectPermissions::REVIEW_BATCH],
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('tenant.projects.batches.review.update', [$tenant, $batch]), ['action' => 'aprovar'])
+            ->assertRedirect();
+
+        $this->assertSame('em_aprovacao', $batch->fresh()->status);
+    }
+
+    public function test_project_comment_management_has_its_own_macro_permission(): void
+    {
+        Notification::fake();
+        [$tenant, $user, $contract] = $this->tenantScenario('tenant_admin', [
+            ProjectPermissions::VIEW,
+            ProjectPermissions::REVIEW,
+        ]);
+        $document = ProjectDocument::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'created_by_id' => $user->id,
+            'title' => 'Projeto para comentario',
+            'document_type' => 'projeto',
+            'status' => 'em_analise',
+        ]);
+        $version = $document->versions()->create([
+            'tenant_id' => $tenant->id,
+            'uploaded_by_id' => $user->id,
+            'revision' => 'R00',
+            'status' => 'em_analise',
+            'original_name' => 'comentario.pdf',
+            'file_path' => 'tenant-1/projects/comentario.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size' => 120,
+        ]);
+        $payload = [
+            'title' => 'Conferir interferencia',
+            'description' => 'Validar o encontro entre as disciplinas.',
+            'assigned_to_ids' => [$user->id],
+            'priority' => 'alta',
+        ];
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.markups.store', [$tenant, $version]), $payload)
+            ->assertForbidden();
+
+        $tenant->memberships()->where('user_id', $user->id)->update([
+            'project_permissions' => [ProjectPermissions::VIEW, ProjectPermissions::COMMENTS],
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('tenant.projects.markups.store', [$tenant, $version]), $payload)
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('project_review_markups', [
+            'project_document_version_id' => $version->id,
+            'title' => 'Conferir interferencia',
+        ]);
+    }
+
     private function projectPhase(string $code = 'PE'): ProjectPhase
     {
         return ProjectPhase::query()->where('code', $code)->firstOrFail();
     }
 
     /**
-     * @return array{Tenant, User, \App\Models\Contract}
+     * @return array{Tenant, User, Contract}
      */
     private function tenantScenario(string $role, ?array $projectPermissions = null): array
     {

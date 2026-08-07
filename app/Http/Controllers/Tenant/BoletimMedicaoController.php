@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BoletimMedicao;
 use App\Models\Contract;
 use App\Models\Tenant;
+use App\Support\MedicaoPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,9 +18,12 @@ class BoletimMedicaoController extends Controller
 {
     public function index(Request $request, Tenant $tenant): Response
     {
-        $selectedContractId = $request->integer('contract_id') ?: $tenant->contracts()->orderBy('code')->value('id');
+        $contractIds = MedicaoPermissions::contractIdsFor($request->user(), $tenant, MedicaoPermissions::VIEW);
+        $contractsQuery = $tenant->contracts()
+            ->when($contractIds !== null, fn ($query) => $query->whereKey($contractIds));
+        $selectedContractId = $request->integer('contract_id') ?: (clone $contractsQuery)->orderBy('code')->value('id');
 
-        $contracts = $tenant->contracts()
+        $contracts = $contractsQuery
             ->orderBy('code')
             ->get(['id', 'code', 'name']);
 

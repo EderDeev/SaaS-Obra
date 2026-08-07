@@ -10,6 +10,11 @@ use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
+use App\Support\ContractPermissions;
+use App\Support\DiarioObraPermissions;
+use App\Support\DocumentationPermissions;
+use App\Support\MedicaoPermissions;
+use App\Support\OrdemServicoPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -43,7 +48,7 @@ class PermissionController extends Controller
         $contractParticipants = ContractParticipant::query()
             ->where('tenant_id', $tenant->id)
             ->where('status', 'active')
-            ->get(['id', 'contract_id', 'user_id', 'activity_permissions', 'project_permissions']);
+            ->get(['id', 'contract_id', 'user_id', 'activity_permissions', 'project_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'medicao_permissions', 'contract_permissions']);
 
         $rncResponsaveis = RelatorioNaoConformidadeResponsavel::query()
             ->where('tenant_id', $tenant->id)
@@ -71,6 +76,11 @@ class PermissionController extends Controller
             'contractIdsByUser' => $this->contractIdsByUser($memberships, $contracts, $contractParticipants),
             'activityPermissionsByUserContract' => $this->activityPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'projectPermissionsByUserContract' => $this->projectPermissionsByUserContract($memberships, $contracts, $contractParticipants),
+            'documentationPermissionsByUserContract' => $this->documentationPermissionsByUserContract($memberships, $contracts, $contractParticipants),
+            'diarioObraPermissionsByUserContract' => $this->diarioObraPermissionsByUserContract($memberships, $contracts, $contractParticipants),
+            'ordemServicoPermissionsByUserContract' => $this->ordemServicoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
+            'medicaoPermissionsByUserContract' => $this->medicaoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
+            'contractPermissionsByUserContract' => $this->contractPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'rncPermissionsByUserContract' => $this->rncPermissionsByUserContract($memberships, $contracts, $rncResponsaveis),
             'userPermissionsByUser' => $memberships
                 ->mapWithKeys(fn (TenantUser $membership): array => [
@@ -98,6 +108,10 @@ class PermissionController extends Controller
                     'label' => 'Atividades',
                     'permissions' => ActivityPermissions::labels(),
                 ],
+                'contracts' => [
+                    'label' => 'Contratos',
+                    'permissions' => ContractPermissions::labels(),
+                ],
                 'rnc' => [
                     'label' => 'RNC',
                     'permissions' => RncPermissions::labels(),
@@ -109,6 +123,22 @@ class PermissionController extends Controller
                 'budgets' => [
                     'label' => 'Orçamentos',
                     'permissions' => BudgetPermissions::labels(),
+                ],
+                'documentation' => [
+                    'label' => 'Documentacao',
+                    'permissions' => DocumentationPermissions::labels(),
+                ],
+                'diario_obra' => [
+                    'label' => 'Diario de Obra',
+                    'permissions' => DiarioObraPermissions::labels(),
+                ],
+                'ordem_servico' => [
+                    'label' => 'Ordem de Serviço',
+                    'permissions' => OrdemServicoPermissions::labels(),
+                ],
+                'medicao' => [
+                    'label' => 'Medição',
+                    'permissions' => MedicaoPermissions::labels(),
                 ],
                 'users' => [
                     'label' => 'Usuarios',
@@ -141,6 +171,16 @@ class PermissionController extends Controller
             'parametrizacao_permissions.*' => ['required', 'string', Rule::in(ParametrizacaoPermissions::all())],
             'budget_permissions' => ['nullable', 'array'],
             'budget_permissions.*' => ['required', 'string', Rule::in(BudgetPermissions::all())],
+            'documentation_permissions' => ['nullable', 'array'],
+            'documentation_permissions.*' => ['required', 'string', Rule::in(DocumentationPermissions::all())],
+            'diario_obra_permissions' => ['nullable', 'array'],
+            'diario_obra_permissions.*' => ['required', 'string', Rule::in(DiarioObraPermissions::all())],
+            'ordem_servico_permissions' => ['nullable', 'array'],
+            'ordem_servico_permissions.*' => ['required', 'string', Rule::in(OrdemServicoPermissions::all())],
+            'medicao_permissions' => ['nullable', 'array'],
+            'medicao_permissions.*' => ['required', 'string', Rule::in(MedicaoPermissions::all())],
+            'contract_permissions' => ['nullable', 'array'],
+            'contract_permissions.*' => ['required', 'string', Rule::in(ContractPermissions::all())],
         ]);
 
         $membership = $tenant->memberships()
@@ -161,6 +201,11 @@ class PermissionController extends Controller
         $userPermissions = UserPermissions::normalize($data['user_permissions'] ?? []);
         $parametrizacaoPermissions = ParametrizacaoPermissions::normalize($data['parametrizacao_permissions'] ?? []);
         $budgetPermissions = BudgetPermissions::normalize($data['budget_permissions'] ?? []);
+        $documentationPermissions = DocumentationPermissions::normalize($data['documentation_permissions'] ?? []);
+        $diarioObraPermissions = DiarioObraPermissions::normalize($data['diario_obra_permissions'] ?? []);
+        $ordemServicoPermissions = OrdemServicoPermissions::normalize($data['ordem_servico_permissions'] ?? []);
+        $medicaoPermissions = MedicaoPermissions::normalize($data['medicao_permissions'] ?? []);
+        $contractPermissions = ContractPermissions::normalize($data['contract_permissions'] ?? []);
 
         if ($membership->role === 'tenant_admin') {
             $membership->update([
@@ -169,6 +214,11 @@ class PermissionController extends Controller
                 'user_permissions' => $userPermissions,
                 'parametrizacao_permissions' => $parametrizacaoPermissions,
                 'budget_permissions' => $budgetPermissions,
+                'documentation_permissions' => $documentationPermissions,
+                'diario_obra_permissions' => $diarioObraPermissions,
+                'ordem_servico_permissions' => $ordemServicoPermissions,
+                'medicao_permissions' => $medicaoPermissions,
+                'contract_permissions' => $contractPermissions,
             ]);
         } else {
             if ($contract) {
@@ -188,10 +238,15 @@ class PermissionController extends Controller
                 $participant->update([
                     'activity_permissions' => $activityPermissions,
                     'project_permissions' => $projectPermissions,
+                    'documentation_permissions' => $documentationPermissions,
+                    'diario_obra_permissions' => $diarioObraPermissions,
+                    'ordem_servico_permissions' => $ordemServicoPermissions,
+                    'medicao_permissions' => $medicaoPermissions,
+                    'contract_permissions' => $contractPermissions,
                 ]);
-            } elseif ($activityPermissions !== [] || $projectPermissions !== [] || $rncPermissions !== []) {
+            } elseif ($activityPermissions !== [] || $projectPermissions !== [] || $rncPermissions !== [] || $documentationPermissions !== [] || $diarioObraPermissions !== [] || $ordemServicoPermissions !== [] || $medicaoPermissions !== [] || $contractPermissions !== []) {
                 throw ValidationException::withMessages([
-                    'contract_id' => 'Vincule o usuario a um contrato para configurar Atividades, Projetos ou RNC.',
+                    'contract_id' => 'Vincule o usuario a um contrato para configurar Atividades, Contratos, Projetos, RNC, Documentacao, Diario de Obra, Ordem de Servico ou Medicao.',
                 ]);
             }
 
@@ -335,6 +390,196 @@ class PermissionController extends Controller
 
                 $matrix[$key] = $participant
                     ? ProjectPermissions::normalize($participant->project_permissions ?? $membership->project_permissions ?? ProjectPermissions::defaultForRole($membership->role))
+                    : [];
+            }
+        }
+
+        return $matrix;
+    }
+
+    private function documentationPermissionsByUserContract($memberships, $contracts, $participants): array
+    {
+        $matrix = [];
+
+        foreach ($memberships as $membership) {
+            foreach ($contracts as $contract) {
+                $key = "{$membership->user_id}:{$contract->id}";
+
+                if ($membership->role === 'tenant_owner') {
+                    $matrix[$key] = DocumentationPermissions::all();
+                    continue;
+                }
+
+                if ($membership->role === 'tenant_admin') {
+                    $matrix[$key] = DocumentationPermissions::normalize(
+                        $membership->documentation_permissions ?? DocumentationPermissions::defaultForRole($membership->role)
+                    );
+                    continue;
+                }
+
+                $participant = $participants
+                    ->where('user_id', $membership->user_id)
+                    ->where('contract_id', $contract->id)
+                    ->first();
+
+                $matrix[$key] = $participant
+                    ? DocumentationPermissions::normalize(
+                        $participant->documentation_permissions
+                            ?? $membership->documentation_permissions
+                            ?? DocumentationPermissions::defaultForRole($membership->role)
+                    )
+                    : [];
+            }
+        }
+
+        return $matrix;
+    }
+
+    private function diarioObraPermissionsByUserContract($memberships, $contracts, $participants): array
+    {
+        $matrix = [];
+
+        foreach ($memberships as $membership) {
+            foreach ($contracts as $contract) {
+                $key = "{$membership->user_id}:{$contract->id}";
+
+                if ($membership->role === 'tenant_owner') {
+                    $matrix[$key] = DiarioObraPermissions::all();
+                    continue;
+                }
+
+                if ($membership->role === 'tenant_admin') {
+                    $matrix[$key] = DiarioObraPermissions::normalize(
+                        $membership->diario_obra_permissions ?? DiarioObraPermissions::defaultForRole($membership->role)
+                    );
+                    continue;
+                }
+
+                $participant = $participants
+                    ->where('user_id', $membership->user_id)
+                    ->where('contract_id', $contract->id)
+                    ->first();
+
+                $matrix[$key] = $participant
+                    ? DiarioObraPermissions::normalize(
+                        $participant->diario_obra_permissions
+                            ?? $membership->diario_obra_permissions
+                            ?? DiarioObraPermissions::defaultForRole($membership->role)
+                    )
+                    : [];
+            }
+        }
+
+        return $matrix;
+    }
+
+    private function ordemServicoPermissionsByUserContract($memberships, $contracts, $participants): array
+    {
+        $matrix = [];
+
+        foreach ($memberships as $membership) {
+            foreach ($contracts as $contract) {
+                $key = "{$membership->user_id}:{$contract->id}";
+
+                if ($membership->role === 'tenant_owner') {
+                    $matrix[$key] = OrdemServicoPermissions::all();
+                    continue;
+                }
+
+                if ($membership->role === 'tenant_admin') {
+                    $matrix[$key] = OrdemServicoPermissions::normalize(
+                        $membership->ordem_servico_permissions ?? OrdemServicoPermissions::defaultForRole($membership->role)
+                    );
+                    continue;
+                }
+
+                $participant = $participants
+                    ->where('user_id', $membership->user_id)
+                    ->where('contract_id', $contract->id)
+                    ->first();
+
+                $matrix[$key] = $participant
+                    ? OrdemServicoPermissions::normalize(
+                        $participant->ordem_servico_permissions
+                            ?? $membership->ordem_servico_permissions
+                            ?? OrdemServicoPermissions::defaultForRole($membership->role)
+                    )
+                    : [];
+            }
+        }
+
+        return $matrix;
+    }
+
+    private function medicaoPermissionsByUserContract($memberships, $contracts, $participants): array
+    {
+        $matrix = [];
+
+        foreach ($memberships as $membership) {
+            foreach ($contracts as $contract) {
+                $key = "{$membership->user_id}:{$contract->id}";
+
+                if ($membership->role === 'tenant_owner') {
+                    $matrix[$key] = MedicaoPermissions::all();
+                    continue;
+                }
+
+                if ($membership->role === 'tenant_admin') {
+                    $matrix[$key] = MedicaoPermissions::normalize(
+                        $membership->medicao_permissions ?? MedicaoPermissions::defaultForRole($membership->role)
+                    );
+                    continue;
+                }
+
+                $participant = $participants
+                    ->where('user_id', $membership->user_id)
+                    ->where('contract_id', $contract->id)
+                    ->first();
+
+                $matrix[$key] = $participant
+                    ? MedicaoPermissions::normalize(
+                        $participant->medicao_permissions
+                            ?? $membership->medicao_permissions
+                            ?? MedicaoPermissions::defaultForRole($membership->role)
+                    )
+                    : [];
+            }
+        }
+
+        return $matrix;
+    }
+
+    private function contractPermissionsByUserContract($memberships, $contracts, $participants): array
+    {
+        $matrix = [];
+
+        foreach ($memberships as $membership) {
+            foreach ($contracts as $contract) {
+                $key = "{$membership->user_id}:{$contract->id}";
+
+                if ($membership->role === 'tenant_owner') {
+                    $matrix[$key] = ContractPermissions::all();
+                    continue;
+                }
+
+                if ($membership->role === 'tenant_admin') {
+                    $matrix[$key] = ContractPermissions::normalize(
+                        $membership->contract_permissions ?? ContractPermissions::defaultForRole($membership->role)
+                    );
+                    continue;
+                }
+
+                $participant = $participants
+                    ->where('user_id', $membership->user_id)
+                    ->where('contract_id', $contract->id)
+                    ->first();
+
+                $matrix[$key] = $participant
+                    ? ContractPermissions::normalize(
+                        $participant->contract_permissions
+                            ?? $membership->contract_permissions
+                            ?? ContractPermissions::defaultForRole($membership->role)
+                    )
                     : [];
             }
         }

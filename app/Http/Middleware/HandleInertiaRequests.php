@@ -6,6 +6,11 @@ use App\Models\Tenant;
 use App\Models\GedEmailProcessedMessage;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
+use App\Support\ContractPermissions;
+use App\Support\DiarioObraPermissions;
+use App\Support\DocumentationPermissions;
+use App\Support\MedicaoPermissions;
+use App\Support\OrdemServicoPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -107,12 +112,10 @@ class HandleInertiaRequests extends Middleware
                     ->select(['id', 'tenant_id', 'code', 'name', 'status'])
                     ->orderBy('code');
 
-                $tenantRole = $user->tenantRole($tenant);
+                $contractIds = ContractPermissions::contractIdsFor($user, $tenant, ContractPermissions::VIEW);
 
-                if (! $user->is_platform_admin && ! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
-                    $query->whereHas('participants', function ($query) use ($user): void {
-                        $query->where('user_id', $user->id)->where('status', 'active');
-                    });
+                if ($contractIds !== null) {
+                    $query->whereKey($contractIds);
                 }
 
                 return $query->get()
@@ -128,17 +131,15 @@ class HandleInertiaRequests extends Middleware
                 $tenant = $tenantForNavigation();
                 $user = $request->user();
 
-                if (! $user || ! $tenant) {
+                if (! $user || ! $tenant || ! DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::EMAIL)) {
                     return ['pending_triage_count' => 0];
                 }
 
                 $contractIdsQuery = $tenant->contracts()->select('contracts.id');
-                $tenantRole = $user->tenantRole($tenant);
+                $permissionContractIds = DocumentationPermissions::contractIdsFor($user, $tenant, DocumentationPermissions::EMAIL);
 
-                if (! $user->is_platform_admin && ! in_array($tenantRole, ['tenant_owner', 'tenant_admin'], true)) {
-                    $contractIdsQuery->whereHas('participants', function ($query) use ($user): void {
-                        $query->where('user_id', $user->id)->where('status', 'active');
-                    });
+                if ($permissionContractIds !== null) {
+                    $contractIdsQuery->whereIn('contracts.id', $permissionContractIds);
                 }
 
                 $pendingTriageCount = GedEmailProcessedMessage::query()
@@ -148,6 +149,81 @@ class HandleInertiaRequests extends Middleware
                     ->count();
 
                 return ['pending_triage_count' => $pendingTriageCount];
+            },
+            'documentationPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+
+                return $request->user() && $tenant
+                    ? [
+                        'all' => DocumentationPermissions::all(),
+                        'labels' => DocumentationPermissions::labels(),
+                        'can' => collect(DocumentationPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => DocumentationPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
+                    ]
+                    : ['all' => [], 'labels' => [], 'can' => []];
+            },
+            'contractPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+
+                return $request->user() && $tenant
+                    ? [
+                        'all' => ContractPermissions::all(),
+                        'labels' => ContractPermissions::labels(),
+                        'can' => collect(ContractPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => ContractPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
+                    ]
+                    : ['all' => [], 'labels' => [], 'can' => []];
+            },
+            'diarioObraPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+
+                return $request->user() && $tenant
+                    ? [
+                        'all' => DiarioObraPermissions::all(),
+                        'labels' => DiarioObraPermissions::labels(),
+                        'can' => collect(DiarioObraPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => DiarioObraPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
+                    ]
+                    : ['all' => [], 'labels' => [], 'can' => []];
+            },
+            'ordemServicoPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+
+                return $request->user() && $tenant
+                    ? [
+                        'all' => OrdemServicoPermissions::all(),
+                        'labels' => OrdemServicoPermissions::labels(),
+                        'can' => collect(OrdemServicoPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => OrdemServicoPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
+                    ]
+                    : ['all' => [], 'labels' => [], 'can' => []];
+            },
+            'medicaoPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+
+                return $request->user() && $tenant
+                    ? [
+                        'all' => MedicaoPermissions::all(),
+                        'labels' => MedicaoPermissions::labels(),
+                        'can' => collect(MedicaoPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => MedicaoPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
+                    ]
+                    : ['all' => [], 'labels' => [], 'can' => []];
             },
             'rncPermissions' => function () use ($request, $tenantForNavigation): array {
                 $tenant = $tenantForNavigation();

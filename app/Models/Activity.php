@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'created_by_id',
     'title',
     'description',
+    'activity_type',
     'category',
     'visibility',
     'status',
@@ -28,6 +29,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Activity extends Model
 {
     use SoftDeletes;
+
+    public const TYPE_ACTIVITY = 'activity';
+
+    public const TYPE_CHECKLIST = 'checklist';
+
+    public const TYPES = [self::TYPE_ACTIVITY, self::TYPE_CHECKLIST];
 
     public const VISIBILITY_PUBLIC = 'public';
 
@@ -74,6 +81,11 @@ class Activity extends Model
     public function files(): HasMany
     {
         return $this->hasMany(ActivityFile::class);
+    }
+
+    public function checklistItems(): HasMany
+    {
+        return $this->hasMany(ActivityChecklistItem::class)->orderBy('position')->orderBy('id');
     }
 
     public function scopeVisibleTo(Builder $query, User $user): Builder

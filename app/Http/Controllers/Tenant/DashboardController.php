@@ -12,6 +12,7 @@ use App\Models\RdoDiario;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ActivityPermissions;
+use App\Support\DocumentationPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
 use App\Support\TenantRoles;
@@ -33,6 +34,8 @@ class DashboardController extends Controller
         $activityContractIds = $this->permittedContractIds($user, $tenant, $contractIds, ActivityPermissions::class, ActivityPermissions::VIEW);
         $projectContractIds = $this->permittedContractIds($user, $tenant, $contractIds, ProjectPermissions::class, ProjectPermissions::VIEW);
         $rncContractIds = $this->permittedContractIds($user, $tenant, $contractIds, RncPermissions::class, RncPermissions::VIEW);
+        $documentationContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DocumentationPermissions::class, DocumentationPermissions::VIEW);
+        $documentationEmailContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DocumentationPermissions::class, DocumentationPermissions::EMAIL);
 
         $activities = $tenant->activities()
             ->whereIn('contract_id', $activityContractIds)
@@ -56,9 +59,9 @@ class DashboardController extends Controller
         $pendingProjects = $projects->whereIn('status', ['em_analise', 'em_aprovacao']);
         $today = today();
 
-        $documents = GedDocument::query()
+        $documents = DocumentationPermissions::scopeReadableDocuments(GedDocument::query(), $user, $tenant)
             ->where('tenant_id', $tenant->id)
-            ->whereIn('contract_id', $contractIds)
+            ->whereIn('contract_id', $documentationContractIds)
             ->with('contract:id,code,name')
             ->latest()
             ->get(['id', 'tenant_id', 'contract_id', 'title', 'status', 'created_at']);
@@ -92,7 +95,7 @@ class DashboardController extends Controller
         $pendingTriage = GedEmailProcessedMessage::query()
             ->where('tenant_id', $tenant->id)
             ->where('status', 'pending_triage')
-            ->whereHas('rule', fn (Builder $query): Builder => $query->whereIn('contract_id', $contractIds))
+            ->whereHas('rule', fn (Builder $query): Builder => $query->whereIn('contract_id', $documentationEmailContractIds))
             ->with('rule.contract:id,code,name')
             ->latest('processed_at')
             ->get(['id', 'tenant_id', 'rule_id', 'subject', 'processed_at', 'created_at']);
@@ -190,6 +193,8 @@ class DashboardController extends Controller
                 'uploadProject' => ProjectPermissions::canAny($user, $tenant, ProjectPermissions::UPLOAD),
                 'rncs' => RncPermissions::canAny($user, $tenant, RncPermissions::VIEW),
                 'createRnc' => RncPermissions::canAny($user, $tenant, RncPermissions::CREATE),
+                'documentation' => DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::VIEW),
+                'documentationEmail' => DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::EMAIL),
             ],
         ]);
     }

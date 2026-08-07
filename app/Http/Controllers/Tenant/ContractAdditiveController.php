@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Contract;
 use App\Models\ContractAdditive;
 use App\Models\Tenant;
-use App\Support\TenantRoles;
+use App\Support\ContractPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +18,7 @@ class ContractAdditiveController extends Controller
 {
     public function store(Request $request, Tenant $tenant, Contract $contract): RedirectResponse
     {
-        $this->authorizeContract($request, $tenant, $contract);
+        $this->authorizeContract($request, $tenant, $contract, ContractPermissions::ADDITIVES);
 
         $isCost = in_array($request->input('type'), ['cost', 'cost_deadline'], true);
         $isDeadline = in_array($request->input('type'), ['deadline', 'cost_deadline'], true);
@@ -120,7 +120,7 @@ class ContractAdditiveController extends Controller
 
     public function download(Request $request, Tenant $tenant, Contract $contract, ContractAdditive $additive): StreamedResponse
     {
-        $this->authorizeContract($request, $tenant, $contract);
+        $this->authorizeContract($request, $tenant, $contract, ContractPermissions::VIEW);
         abort_unless((int) $additive->contract_id === (int) $contract->id, 404);
         abort_unless(Storage::disk('public')->exists($additive->attachment_path), 404);
 
@@ -131,12 +131,11 @@ class ContractAdditiveController extends Controller
         );
     }
 
-    private function authorizeContract(Request $request, Tenant $tenant, Contract $contract): void
+    private function authorizeContract(Request $request, Tenant $tenant, Contract $contract, string $permission): void
     {
         abort_unless((int) $contract->tenant_id === (int) $tenant->id, 404);
         abort_unless(
-            $request->user()->is_platform_admin
-                || TenantRoles::canManageContracts($request->user()->tenantRole($tenant)),
+            ContractPermissions::can($request->user(), $tenant, $permission, $contract),
             403,
         );
     }

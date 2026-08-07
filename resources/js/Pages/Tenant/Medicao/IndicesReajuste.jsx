@@ -53,7 +53,9 @@ function Field({ label, error, children, className = '' }) {
     );
 }
 export default function IndicesReajuste({ tenant, contracts, selectedContractId, indices, itensReajuste = [] }) {
-    const { flash = {} } = usePage().props;
+    const pageProps = usePage().props;
+    const { flash = {} } = pageProps;
+    const canManageItems = Boolean(pageProps.medicaoPermissions?.can?.manage_measurement_items);
     const [showCreate, setShowCreate] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [showLinks, setShowLinks] = useState(false);
@@ -274,7 +276,7 @@ export default function IndicesReajuste({ tenant, contracts, selectedContractId,
                             Cadastre índices, atualize competências e vincule cada item ao índice que será usado nas medições.
                         </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    {canManageItems && <div className="flex flex-wrap gap-2">
                     <button
                         type="button"
                         onClick={() => setShowLinks((current) => !current)}
@@ -291,7 +293,7 @@ export default function IndicesReajuste({ tenant, contracts, selectedContractId,
                         <Plus size={18} />
                         Criar índice
                     </button>
-                    </div>
+                    </div>}
                 </section>
 
                 {flash.success ? (
@@ -463,7 +465,7 @@ export default function IndicesReajuste({ tenant, contracts, selectedContractId,
                                             <span className="text-xs font-bold uppercase text-[var(--ink-500)]">Reajuste inicial</span>
                                             <strong className="block text-emerald-700">{formatPercent(indice.percentual_reajuste)}%</strong>
                                         </div>
-                                        <div className="flex gap-2">
+                                        {canManageItems && <div className="flex gap-2">
                                             <button
                                                 type="button"
                                                 onClick={() => openCompetenciaForm(indice)}
@@ -480,7 +482,7 @@ export default function IndicesReajuste({ tenant, contracts, selectedContractId,
                                             >
                                                 <Trash2 size={17} />
                                             </button>
-                                        </div>
+                                        </div>}
                                     </div>
 
                                     {activeCompetenciaId === indice.id ? (
@@ -546,9 +548,9 @@ export default function IndicesReajuste({ tenant, contracts, selectedContractId,
                                                     <span>{formatDecimal(competencia.valor_indice)}</span>
                                                     <span className="font-bold text-emerald-700">{formatPercent(competencia.percentual_reajuste)}%</span>
                                                     <span className="text-[var(--ink-500)]">{competencia.data_publicacao_label || '-'}</span>
-                                                    <button type="button" onClick={() => destroyCompetencia(indice, competencia)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50" title="Remover competência">
+                                                    {canManageItems && <button type="button" onClick={() => destroyCompetencia(indice, competencia)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50" title="Remover competência">
                                                         <Trash2 size={15} />
-                                                    </button>
+                                                    </button>}
                                                 </div>
                                             ))
                                         ) : (

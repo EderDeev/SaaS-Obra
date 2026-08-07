@@ -159,7 +159,7 @@ function companyOptions(contracts, resolve) {
     }, []).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 }
 
-export default function ContractsIndex({ tenant, contracts, statuses, canCreateContracts, canManageContracts = false, parametrizacao = {} }) {
+export default function ContractsIndex({ tenant, contracts, statuses, canCreateContracts, contractCapabilities = {}, parametrizacao = {} }) {
     const page = usePage();
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState('todos');
@@ -296,6 +296,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
     const parametrizacaoForContract = (contract) => ({
         empresas: Object.values(parametrizacao.empresas?.[contract.id] || {}),
         obras: Object.values(parametrizacao.obras?.[contract.id] || {}),
+        trechos: Object.values(parametrizacao.trechos?.[contract.id] || {}),
         disciplinas: Object.values(parametrizacao.disciplinas?.[contract.id] || {}),
         tiposEmpresa: parametrizacao.tiposEmpresa || [],
     });
@@ -454,26 +455,32 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
 
                     {viewMode === 'cards' ? (
                         <div data-tour="contracts-list" className="grid gap-4 xl:grid-cols-3 lg:grid-cols-2">
-                            {displayedContracts.map((contract, index) => (
-                                <ContractAccessCard
-                                    key={contract.id}
-                                    tenant={tenant}
-                                    contract={contract}
-                                    shortDate={shortDate}
-                                    canManageContracts={canManageContracts || showTourDemo}
-                                    onParametrize={() => setParametrizacaoContract(contract)}
-                                    onAdditive={() => setAdditiveContract(contract)}
-                                    onHistory={() => setAdditiveHistoryContract(contract)}
-                                    tour={index === 0}
-                                    detailUrl={showTourDemo ? tourDetailUrl : null}
-                                />
-                            ))}
+                            {displayedContracts.map((contract, index) => {
+                                const capabilities = contractCapabilities?.[contract.id] || {};
+
+                                return (
+                                    <ContractAccessCard
+                                        key={contract.id}
+                                        tenant={tenant}
+                                        contract={contract}
+                                        shortDate={shortDate}
+                                        canParametrize={Boolean(capabilities.parametrize) || showTourDemo}
+                                        canManageAdditives={Boolean(capabilities.additives) || showTourDemo}
+                                        onParametrize={() => setParametrizacaoContract(contract)}
+                                        onAdditive={() => setAdditiveContract(contract)}
+                                        onHistory={() => setAdditiveHistoryContract(contract)}
+                                        tour={index === 0}
+                                        detailUrl={showTourDemo ? tourDetailUrl : null}
+                                    />
+                                );
+                            })}
                         </div>
                     ) : (
                         <ContractsTable
                             tenant={tenant}
                             contracts={displayedContracts}
-                            canManageContracts={canManageContracts || showTourDemo}
+                            contractCapabilities={contractCapabilities}
+                            showTourDemo={showTourDemo}
                             onParametrize={setParametrizacaoContract}
                             onAdditive={setAdditiveContract}
                             onHistory={setAdditiveHistoryContract}
@@ -679,7 +686,7 @@ function FilterSelect({ value, onChange, firstLabel, options }) {
     );
 }
 
-function ContractsTable({ tenant, contracts, canManageContracts, onParametrize, onAdditive, onHistory }) {
+function ContractsTable({ tenant, contracts, contractCapabilities, showTourDemo, onParametrize, onAdditive, onHistory }) {
     return (
         <div className="sig-card overflow-x-auto">
             <table className="sig-table min-w-[1080px]">
@@ -697,7 +704,12 @@ function ContractsTable({ tenant, contracts, canManageContracts, onParametrize, 
                     </tr>
                 </thead>
                 <tbody>
-                    {contracts.map((contract) => (
+                    {contracts.map((contract) => {
+                        const capabilities = contractCapabilities?.[contract.id] || {};
+                        const canParametrize = Boolean(capabilities.parametrize) || showTourDemo;
+                        const canManageAdditives = Boolean(capabilities.additives) || showTourDemo;
+
+                        return (
                         <tr key={contract.id}>
                             <td>
                                 <strong className="block text-[var(--ink-900)]">{contract.code}</strong>
@@ -730,17 +742,17 @@ function ContractsTable({ tenant, contracts, canManageContracts, onParametrize, 
                             <td><span className={`sig-pill ${contract.meta.pill}`}>{contract.meta.label}</span></td>
                             <td>
                                 <div className="flex justify-end gap-2">
-                                    {canManageContracts && (
-                                        <>
-                                            <button className="sig-btn sig-btn-secondary" type="button" onClick={() => onAdditive(contract)}>
-                                                <FilePlus2 size={14} />
-                                                Aditivo
-                                            </button>
-                                            <button className="sig-btn sig-btn-primary" type="button" onClick={() => onParametrize(contract)}>
-                                                <Settings size={14} />
-                                                Parametrizar
-                                            </button>
-                                        </>
+                                    {canManageAdditives && (
+                                        <button className="sig-btn sig-btn-secondary" type="button" onClick={() => onAdditive(contract)}>
+                                            <FilePlus2 size={14} />
+                                            Aditivo
+                                        </button>
+                                    )}
+                                    {canParametrize && (
+                                        <button className="sig-btn sig-btn-primary" type="button" onClick={() => onParametrize(contract)}>
+                                            <Settings size={14} />
+                                            Parametrizar
+                                        </button>
                                     )}
                                     <Link className="sig-btn sig-btn-secondary" href={route('tenant.contracts.show', [tenant.slug, contract.id])}>
                                         Abrir
@@ -748,7 +760,8 @@ function ContractsTable({ tenant, contracts, canManageContracts, onParametrize, 
                                 </div>
                             </td>
                         </tr>
-                    ))}
+                        );
+                    })}
                 </tbody>
             </table>
         </div>

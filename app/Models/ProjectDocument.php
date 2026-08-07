@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'tenant_id',
     'contract_id',
     'obra_id',
+    'trecho_id',
     'disciplina_id',
     'project_phase_id',
     'created_by_id',
@@ -82,6 +83,11 @@ class ProjectDocument extends Model
         return $this->belongsTo(Obra::class)->withTrashed();
     }
 
+    public function trecho(): BelongsTo
+    {
+        return $this->belongsTo(Trecho::class)->withTrashed();
+    }
+
     public function disciplina(): BelongsTo
     {
         return $this->belongsTo(Disciplina::class)->withTrashed();
@@ -115,6 +121,25 @@ class ProjectDocument extends Model
     public function versions(): HasMany
     {
         return $this->hasMany(ProjectDocumentVersion::class);
+    }
+
+    public function statusChanges(): HasMany
+    {
+        return $this->hasMany(ProjectDocumentStatusChange::class)->latest();
+    }
+
+    public function submissionBatches(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ProjectSubmissionBatch::class,
+            'project_document_versions',
+            'project_document_id',
+            'project_submission_batch_id'
+        )
+            ->whereNull('project_document_versions.deleted_at')
+            ->whereNotNull('project_document_versions.project_submission_batch_id')
+            ->orderByDesc('project_submission_batches.id')
+            ->distinct();
     }
 
     public function rncs(): BelongsToMany

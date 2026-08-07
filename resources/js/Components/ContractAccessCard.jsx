@@ -57,7 +57,7 @@ function remainingDaysPillClass(date) {
     return 'sig-pill-red';
 }
 
-export default function ContractAccessCard({ tenant, contract, shortDate, canManageContracts = false, onParametrize, onAdditive, onHistory, tour = false, detailUrl = null }) {
+export default function ContractAccessCard({ tenant, contract, shortDate, canParametrize = false, canManageAdditives = false, onParametrize, onAdditive, onHistory, tour = false, detailUrl = null }) {
     const title = contract.obra?.nome || contract.name;
     const cliente = contract.cliente_empresa?.nome || contract.client_company_name || 'Cliente não informado';
     const construtora = contract.construtora_empresa?.nome || contract.contractor_company_name || 'Construtora não informada';
@@ -123,17 +123,17 @@ export default function ContractAccessCard({ tenant, contract, shortDate, canMan
                         )}
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
-                        {canManageContracts && (
-                            <>
-                                <button data-tour={tour ? 'contracts-additive' : undefined} className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={onAdditive}>
-                                    <FilePlus2 size={13} />
-                                    Aditivo
-                                </button>
-                                <button data-tour={tour ? 'contracts-parametrize' : undefined} className="sig-btn sig-btn-primary sig-btn-sm" type="button" onClick={onParametrize}>
-                                    <Settings size={13} />
-                                    Parametrizar
-                                </button>
-                            </>
+                        {canManageAdditives && (
+                            <button data-tour={tour ? 'contracts-additive' : undefined} className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={onAdditive}>
+                                <FilePlus2 size={13} />
+                                Aditivo
+                            </button>
+                        )}
+                        {canParametrize && (
+                            <button data-tour={tour ? 'contracts-parametrize' : undefined} className="sig-btn sig-btn-primary sig-btn-sm" type="button" onClick={onParametrize}>
+                                <Settings size={13} />
+                                Parametrizar
+                            </button>
                         )}
                         <Link data-tour={tour ? 'contracts-open' : undefined} className="sig-btn sig-btn-secondary sig-btn-sm" href={detailUrl || route('tenant.contracts.show', [tenant.slug, contract.id])}>
                             Abrir

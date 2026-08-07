@@ -19,6 +19,7 @@ foreach ($productionMarkers as $marker) {
 
 $isolatedEnvironment = [
     'APP_ENV' => 'testing',
+    'APP_KEY' => 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
     'APP_MAINTENANCE_DRIVER' => 'file',
     'BCRYPT_ROUNDS' => '4',
     'BROADCAST_CONNECTION' => 'null',
