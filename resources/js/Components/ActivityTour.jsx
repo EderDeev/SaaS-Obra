@@ -25,6 +25,12 @@ const stepsBySection = {
             placement: 'bottom',
         },
         {
+            target: '[data-tour="activities-create-type"]',
+            title: 'Atividade ou checklist',
+            content: 'Use Atividade para uma entrega direta. Escolha Checklist quando o trabalho tiver várias etapas que precisam ser acompanhadas individualmente.',
+            placement: 'bottom',
+        },
+        {
             target: '[data-tour="activities-create-fields"]',
             title: 'Identificar e planejar',
             content: 'Defina título, contrato, categoria, prioridade e prazo. Esses dados organizam o card e alimentam os filtros e indicadores.',
@@ -34,6 +40,12 @@ const stepsBySection = {
             target: '[data-tour="activities-create-visibility"]',
             title: 'Definir a visibilidade',
             content: 'Atividades públicas ficam disponíveis aos usuários do contrato. Nas restritas, somente o criador e os responsáveis vinculados visualizam o card.',
+            placement: 'top',
+        },
+        {
+            target: '[data-tour="activities-create-checklist"]',
+            title: 'Organizar as etapas',
+            content: 'No Checklist, cadastre as etapas na ordem de execução. Depois, novas etapas ainda podem ser acrescentadas pela edição do card.',
             placement: 'top',
         },
         {
@@ -71,7 +83,7 @@ const stepsBySection = {
         {
             target: '[data-tour="activities-card"]',
             title: 'Ler o card',
-            content: 'O card mostra categoria, prioridade, visibilidade, prazo, comentários, anexos, contrato e responsáveis sem precisar abri-lo.',
+            content: 'O card mostra categoria, prioridade, visibilidade, prazo, comentários, anexos e, nos checklists, o progresso das etapas sem precisar abri-lo.',
             placement: 'right',
         },
     ],
@@ -87,6 +99,12 @@ const stepsBySection = {
             title: 'Situação e identificação',
             content: 'O cabeçalho mantém visíveis categoria, prioridade, visibilidade, prazo, contrato e as opções de edição.',
             placement: 'bottom',
+        },
+        {
+            target: '[data-tour="activities-detail-checklist"]',
+            title: 'Executar o checklist',
+            content: 'Marque cada etapa concluída. O sistema registra o responsável, atualiza o progresso e mantém as etapas finalizadas riscadas em verde.',
+            placement: 'right',
         },
         {
             target: '[data-tour="activities-detail-comments"]',

@@ -492,7 +492,9 @@ class TenantActivityTest extends TestCase
                 ->where('tourMode', true)
                 ->where('tourScreen', 'detail')
                 ->where('activities.0._tourData', true)
-                ->where('activities.0.title', 'Validar medição mensal da obra')
+                ->where('activities.0.title', 'Checklist de fechamento da medição')
+                ->where('activities.0.activity_type', Activity::TYPE_CHECKLIST)
+                ->has('activities.0.checklist_items', 3)
                 ->has('activities.0.comments', 2)
                 ->has('activities.0.files', 1)
             );
@@ -1071,6 +1073,76 @@ class TenantActivityTest extends TestCase
                 ->where('activities.0.activity_type', Activity::TYPE_CHECKLIST)
                 ->has('activities.0.checklist_items', 3)
             );
+    }
+
+    public function test_editor_can_append_checklist_items_without_changing_existing_progress(): void
+    {
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'activity_type' => Activity::TYPE_CHECKLIST,
+            'title' => 'Checklist em execução',
+            'description' => 'Etapas originais.',
+            'category' => 'field',
+            'visibility' => Activity::VISIBILITY_PUBLIC,
+            'status' => 'in_progress',
+            'priority' => 'high',
+        ]);
+        $completedItem = $activity->checklistItems()->create([
+            'label' => 'Etapa concluída',
+            'position' => 0,
+            'is_completed' => true,
+            'completed_by_id' => $admin->id,
+            'completed_at' => now(),
+        ]);
+        $pendingItem = $activity->checklistItems()->create([
+            'label' => 'Etapa pendente',
+            'position' => 1,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('tenant.activities.update', [$tenant, $activity]), [
+                'title' => 'Checklist em execução',
+                'description' => 'Etapas originais e complementares.',
+                'category' => 'field',
+                'visibility' => Activity::VISIBILITY_PUBLIC,
+                'priority' => 'high',
+                'assigned_to_ids' => [],
+                'new_checklist_items' => [
+                    'Registrar evidências',
+                    'Validar conclusão',
+                ],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'id' => $completedItem->id,
+            'label' => 'Etapa concluída',
+            'position' => 0,
+            'is_completed' => true,
+            'completed_by_id' => $admin->id,
+        ]);
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'id' => $pendingItem->id,
+            'label' => 'Etapa pendente',
+            'position' => 1,
+            'is_completed' => false,
+        ]);
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'activity_id' => $activity->id,
+            'label' => 'Registrar evidências',
+            'position' => 2,
+            'is_completed' => false,
+        ]);
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'activity_id' => $activity->id,
+            'label' => 'Validar conclusão',
+            'position' => 3,
+            'is_completed' => false,
+        ]);
+        $this->assertSame(4, $activity->checklistItems()->count());
     }
 
     public function test_assigned_user_can_complete_and_reopen_checklist_item(): void

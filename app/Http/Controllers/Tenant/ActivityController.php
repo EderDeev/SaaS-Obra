@@ -401,7 +401,19 @@ class ActivityController extends Controller
             'due_date' => ['nullable', 'date'],
             'assigned_to_ids' => ['nullable', 'array'],
             'assigned_to_ids.*' => ['integer', 'exists:users,id'],
+            'new_checklist_items' => ['nullable', 'array', 'max:50'],
+            'new_checklist_items.*' => ['required', 'string', 'max:500'],
         ]);
+
+        $newChecklistItems = collect($data['new_checklist_items'] ?? [])
+            ->map(fn (string $label): string => trim($label))
+            ->values();
+
+        if ($activity->activity_type !== Activity::TYPE_CHECKLIST && $newChecklistItems->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'new_checklist_items' => 'Novas etapas só podem ser adicionadas a uma atividade do tipo checklist.',
+            ]);
+        }
 
         $assignedUserIds = collect($data['assigned_to_ids'] ?? [])
             ->filter()
@@ -419,19 +431,50 @@ class ActivityController extends Controller
             ]);
         }
 
-        $activity->update([
-            'assigned_to_id' => $assignedUserIds->first(),
-            'title' => $data['title'],
-            'description' => $data['description'] ?? null,
-            'category' => $data['category'] ?? $activity->category ?? 'project',
-            'visibility' => $data['visibility'] ?? $activity->visibility,
-            'priority' => $data['priority'],
-            'due_date' => $data['due_date'] ?? null,
-        ]);
+        DB::transaction(function () use ($activity, $assignedUserIds, $data, $newChecklistItems): void {
+            Activity::query()->whereKey($activity->id)->lockForUpdate()->firstOrFail();
 
-        $activity->assignees()->sync($assignedUserIds);
+            $activity->update([
+                'assigned_to_id' => $assignedUserIds->first(),
+                'title' => $data['title'],
+                'description' => $data['description'] ?? null,
+                'category' => $data['category'] ?? $activity->category ?? 'project',
+                'visibility' => $data['visibility'] ?? $activity->visibility,
+                'priority' => $data['priority'],
+                'due_date' => $data['due_date'] ?? null,
+            ]);
 
-        return back()->with('success', 'Atividade atualizada.');
+            $activity->assignees()->sync($assignedUserIds);
+
+            if ($newChecklistItems->isNotEmpty()) {
+                $existingItems = $activity->checklistItems()->lockForUpdate()->get(['position']);
+
+                if ($existingItems->count() + $newChecklistItems->count() > 50) {
+                    throw ValidationException::withMessages([
+                        'new_checklist_items' => 'O checklist pode ter no máximo 50 etapas.',
+                    ]);
+                }
+
+                $nextPosition = $existingItems->isEmpty()
+                    ? 0
+                    : ((int) $existingItems->max('position')) + 1;
+
+                $activity->checklistItems()->createMany(
+                    $newChecklistItems
+                        ->map(fn (string $label, int $index): array => [
+                            'label' => $label,
+                            'position' => $nextPosition + $index,
+                        ])
+                        ->all(),
+                );
+            }
+        });
+
+        $message = $newChecklistItems->isNotEmpty()
+            ? 'Atividade atualizada e novas etapas adicionadas ao checklist.'
+            : 'Atividade atualizada.';
+
+        return back()->with('success', $message);
     }
 
     public function updateChecklistItem(
@@ -962,9 +1005,9 @@ class ActivityController extends Controller
             'contract_id' => $contractId,
             'assigned_to_id' => $responsibles[0]['id'],
             'created_by_id' => -203,
-            'title' => 'Validar medição mensal da obra',
+            'title' => 'Checklist de fechamento da medição',
             'description' => 'Conferir os quantitativos executados, validar a memória de cálculo e registrar as pendências antes do fechamento da medição.',
-            'activity_type' => Activity::TYPE_ACTIVITY,
+            'activity_type' => Activity::TYPE_CHECKLIST,
             'category' => 'measurement',
             'visibility' => Activity::VISIBILITY_RESTRICTED,
             'status' => 'todo',
@@ -1006,7 +1049,32 @@ class ActivityController extends Controller
                     'user' => $responsibles[1],
                 ],
             ],
-            'checklist_items' => [],
+            'checklist_items' => [
+                [
+                    'id' => -701,
+                    'label' => 'Conferir quantitativos executados',
+                    'position' => 0,
+                    'is_completed' => true,
+                    'completed_by' => $responsibles[0],
+                    'completed_at' => CarbonImmutable::now()->subHours(6)->toIso8601String(),
+                ],
+                [
+                    'id' => -702,
+                    'label' => 'Validar a memória de cálculo',
+                    'position' => 1,
+                    'is_completed' => true,
+                    'completed_by' => $responsibles[1],
+                    'completed_at' => CarbonImmutable::now()->subHours(3)->toIso8601String(),
+                ],
+                [
+                    'id' => -703,
+                    'label' => 'Registrar pendências da medição',
+                    'position' => 2,
+                    'is_completed' => false,
+                    'completed_by' => null,
+                    'completed_at' => null,
+                ],
+            ],
             '_tourData' => true,
         ];
 

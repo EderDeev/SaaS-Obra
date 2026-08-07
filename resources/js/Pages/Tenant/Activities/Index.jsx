@@ -206,9 +206,11 @@ export default function ActivitiesIndex({
     const form = useForm({
         contract_id: defaultContractId,
         assigned_to_ids: tourAssigneeIds,
-        activity_type: 'activity',
-        checklist_items: [''],
-        title: tourMode ? 'Validar medição mensal da obra' : '',
+        activity_type: tourMode ? 'checklist' : 'activity',
+        checklist_items: tourMode
+            ? ['Conferir quantitativos executados', 'Validar a memória de cálculo', 'Registrar pendências da medição']
+            : [''],
+        title: tourMode ? 'Checklist de fechamento da medição' : '',
         description: tourMode
             ? 'Conferir os quantitativos executados, validar a memória de cálculo e registrar as pendências antes do fechamento da medição.'
             : '',
@@ -538,7 +540,7 @@ export default function ActivitiesIndex({
                                 </button>
                             </header>
                             <form className="grid max-h-[calc(100vh-150px)] grid-cols-1 gap-4 overflow-y-auto p-6 md:grid-cols-2 xl:grid-cols-4" onSubmit={submit}>
-                        <div className="md:col-span-2 xl:col-span-4">
+                        <div data-tour="activities-create-type" className="md:col-span-2 xl:col-span-4">
                             <span className="eyebrow mb-2 block">Tipo</span>
                             <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-1">
                                 <button
@@ -612,7 +614,7 @@ export default function ActivitiesIndex({
                             </Field>
                         </div>
                         {form.data.activity_type === 'checklist' && (
-                            <div className="md:col-span-2 xl:col-span-4">
+                            <div data-tour="activities-create-checklist" className="md:col-span-2 xl:col-span-4">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <div>
                                         <span className="eyebrow block">Etapas do checklist</span>
@@ -1007,6 +1009,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
         priority: activity.priority || 'normal',
         due_date: activity.due_date ? String(activity.due_date).slice(0, 10) : '',
         assigned_to_ids: activityAssignees(activity).map((user) => user.id),
+        new_checklist_items: [],
     });
     const priority = priorityMeta[activity.priority] || priorityMeta.normal;
     const category = categoryMeta[activity.category || 'project'] || categoryMeta.project;
@@ -1032,6 +1035,23 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
             : [...editForm.data.assigned_to_ids, normalizedUserId]);
     };
 
+    const updateNewChecklistItem = (index, value) => {
+        editForm.setData('new_checklist_items', editForm.data.new_checklist_items.map((item, itemIndex) => (
+            itemIndex === index ? value : item
+        )));
+    };
+
+    const addNewChecklistItem = () => {
+        editForm.setData('new_checklist_items', [...editForm.data.new_checklist_items, '']);
+    };
+
+    const removeNewChecklistItem = (index) => {
+        editForm.setData(
+            'new_checklist_items',
+            editForm.data.new_checklist_items.filter((_, itemIndex) => itemIndex !== index),
+        );
+    };
+
     const submitEdit = (event) => {
         event.preventDefault();
 
@@ -1041,7 +1061,10 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
 
         editForm.patch(route('tenant.activities.update', [tenant.slug, activity.id]), {
             preserveScroll: true,
-            onSuccess: () => setEditing(false),
+            onSuccess: () => {
+                editForm.setData('new_checklist_items', []);
+                setEditing(false);
+            },
         });
     };
 
@@ -1203,6 +1226,56 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                         <Field label="Descrição" error={editForm.errors.description}>
                             <textarea value={editForm.data.description} onChange={(event) => editForm.setData('description', event.target.value)} rows={3} />
                         </Field>
+                        {isChecklist && (
+                            <div className="rounded-lg border border-[var(--border)] bg-white p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <span className="eyebrow block">Etapas do checklist</span>
+                                        <p className="mt-1 text-[12px] text-[var(--ink-500)]">
+                                            As {checklistItems.length} etapas atuais e seus progressos serão preservados.
+                                        </p>
+                                    </div>
+                                    <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={addNewChecklistItem}>
+                                        <Plus size={14} />
+                                        Adicionar etapa
+                                    </button>
+                                </div>
+
+                                {editForm.data.new_checklist_items.length > 0 && (
+                                    <div className="mt-3 grid gap-2 rounded-lg bg-[var(--surface-muted)] p-3">
+                                        {editForm.data.new_checklist_items.map((item, index) => (
+                                            <div key={index} className="flex items-center gap-2">
+                                                <span className="mono flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-[12px] font-semibold text-[var(--ink-500)]">
+                                                    {checklistItems.length + index + 1}
+                                                </span>
+                                                <input
+                                                    className="min-w-0 flex-1"
+                                                    value={item}
+                                                    onChange={(event) => updateNewChecklistItem(index, event.target.value)}
+                                                    required
+                                                    maxLength={500}
+                                                    placeholder="Descreva a nova etapa"
+                                                />
+                                                <button
+                                                    className="sig-btn sig-btn-ghost !min-h-9 !px-2 text-[var(--red)]"
+                                                    type="button"
+                                                    onClick={() => removeNewChecklistItem(index)}
+                                                    title="Remover nova etapa"
+                                                >
+                                                    <Trash2 size={15} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {(editForm.errors.new_checklist_items || Object.entries(editForm.errors).find(([key]) => key.startsWith('new_checklist_items.'))?.[1]) && (
+                                    <span className="mt-2 block text-xs text-[var(--red)]">
+                                        {editForm.errors.new_checklist_items || Object.entries(editForm.errors).find(([key]) => key.startsWith('new_checklist_items.'))?.[1]}
+                                    </span>
+                                )}
+                            </div>
+                        )}
                         <div>
                             <button className="sig-btn sig-btn-primary" disabled={editForm.processing}>
                                 <Save size={14} />
@@ -1222,7 +1295,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                         </section>
 
                         {isChecklist && (
-                            <section className="rounded-lg border border-[var(--border)] bg-white p-4">
+                            <section data-tour="activities-detail-checklist" className="rounded-lg border border-[var(--border)] bg-white p-4">
                                 <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <h3 className="flex items-center gap-2 text-[14px] font-semibold text-[var(--ink-900)]">
