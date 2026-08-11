@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'ordem_servico_id',
     'uploaded_by_id',
+    'categoria',
+    'comentario_id',
     'nome_original',
     'path',
     'mime_type',
@@ -26,5 +28,10 @@ class OrdemServicoDocumento extends Model
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by_id');
+    }
+
+    public function comentario(): BelongsTo
+    {
+        return $this->belongsTo(OrdemServicoComentario::class, 'comentario_id');
     }
 }

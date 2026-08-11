@@ -1,22 +1,28 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { consumeAssistantDraft } from '@/Utils/assistantDraft';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     Building2,
+    Ban,
     CalendarDays,
+    CheckCircle2,
     ChevronDown,
     ChevronRight,
     CircleDollarSign,
     ClipboardCheck,
     ClipboardList,
+    Download,
     FileText,
     FolderKanban,
     HardHat,
+    MessageSquare,
     Paperclip,
     Pencil,
+    Play,
     Plus,
     Search,
     Send,
+    Users,
     UserRound,
     X,
 } from 'lucide-react';
@@ -35,16 +41,6 @@ const formatPercentage = (value) =>
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,
     }).format(Number(value || 0));
-
-const formatMoneyInput = (value) => {
-    const digits = String(value ?? '').replace(/\D/g, '');
-
-    if (!digits) {
-        return '';
-    }
-
-    return formatCurrency(Number(digits) / 100);
-};
 
 const statusLabels = {
     rascunho: 'Rascunho',
@@ -98,15 +94,19 @@ const orderFormDefaults = (contractId = '') => ({
     construtora_empresa_id: '',
     titulo: '',
     descricao: '',
-    prazo_execucao: '',
+    prazo_inicio: '',
+    prazo_finalizacao: '',
     custo_previsto: '',
     custo_observacao: '',
     item_ids: [],
+    responsavel_ids: [],
     documentos: [],
 });
 
 export default function OrdemServicoIndex({
     selectedContractId,
+    editOrderId = null,
+    editOrder = null,
     contracts = [],
     ordens = [],
     options = {},
@@ -137,6 +137,8 @@ export default function OrdemServicoIndex({
     const [expandedOrderId, setExpandedOrderId] = useState(null);
     const [analysisOrder, setAnalysisOrder] = useState(null);
     const [analysisSubmitting, setAnalysisSubmitting] = useState(false);
+    const [executionAction, setExecutionAction] = useState(null);
+    const actionForm = useForm({ completion_summary: '', evidencias: [], motivo: '' });
 
     const form = useForm(orderFormDefaults(selectedContractId || ''));
 
@@ -160,6 +162,7 @@ export default function OrdemServicoIndex({
     const obras = options.obras || [];
     const projects = options.projects || [];
     const empresas = options.empresas || [];
+    const users = options.users || [];
 
     const empresaMatchesTipo = (empresa, tipo) => {
         const haystack = `${empresa.tipo_slug || ''} ${empresa.tipo_nome || ''}`.toLowerCase();
@@ -183,7 +186,7 @@ export default function OrdemServicoIndex({
 
     const selectedItems = Object.values(selectedItemMap);
     const estimatedTotalP0 = selectedItems.reduce(
-        (total, item) => total + Number(item.valor_total_p0 ?? item.valor_total ?? 0),
+        (total, item) => total + Math.round(Number(item.valor_total_p0 ?? item.valor_total ?? 0) * 100) / 100,
         0
     );
     const estimatedTotalAdjusted = selectedItems.reduce(
@@ -379,14 +382,36 @@ export default function OrdemServicoIndex({
             construtora_empresa_id: ordem.construtora_empresa?.id || '',
             titulo: ordem.titulo || '',
             descricao: ordem.descricao || '',
-            prazo_execucao: ordem.prazo_execucao || '',
+            prazo_inicio: ordem.prazo_inicio || '',
+            prazo_finalizacao: ordem.prazo_finalizacao || '',
             custo_previsto: formatCurrency(ordem.custo_previsto || 0),
             custo_observacao: ordem.custo_observacao || '',
             item_ids: orderItems.map((item) => item.id),
+            responsavel_ids: (ordem.responsaveis || []).map((responsavel) => responsavel.user_id),
             documentos: [],
         });
         setShowForm(true);
     };
+
+    const requestEditOrder = (ordem) => {
+        router.get(
+            route('tenant.ordem-servico.os.index', tenant.slug),
+            { contract_id: selectedContractId, edit: ordem.id },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                only: ['editOrderId', 'editOrder'],
+            },
+        );
+    };
+
+    useEffect(() => {
+        if (!editOrderId || editOrder?.status !== 'rascunho') {
+            return;
+        }
+
+        openEditForm(editOrder);
+    }, [editOrderId, editOrder]);
 
     const toggleId = (field, id) => {
         const current = form.data[field] || [];
@@ -455,6 +480,44 @@ export default function OrdemServicoIndex({
                 setAnalysisSubmitting(false);
                 setAnalysisOrder(null);
             },
+        });
+    };
+
+    const closeExecutionAction = () => {
+        setExecutionAction(null);
+        actionForm.reset();
+        actionForm.clearErrors();
+    };
+
+    const submitExecutionAction = (event) => {
+        event.preventDefault();
+
+        if (!executionAction) {
+            return;
+        }
+
+        const { type, ordem } = executionAction;
+
+        if (type === 'start') {
+            router.patch(route('tenant.ordem-servico.os.start-execution', [tenant.slug, ordem.id]), {}, {
+                preserveScroll: true,
+                onFinish: closeExecutionAction,
+            });
+            return;
+        }
+
+        if (type === 'complete') {
+            actionForm.post(route('tenant.ordem-servico.os.complete', [tenant.slug, ordem.id]), {
+                forceFormData: true,
+                preserveScroll: true,
+                onSuccess: closeExecutionAction,
+            });
+            return;
+        }
+
+        actionForm.patch(route('tenant.ordem-servico.os.cancel', [tenant.slug, ordem.id]), {
+            preserveScroll: true,
+            onSuccess: closeExecutionAction,
         });
     };
 
@@ -566,6 +629,89 @@ export default function OrdemServicoIndex({
                                 </button>
                             </footer>
                         </section>
+                    </div>
+                )}
+
+                {executionAction && (
+                    <div
+                        className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-950/55 p-4"
+                        role="presentation"
+                        onMouseDown={(event) => event.target === event.currentTarget && closeExecutionAction()}
+                    >
+                        <form
+                            onSubmit={submitExecutionAction}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            className="w-full max-w-xl overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-2xl"
+                            role="dialog"
+                            aria-modal="true"
+                        >
+                            <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
+                                <div>
+                                    <span className="eyebrow">{executionAction.ordem.codigo}</span>
+                                    <h2 className="mt-1 text-lg font-bold text-[var(--ink-900)]">
+                                        {executionAction.type === 'start' && 'Iniciar execução da OS?'}
+                                        {executionAction.type === 'complete' && 'Concluir ordem de serviço'}
+                                        {executionAction.type === 'cancel' && 'Cancelar ordem de serviço'}
+                                    </h2>
+                                </div>
+                                <button type="button" onClick={closeExecutionAction} className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-[var(--surface-muted)]">
+                                    <X size={18} />
+                                </button>
+                            </header>
+
+                            <div className="grid gap-4 p-5">
+                                {executionAction.type === 'start' && (
+                                    <p className="text-sm leading-6 text-[var(--ink-600)]">
+                                        A OS passará para <strong>Em execução</strong>. Responsáveis, fiscais e aprovadores serão avisados.
+                                    </p>
+                                )}
+                                {executionAction.type === 'complete' && (
+                                    <>
+                                        <Field label="Resumo da execução" error={actionForm.errors.completion_summary}>
+                                            <textarea
+                                                value={actionForm.data.completion_summary}
+                                                onChange={(event) => actionForm.setData('completion_summary', event.target.value)}
+                                                className="sig-input min-h-32"
+                                                placeholder="Registre o serviço executado, ocorrências e resultado final."
+                                            />
+                                        </Field>
+                                        <Field label="Evidências da conclusão" error={actionForm.errors.evidencias}>
+                                            <input
+                                                type="file"
+                                                multiple
+                                                onChange={(event) => actionForm.setData('evidencias', Array.from(event.target.files || []))}
+                                                className="sig-input file:mr-4 file:rounded-md file:border-0 file:bg-[var(--primary-50)] file:px-3 file:py-2 file:text-sm file:font-bold file:text-[var(--primary)]"
+                                            />
+                                            <span className="text-xs text-[var(--ink-500)]">Ao menos uma evidência é obrigatória.</span>
+                                        </Field>
+                                    </>
+                                )}
+                                {executionAction.type === 'cancel' && (
+                                    <Field label="Motivo do cancelamento" error={actionForm.errors.motivo}>
+                                        <textarea
+                                            value={actionForm.data.motivo}
+                                            onChange={(event) => actionForm.setData('motivo', event.target.value)}
+                                            className="sig-input min-h-28"
+                                            placeholder="Explique por que a OS não seguirá para execução."
+                                        />
+                                    </Field>
+                                )}
+                            </div>
+
+                            <footer className="flex justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                                <button type="button" onClick={closeExecutionAction} className="sig-btn sig-btn-secondary">Voltar</button>
+                                <button
+                                    type="submit"
+                                    disabled={actionForm.processing}
+                                    className={`sig-btn ${executionAction.type === 'cancel' ? 'bg-red-600 text-white hover:bg-red-700' : 'sig-btn-primary'}`}
+                                >
+                                    {executionAction.type === 'start' && <Play size={16} />}
+                                    {executionAction.type === 'complete' && <CheckCircle2 size={16} />}
+                                    {executionAction.type === 'cancel' && <Ban size={16} />}
+                                    {executionAction.type === 'start' ? 'Iniciar execução' : executionAction.type === 'complete' ? 'Concluir OS' : 'Confirmar cancelamento'}
+                                </button>
+                            </footer>
+                        </form>
                     </div>
                 )}
 
@@ -760,32 +906,40 @@ export default function OrdemServicoIndex({
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 lg:grid-cols-[1fr_180px_220px]">
-                                <Field label="Título" error={form.errors.titulo}>
-                                    <input
-                                        value={form.data.titulo}
-                                        onChange={(event) => form.setData('titulo', event.target.value)}
-                                        className="sig-input"
-                                        placeholder="Ex: Execução da drenagem do trecho 01"
-                                    />
-                                </Field>
+                            <Field label="Título" error={form.errors.titulo}>
+                                <input
+                                    value={form.data.titulo}
+                                    onChange={(event) => form.setData('titulo', event.target.value)}
+                                    className="sig-input"
+                                    placeholder="Ex: Execução da drenagem do trecho 01"
+                                />
+                            </Field>
 
-                                <Field label="Prazo para execução" error={form.errors.prazo_execucao}>
+                            <div className="grid gap-4 md:grid-cols-3">
+                                <Field label="Prazo para início" error={form.errors.prazo_inicio}>
                                     <input
                                         type="date"
-                                        value={form.data.prazo_execucao}
-                                        onChange={(event) => form.setData('prazo_execucao', event.target.value)}
+                                        value={form.data.prazo_inicio}
+                                        onChange={(event) => form.setData('prazo_inicio', event.target.value)}
                                         className="sig-input"
                                     />
                                 </Field>
 
-                                <Field label="Custo previsto" error={form.errors.custo_previsto}>
+                                <Field label="Prazo para finalização" error={form.errors.prazo_finalizacao}>
                                     <input
-                                        value={form.data.custo_previsto}
-                                        onChange={(event) => form.setData('custo_previsto', formatMoneyInput(event.target.value))}
+                                        type="date"
+                                        min={form.data.prazo_inicio || undefined}
+                                        value={form.data.prazo_finalizacao}
+                                        onChange={(event) => form.setData('prazo_finalizacao', event.target.value)}
                                         className="sig-input"
-                                        placeholder={formatCurrency(estimatedTotalP0)}
-                                        inputMode="numeric"
+                                    />
+                                </Field>
+
+                                <Field label="Custo previsto pelos itens">
+                                    <input
+                                        value={formatCurrency(estimatedTotalP0)}
+                                        className="sig-input bg-[var(--surface-muted)] font-semibold"
+                                        readOnly
                                     />
                                 </Field>
                             </div>
@@ -798,6 +952,44 @@ export default function OrdemServicoIndex({
                                     placeholder="Descreva o escopo, restrições e premissas da execução."
                                 />
                             </Field>
+
+                            <section className="rounded-lg border border-[var(--border)] p-4">
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
+                                        <Users size={18} />
+                                    </span>
+                                    <div>
+                                        <h3 className="text-sm font-bold text-[var(--ink-900)]">Responsáveis pela execução</h3>
+                                        <p className="text-xs text-[var(--ink-500)]">Selecione quem acompanhará a execução e receberá as atualizações desta OS.</p>
+                                    </div>
+                                </div>
+                                <div className="mt-3 grid max-h-40 gap-2 overflow-auto sm:grid-cols-2 lg:grid-cols-3">
+                                    {users.length === 0 ? (
+                                        <p className="text-sm text-[var(--ink-500)]">Nenhum usuário disponível neste contrato.</p>
+                                    ) : users.map((user) => {
+                                        const checked = form.data.responsavel_ids.includes(user.id);
+
+                                        return (
+                                            <label
+                                                key={user.id}
+                                                className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${checked ? 'border-blue-300 bg-blue-50' : 'border-[var(--border)] bg-white hover:bg-[var(--surface-muted)]'}`}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={() => toggleId('responsavel_ids', user.id)}
+                                                />
+                                                <Avatar user={user} />
+                                                <span className="min-w-0">
+                                                    <strong className="block truncate text-sm text-[var(--ink-900)]">{user.name}</strong>
+                                                    <span className="block truncate text-xs text-[var(--ink-500)]">{user.email}</span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                                {form.errors.responsavel_ids && <p className="mt-2 text-xs font-semibold text-red-600">{form.errors.responsavel_ids}</p>}
+                            </section>
 
                             <SelectionPanel
                                 title="Itens de contrato vinculados"
@@ -1000,12 +1192,7 @@ export default function OrdemServicoIndex({
                         <div className="divide-y divide-[var(--border)]">
                             {ordens.map((ordem) => (
                                 <article key={ordem.id}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setExpandedOrderId((current) => current === ordem.id ? null : ordem.id)}
-                                        aria-expanded={expandedOrderId === ordem.id}
-                                        className="grid w-full items-center gap-3 p-4 text-left transition hover:bg-[var(--surface-muted)] md:grid-cols-[110px_minmax(0,1fr)_150px_230px_28px]"
-                                    >
+                                    <div className="grid w-full items-center gap-3 p-4 text-left transition hover:bg-[var(--surface-muted)] md:grid-cols-[110px_minmax(0,1fr)_130px] xl:grid-cols-[110px_minmax(180px,1fr)_130px_400px_auto]">
                                         <p className="mono font-bold text-[var(--primary)]">{ordem.codigo}</p>
                                         <div className="min-w-0">
                                             <h3 className="truncate text-sm font-bold text-[var(--ink-900)]">{ordem.titulo}</h3>
@@ -1016,7 +1203,7 @@ export default function OrdemServicoIndex({
                                         <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${statusClasses[ordem.status] || statusClasses.rascunho}`}>
                                             {statusLabels[ordem.status] || ordem.status}
                                         </span>
-                                        <div className="grid grid-cols-2 gap-3">
+                                        <div className="grid min-w-0 grid-cols-[minmax(125px,1fr)_minmax(125px,1fr)_minmax(72px,0.7fr)] gap-4 md:col-span-2 md:col-start-2 xl:col-span-1 xl:col-start-auto">
                                             <div>
                                                 <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--ink-500)]">
                                                     Previsto
@@ -1033,13 +1220,30 @@ export default function OrdemServicoIndex({
                                                     {formatCurrency(ordem.custo_real)}
                                                 </strong>
                                             </div>
+                                            <div>
+                                                <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--ink-500)]">
+                                                    Medido
+                                                </span>
+                                                <strong className="mt-1 block whitespace-nowrap text-sm text-[var(--primary)]">
+                                                    {formatPercentage(ordem.percentual_medido)}%
+                                                </strong>
+                                            </div>
                                         </div>
-                                        {expandedOrderId === ordem.id
-                                            ? <ChevronDown size={18} className="text-[var(--ink-500)]" />
-                                            : <ChevronRight size={18} className="text-[var(--ink-500)]" />}
-                                    </button>
+                                        <div className="flex flex-wrap justify-end gap-2 md:col-start-3 xl:col-start-auto">
+                                            {ordem.status === 'rascunho' && can.manage_drafts && (
+                                                <button type="button" onClick={() => requestEditOrder(ordem)} className="sig-btn sig-btn-secondary">
+                                                    <Pencil size={15} />
+                                                    Editar
+                                                </button>
+                                            )}
+                                            <Link href={route('tenant.ordem-servico.os.show', [tenant.slug, ordem.id])} className="sig-btn sig-btn-secondary">
+                                                Abrir
+                                                <ChevronRight size={15} />
+                                            </Link>
+                                        </div>
+                                    </div>
 
-                                    <div className={`${expandedOrderId === ordem.id ? 'grid' : 'hidden'} gap-4 border-t border-[var(--border)] p-5 xl:grid-cols-[180px_1fr_260px]`}>
+                                    <div className="hidden">
                                     <div>
                                         <p className="mono text-lg font-bold text-[var(--primary)]">{ordem.codigo}</p>
                                         <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ${statusClasses[ordem.status] || statusClasses.rascunho}`}>
@@ -1063,7 +1267,8 @@ export default function OrdemServicoIndex({
                                                     ? `${ordem.projects.length} projeto(s)`
                                                     : 'Sem projeto'}
                                             />
-                                            <InfoLine icon={CalendarDays} label="Prazo" value={ordem.prazo_execucao_label || 'Sem prazo'} />
+                                            <InfoLine icon={CalendarDays} label="Prazo para início" value={ordem.prazo_inicio_label || 'Sem prazo'} />
+                                            <InfoLine icon={CalendarDays} label="Prazo para finalização" value={ordem.prazo_finalizacao_label || 'Sem prazo'} />
                                         </div>
 
                                         {ordem.projects?.length > 0 && (
@@ -1140,6 +1345,37 @@ export default function OrdemServicoIndex({
                                                 </span>
                                             ))}
                                         </div>
+
+                                        <div className="mt-4 grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4 sm:grid-cols-2">
+                                            <div>
+                                                <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Responsáveis pela execução</span>
+                                                <p className="mt-1 text-sm font-semibold text-[var(--ink-800)]">
+                                                    {ordem.responsaveis?.length
+                                                        ? ordem.responsaveis.map((responsavel) => responsavel.name).join(', ')
+                                                        : 'Nenhum responsável vinculado'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Registro da execução</span>
+                                                <p className="mt-1 text-sm text-[var(--ink-700)]">
+                                                    {ordem.completed_at
+                                                        ? `Concluída por ${ordem.completed_by?.name || 'usuário'} em ${ordem.completed_at}`
+                                                        : ordem.execution_started_at
+                                                            ? `Iniciada por ${ordem.execution_started_by?.name || 'usuário'} em ${ordem.execution_started_at}`
+                                                            : ordem.cancelled_at
+                                                                ? `Cancelada por ${ordem.cancelled_by?.name || 'usuário'} em ${ordem.cancelled_at}`
+                                                                : 'Execução ainda não iniciada'}
+                                                </p>
+                                            </div>
+                                            {ordem.completion_summary && (
+                                                <p className="text-sm leading-6 text-[var(--ink-700)] sm:col-span-2"><strong>Conclusão:</strong> {ordem.completion_summary}</p>
+                                            )}
+                                            {ordem.cancellation_reason && (
+                                                <p className="text-sm leading-6 text-red-700 sm:col-span-2"><strong>Cancelamento:</strong> {ordem.cancellation_reason}</p>
+                                            )}
+                                        </div>
+
+                                        <OrderConversation ordem={ordem} tenant={tenant} users={users} />
                                     </div>
 
                                     <div className="grid content-between gap-4">
@@ -1185,6 +1421,49 @@ export default function OrdemServicoIndex({
                                                 </button>
                                             </div>
                                         )}
+
+                                        {ordem.status === 'aprovada' && can.execute && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setExecutionAction({ type: 'start', ordem })}
+                                                className="sig-btn sig-btn-primary justify-center"
+                                            >
+                                                <Play size={16} />
+                                                Iniciar execução
+                                            </button>
+                                        )}
+
+                                        {ordem.status === 'em_execucao' && can.complete && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setExecutionAction({ type: 'complete', ordem })}
+                                                className="sig-btn bg-emerald-600 text-white hover:bg-emerald-700 justify-center"
+                                            >
+                                                <CheckCircle2 size={16} />
+                                                Concluir OS
+                                            </button>
+                                        )}
+
+                                        {['rascunho', 'aprovada', 'em_execucao'].includes(ordem.status) && can.complete && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setExecutionAction({ type: 'cancel', ordem })}
+                                                className="sig-btn sig-btn-secondary justify-center text-red-700"
+                                            >
+                                                <Ban size={16} />
+                                                Cancelar OS
+                                            </button>
+                                        )}
+
+                                        {ordem.status === 'concluida' && (
+                                            <a
+                                                href={route('tenant.ordem-servico.os.pdf', [tenant.slug, ordem.id])}
+                                                className="sig-btn sig-btn-secondary justify-center"
+                                            >
+                                                <Download size={16} />
+                                                Baixar PDF final
+                                            </a>
+                                        )}
                                     </div>
                                     </div>
                                 </article>
@@ -1194,6 +1473,171 @@ export default function OrdemServicoIndex({
                 </section>
             </div>
         </AuthenticatedLayout>
+    );
+}
+
+function OrderConversation({ ordem, tenant, users = [] }) {
+    const [replyTo, setReplyTo] = useState(null);
+    const form = useForm({ tipo: 'comentario', body: '', parent_id: '', mention_user_ids: [], anexos: [] });
+
+    const submit = (event) => {
+        event.preventDefault();
+        form.post(route('tenant.ordem-servico.os.comments.store', [tenant.slug, ordem.id]), {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                setReplyTo(null);
+            },
+        });
+    };
+
+    const beginReply = (comment) => {
+        setReplyTo(comment);
+        form.setData({
+            ...form.data,
+            tipo: comment.tipo,
+            parent_id: comment.id,
+            body: '',
+            mention_user_ids: comment.user?.id ? [comment.user.id] : [],
+            anexos: [],
+        });
+    };
+
+    const cancelReply = () => {
+        setReplyTo(null);
+        form.setData({ ...form.data, parent_id: '', body: '', mention_user_ids: [], anexos: [] });
+    };
+
+    const toggleResolved = (comment) => {
+        router.patch(route('tenant.ordem-servico.os.comments.resolve', [tenant.slug, ordem.id, comment.id]), {}, {
+            preserveScroll: true,
+        });
+    };
+
+    return (
+        <section className="mt-4 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+            <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+                <div className="flex items-center gap-2">
+                    <MessageSquare size={17} className="text-[var(--primary)]" />
+                    <h4 className="text-sm font-bold text-[var(--ink-900)]">Acompanhamento da OS</h4>
+                </div>
+                <span className="text-xs font-semibold text-[var(--ink-500)]">{ordem.comentarios?.length || 0} registro(s)</span>
+            </header>
+
+            <div className="max-h-96 divide-y divide-[var(--border)] overflow-auto">
+                {(ordem.comentarios || []).length === 0 ? (
+                    <p className="p-5 text-center text-sm text-[var(--ink-500)]">Nenhum comentário ou pendência registrado.</p>
+                ) : ordem.comentarios.map((comment) => (
+                    <article key={comment.id} className={`p-4 ${comment.tipo === 'pendencia' ? 'bg-amber-50/60' : ''}`}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                                <p className="text-sm font-bold text-[var(--ink-900)]">{comment.user?.name || 'Usuário removido'}</p>
+                                <p className="text-xs text-[var(--ink-500)]">{comment.created_at}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {comment.tipo === 'pendencia' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleResolved(comment)}
+                                        className={`rounded-full px-2.5 py-1 text-xs font-bold ${comment.status === 'resolvida' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
+                                    >
+                                        {comment.status === 'resolvida' ? 'Resolvida' : 'Pendente'}
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => beginReply(comment)} className="text-xs font-bold text-[var(--primary)] hover:underline">Responder</button>
+                            </div>
+                        </div>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--ink-700)]">{comment.body}</p>
+                        <AttachmentLinks attachments={comment.attachments} ordem={ordem} tenant={tenant} />
+                        {(comment.replies || []).map((reply) => (
+                            <div key={reply.id} className="ml-5 mt-3 border-l-2 border-blue-200 pl-3">
+                                <p className="text-xs font-bold text-[var(--ink-900)]">{reply.user?.name || 'Usuário removido'} <span className="font-normal text-[var(--ink-500)]">· {reply.created_at}</span></p>
+                                <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-700)]">{reply.body}</p>
+                                <AttachmentLinks attachments={reply.attachments} ordem={ordem} tenant={tenant} />
+                            </div>
+                        ))}
+                    </article>
+                ))}
+            </div>
+
+            <form onSubmit={submit} className="grid gap-3 border-t border-[var(--border)] bg-[var(--surface-muted)] p-4">
+                {replyTo && (
+                    <div className="flex items-center justify-between rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                        <span>Respondendo a {replyTo.user?.name || 'usuário'}</span>
+                        <button type="button" onClick={cancelReply} className="font-bold">Cancelar resposta</button>
+                    </div>
+                )}
+                {!replyTo && (
+                    <div className="flex gap-2">
+                        {['comentario', 'pendencia'].map((type) => (
+                            <button
+                                key={type}
+                                type="button"
+                                onClick={() => form.setData('tipo', type)}
+                                className={`rounded-md px-3 py-1.5 text-xs font-bold ${form.data.tipo === type ? 'bg-[var(--primary)] text-white' : 'border border-[var(--border)] bg-white text-[var(--ink-700)]'}`}
+                            >
+                                {type === 'comentario' ? 'Comentário' : 'Pendência'}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                <textarea
+                    value={form.data.body}
+                    onChange={(event) => form.setData('body', event.target.value)}
+                    className="sig-input min-h-20 bg-white"
+                    placeholder={replyTo ? 'Escreva a resposta...' : 'Registre uma atualização, orientação ou pendência...'}
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-1 text-xs font-bold uppercase text-[var(--ink-500)]">
+                        Mencionar usuários
+                        <select
+                            multiple
+                            value={form.data.mention_user_ids.map(String)}
+                            onChange={(event) => form.setData('mention_user_ids', Array.from(event.target.selectedOptions).map((option) => Number(option.value)))}
+                            className="sig-input min-h-20 bg-white normal-case"
+                        >
+                            {users.map((user) => <option key={user.id} value={user.id}>{user.name} - {user.email}</option>)}
+                        </select>
+                    </label>
+                    <label className="grid content-start gap-1 text-xs font-bold uppercase text-[var(--ink-500)]">
+                        Anexos
+                        <input
+                            type="file"
+                            multiple
+                            onChange={(event) => form.setData('anexos', Array.from(event.target.files || []))}
+                            className="sig-input bg-white normal-case"
+                        />
+                    </label>
+                </div>
+                {form.errors.body && <p className="text-xs font-semibold text-red-600">{form.errors.body}</p>}
+                <button type="submit" disabled={form.processing || !form.data.body.trim()} className="sig-btn sig-btn-primary w-fit justify-self-end">
+                    <Send size={15} />
+                    {replyTo ? 'Enviar resposta' : 'Registrar'}
+                </button>
+            </form>
+        </section>
+    );
+}
+
+function AttachmentLinks({ attachments = [], ordem, tenant }) {
+    if (!attachments.length) {
+        return null;
+    }
+
+    return (
+        <div className="mt-2 flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+                <a
+                    key={attachment.id}
+                    href={route('tenant.ordem-servico.os.documents.download', [tenant.slug, ordem.id, attachment.id])}
+                    className="inline-flex max-w-full items-center gap-1 rounded-md border border-[var(--border)] bg-white px-2 py-1 text-xs font-semibold text-[var(--primary)]"
+                >
+                    <Paperclip size={13} />
+                    <span className="truncate">{attachment.nome_original}</span>
+                </a>
+            ))}
+        </div>
     );
 }
 

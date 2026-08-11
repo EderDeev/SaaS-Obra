@@ -615,6 +615,8 @@ class MeasurementMassTestSeeder extends Seeder
                 'sequencial' => $sequence,
                 'titulo' => "OS {$sequence} - Frente de servicos ".chr(64 + $sequence),
                 'descricao' => 'Ordem de servico aprovada para validar o fluxo de medicao controlada.',
+                'prazo_inicio' => Carbon::parse('2026-07-01')->addMonths($sequence),
+                'prazo_finalizacao' => Carbon::parse('2026-08-01')->addMonths($sequence),
                 'prazo_execucao' => Carbon::parse('2026-08-01')->addMonths($sequence),
                 'custo_previsto' => 0,
                 'custo_observacao' => 'Valor calculado pelos itens vinculados.',

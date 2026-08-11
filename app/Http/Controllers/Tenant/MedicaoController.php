@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Contract;
 use App\Models\MedicaoIndiceReajuste;
 use App\Models\MedicaoIndiceReajusteCompetencia;
+use App\Models\MedicaoItem;
 use App\Models\MedicaoItemAdditive;
 use App\Models\MedicaoItemAdditiveItem;
-use App\Models\MedicaoItem;
 use App\Models\MedicaoItemReajusteIndice;
 use App\Models\MedicaoItemVersion;
 use App\Models\Orcamento;
@@ -17,6 +17,7 @@ use App\Support\MedicaoPermissions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -226,7 +227,7 @@ class MedicaoController extends Controller
             'indice_base' => ['required', 'numeric', 'gt:0'],
             'data_base' => ['required', 'date'],
             'indice_atual' => ['required', 'numeric', 'gte:0'],
-            'data_atual' => ['required', 'date'],
+            'data_atual' => ['required', 'date', 'after_or_equal:data_base'],
             'observacao' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -276,6 +277,12 @@ class MedicaoController extends Controller
             'data_publicacao' => ['nullable', 'date'],
             'observacao' => ['nullable', 'string', 'max:1000'],
         ]);
+
+        if (Carbon::parse($data['competencia'])->startOfMonth()->lt($indice->data_base->copy()->startOfMonth())) {
+            throw ValidationException::withMessages([
+                'competencia' => 'A competência não pode ser anterior à data-base do índice.',
+            ]);
+        }
 
         $competencia = MedicaoIndiceReajusteCompetencia::withTrashed()->firstOrNew([
             'medicao_indice_reajuste_id' => $indice->id,
@@ -354,6 +361,7 @@ class MedicaoController extends Controller
 
             if (! $item) {
                 $invalid++;
+
                 continue;
             }
 
@@ -378,6 +386,7 @@ class MedicaoController extends Controller
 
             if (! $indice) {
                 $invalid++;
+
                 continue;
             }
 
@@ -481,6 +490,7 @@ class MedicaoController extends Controller
 
                 if (! $item || ! $indice) {
                     $invalid++;
+
                     continue;
                 }
 
@@ -587,98 +597,73 @@ class MedicaoController extends Controller
 
         $created = 0;
         $skipped = 0;
-        $useNaoDesonerado = $orcamento->encargos_sociais === 'nao_desonerado';
+        $payloads = $this->payloadsFromOrcamento($orcamento);
+        $this->assertPayloadFinancialValuesAreValid($payloads);
 
-        DB::transaction(function () use ($tenant, $contract, $request, $orcamento, $useNaoDesonerado, &$created, &$skipped): void {
-            foreach ($orcamento->etapas as $etapa) {
-                $stageExists = MedicaoItem::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where('contract_id', $contract->id)
-                    ->where('source_orcamento_etapa_id', $etapa->id)
-                    ->whereNull('source_orcamento_item_id')
-                    ->exists();
+        DB::transaction(function () use ($tenant, $contract, $request, $orcamento, $payloads, &$created, &$skipped): void {
+            Contract::query()
+                ->where('tenant_id', $tenant->id)
+                ->whereKey($contract->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-                $stageQuantity = $this->decimalFromFloat(max((float) $etapa->quantidade, 1));
-                $stageTotal = $etapa->itens->sum(function ($item) use ($useNaoDesonerado): float {
-                    $quantity = (float) $item->quantidade;
-                    $valueWithBdi = (float) ($useNaoDesonerado
-                        ? $item->valor_com_bdi_nao_desonerado
-                        : $item->valor_com_bdi_desonerado);
+            $existingItems = MedicaoItem::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('contract_id', $contract->id)
+                ->get(['source_orcamento_id', 'source_orcamento_etapa_id', 'source_orcamento_item_id']);
 
-                    return $quantity * $valueWithBdi;
-                });
+            if ($existingItems->isNotEmpty()) {
+                $importedBudgetIds = $existingItems->pluck('source_orcamento_id')->filter()->unique();
+                $isIdempotentImport = $importedBudgetIds->count() === 1
+                    && (int) $importedBudgetIds->first() === (int) $orcamento->id
+                    && $existingItems->every(fn (MedicaoItem $item): bool => (int) $item->source_orcamento_id === (int) $orcamento->id);
 
-                if (! $stageExists) {
-                    MedicaoItem::create([
-                        'tenant_id' => $tenant->id,
-                        'contract_id' => $contract->id,
-                        'created_by_id' => $request->user()->id,
-                        'source_type' => 'orcamento',
-                        'source_orcamento_id' => $orcamento->id,
-                        'source_orcamento_etapa_id' => $etapa->id,
-                        'item' => (string) $etapa->ordem,
-                        'nivel' => 1,
-                        'item_type' => 'etapa',
-                        'descricao' => $etapa->descricao,
-                        'quantidade_prevista' => $stageQuantity,
-                        'valor_unitario' => '0.000000',
-                        'valor_com_bdi' => '0.000000',
-                        'valor_total' => $this->decimalFromFloat($stageTotal),
-                        'meta' => ['orcamento_codigo' => $orcamento->codigo],
+                if (! $isIdempotentImport) {
+                    throw ValidationException::withMessages([
+                        'orcamento_id' => 'O contrato já possui uma base de itens. Importe o novo orçamento como aditivo para preservar o histórico e validar os quantitativos já medidos.',
                     ]);
+                }
+            }
 
-                    $created++;
-                } else {
+            $existingStageIds = $existingItems
+                ->whereNull('source_orcamento_item_id')
+                ->pluck('source_orcamento_etapa_id')
+                ->filter()
+                ->mapWithKeys(fn ($id): array => [(int) $id => true]);
+            $existingItemIds = $existingItems
+                ->pluck('source_orcamento_item_id')
+                ->filter()
+                ->mapWithKeys(fn ($id): array => [(int) $id => true]);
+            $now = now();
+            $rows = [];
+
+            foreach ($payloads as $payload) {
+                $sourceItemId = $payload['source_orcamento_item_id'] ?? null;
+                $sourceStageId = $payload['source_orcamento_etapa_id'] ?? null;
+                $alreadyExists = $sourceItemId
+                    ? $existingItemIds->has((int) $sourceItemId)
+                    : $existingStageIds->has((int) $sourceStageId);
+
+                if ($alreadyExists) {
                     $skipped++;
+
+                    continue;
                 }
 
-                foreach ($etapa->itens as $item) {
-                    $itemExists = MedicaoItem::query()
-                        ->where('tenant_id', $tenant->id)
-                        ->where('contract_id', $contract->id)
-                        ->where('source_orcamento_item_id', $item->id)
-                        ->exists();
+                $rows[] = array_merge($payload, [
+                    'tenant_id' => $tenant->id,
+                    'contract_id' => $contract->id,
+                    'created_by_id' => $request->user()->id,
+                    'source_type' => 'orcamento',
+                    'meta' => json_encode($payload['meta'] ?? [], JSON_UNESCAPED_UNICODE),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
 
-                    if ($itemExists) {
-                        $skipped++;
-                        continue;
-                    }
-
-                    $unitValue = (float) ($useNaoDesonerado
-                        ? $item->valor_unitario_nao_desonerado
-                        : $item->valor_unitario_desonerado);
-                    $valueWithBdi = (float) ($useNaoDesonerado
-                        ? $item->valor_com_bdi_nao_desonerado
-                        : $item->valor_com_bdi_desonerado);
-                    $quantity = (float) $item->quantidade;
-
-                    MedicaoItem::create([
-                        'tenant_id' => $tenant->id,
-                        'contract_id' => $contract->id,
-                        'created_by_id' => $request->user()->id,
-                        'source_type' => 'orcamento',
-                        'source_orcamento_id' => $orcamento->id,
-                        'source_orcamento_etapa_id' => $etapa->id,
-                        'source_orcamento_item_id' => $item->id,
-                        'item' => $etapa->ordem.'.'.$item->ordem,
-                        'nivel' => 2,
-                        'item_type' => $item->item_type,
-                        'codigo' => $item->codigo,
-                        'banco' => $item->banco,
-                        'descricao' => $item->descricao,
-                        'unidade' => $item->unidade,
-                        'quantidade_prevista' => $this->decimalFromFloat($quantity),
-                        'valor_unitario' => $this->decimalFromFloat($unitValue),
-                        'valor_com_bdi' => $this->decimalFromFloat($valueWithBdi),
-                        'valor_total' => $this->decimalFromFloat($quantity * $valueWithBdi),
-                        'meta' => [
-                            'orcamento_codigo' => $orcamento->codigo,
-                            'orcamento_encargos_sociais' => $orcamento->encargos_sociais,
-                        ],
-                    ]);
-
-                    $created++;
-                }
+            foreach (array_chunk($rows, 500) as $chunk) {
+                MedicaoItem::query()->insert($chunk);
+                $created += count($chunk);
             }
         });
 
@@ -756,6 +741,7 @@ class MedicaoController extends Controller
 
                 if ($description === '') {
                     $invalid++;
+
                     continue;
                 }
 
@@ -779,6 +765,7 @@ class MedicaoController extends Controller
 
                 if (isset($seenKeys[$duplicateKey])) {
                     $duplicates++;
+
                     continue;
                 }
 
@@ -793,6 +780,7 @@ class MedicaoController extends Controller
 
                 if ($alreadyExists) {
                     $duplicates++;
+
                     continue;
                 }
 
@@ -962,6 +950,46 @@ class MedicaoController extends Controller
         int $invalid = 0
     ): array {
         return DB::transaction(function () use ($request, $tenant, $contract, $payloads, $sourceType, $orcamento, $data, $duplicates, $invalid): array {
+            Contract::query()
+                ->where('tenant_id', $tenant->id)
+                ->whereKey($contract->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($orcamento && MedicaoItemAdditive::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('contract_id', $contract->id)
+                ->where('source_orcamento_id', $orcamento->id)
+                ->where('status', 'applied')
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'orcamento_id' => 'Este orçamento já foi aplicado aos itens do contrato.',
+                ]);
+            }
+
+            $this->assertPayloadIdentitiesAreUnique($payloads);
+            $this->assertPayloadFinancialValuesAreValid($payloads);
+
+            $existingItems = MedicaoItem::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('contract_id', $contract->id)
+                ->get();
+            $matches = collect($payloads)
+                ->map(fn (array $payload): ?MedicaoItem => $this->findMatchingMedicaoItem($existingItems, $payload));
+            $measuredQuantities = $this->measuredQuantitiesForItems($matches->filter()->pluck('id')->all());
+
+            foreach ($payloads as $index => $payload) {
+                $existingItem = $matches->get($index);
+
+                if ($existingItem) {
+                    $this->assertAdditiveQuantityDoesNotReduceMeasuredBalance(
+                        $existingItem,
+                        $payload,
+                        (float) ($measuredQuantities[$existingItem->id] ?? 0)
+                    );
+                }
+            }
+
             $lastNumber = MedicaoItemAdditive::query()
                 ->where('tenant_id', $tenant->id)
                 ->where('contract_id', $contract->id)
@@ -969,14 +997,6 @@ class MedicaoController extends Controller
                 ->lockForUpdate()
                 ->value('number');
             $number = ((int) $lastNumber) + 1;
-
-            foreach ($payloads as $payload) {
-                $existingItem = $this->findMatchingMedicaoItem($tenant, $contract, $payload);
-
-                if ($existingItem) {
-                    $this->assertAdditiveQuantityDoesNotReduceMeasuredBalance($existingItem, $payload);
-                }
-            }
 
             $additive = MedicaoItemAdditive::create([
                 'tenant_id' => $tenant->id,
@@ -1005,8 +1025,8 @@ class MedicaoController extends Controller
                 'number' => $number,
             ];
 
-            foreach ($payloads as $payload) {
-                $existingItem = $this->findMatchingMedicaoItem($tenant, $contract, $payload);
+            foreach ($payloads as $index => $payload) {
+                $existingItem = $matches->get($index);
 
                 if (! $existingItem) {
                     $newItem = MedicaoItem::create(array_merge($payload, [
@@ -1069,10 +1089,12 @@ class MedicaoController extends Controller
         });
     }
 
-    private function assertAdditiveQuantityDoesNotReduceMeasuredBalance(MedicaoItem $item, array $payload): void
-    {
+    private function assertAdditiveQuantityDoesNotReduceMeasuredBalance(
+        MedicaoItem $item,
+        array $payload,
+        float $quantidadeMedida
+    ): void {
         $novaQuantidade = (float) ($payload['quantidade_prevista'] ?? 0);
-        $quantidadeMedida = $this->measuredQuantityForItem($item);
 
         if ($novaQuantidade + 0.000001 >= $quantidadeMedida) {
             return;
@@ -1088,16 +1110,24 @@ class MedicaoController extends Controller
         ]);
     }
 
-    private function measuredQuantityForItem(MedicaoItem $item): float
+    private function measuredQuantitiesForItems(array $itemIds): array
     {
-        return (float) DB::table('folha_rosto_item_analises as analises')
+        if ($itemIds === []) {
+            return [];
+        }
+
+        return DB::table('folha_rosto_item_analises as analises')
             ->join('folha_rosto_itens as fri', 'fri.id', '=', 'analises.folha_rosto_item_id')
             ->join('folhas_rosto as fr', 'fr.id', '=', 'fri.folha_rosto_id')
-            ->where('fri.medicao_item_id', $item->id)
+            ->whereIn('fri.medicao_item_id', array_values(array_unique($itemIds)))
             ->where('analises.setor', 'medicao')
             ->where('fr.status', 'analisada')
             ->whereNull('fr.deleted_at')
-            ->sum('analises.quantidade_aprovada');
+            ->groupBy('fri.medicao_item_id')
+            ->selectRaw('fri.medicao_item_id, COALESCE(SUM(analises.quantidade_aprovada), 0) as quantidade_medida')
+            ->get()
+            ->mapWithKeys(fn ($row): array => [(int) $row->medicao_item_id => (float) $row->quantidade_medida])
+            ->all();
     }
 
     private function payloadsFromOrcamento(Orcamento $orcamento): array
@@ -1106,6 +1136,10 @@ class MedicaoController extends Controller
         $useNaoDesonerado = $orcamento->encargos_sociais === 'nao_desonerado';
 
         foreach ($orcamento->etapas as $etapa) {
+            $etapaMeta = $etapa->meta ?? [];
+            $originEtapaId = (int) ($etapaMeta['origin_orcamento_etapa_id']
+                ?? $etapaMeta['copied_from_etapa_id']
+                ?? $etapa->id);
             $stageTotal = $etapa->itens->sum(function ($item) use ($useNaoDesonerado): float {
                 $quantity = (float) $item->quantidade;
                 $valueWithBdi = (float) ($useNaoDesonerado
@@ -1130,10 +1164,17 @@ class MedicaoController extends Controller
                 'valor_unitario' => '0.000000',
                 'valor_com_bdi' => '0.000000',
                 'valor_total' => $this->decimalFromFloat($stageTotal),
-                'meta' => ['orcamento_codigo' => $orcamento->codigo],
+                'meta' => [
+                    'orcamento_codigo' => $orcamento->codigo,
+                    'budget_origin_etapa_id' => $originEtapaId,
+                ],
             ];
 
             foreach ($etapa->itens as $item) {
+                $itemMeta = $item->meta ?? [];
+                $originItemId = (int) ($itemMeta['origin_orcamento_item_id']
+                    ?? $itemMeta['copied_from_item_id']
+                    ?? $item->id);
                 $unitValue = (float) ($useNaoDesonerado
                     ? $item->valor_unitario_nao_desonerado
                     : $item->valor_unitario_desonerado);
@@ -1160,6 +1201,8 @@ class MedicaoController extends Controller
                     'meta' => [
                         'orcamento_codigo' => $orcamento->codigo,
                         'orcamento_encargos_sociais' => $orcamento->encargos_sociais,
+                        'budget_origin_etapa_id' => $originEtapaId,
+                        'budget_origin_item_id' => $originItemId,
                     ],
                 ];
             }
@@ -1209,6 +1252,7 @@ class MedicaoController extends Controller
 
                 if ($description === '') {
                     $invalid++;
+
                     continue;
                 }
 
@@ -1232,6 +1276,7 @@ class MedicaoController extends Controller
 
                 if (isset($seenKeys[$duplicateKey])) {
                     $duplicates++;
+
                     continue;
                 }
 
@@ -1295,24 +1340,95 @@ class MedicaoController extends Controller
         ];
     }
 
-    private function findMatchingMedicaoItem(Tenant $tenant, Contract $contract, array $payload): ?MedicaoItem
+    private function assertPayloadIdentitiesAreUnique(array $payloads): void
     {
-        $query = MedicaoItem::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('contract_id', $contract->id);
+        $seen = [];
+
+        foreach ($payloads as $payload) {
+            $identity = $this->budgetPayloadIdentity($payload);
+
+            if ($identity === null) {
+                continue;
+            }
+
+            if (isset($seen[$identity])) {
+                throw ValidationException::withMessages([
+                    'orcamento_id' => 'O orçamento possui itens duplicados com a mesma origem. Revise a estrutura antes de aplicar o aditivo.',
+                ]);
+            }
+
+            $seen[$identity] = true;
+        }
+    }
+
+    private function assertPayloadFinancialValuesAreValid(array $payloads): void
+    {
+        foreach ($payloads as $payload) {
+            foreach (['quantidade_prevista', 'valor_unitario', 'valor_com_bdi', 'valor_total'] as $field) {
+                if ((float) ($payload[$field] ?? 0) < 0) {
+                    throw ValidationException::withMessages([
+                        'orcamento_id' => 'O orçamento contém quantidades ou valores financeiros negativos e não pode ser importado.',
+                    ]);
+                }
+            }
+        }
+    }
+
+    private function findMatchingMedicaoItem(Collection $items, array $payload): ?MedicaoItem
+    {
+        $identity = $this->budgetPayloadIdentity($payload);
+
+        if ($identity !== null) {
+            [$type, $originId] = explode(':', $identity, 2);
+            $originId = (int) $originId;
+
+            return $items->first(function (MedicaoItem $item) use ($type, $originId): bool {
+                $meta = $item->meta ?? [];
+
+                if ($type === 'item') {
+                    return (int) $item->source_orcamento_item_id === $originId
+                        || (int) ($meta['budget_origin_item_id'] ?? 0) === $originId;
+                }
+
+                return $item->source_orcamento_item_id === null
+                    && ((int) $item->source_orcamento_etapa_id === $originId
+                        || (int) ($meta['budget_origin_etapa_id'] ?? 0) === $originId);
+            });
+        }
 
         if ($this->blankToNull($payload['item'] ?? null) !== null) {
-            return $query->where('item', $payload['item'])->first();
+            return $items->first(fn (MedicaoItem $item): bool => (string) $item->item === (string) $payload['item']);
         }
 
         if ($this->blankToNull($payload['codigo'] ?? null) !== null) {
-            return $query
-                ->where('codigo', $payload['codigo'])
-                ->where('descricao', $payload['descricao'])
-                ->first();
+            return $items->first(fn (MedicaoItem $item): bool => (string) $item->codigo === (string) $payload['codigo']
+                && (string) $item->descricao === (string) $payload['descricao']);
         }
 
-        return $query->where('descricao', $payload['descricao'])->first();
+        return $items->first(fn (MedicaoItem $item): bool => (string) $item->descricao === (string) $payload['descricao']);
+    }
+
+    private function budgetPayloadIdentity(array $payload): ?string
+    {
+        if (empty($payload['source_orcamento_id'])) {
+            return null;
+        }
+
+        if (! empty($payload['source_orcamento_item_id'])) {
+            $originId = (int) (($payload['meta']['budget_origin_item_id'] ?? null)
+                ?: $payload['source_orcamento_item_id']);
+
+            return "item:{$originId}";
+        }
+
+        if (! empty($payload['source_orcamento_etapa_id'])) {
+            $originId = (int) (($payload['meta']['budget_origin_etapa_id'] ?? null)
+                ?: $payload['source_orcamento_etapa_id']);
+
+            return "stage:{$originId}";
+        }
+
+        return null;
     }
 
     private function ensureBaseVersion(MedicaoItem $item, Request $request): MedicaoItemVersion

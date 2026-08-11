@@ -82,7 +82,7 @@ class DashboardController extends Controller
             ->whereIn('contract_id', $contractIds)
             ->with('contract:id,code,name')
             ->latest()
-            ->get(['id', 'tenant_id', 'contract_id', 'codigo', 'titulo', 'status', 'prazo_execucao', 'created_at']);
+            ->get(['id', 'tenant_id', 'contract_id', 'codigo', 'titulo', 'status', 'prazo_inicio', 'prazo_finalizacao', 'created_at']);
         $additives = ContractAdditive::query()
             ->where('tenant_id', $tenant->id)
             ->whereIn('contract_id', $contractIds)

@@ -185,7 +185,8 @@ class AssistantActionResolver
             'construtora_empresa_id' => $construtora ? (string) $construtora->id : null,
             'titulo' => $this->text($fields['titulo'] ?? '', 255),
             'descricao' => $this->text($fields['descricao'] ?? '', 10000),
-            'prazo_execucao' => $this->date($fields['prazo_execucao'] ?? null),
+            'prazo_inicio' => $this->date($fields['prazo_inicio'] ?? null),
+            'prazo_finalizacao' => $this->date($fields['prazo_finalizacao'] ?? $fields['prazo_execucao'] ?? null),
             'custo_previsto' => $this->text($fields['custo_previsto'] ?? '', 50),
             'custo_observacao' => $this->text($fields['custo_observacao'] ?? '', 5000),
         ], fn ($value): bool => $value !== null);

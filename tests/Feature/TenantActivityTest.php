@@ -7,6 +7,7 @@ use App\Models\Contract;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ActivityAssignedNotification;
+use App\Notifications\ActivityChecklistItemsAddedNotification;
 use App\Notifications\ActivityCommentedNotification;
 use App\Notifications\ActivityFileUploadedNotification;
 use App\Notifications\ActivityStatusChangedNotification;
@@ -1077,6 +1078,8 @@ class TenantActivityTest extends TestCase
 
     public function test_editor_can_append_checklist_items_without_changing_existing_progress(): void
     {
+        Notification::fake();
+
         [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
 
         $activity = $tenant->activities()->create([
@@ -1143,6 +1146,99 @@ class TenantActivityTest extends TestCase
             'is_completed' => false,
         ]);
         $this->assertSame(4, $activity->checklistItems()->count());
+        Notification::assertSentTo($admin, ActivityChecklistItemsAddedNotification::class);
+    }
+
+    public function test_editor_can_reorder_checklist_and_notify_creator_and_assignee_when_adding_stage(): void
+    {
+        Notification::fake();
+
+        [$tenant, $admin, $contract] = $this->tenantWithUser('tenant_admin');
+        $assignee = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $assignee->id,
+            'role' => 'engineer',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+        ]);
+        $contract->participants()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $assignee->id,
+            'side' => 'manager',
+            'role' => 'team_member',
+            'status' => 'active',
+            'activity_permissions' => [ActivityPermissions::VIEW],
+        ]);
+
+        $activity = $tenant->activities()->create([
+            'contract_id' => $contract->id,
+            'created_by_id' => $admin->id,
+            'activity_type' => Activity::TYPE_CHECKLIST,
+            'title' => 'Liberacao de frente',
+            'description' => 'Checklist operacional.',
+            'category' => 'field',
+            'visibility' => Activity::VISIBILITY_RESTRICTED,
+            'status' => 'in_progress',
+            'priority' => 'high',
+        ]);
+        $activity->assignees()->sync([$assignee->id]);
+
+        $completedItem = $activity->checklistItems()->create([
+            'label' => 'Conferir projeto',
+            'position' => 0,
+            'is_completed' => true,
+            'completed_by_id' => $assignee->id,
+            'completed_at' => now(),
+        ]);
+        $pendingItem = $activity->checklistItems()->create([
+            'label' => 'Isolar area',
+            'position' => 1,
+        ]);
+        $lastItem = $activity->checklistItems()->create([
+            'label' => 'Liberar equipe',
+            'position' => 2,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('tenant.activities.update', [$tenant, $activity]), [
+                'title' => $activity->title,
+                'description' => $activity->description,
+                'category' => $activity->category,
+                'visibility' => $activity->visibility,
+                'priority' => $activity->priority,
+                'assigned_to_ids' => [$assignee->id],
+                'checklist_items' => [
+                    ['id' => $lastItem->id, 'label' => $lastItem->label],
+                    ['id' => $completedItem->id, 'label' => $completedItem->label],
+                    ['id' => null, 'label' => 'Registrar evidencia fotografica'],
+                    ['id' => $pendingItem->id, 'label' => $pendingItem->label],
+                ],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(
+            ['Liberar equipe', 'Conferir projeto', 'Registrar evidencia fotografica', 'Isolar area'],
+            $activity->checklistItems()->orderBy('position')->pluck('label')->all(),
+        );
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'id' => $completedItem->id,
+            'position' => 1,
+            'is_completed' => true,
+            'completed_by_id' => $assignee->id,
+        ]);
+        $this->assertDatabaseHas('activity_checklist_items', [
+            'activity_id' => $activity->id,
+            'label' => 'Registrar evidencia fotografica',
+            'position' => 2,
+            'is_completed' => false,
+        ]);
+
+        Notification::assertSentTo(
+            [$admin, $assignee],
+            ActivityChecklistItemsAddedNotification::class,
+            fn ($notification, array $channels): bool => in_array('database', $channels, true) && in_array('mail', $channels, true),
+        );
     }
 
     public function test_assigned_user_can_complete_and_reopen_checklist_item(): void

@@ -9,7 +9,9 @@ use App\Models\FolhaRosto;
 use App\Models\FolhaRostoItem;
 use App\Models\MedicaoItem;
 use App\Models\Tenant;
+use App\Support\MedicaoItemValueResolver;
 use App\Support\MedicaoPermissions;
+use App\Support\MedicaoReajusteCalculator;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -38,8 +40,13 @@ class MedicaoRelatorioController extends Controller
             ->orderBy('code')
             ->get(['id', 'code', 'name']);
 
+        if ($selectedContractId && ! $contracts->contains('id', $selectedContractId)) {
+            $selectedContractId = null;
+        }
+
         $boletins = BoletimMedicao::query()
             ->where('tenant_id', $tenant->id)
+            ->when($contractIds !== null, fn ($query) => $query->whereIn('contract_id', $contractIds))
             ->when($selectedContractId, fn ($query) => $query->where('contract_id', $selectedContractId))
             ->when(! $selectedContractId, fn ($query) => $query->whereRaw('1 = 0'))
             ->orderByDesc('periodo')
@@ -53,6 +60,7 @@ class MedicaoRelatorioController extends Controller
         $boletim = $selectedBoletimId
             ? BoletimMedicao::query()
                 ->where('tenant_id', $tenant->id)
+                ->when($contractIds !== null, fn ($query) => $query->whereIn('contract_id', $contractIds))
                 ->when($selectedContractId, fn ($query) => $query->where('contract_id', $selectedContractId))
                 ->with($this->boletimReportRelations())
                 ->find($selectedBoletimId)
@@ -70,6 +78,7 @@ class MedicaoRelatorioController extends Controller
                 ['value' => 'sintetico', 'label' => 'Sintético'],
                 ['value' => 'por_fr', 'label' => 'Por FR'],
                 ['value' => 'resumo', 'label' => 'Resumo'],
+                ['value' => 'fluxo_fr', 'label' => 'Fluxo das FRs'],
             ],
             'boletim' => $boletim ? $this->serializeBoletim($boletim) : null,
             'reportData' => $this->reportData($tenant, $boletim, $selectedReport),
@@ -247,6 +256,36 @@ class MedicaoRelatorioController extends Controller
         return $pdf->download($this->exportFileName($boletim, 'resumo', 'pdf'));
     }
 
+    public function exportFluxoFrExcel(Request $request, Tenant $tenant): StreamedResponse
+    {
+        $boletim = $this->resolveBoletimForExport($request, $tenant);
+        $headers = $this->fluxoFrHeaders();
+        $rows = $this->fluxoFrRows($tenant, $boletim);
+        $spreadsheet = $this->buildFlowSpreadsheet($boletim, $headers, $rows);
+
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            $writer = new Xlsx($spreadsheet);
+            $writer->setPreCalculateFormulas(false);
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $this->exportFileName($boletim, 'fluxo-fr', 'xlsx'), [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    public function exportFluxoFrPdf(Request $request, Tenant $tenant)
+    {
+        $boletim = $this->resolveBoletimForExport($request, $tenant);
+
+        $pdf = Pdf::loadView('pdf.medicao-fluxo-fr', [
+            'boletim' => $this->serializeBoletim($boletim),
+            'headers' => $this->fluxoFrHeaders(),
+            'rows' => $this->fluxoFrRows($tenant, $boletim),
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download($this->exportFileName($boletim, 'fluxo-fr', 'pdf'));
+    }
+
     /**
      * @return array<int, array{key: string, label: string, numeric?: bool, money?: bool}>
      */
@@ -333,6 +372,20 @@ class MedicaoRelatorioController extends Controller
         ];
     }
 
+    private function fluxoFrHeaders(): array
+    {
+        return [
+            ['key' => 'fr', 'label' => 'FR'],
+            ['key' => 'os', 'label' => 'OS'],
+            ['key' => 'evento', 'label' => 'Evento'],
+            ['key' => 'etapa', 'label' => 'Etapa'],
+            ['key' => 'data_hora', 'label' => 'Data e hora'],
+            ['key' => 'executado_por', 'label' => 'Executado por'],
+            ['key' => 'responsaveis', 'label' => 'Responsáveis da etapa'],
+            ['key' => 'observacao', 'label' => 'Observação'],
+        ];
+    }
+
     private function reportData(Tenant $tenant, ?BoletimMedicao $boletim, string $selectedReport): array
     {
         $headers = $this->headersForReport($selectedReport);
@@ -365,6 +418,7 @@ class MedicaoRelatorioController extends Controller
             'sintetico' => $this->sinteticoHeaders(),
             'por_fr' => $this->porFrHeaders(),
             'resumo' => $this->resumoHeaders(),
+            'fluxo_fr' => $this->fluxoFrHeaders(),
             default => $this->pleitoPreliminarHeaders(),
         };
     }
@@ -376,6 +430,7 @@ class MedicaoRelatorioController extends Controller
             'sintetico' => $this->sinteticoRows($tenant, $boletim),
             'por_fr' => $this->porFrRows($tenant, $boletim),
             'resumo' => $this->resumoRows($tenant, $boletim),
+            'fluxo_fr' => $this->fluxoFrRows($tenant, $boletim),
             default => $this->pleitoPreliminarRows($tenant, $boletim),
         };
     }
@@ -387,6 +442,7 @@ class MedicaoRelatorioController extends Controller
             'sintetico' => 'Sintético',
             'por_fr' => 'Por FR',
             'resumo' => 'Resumo',
+            'fluxo_fr' => 'Fluxo das FRs',
             default => 'Pleito preliminar',
         };
     }
@@ -398,8 +454,154 @@ class MedicaoRelatorioController extends Controller
             'sintetico' => 'Apresenta acumulados anteriores, execução no período, acumulado atual, saldo e reajustamento somente de FRs finalizadas.',
             'por_fr' => 'Detalha os itens medidos no BM selecionado, separados pela Folha de Rosto de origem.',
             'resumo' => "Resume o valor P0 geral do contrato e a evolu\u{00E7}\u{00E3}o por planilha no BM selecionado.",
+            'fluxo_fr' => 'Apresenta a trilha de envio, análises, encaminhamentos, retornos e finalização de cada FR do BM.',
             default => 'Consolida os quantitativos pleiteados pela construtora no BM selecionado.',
         };
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fluxoFrRows(Tenant $tenant, BoletimMedicao $boletim): array
+    {
+        $folhas = FolhaRosto::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('boletim_medicao_id', $boletim->id)
+            ->with([
+                'creator:id,name,email',
+                'obra:id,codigo,nome',
+                'ordemServico:id,codigo',
+                'analises.user:id,name,email',
+                'fluxoHistoricos' => fn ($query) => $query->with('user:id,name,email')->orderBy('created_at')->orderBy('id'),
+            ])
+            ->orderBy('codigo')
+            ->get();
+
+        return $folhas->flatMap(function (FolhaRosto $folha): array {
+            $histories = $folha->fluxoHistoricos;
+            $events = collect();
+
+            if ($folha->submitted_for_analysis_at && ! $histories->contains('acao', 'submeter_analise')) {
+                $events->push([
+                    'event_sort' => $folha->submitted_for_analysis_at->getTimestamp(),
+                    'fr' => $folha->codigo,
+                    'os' => $folha->ordemServico?->codigo ?? 'Medição simples',
+                    'evento' => 'Enviada para análise',
+                    'etapa' => 'Fiscal',
+                    'data_hora' => $folha->submitted_for_analysis_at->format('d/m/Y H:i'),
+                    'executado_por' => 'Não registrado no histórico',
+                    'responsaveis' => 'Não registrado no histórico',
+                    'observacao' => 'Registro anterior à trilha completa de auditoria.',
+                ]);
+            }
+
+            foreach ($histories as $history) {
+                $events->push([
+                    'event_sort' => $history->created_at?->getTimestamp() ?? 0,
+                    'fr' => $folha->codigo,
+                    'os' => $folha->ordemServico?->codigo ?? 'Medição simples',
+                    'evento' => $this->flowActionLabel((string) $history->acao),
+                    'etapa' => $this->flowStatusLabel((string) $history->status_destino),
+                    'data_hora' => $history->created_at?->format('d/m/Y H:i') ?? '-',
+                    'executado_por' => $this->flowUserLabel($history->user),
+                    'responsaveis' => $this->flowSnapshotLabel($history->responsaveis_snapshot),
+                    'observacao' => $history->motivo ?: '-',
+                ]);
+            }
+
+            $analysisStatusesWithAudit = $histories
+                ->where('acao', 'registrar_analise')
+                ->pluck('status_destino')
+                ->all();
+
+            foreach ($folha->analises as $analise) {
+                $status = 'analise_'.$analise->setor;
+
+                if (in_array($status, $analysisStatusesWithAudit, true)) {
+                    continue;
+                }
+
+                $events->push([
+                    'event_sort' => $analise->updated_at?->getTimestamp() ?? 0,
+                    'fr' => $folha->codigo,
+                    'os' => $folha->ordemServico?->codigo ?? 'Medição simples',
+                    'evento' => 'Análise registrada',
+                    'etapa' => $this->flowStatusLabel($status),
+                    'data_hora' => $analise->updated_at?->format('d/m/Y H:i') ?? '-',
+                    'executado_por' => $this->flowUserLabel($analise->user),
+                    'responsaveis' => 'Não registrado no histórico',
+                    'observacao' => $analise->comentario_geral ?: '-',
+                ]);
+            }
+
+            $group = [
+                '_is_group' => true,
+                'group_title' => collect([
+                    $folha->codigo,
+                    $folha->ordemServico?->codigo,
+                    $folha->obra ? "{$folha->obra->codigo} - {$folha->obra->nome}" : null,
+                ])->filter()->implode(' | '),
+            ];
+
+            return array_merge([$group], $events->sortBy('event_sort')->values()->all());
+        })->values()->all();
+    }
+
+    private function flowActionLabel(string $action): string
+    {
+        return match ($action) {
+            'submeter_analise' => 'Enviada para análise',
+            'registrar_analise' => 'Análise registrada',
+            'fiscal' => 'Encaminhada ao fiscal',
+            'qualidade' => 'Encaminhada à qualidade',
+            'medicao' => 'Encaminhada à medição',
+            'retornar_construtora' => 'Retornada à construtora',
+            'finalizar' => 'Finalizada',
+            default => Str::headline($action),
+        };
+    }
+
+    private function flowStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'rascunho' => 'Rascunho',
+            'retornada' => 'Construtora',
+            'analise_fiscal' => 'Fiscal',
+            'analise_qualidade' => 'Qualidade',
+            'analise_medicao' => 'Medição',
+            'analisada' => 'Finalizada',
+            default => Str::headline($status),
+        };
+    }
+
+    private function flowUserLabel(mixed $user): string
+    {
+        if (! $user) {
+            return 'Não registrado no histórico';
+        }
+
+        return $user->email ? "{$user->name} ({$user->email})" : (string) $user->name;
+    }
+
+    private function flowSnapshotLabel(?array $snapshot): string
+    {
+        if ($snapshot === null) {
+            return 'Não registrado no histórico';
+        }
+
+        if ($snapshot === []) {
+            return 'Nenhum responsável configurado';
+        }
+
+        return collect($snapshot)
+            ->map(function (array $user): string {
+                $name = trim((string) ($user['name'] ?? ''));
+                $email = trim((string) ($user['email'] ?? ''));
+
+                return $email !== '' ? "{$name} ({$email})" : $name;
+            })
+            ->filter()
+            ->implode('; ');
     }
 
     /**
@@ -446,7 +648,7 @@ class MedicaoRelatorioController extends Controller
                 $quantity = (float) $rows->sum(fn (array $row): float => (float) $row['item']->quantidade_pleiteada);
                 $valoresItem = $this->effectiveMedicaoItemValues($medicaoItem, $boletim->periodo, $ordemItem);
                 $precoUnitarioP0 = $valoresItem['preco_unitario_p0'];
-                    $precoUnitarioReajustado = $this->adjustedValue($precoUnitarioP0, $medicaoItem, $boletim->periodo);
+                $precoUnitarioReajustado = $this->adjustedValue($precoUnitarioP0, $medicaoItem, $boletim->periodo);
                 $frCodes = $rows
                     ->map(fn (array $row): string => $row['folha']->codigo)
                     ->unique()
@@ -1021,40 +1223,12 @@ class MedicaoRelatorioController extends Controller
      */
     private function effectiveMedicaoItemValues(?MedicaoItem $item, mixed $competencia = null, mixed $ordemItem = null): array
     {
-        if (! $item) {
-            $quantidade = (float) ($ordemItem?->quantidade_solicitada ?? 0);
-            $valorTotal = (float) ($ordemItem?->valor_previsto ?? 0);
-
-            return [
-                'quantidade_total' => $quantidade,
-                'preco_unitario_p0' => $quantidade > 0 ? $valorTotal / $quantidade : 0.0,
-                'valor_total_p0' => $valorTotal,
-            ];
-        }
-
-        $competenciaReferencia = $competencia ? \Illuminate\Support\Carbon::parse($competencia)->endOfMonth() : null;
-        $versions = $item->relationLoaded('versions') ? $item->versions : $item->versions()->get();
-        $version = $competenciaReferencia
-            ? $versions
-                ->filter(fn ($version): bool => ! $version->starts_at || $version->starts_at->lte($competenciaReferencia))
-                ->sortByDesc('version_number')
-                ->first()
-            : $versions->sortByDesc('version_number')->first();
-
-        $quantidade = (float) ($version?->quantidade_prevista ?? $item->quantidade_prevista ?? $ordemItem?->quantidade_solicitada ?? 0);
-        $precoUnitario = (float) ($version?->valor_com_bdi ?? $item->valor_com_bdi ?? 0);
-        $valorTotal = (float) ($version?->valor_total ?? ($quantidade * $precoUnitario));
-
-        return [
-            'quantidade_total' => $quantidade,
-            'preco_unitario_p0' => $precoUnitario,
-            'valor_total_p0' => $valorTotal,
-        ];
+        return MedicaoItemValueResolver::resolve($item, $competencia, $ordemItem);
     }
 
     private function adjustedValue(float $baseValue, ?MedicaoItem $item, mixed $competencia = null): float
     {
-        return round($baseValue * (1 + ($this->adjustmentPercentage($item, $competencia) / 100)), 6);
+        return MedicaoReajusteCalculator::adjustedValue($baseValue, $item, $competencia);
     }
 
     private function planilhaKeyFromItem(?string $item): string
@@ -1082,45 +1256,87 @@ class MedicaoRelatorioController extends Controller
 
     private function adjustmentPercentage(?MedicaoItem $item, mixed $competencia = null): float
     {
-        $indice = $item?->reajusteIndice?->indice;
-
-        if (! $indice || (float) $indice->indice_base <= 0) {
-            return 0.0;
-        }
-
-        $competenciaReferencia = $competencia ? \Illuminate\Support\Carbon::parse($competencia)->startOfMonth() : null;
-        $latestCompetencia = $indice->competencias
-            ->when($competenciaReferencia, fn (Collection $competencias): Collection => $competencias
-                ->filter(fn ($competencia): bool => $competencia->competencia && $competencia->competencia->startOfMonth()->lte($competenciaReferencia)))
-            ->sortByDesc('competencia')
-            ->first();
-
-        $currentIndex = $latestCompetencia
-            ? (float) $latestCompetencia->valor_indice
-            : ($competenciaReferencia ? (float) $indice->indice_base : (float) $indice->indice_atual);
-
-        return (($currentIndex - (float) $indice->indice_base) / (float) $indice->indice_base) * 100;
+        return MedicaoReajusteCalculator::percentage($item, $competencia);
     }
 
     private function resolveBoletimForExport(Request $request, Tenant $tenant): BoletimMedicao
     {
         $boletimId = $request->integer('boletim_id');
+        $contractIds = MedicaoPermissions::contractIdsFor($request->user(), $tenant, MedicaoPermissions::REPORTS);
 
         abort_unless($boletimId, 404);
 
         return BoletimMedicao::query()
             ->where('tenant_id', $tenant->id)
+            ->when($contractIds !== null, fn ($query) => $query->whereIn('contract_id', $contractIds))
             ->with($this->boletimReportRelations())
             ->findOrFail($boletimId);
     }
 
+    private function buildFlowSpreadsheet(BoletimMedicao $boletim, array $headers, array $rows): Spreadsheet
+    {
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Fluxo das FRs');
+        $lastColumn = Coordinate::stringFromColumnIndex(count($headers));
+
+        $sheet->setCellValue('A1', 'Fluxo das Folhas de Rosto');
+        $sheet->setCellValue('A2', "{$boletim->codigo} | Referência {$boletim->periodo?->format('m/y')} | {$boletim->tipo}");
+        $sheet->mergeCells("A1:{$lastColumn}1");
+        $sheet->mergeCells("A2:{$lastColumn}2");
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(15);
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(10);
+
+        foreach ($headers as $columnIndex => $header) {
+            $column = Coordinate::stringFromColumnIndex($columnIndex + 1);
+            $sheet->setCellValue("{$column}4", $header['label']);
+        }
+
+        $rowNumber = 5;
+        foreach ($rows as $row) {
+            if ($row['_is_group'] ?? false) {
+                $sheet->setCellValueExplicit("A{$rowNumber}", (string) ($row['group_title'] ?? ''), DataType::TYPE_STRING);
+                $sheet->mergeCells("A{$rowNumber}:{$lastColumn}{$rowNumber}");
+                $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->getFont()->setBold(true);
+                $sheet->getStyle("A{$rowNumber}:{$lastColumn}{$rowNumber}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('DBEAFE');
+                $rowNumber++;
+
+                continue;
+            }
+
+            foreach ($headers as $columnIndex => $header) {
+                $column = Coordinate::stringFromColumnIndex($columnIndex + 1);
+                $sheet->setCellValueExplicit("{$column}{$rowNumber}", (string) ($row[$header['key']] ?? ''), DataType::TYPE_STRING);
+            }
+
+            $rowNumber++;
+        }
+
+        $lastRow = max(4, $rowNumber - 1);
+        $sheet->freezePane('A5');
+        $sheet->setAutoFilter("A4:{$lastColumn}4");
+        $sheet->getStyle("A4:{$lastColumn}4")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => '111827']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F3F4F6']],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']]],
+        ]);
+        $sheet->getStyle("A5:{$lastColumn}{$lastRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('E5E7EB');
+        $sheet->getStyle("A5:{$lastColumn}{$lastRow}")->getAlignment()->setVertical(Alignment::VERTICAL_TOP)->setWrapText(true);
+
+        foreach ([14, 18, 24, 14, 18, 34, 42, 42] as $index => $width) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($index + 1))->setWidth($width);
+        }
+
+        return $spreadsheet;
+    }
+
     /**
-     * @param array<int, array{key: string, label: string, numeric?: bool, money?: bool}> $headers
-     * @param array<int, array<string, mixed>> $rows
+     * @param  array<int, array{key: string, label: string, numeric?: bool, money?: bool}>  $headers
+     * @param  array<int, array<string, mixed>>  $rows
      */
     private function buildPleitoPreliminarSpreadsheet(BoletimMedicao $boletim, array $headers, array $rows, string $title = 'Pleito preliminar', array $totals = []): Spreadsheet
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle(Str::limit($title, 31, ''));
 

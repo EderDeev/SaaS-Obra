@@ -55,7 +55,7 @@ function Field({ label, error, children, className = '' }) {
 export default function IndicesReajuste({ tenant, contracts, selectedContractId, indices, itensReajuste = [] }) {
     const pageProps = usePage().props;
     const { flash = {} } = pageProps;
-    const canManageItems = Boolean(pageProps.medicaoPermissions?.can?.manage_measurement_items);
+    const canManageItems = Boolean(pageProps.medicaoPermissions?.can?.manage_measurement_adjustment_indices);
     const [showCreate, setShowCreate] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [showLinks, setShowLinks] = useState(false);

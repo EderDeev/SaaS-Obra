@@ -645,6 +645,9 @@ class OrcamentoController extends Controller
                     : '';
                 $newOrder = $rootOrderMap[$rootOrder].$suffix;
                 $meta = $sourceEtapa->meta ?? [];
+                $meta['origin_orcamento_etapa_id'] = $meta['origin_orcamento_etapa_id']
+                    ?? $meta['copied_from_etapa_id']
+                    ?? $sourceEtapa->id;
                 $meta['copied_from_orcamento_id'] = $sourceOrcamento->id;
                 $meta['copied_from_etapa_id'] = $sourceEtapa->id;
 
@@ -672,6 +675,9 @@ class OrcamentoController extends Controller
                     }
 
                     $meta = $sourceItem->meta ?? [];
+                    $meta['origin_orcamento_item_id'] = $meta['origin_orcamento_item_id']
+                        ?? $meta['copied_from_item_id']
+                        ?? $sourceItem->id;
                     $meta['copied_from_orcamento_id'] = $sourceOrcamento->id;
                     $meta['copied_from_item_id'] = $sourceItem->id;
 
@@ -7664,8 +7670,7 @@ class OrcamentoController extends Controller
         Orcamento $orcamento,
         string $search = '',
         bool $available = false,
-    ): array
-    {
+    ): array {
         $accessLevels = $orcamento->relationLoaded('accesses')
             ? $orcamento->accesses->pluck('access_level', 'user_id')
             : OrcamentoAcesso::query()

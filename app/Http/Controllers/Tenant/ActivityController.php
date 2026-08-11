@@ -9,6 +9,7 @@ use App\Models\Contract;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ActivityAssignedNotification;
+use App\Notifications\ActivityChecklistItemsAddedNotification;
 use App\Notifications\ActivityCommentedNotification;
 use App\Notifications\ActivityFileUploadedNotification;
 use App\Notifications\ActivityStatusChangedNotification;
@@ -401,15 +402,29 @@ class ActivityController extends Controller
             'due_date' => ['nullable', 'date'],
             'assigned_to_ids' => ['nullable', 'array'],
             'assigned_to_ids.*' => ['integer', 'exists:users,id'],
+            'checklist_items' => ['nullable', 'array', 'max:50'],
+            'checklist_items.*.id' => ['nullable', 'integer'],
+            'checklist_items.*.label' => ['required', 'string', 'max:500'],
             'new_checklist_items' => ['nullable', 'array', 'max:50'],
             'new_checklist_items.*' => ['required', 'string', 'max:500'],
         ]);
 
+        $checklistItems = collect($data['checklist_items'] ?? [])
+            ->map(fn (array $item): array => [
+                'id' => filled($item['id'] ?? null) ? (int) $item['id'] : null,
+                'label' => trim((string) $item['label']),
+            ])
+            ->values();
         $newChecklistItems = collect($data['new_checklist_items'] ?? [])
             ->map(fn (string $label): string => trim($label))
             ->values();
+        $addedChecklistItems = $checklistItems
+            ->whereNull('id')
+            ->pluck('label')
+            ->concat($newChecklistItems)
+            ->values();
 
-        if ($activity->activity_type !== Activity::TYPE_CHECKLIST && $newChecklistItems->isNotEmpty()) {
+        if ($activity->activity_type !== Activity::TYPE_CHECKLIST && ($checklistItems->isNotEmpty() || $newChecklistItems->isNotEmpty())) {
             throw ValidationException::withMessages([
                 'new_checklist_items' => 'Novas etapas só podem ser adicionadas a uma atividade do tipo checklist.',
             ]);
@@ -431,7 +446,7 @@ class ActivityController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($activity, $assignedUserIds, $data, $newChecklistItems): void {
+        DB::transaction(function () use ($activity, $assignedUserIds, $data, $checklistItems, $newChecklistItems): void {
             Activity::query()->whereKey($activity->id)->lockForUpdate()->firstOrFail();
 
             $activity->update([
@@ -446,7 +461,42 @@ class ActivityController extends Controller
 
             $activity->assignees()->sync($assignedUserIds);
 
-            if ($newChecklistItems->isNotEmpty()) {
+            if ($checklistItems->isNotEmpty()) {
+                $existingItems = $activity->checklistItems()
+                    ->lockForUpdate()
+                    ->orderBy('position')
+                    ->get(['id', 'position']);
+
+                $existingIds = $existingItems->pluck('id')->map(fn ($id): int => (int) $id)->sort()->values();
+                $submittedIds = $checklistItems->pluck('id')->filter()->map(fn ($id): int => (int) $id);
+
+                if ($checklistItems->count() > 50) {
+                    throw ValidationException::withMessages([
+                        'checklist_items' => 'O checklist pode ter no maximo 50 etapas.',
+                    ]);
+                }
+
+                if ($submittedIds->duplicates()->isNotEmpty() || $submittedIds->sort()->values()->all() !== $existingIds->all()) {
+                    throw ValidationException::withMessages([
+                        'checklist_items' => 'Todas as etapas atuais devem ser mantidas uma unica vez.',
+                    ]);
+                }
+
+                $checklistItems->each(function (array $item, int $position) use ($activity): void {
+                    if ($item['id']) {
+                        $activity->checklistItems()
+                            ->whereKey($item['id'])
+                            ->update(['position' => $position]);
+
+                        return;
+                    }
+
+                    $activity->checklistItems()->create([
+                        'label' => $item['label'],
+                        'position' => $position,
+                    ]);
+                });
+            } elseif ($newChecklistItems->isNotEmpty()) {
                 $existingItems = $activity->checklistItems()->lockForUpdate()->get(['position']);
 
                 if ($existingItems->count() + $newChecklistItems->count() > 50) {
@@ -470,7 +520,15 @@ class ActivityController extends Controller
             }
         });
 
-        $message = $newChecklistItems->isNotEmpty()
+        if ($addedChecklistItems->isNotEmpty()) {
+            $updatedActivity = $activity->fresh();
+            $this->notifyActivityParticipants(
+                $updatedActivity,
+                new ActivityChecklistItemsAddedNotification($updatedActivity, $request->user(), $addedChecklistItems->all()),
+            );
+        }
+
+        $message = $addedChecklistItems->isNotEmpty()
             ? 'Atividade atualizada e novas etapas adicionadas ao checklist.'
             : 'Atividade atualizada.';
 

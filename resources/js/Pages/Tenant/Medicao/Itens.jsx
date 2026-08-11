@@ -291,8 +291,11 @@ export default function MedicaoItens({
     const { props } = usePage();
     const flash = props?.flash || {};
     const canManageItems = Boolean(props.medicaoPermissions?.can?.manage_measurement_items);
+    const canImportItems = Boolean(props.medicaoPermissions?.can?.import_measurement_items);
+    const canManageAdditives = Boolean(props.medicaoPermissions?.can?.manage_measurement_item_additives);
+    const canEditItemBase = canManageItems || canImportItems;
     const [importOptionsOpen, setImportOptionsOpen] = useState(false);
-    const [activePanel, setActivePanel] = useState('orcamento');
+    const [activePanel, setActivePanel] = useState(canImportItems ? 'orcamento' : 'manual');
     const [additiveOptionsOpen, setAdditiveOptionsOpen] = useState(false);
     const [activeAdditivePanel, setActiveAdditivePanel] = useState('orcamento');
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
@@ -592,7 +595,8 @@ export default function MedicaoItens({
                     </div>
                 ) : null}
 
-                {canManageItems && <div className="flex flex-wrap items-center gap-3">
+                {(canEditItemBase || canManageAdditives) && <div className="flex flex-wrap items-center gap-3">
+                    {canEditItemBase ? (
                     <button
                         type="button"
                         onClick={() => {
@@ -606,6 +610,8 @@ export default function MedicaoItens({
                         </span>
                         {importOptionsOpen ? 'Ocultar importação' : 'Importar itens'}
                     </button>
+                    ) : null}
+                    {canManageAdditives ? (
                     <button
                         type="button"
                         onClick={() => {
@@ -619,35 +625,36 @@ export default function MedicaoItens({
                         </span>
                         {additiveOptionsOpen ? 'Ocultar aditivo' : 'Aditivo de itens'}
                     </button>
+                    ) : null}
                 </div>}
 
                 {importOptionsOpen ? (
                     <>
                 <section className="grid gap-4 md:grid-cols-3">
-                    <PanelButton
+                    {canImportItems ? <PanelButton
                         active={activePanel === 'orcamento'}
                         icon={ClipboardList}
                         title="Usar orçamento criado"
                         description="Puxa etapas e itens de um orçamento finalizado, mas grava tudo no contrato escolhido."
                         colorClass="bg-blue-50 text-blue-700"
                         onClick={() => setActivePanel('orcamento')}
-                    />
-                    <PanelButton
+                    /> : null}
+                    {canImportItems ? <PanelButton
                         active={activePanel === 'importar'}
                         icon={Upload}
                         title="Importar base de itens"
                         description="Importa uma planilha CSV no padrão do relatório sintético."
                         colorClass="bg-amber-50 text-amber-700"
                         onClick={() => setActivePanel('importar')}
-                    />
-                    <PanelButton
+                    /> : null}
+                    {canManageItems ? <PanelButton
                         active={activePanel === 'manual'}
                         icon={Plus}
                         title="Criar manualmente"
                         description="Cria um item avulso para o contrato quando ele não vier de orçamento ou planilha."
                         colorClass="bg-emerald-50 text-emerald-700"
                         onClick={() => setActivePanel('manual')}
-                    />
+                    /> : null}
                 </section>
 
                 <section className="sig-card overflow-hidden">

@@ -18,6 +18,41 @@ class TenantFolhaRostoTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_future_boletim_types_cannot_be_opened_yet(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'empresa-bm-futuro',
+            'name' => 'Empresa BM Futuro',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $user = User::factory()->create();
+        $tenant->memberships()->create([
+            'user_id' => $user->id,
+            'role' => 'tenant_owner',
+            'status' => 'active',
+        ]);
+        $contract = $tenant->contracts()->create([
+            'code' => '012/2027-BM',
+            'name' => 'Contrato BM Futuro',
+            'status' => 'active',
+        ]);
+
+        foreach (['reequilibrio', 'contingencia'] as $type) {
+            $this->actingAs($user)
+                ->from(route('tenant.medicao.boletim-medicao.index', $tenant))
+                ->post(route('tenant.medicao.boletim-medicao.store', $tenant), [
+                    'contract_id' => $contract->id,
+                    'periodo_referencia' => '08/27',
+                    'tipo' => $type,
+                ])
+                ->assertRedirect(route('tenant.medicao.boletim-medicao.index', $tenant))
+                ->assertSessionHasErrors('tipo');
+        }
+
+        $this->assertDatabaseCount('boletins_medicao', 0);
+    }
+
     public function test_boletim_medicao_can_be_created_and_receive_folha_rosto(): void
     {
         Storage::fake('public');
