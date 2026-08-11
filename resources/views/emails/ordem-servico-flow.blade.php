@@ -63,8 +63,8 @@
                                     <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">{{ $obraLabel ?: 'Não informada' }}</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Prazo de execução</td>
-                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">{{ $ordem->prazo_execucao?->format('d/m/Y') ?: 'Sem prazo' }}</td>
+                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Período previsto</td>
+                                    <td style="padding:10px 0;border-bottom:1px solid #eef2f7;text-align:right;font-size:13px;font-weight:700;">{{ $ordem->prazo_inicio?->format('d/m/Y') ?: 'Não informado' }} até {{ $ordem->prazo_finalizacao?->format('d/m/Y') ?: 'não informada' }}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;">Custo previsto</td>

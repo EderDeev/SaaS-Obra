@@ -114,6 +114,8 @@ class OrdemServicoWorkflowNotificationTest extends TestCase
             'created_by_id' => $actor->id,
             'codigo' => 'OS-0050',
             'titulo' => 'Executar serviço',
+            'prazo_inicio' => '2026-08-01',
+            'prazo_finalizacao' => '2026-08-15',
             'prazo_execucao' => '2026-08-15',
             'custo_previsto' => 125000,
         ]);

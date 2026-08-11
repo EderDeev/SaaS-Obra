@@ -4,35 +4,36 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\BoletimMedicao;
+use App\Models\Contract;
 use App\Models\Empresa;
 use App\Models\FolhaRosto;
 use App\Models\FolhaRostoAnalise;
 use App\Models\FolhaRostoAnaliseResponsavel;
 use App\Models\FolhaRostoFluxoHistorico;
 use App\Models\FolhaRostoItem;
-use App\Models\Contract;
 use App\Models\MedicaoItem;
 use App\Models\Obra;
 use App\Models\OrdemServico;
 use App\Models\OrdemServicoItem;
 use App\Models\Tenant;
-use App\Support\MedicaoPermissions;
 use App\Models\TipoEmpresa;
 use App\Models\User;
-use App\Notifications\FolhaRostoSubmittedForAnalysisNotification;
 use App\Notifications\FolhaRostoFlowChangedNotification;
+use App\Notifications\FolhaRostoSubmittedForAnalysisNotification;
+use App\Support\MedicaoPermissions;
+use App\Support\MedicaoReajusteCalculator;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FolhaRostoController extends Controller
 {
@@ -72,49 +73,49 @@ class FolhaRostoController extends Controller
 
         if ($selectedContract?->measurement_mode === 'controlled') {
             $ordens = OrdemServico::query()
-            ->where('tenant_id', $tenant->id)
-            ->when($selectedContractId, fn ($query) => $query->where('contract_id', $selectedContractId))
-            ->whereIn('status', ['aprovada', 'em_execucao', 'concluida'])
-            ->with([
-                'contract:id,code,name',
-                'obra:id,codigo,nome',
-                'creator:id,name',
-            ])
-            ->withCount([
-                'folhasRosto as folhas_rosto_total' => fn ($query) => $query
-                    ->when($boletim, fn ($query) => $query->where('boletim_medicao_id', $boletim->id)),
-                'folhasRosto as folhas_rosto_abertas' => fn ($query) => $query
-                    ->when($boletim, fn ($query) => $query->where('boletim_medicao_id', $boletim->id))
-                    ->whereIn('status', self::CONSUMING_STATUSES),
-            ])
-            ->latest('id')
-            ->get()
-            ->map(fn (OrdemServico $ordem): array => [
-                'id' => $ordem->id,
-                'codigo' => $ordem->codigo,
-                'titulo' => $ordem->titulo,
-                'status' => $ordem->status,
-                'custo_previsto' => (float) $ordem->custo_previsto,
-                'folhas_rosto_total' => $ordem->folhas_rosto_total,
-                'folhas_rosto_abertas' => $ordem->folhas_rosto_abertas,
-                'contract' => $ordem->contract ? [
-                    'id' => $ordem->contract->id,
-                    'code' => $ordem->contract->code,
-                    'name' => $ordem->contract->name,
-                ] : null,
-                'obra' => $ordem->obra ? [
-                    'id' => $ordem->obra->id,
-                    'codigo' => $ordem->obra->codigo,
-                    'nome' => $ordem->obra->nome,
-                ] : null,
-                'solicitante' => $ordem->creator?->name,
-            ])
-            ->groupBy(fn (array $ordem): string => (string) ($ordem['obra']['id'] ?? 'sem-obra'))
-            ->map(fn ($items): array => [
-                'obra' => $items->first()['obra'],
-                'ordens' => $items->values(),
-            ])
-            ->values();
+                ->where('tenant_id', $tenant->id)
+                ->when($selectedContractId, fn ($query) => $query->where('contract_id', $selectedContractId))
+                ->whereIn('status', ['aprovada', 'em_execucao', 'concluida'])
+                ->with([
+                    'contract:id,code,name',
+                    'obra:id,codigo,nome',
+                    'creator:id,name',
+                ])
+                ->withCount([
+                    'folhasRosto as folhas_rosto_total' => fn ($query) => $query
+                        ->when($boletim, fn ($query) => $query->where('boletim_medicao_id', $boletim->id)),
+                    'folhasRosto as folhas_rosto_abertas' => fn ($query) => $query
+                        ->when($boletim, fn ($query) => $query->where('boletim_medicao_id', $boletim->id))
+                        ->whereIn('status', self::CONSUMING_STATUSES),
+                ])
+                ->latest('id')
+                ->get()
+                ->map(fn (OrdemServico $ordem): array => [
+                    'id' => $ordem->id,
+                    'codigo' => $ordem->codigo,
+                    'titulo' => $ordem->titulo,
+                    'status' => $ordem->status,
+                    'custo_previsto' => (float) $ordem->custo_previsto,
+                    'folhas_rosto_total' => $ordem->folhas_rosto_total,
+                    'folhas_rosto_abertas' => $ordem->folhas_rosto_abertas,
+                    'contract' => $ordem->contract ? [
+                        'id' => $ordem->contract->id,
+                        'code' => $ordem->contract->code,
+                        'name' => $ordem->contract->name,
+                    ] : null,
+                    'obra' => $ordem->obra ? [
+                        'id' => $ordem->obra->id,
+                        'codigo' => $ordem->obra->codigo,
+                        'nome' => $ordem->obra->nome,
+                    ] : null,
+                    'solicitante' => $ordem->creator?->name,
+                ])
+                ->groupBy(fn (array $ordem): string => (string) ($ordem['obra']['id'] ?? 'sem-obra'))
+                ->map(fn ($items): array => [
+                    'obra' => $items->first()['obra'],
+                    'ordens' => $items->values(),
+                ])
+                ->values();
         }
 
         return Inertia::render('Tenant/Medicao/FolhaRosto/Index', [
@@ -394,77 +395,77 @@ class FolhaRostoController extends Controller
 
         try {
             DB::transaction(function () use ($request, $tenant, $ordem, $validated, $requested, $boletim, $construtora, &$storedPath): void {
-            OrdemServico::query()->whereKey($ordem->id)->lockForUpdate()->firstOrFail();
+                OrdemServico::query()->whereKey($ordem->id)->lockForUpdate()->firstOrFail();
 
-            $items = OrdemServicoItem::query()
-                ->where('ordem_servico_id', $ordem->id)
-                ->whereIn('id', $requested->keys())
-                ->with('medicaoItem')
-                ->get();
+                $items = OrdemServicoItem::query()
+                    ->where('ordem_servico_id', $ordem->id)
+                    ->whereIn('id', $requested->keys())
+                    ->with('medicaoItem')
+                    ->get();
 
-            if ($items->count() !== $requested->count()) {
-                throw ValidationException::withMessages([
-                    'itens' => 'Um ou mais itens não pertencem à OS selecionada.',
-                ]);
-            }
-
-            foreach ($items as $item) {
-                $requestedQuantity = (float) $requested[$item->id]['quantidade_pleiteada'];
-                $medicaoItem = $item->medicaoItem;
-                $consumed = $medicaoItem ? $this->consumedQuantity($medicaoItem) : 0;
-                $available = max(0, (float) ($medicaoItem?->quantidade_prevista ?? 0) - $consumed);
-
-                if ($requestedQuantity > $available + 0.000001) {
+                if ($items->count() !== $requested->count()) {
                     throw ValidationException::withMessages([
-                        "itens.{$item->id}" => "A quantidade pleiteada do item {$item->medicaoItem?->item} supera o saldo disponível.",
+                        'itens' => 'Um ou mais itens não pertencem à OS selecionada.',
                     ]);
                 }
-            }
 
-            $next = FolhaRosto::withTrashed()
-                ->where('ordem_servico_id', $ordem->id)
-                ->max('sequencial') + 1;
+                foreach ($items as $item) {
+                    $requestedQuantity = (float) $requested[$item->id]['quantidade_pleiteada'];
+                    $medicaoItem = $item->medicaoItem;
+                    $consumed = $medicaoItem ? $this->consumedQuantity($medicaoItem) : 0;
+                    $available = max(0, (float) ($medicaoItem?->quantidade_prevista ?? 0) - $consumed);
 
-            $folha = FolhaRosto::create([
-                'tenant_id' => $tenant->id,
-                'contract_id' => $ordem->contract_id,
-                'obra_id' => $ordem->obra_id,
-                'ordem_servico_id' => $ordem->id,
-                'boletim_medicao_id' => $boletim?->id,
-                'construtora_empresa_id' => $construtora->id,
-                'created_by_id' => $request->user()?->id,
-                'codigo' => "{$ordem->codigo}-FR-".str_pad((string) $next, 3, '0', STR_PAD_LEFT),
-                'sequencial' => $next,
-                'comentario' => $validated['comentario'],
-                'status' => 'rascunho',
-            ]);
+                    if ($requestedQuantity > $available + 0.000001) {
+                        throw ValidationException::withMessages([
+                            "itens.{$item->id}" => "A quantidade pleiteada do item {$item->medicaoItem?->item} supera o saldo disponível.",
+                        ]);
+                    }
+                }
 
-            $file = $request->file('memoria_calculo');
-            $storedPath = $file->store(
-                "tenant-{$tenant->id}/medicao/folhas-rosto/fr-{$folha->id}/memoria-calculo",
-                'public'
-            );
+                $next = FolhaRosto::withTrashed()
+                    ->where('ordem_servico_id', $ordem->id)
+                    ->max('sequencial') + 1;
 
-            $folha->forceFill([
-                'memoria_calculo_path' => $storedPath,
-                'memoria_calculo_nome_original' => $file->getClientOriginalName(),
-                'memoria_calculo_mime_type' => $file->getClientMimeType(),
-                'memoria_calculo_size' => $file->getSize() ?: 0,
-            ])->save();
-
-            foreach ($items as $item) {
-                $quantity = (float) $requested[$item->id]['quantidade_pleiteada'];
-                $value = $this->unitValue($item->medicaoItem) * $quantity;
-
-                $folha->itens()->create([
-                    'ordem_servico_item_id' => $item->id,
-                    'medicao_item_id' => $item->medicao_item_id,
-                    'quantidade_pleiteada' => $quantity,
-                    'valor_pleiteado' => round($value, 2),
-                    'precisa_analise_topografica' => (bool) ($requested[$item->id]['precisa_analise_topografica'] ?? false),
-                    'precisa_analise_qualidade' => (bool) ($requested[$item->id]['precisa_analise_qualidade'] ?? false),
+                $folha = FolhaRosto::create([
+                    'tenant_id' => $tenant->id,
+                    'contract_id' => $ordem->contract_id,
+                    'obra_id' => $ordem->obra_id,
+                    'ordem_servico_id' => $ordem->id,
+                    'boletim_medicao_id' => $boletim?->id,
+                    'construtora_empresa_id' => $construtora->id,
+                    'created_by_id' => $request->user()?->id,
+                    'codigo' => "{$ordem->codigo}-FR-".str_pad((string) $next, 3, '0', STR_PAD_LEFT),
+                    'sequencial' => $next,
+                    'comentario' => $validated['comentario'],
+                    'status' => 'rascunho',
                 ]);
-            }
+
+                $file = $request->file('memoria_calculo');
+                $storedPath = $file->store(
+                    "tenant-{$tenant->id}/medicao/folhas-rosto/fr-{$folha->id}/memoria-calculo",
+                    'public'
+                );
+
+                $folha->forceFill([
+                    'memoria_calculo_path' => $storedPath,
+                    'memoria_calculo_nome_original' => $file->getClientOriginalName(),
+                    'memoria_calculo_mime_type' => $file->getClientMimeType(),
+                    'memoria_calculo_size' => $file->getSize() ?: 0,
+                ])->save();
+
+                foreach ($items as $item) {
+                    $quantity = (float) $requested[$item->id]['quantidade_pleiteada'];
+                    $value = $this->unitValue($item->medicaoItem) * $quantity;
+
+                    $folha->itens()->create([
+                        'ordem_servico_item_id' => $item->id,
+                        'medicao_item_id' => $item->medicao_item_id,
+                        'quantidade_pleiteada' => $quantity,
+                        'valor_pleiteado' => round($value, 2),
+                        'precisa_analise_topografica' => (bool) ($requested[$item->id]['precisa_analise_topografica'] ?? false),
+                        'precisa_analise_qualidade' => (bool) ($requested[$item->id]['precisa_analise_qualidade'] ?? false),
+                    ]);
+                }
             });
         } catch (\Throwable $exception) {
             if ($storedPath) {
@@ -812,16 +813,30 @@ class FolhaRostoController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($folha): void {
-            FolhaRosto::query()->whereKey($folha->id)->lockForUpdate()->firstOrFail()
+        $actor = $request->user();
+        $responsaveisSnapshot = $this->usersSnapshot($responsaveis);
+
+        DB::transaction(function () use ($folha, $actor, $responsaveisSnapshot): void {
+            $lockedFolha = FolhaRosto::query()->whereKey($folha->id)->lockForUpdate()->firstOrFail();
+            $currentStatus = $lockedFolha->status;
+
+            $lockedFolha
                 ->forceFill([
                     'status' => 'analise_fiscal',
                     'submitted_for_analysis_at' => now(),
                 ])
                 ->save();
+
+            FolhaRostoFluxoHistorico::create([
+                'folha_rosto_id' => $lockedFolha->id,
+                'user_id' => $actor?->id,
+                'status_origem' => $currentStatus,
+                'status_destino' => 'analise_fiscal',
+                'acao' => 'submeter_analise',
+                'responsaveis_snapshot' => $responsaveisSnapshot,
+            ]);
         });
 
-        $actor = $request->user();
         if ($actor) {
             $folha->refresh();
             $responsaveis->each(fn (User $user) => $user->notify(
@@ -1048,8 +1063,12 @@ class FolhaRostoController extends Controller
         ]);
         $itemIds = $folha->itens->pluck('id')->map(fn ($id): int => (int) $id)->all();
         $itensById = $folha->itens->keyBy('id');
+        $analysisSector = $this->analysisSectorForStatus($folha->status);
+        $responsaveisSnapshot = $analysisSector
+            ? $this->usersSnapshot($this->responsaveisDaAnalise($tenant, $folha, $analysisSector))
+            : [];
 
-        DB::transaction(function () use ($request, $folha, $validated, $itemIds, $itensById): void {
+        DB::transaction(function () use ($request, $folha, $validated, $itemIds, $itensById, $responsaveisSnapshot): void {
             $currentSetor = $this->analysisSectorForStatus($folha->status);
 
             if (! $currentSetor || ! isset($validated['setores'][$currentSetor])) {
@@ -1108,6 +1127,16 @@ class FolhaRostoController extends Controller
                     );
                 }
             }
+
+            FolhaRostoFluxoHistorico::create([
+                'folha_rosto_id' => $folha->id,
+                'user_id' => $request->user()?->id,
+                'status_origem' => $folha->status,
+                'status_destino' => $folha->status,
+                'acao' => 'registrar_analise',
+                'motivo' => trim((string) ($validated['setores'][$currentSetor]['comentario_geral'] ?? '')) ?: null,
+                'responsaveis_snapshot' => $responsaveisSnapshot,
+            ]);
         });
 
         return back()->with('success', 'Análise do pleito salva com sucesso.');
@@ -1152,8 +1181,12 @@ class FolhaRostoController extends Controller
         }
 
         $actor = $request->user();
+        $folha->loadMissing('creator');
+        $responsaveisSnapshot = $this->usersSnapshot(
+            $this->flowDestinationUsers($tenant, $folha, $action)
+        );
 
-        DB::transaction(function () use ($folha, $actor, $action, $motivo, $nextStatus): void {
+        DB::transaction(function () use ($folha, $actor, $action, $motivo, $nextStatus, $responsaveisSnapshot): void {
             $currentStatus = $folha->status;
 
             FolhaRosto::query()
@@ -1170,6 +1203,7 @@ class FolhaRostoController extends Controller
                 'status_destino' => $nextStatus,
                 'acao' => $action,
                 'motivo' => $motivo !== '' ? $motivo : null,
+                'responsaveis_snapshot' => $responsaveisSnapshot,
             ]);
 
             $folha->forceFill(['status' => $nextStatus]);
@@ -1577,6 +1611,38 @@ class FolhaRostoController extends Controller
             )));
     }
 
+    /**
+     * @return Collection<int, User>
+     */
+    private function flowDestinationUsers(Tenant $tenant, FolhaRosto $folha, string $action): Collection
+    {
+        return match ($action) {
+            'fiscal', 'qualidade', 'medicao' => $this->responsaveisDaAnalise($tenant, $folha, $action),
+            'retornar_construtora' => $this->usuariosConstrutoraFolha($tenant, $folha),
+            'finalizar' => $this->usuariosConclusaoFolha($tenant, $folha),
+            default => collect(),
+        };
+    }
+
+    /**
+     * @param  Collection<int, User>  $users
+     * @return array<int, array{id: int, name: string, email: string}>
+     */
+    private function usersSnapshot(Collection $users): array
+    {
+        return $users
+            ->filter()
+            ->unique('id')
+            ->sortBy('name')
+            ->map(fn (User $user): array => [
+                'id' => (int) $user->id,
+                'name' => (string) $user->name,
+                'email' => (string) $user->email,
+            ])
+            ->values()
+            ->all();
+    }
+
     private function usuariosConstrutoraFolha(Tenant $tenant, FolhaRosto $folha): Collection
     {
         $userIds = DB::table('tenant_users')
@@ -1779,7 +1845,7 @@ class FolhaRostoController extends Controller
             ] : null,
             'analises' => $this->serializeAnalises($folha),
             'itens' => $folha->itens
-                ->map(fn (FolhaRostoItem $item): array => $this->serializeAnalysisItem($item))
+                ->map(fn (FolhaRostoItem $item): array => $this->serializeAnalysisItem($item, $folha->boletimMedicao?->periodo))
                 ->values()
                 ->all(),
             'ordem' => $folha->ordemServico ? [
@@ -1839,7 +1905,7 @@ class FolhaRostoController extends Controller
             ->all();
     }
 
-    private function serializeAnalysisItem(FolhaRostoItem $item): array
+    private function serializeAnalysisItem(FolhaRostoItem $item, mixed $competencia = null): array
     {
         $medicaoItem = $item->medicaoItem;
         $baseQuantity = (float) ($medicaoItem?->quantidade_prevista ?? 0);
@@ -1854,7 +1920,7 @@ class FolhaRostoController extends Controller
             'descricao' => $medicaoItem?->descricao,
             'unidade' => $medicaoItem?->unidade,
             'preco_p0' => round($precoP0, 6),
-            'preco_reajustado' => $this->adjustedValue($precoP0, $medicaoItem),
+            'preco_reajustado' => $this->adjustedValue($precoP0, $medicaoItem, $competencia),
             'saldo' => $saldo,
             'quantidade_pleiteada' => (float) $item->quantidade_pleiteada,
             'valor_pleiteado' => (float) $item->valor_pleiteado,
@@ -1905,28 +1971,9 @@ class FolhaRostoController extends Controller
         return $sector ? self::ANALYSIS_STAGES[$sector]['label'] : null;
     }
 
-    private function adjustedValue(float $baseValue, ?MedicaoItem $item): float
+    private function adjustedValue(float $baseValue, ?MedicaoItem $item, mixed $competencia = null): float
     {
-        return round($baseValue * (1 + ($this->adjustmentPercentage($item) / 100)), 6);
-    }
-
-    private function adjustmentPercentage(?MedicaoItem $item): float
-    {
-        $indice = $item?->reajusteIndice?->indice;
-
-        if (! $indice || (float) $indice->indice_base <= 0) {
-            return 0.0;
-        }
-
-        $latestCompetencia = $indice->competencias
-            ->sortByDesc('competencia')
-            ->first();
-
-        $currentIndex = $latestCompetencia
-            ? (float) $latestCompetencia->valor_indice
-            : (float) $indice->indice_atual;
-
-        return (($currentIndex - (float) $indice->indice_base) / (float) $indice->indice_base) * 100;
+        return MedicaoReajusteCalculator::adjustedValue($baseValue, $item, $competencia);
     }
 
     private function serializeBoletim(BoletimMedicao $boletim): array

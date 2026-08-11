@@ -5,6 +5,8 @@ import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     BarChart3,
+    ChevronDown,
+    ChevronUp,
     Calendar,
     CheckCircle2,
     Circle,
@@ -1009,7 +1011,10 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
         priority: activity.priority || 'normal',
         due_date: activity.due_date ? String(activity.due_date).slice(0, 10) : '',
         assigned_to_ids: activityAssignees(activity).map((user) => user.id),
-        new_checklist_items: [],
+        checklist_items: (activity.checklist_items || []).map((item) => ({
+            id: item.id,
+            label: item.label,
+        })),
     });
     const priority = priorityMeta[activity.priority] || priorityMeta.normal;
     const category = categoryMeta[activity.category || 'project'] || categoryMeta.project;
@@ -1035,21 +1040,47 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
             : [...editForm.data.assigned_to_ids, normalizedUserId]);
     };
 
-    const updateNewChecklistItem = (index, value) => {
-        editForm.setData('new_checklist_items', editForm.data.new_checklist_items.map((item, itemIndex) => (
-            itemIndex === index ? value : item
+    const updateChecklistItemLabel = (index, value) => {
+        editForm.setData('checklist_items', editForm.data.checklist_items.map((item, itemIndex) => (
+            itemIndex === index ? { ...item, label: value } : item
         )));
     };
 
-    const addNewChecklistItem = () => {
-        editForm.setData('new_checklist_items', [...editForm.data.new_checklist_items, '']);
+    const addChecklistItem = () => {
+        editForm.setData('checklist_items', [
+            ...editForm.data.checklist_items,
+            { id: null, label: '' },
+        ]);
     };
 
-    const removeNewChecklistItem = (index) => {
+    const removeChecklistItem = (index) => {
         editForm.setData(
-            'new_checklist_items',
-            editForm.data.new_checklist_items.filter((_, itemIndex) => itemIndex !== index),
+            'checklist_items',
+            editForm.data.checklist_items.filter((_, itemIndex) => itemIndex !== index),
         );
+    };
+
+    const moveChecklistItem = (index, direction) => {
+        const destination = index + direction;
+
+        if (destination < 0 || destination >= editForm.data.checklist_items.length) {
+            return;
+        }
+
+        const reorderedItems = [...editForm.data.checklist_items];
+        [reorderedItems[index], reorderedItems[destination]] = [reorderedItems[destination], reorderedItems[index]];
+        editForm.setData('checklist_items', reorderedItems);
+    };
+
+    const toggleEditing = () => {
+        if (!editing && isChecklist) {
+            editForm.setData('checklist_items', checklistItems.map((item) => ({
+                id: item.id,
+                label: item.label,
+            })));
+        }
+
+        setEditing((value) => !value);
     };
 
     const submitEdit = (event) => {
@@ -1062,7 +1093,6 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
         editForm.patch(route('tenant.activities.update', [tenant.slug, activity.id]), {
             preserveScroll: true,
             onSuccess: () => {
-                editForm.setData('new_checklist_items', []);
                 setEditing(false);
             },
         });
@@ -1144,7 +1174,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                     </div>
                     <div className="flex shrink-0 flex-wrap justify-end gap-2">
                         {canEditActivities && (
-                            <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={() => setEditing((value) => !value)}>
+                            <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={toggleEditing}>
                                 <Pencil size={14} />
                                 {editing ? 'Cancelar edição' : 'Editar'}
                             </button>
@@ -1232,46 +1262,75 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                                     <div>
                                         <span className="eyebrow block">Etapas do checklist</span>
                                         <p className="mt-1 text-[12px] text-[var(--ink-500)]">
-                                            As {checklistItems.length} etapas atuais e seus progressos serão preservados.
+                                            Adicione ou reposicione etapas. O progresso atual será preservado e novas etapas notificarão os envolvidos.
                                         </p>
                                     </div>
-                                    <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={addNewChecklistItem}>
+                                    <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={addChecklistItem}>
                                         <Plus size={14} />
                                         Adicionar etapa
                                     </button>
                                 </div>
 
-                                {editForm.data.new_checklist_items.length > 0 && (
+                                {editForm.data.checklist_items.length > 0 && (
                                     <div className="mt-3 grid gap-2 rounded-lg bg-[var(--surface-muted)] p-3">
-                                        {editForm.data.new_checklist_items.map((item, index) => (
-                                            <div key={index} className="flex items-center gap-2">
+                                        {editForm.data.checklist_items.map((item, index) => (
+                                            <div key={`${item.id || 'new'}-${index}`} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white p-2">
                                                 <span className="mono flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-[12px] font-semibold text-[var(--ink-500)]">
-                                                    {checklistItems.length + index + 1}
+                                                    {index + 1}
                                                 </span>
-                                                <input
-                                                    className="min-w-0 flex-1"
-                                                    value={item}
-                                                    onChange={(event) => updateNewChecklistItem(index, event.target.value)}
-                                                    required
-                                                    maxLength={500}
-                                                    placeholder="Descreva a nova etapa"
-                                                />
-                                                <button
-                                                    className="sig-btn sig-btn-ghost !min-h-9 !px-2 text-[var(--red)]"
-                                                    type="button"
-                                                    onClick={() => removeNewChecklistItem(index)}
-                                                    title="Remover nova etapa"
-                                                >
-                                                    <Trash2 size={15} />
-                                                </button>
+                                                {item.id ? (
+                                                    <span className="min-w-0 flex-1 text-[13px] font-medium text-[var(--ink-800)]">{item.label}</span>
+                                                ) : (
+                                                    <input
+                                                        className="min-w-0 flex-1"
+                                                        value={item.label}
+                                                        onChange={(event) => updateChecklistItemLabel(index, event.target.value)}
+                                                        required
+                                                        maxLength={500}
+                                                        placeholder="Descreva a nova etapa"
+                                                    />
+                                                )}
+                                                <div className="flex shrink-0 items-center gap-1">
+                                                    <button
+                                                        className="sig-btn sig-btn-ghost !min-h-8 !px-2"
+                                                        type="button"
+                                                        onClick={() => moveChecklistItem(index, -1)}
+                                                        disabled={index === 0}
+                                                        title="Mover etapa para cima"
+                                                        aria-label="Mover etapa para cima"
+                                                    >
+                                                        <ChevronUp size={15} />
+                                                    </button>
+                                                    <button
+                                                        className="sig-btn sig-btn-ghost !min-h-8 !px-2"
+                                                        type="button"
+                                                        onClick={() => moveChecklistItem(index, 1)}
+                                                        disabled={index === editForm.data.checklist_items.length - 1}
+                                                        title="Mover etapa para baixo"
+                                                        aria-label="Mover etapa para baixo"
+                                                    >
+                                                        <ChevronDown size={15} />
+                                                    </button>
+                                                    {!item.id && (
+                                                        <button
+                                                            className="sig-btn sig-btn-ghost !min-h-8 !px-2 text-[var(--red)]"
+                                                            type="button"
+                                                            onClick={() => removeChecklistItem(index)}
+                                                            title="Remover nova etapa"
+                                                            aria-label="Remover nova etapa"
+                                                        >
+                                                            <Trash2 size={15} />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                 )}
 
-                                {(editForm.errors.new_checklist_items || Object.entries(editForm.errors).find(([key]) => key.startsWith('new_checklist_items.'))?.[1]) && (
+                                {(editForm.errors.checklist_items || Object.entries(editForm.errors).find(([key]) => key.startsWith('checklist_items.'))?.[1]) && (
                                     <span className="mt-2 block text-xs text-[var(--red)]">
-                                        {editForm.errors.new_checklist_items || Object.entries(editForm.errors).find(([key]) => key.startsWith('new_checklist_items.'))?.[1]}
+                                        {editForm.errors.checklist_items || Object.entries(editForm.errors).find(([key]) => key.startsWith('checklist_items.'))?.[1]}
                                     </span>
                                 )}
                             </div>

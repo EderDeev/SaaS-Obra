@@ -17,13 +17,21 @@ class OrdemServicoPermissions
     public const ANALYZE = 'analyze_service_orders';
     public const APPROVE = 'approve_service_orders';
     public const RESPONSIBLES = 'manage_service_order_responsibles';
+    public const SETTINGS = 'manage_service_order_settings';
+    public const METRICS = 'view_service_order_metrics';
+    public const EXECUTE = 'manage_service_order_execution';
+    public const COMPLETE = 'complete_service_orders';
 
     public const LABELS = [
+        self::METRICS => 'Visualizar métricas da OS',
         self::VIEW => 'Visualizar ordens de serviço',
         self::MANAGE_DRAFTS => 'Criar, editar e enviar OS',
         self::ANALYZE => 'Analisar ordens de serviço',
         self::APPROVE => 'Aprovar ordens de serviço',
         self::RESPONSIBLES => 'Gerenciar responsáveis da OS',
+        self::SETTINGS => 'Parametrizar requisitos da OS',
+        self::EXECUTE => 'Registrar execução da OS',
+        self::COMPLETE => 'Concluir ou cancelar ordens de serviço',
     ];
 
     public static function all(): array
@@ -185,7 +193,7 @@ class OrdemServicoPermissions
             'tenant_member',
             'member',
         ], true)) {
-            return [self::VIEW, self::MANAGE_DRAFTS, self::ANALYZE, self::APPROVE];
+            return [self::VIEW, self::MANAGE_DRAFTS, self::ANALYZE, self::APPROVE, self::EXECUTE];
         }
 
         return in_array($role, TenantRoles::administrativeRoles(), true)

@@ -387,7 +387,7 @@ export default function AuthenticatedLayout({ children }) {
         : [];
     const medicaoItems = tenant
         ? [
-            ...(medicaoCan.view_measurements || medicaoCan.view_measurement_reports ? [{
+            ...(medicaoCan.view_measurements || medicaoCan.view_measurement_reports || medicaoCan.view_measurement_bi ? [{
                 label: 'Relatórios',
                 active: route().current('tenant.medicao.boletim-medicao.*')
                     || route().current('tenant.medicao.relatorios.*')
@@ -406,6 +406,8 @@ export default function AuthenticatedLayout({ children }) {
                         href: route('tenant.medicao.relatorios.index', tenant.slug),
                         active: route().current('tenant.medicao.relatorios.*'),
                     },
+                    ] : []),
+                    ...(medicaoCan.view_measurement_bi ? [
                     {
                         label: 'B.I',
                         href: route('tenant.medicao.bi.index', tenant.slug),
@@ -473,10 +475,20 @@ export default function AuthenticatedLayout({ children }) {
             href: route('tenant.ordem-servico.analise.index', tenant.slug),
             active: route().current('tenant.ordem-servico.analise.*'),
         }] : []),
+        ...(ordemServicoCan.view_service_order_metrics ? [{
+            label: 'Métricas',
+            href: route('tenant.ordem-servico.metrics.index', tenant.slug),
+            active: route().current('tenant.ordem-servico.metrics.*'),
+        }] : []),
         ...(ordemServicoCan.manage_service_order_responsibles ? [{
             label: 'Responsáveis',
             href: route('tenant.ordem-servico.responsaveis.index', tenant.slug),
             active: route().current('tenant.ordem-servico.responsaveis.*'),
+        }] : []),
+        ...(ordemServicoCan.manage_service_order_settings ? [{
+            label: 'Parametrização',
+            href: route('tenant.ordem-servico.settings.index', tenant.slug),
+            active: route().current('tenant.ordem-servico.settings.*'),
         }] : []),
     ]
     : [];

@@ -10,6 +10,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\OrdemServicoPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class TenantOrdemServicoPermissionsTest extends TestCase
@@ -120,6 +121,99 @@ class TenantOrdemServicoPermissionsTest extends TestCase
             ->patch(route('tenant.ordem-servico.os.analyze', [$tenant, $ordem]), [
                 'observacao' => 'Analise tecnica.',
             ])
+            ->assertForbidden();
+    }
+
+    public function test_settings_permission_is_independent_and_scoped_by_contract(): void
+    {
+        [$tenant, $user, $contract] = $this->context([OrdemServicoPermissions::SETTINGS], true);
+
+        $this->actingAs($user)
+            ->get(route('tenant.ordem-servico.settings.index', [
+                'tenant' => $tenant,
+                'contract_id' => $contract->id,
+            ]))
+            ->assertOk();
+
+        $this->actingAs($user)
+            ->patch(route('tenant.ordem-servico.settings.update', $tenant), [
+                'contract_id' => $contract->id,
+                'require_project' => true,
+                'require_document' => false,
+                'require_deadline' => true,
+                'require_execution_responsible' => false,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        [$otherTenant, $otherUser] = $this->context([OrdemServicoPermissions::RESPONSIBLES], true);
+
+        $this->actingAs($otherUser)
+            ->get(route('tenant.ordem-servico.settings.index', $otherTenant))
+            ->assertForbidden();
+    }
+
+    public function test_metrics_permission_is_independent_and_scoped_by_contract(): void
+    {
+        [$tenant, $user, $contractA, $contractB] = $this->context([
+            OrdemServicoPermissions::METRICS,
+        ]);
+
+        ContractParticipant::query()
+            ->where('contract_id', $contractB->id)
+            ->where('user_id', $user->id)
+            ->update(['ordem_servico_permissions' => []]);
+
+        $obraA = $contractA->obras()->create([
+            'tenant_id' => $tenant->id,
+            'codigo' => '100',
+            'nome' => 'Frente A',
+            'tipo' => 'pai',
+        ]);
+        $obraB = $contractB->obras()->create([
+            'tenant_id' => $tenant->id,
+            'codigo' => '200',
+            'nome' => 'Frente B',
+            'tipo' => 'pai',
+        ]);
+
+        foreach ([[$contractA, $obraA, 'CT-OS-A-100-OS-001'], [$contractB, $obraB, 'CT-OS-B-200-OS-001']] as [$contract, $obra, $code]) {
+            OrdemServico::create([
+                'tenant_id' => $tenant->id,
+                'contract_id' => $contract->id,
+                'obra_id' => $obra->id,
+                'created_by_id' => $user->id,
+                'codigo' => $code,
+                'sequencial' => 1,
+                'titulo' => "Ordem {$code}",
+                'custo_previsto' => 1000,
+                'status' => 'rascunho',
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get(route('tenant.ordem-servico.metrics.index', $tenant))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/OrdemServico/Metrics')
+                ->where('summary.total', 1)
+                ->has('filterOptions.contracts', 1)
+                ->where('filterOptions.contracts.0.id', $contractA->id));
+
+        $this->actingAs($user)
+            ->get(route('tenant.ordem-servico.metrics.index', [
+                'tenant' => $tenant,
+                'contract_id' => $contractB->id,
+            ]))
+            ->assertForbidden();
+    }
+
+    public function test_metrics_screen_requires_its_own_permission(): void
+    {
+        [$tenant, $user] = $this->context([OrdemServicoPermissions::VIEW], true);
+
+        $this->actingAs($user)
+            ->get(route('tenant.ordem-servico.metrics.index', $tenant))
             ->assertForbidden();
     }
 

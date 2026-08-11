@@ -12,21 +12,39 @@ use Illuminate\Support\Collection;
 class MedicaoPermissions
 {
     public const VIEW = 'view_measurements';
+
     public const ITEMS = 'manage_measurement_items';
+
+    public const IMPORT_ITEMS = 'import_measurement_items';
+
+    public const ADDITIVES = 'manage_measurement_item_additives';
+
+    public const ADJUSTMENT_INDICES = 'manage_measurement_adjustment_indices';
+
     public const CLAIMS = 'manage_measurement_claims';
+
     public const ANALYZE = 'analyze_measurement_claims';
+
     public const RESPONSIBLES = 'manage_measurement_responsibles';
+
     public const BULLETINS = 'manage_measurement_bulletins';
+
     public const REPORTS = 'view_measurement_reports';
+
+    public const BI = 'view_measurement_bi';
 
     public const LABELS = [
         self::VIEW => 'Visualizar medições',
-        self::ITEMS => 'Gerenciar itens e índices de reajuste',
+        self::ITEMS => 'Criar itens de contrato manualmente',
+        self::IMPORT_ITEMS => 'Importar orçamentos e bases de itens',
+        self::ADDITIVES => 'Gerenciar aditivos de itens',
+        self::ADJUSTMENT_INDICES => 'Gerenciar índices de reajuste',
         self::CLAIMS => 'Criar, editar e enviar pleitos',
         self::ANALYZE => 'Analisar pleitos de medição',
         self::RESPONSIBLES => 'Gerenciar responsáveis da análise',
         self::BULLETINS => 'Gerenciar boletins de medição',
-        self::REPORTS => 'Visualizar relatórios e B.I.',
+        self::REPORTS => 'Visualizar relatórios de medição',
+        self::BI => 'Visualizar B.I. de medição',
     ];
 
     public static function all(): array
@@ -168,11 +186,11 @@ class MedicaoPermissions
             'tenant_member',
             'member',
         ], true)) {
-            return [self::VIEW, self::CLAIMS, self::ANALYZE, self::REPORTS];
+            return [self::VIEW, self::CLAIMS, self::ANALYZE, self::REPORTS, self::BI];
         }
 
         return in_array($role, TenantRoles::administrativeRoles(), true)
-            ? [self::VIEW, self::CLAIMS, self::REPORTS]
+            ? [self::VIEW, self::CLAIMS, self::REPORTS, self::BI]
             : [];
     }
 }

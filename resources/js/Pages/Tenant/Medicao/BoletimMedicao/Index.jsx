@@ -131,7 +131,7 @@ export default function BoletimMedicaoIndex({
                         className="sig-btn sig-btn-primary justify-center"
                     >
                         {showCreate ? <X size={16} /> : <Plus size={16} />}
-                        {showCreate ? 'Fechar cadastro' : 'Cadastrar Boletim'}
+                        {showCreate ? 'Fechar abertura' : 'Abrir Boletim'}
                     </button>}
                 </section>
 
@@ -149,7 +149,7 @@ export default function BoletimMedicaoIndex({
 
                 {showCreate && (
                     <section className="sig-card p-5">
-                        <form onSubmit={submit} className="grid gap-4 xl:grid-cols-[minmax(360px,1fr)_240px_220px_180px] xl:items-start">
+                        <form onSubmit={submit} className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_minmax(180px,220px)_minmax(180px,220px)_auto] xl:items-start">
                             <label className="grid min-w-0 gap-1.5 text-sm">
                                 <span className="font-bold uppercase tracking-wide text-[var(--ink-500)]">Contrato</span>
                                 <select
@@ -165,7 +165,7 @@ export default function BoletimMedicaoIndex({
                                 </select>
                             </label>
 
-                            <label className="grid min-w-[220px] gap-1.5 text-sm">
+                            <label className="grid min-w-0 gap-1.5 text-sm">
                                 <span className="font-bold uppercase tracking-wide text-[var(--ink-500)]">Mês de referência</span>
                                 <input
                                     type="text"
@@ -179,7 +179,7 @@ export default function BoletimMedicaoIndex({
                                 <span className="whitespace-nowrap text-xs text-[var(--ink-500)]">Use o formato MM/AA, exemplo: 01/26.</span>
                             </label>
 
-                            <label className="grid min-w-[200px] gap-1.5 text-sm">
+                            <label className="grid min-w-0 gap-1.5 text-sm">
                                 <span className="font-bold uppercase tracking-wide text-[var(--ink-500)]">Tipo</span>
                                 <select
                                     value={form.data.tipo}
@@ -187,7 +187,9 @@ export default function BoletimMedicaoIndex({
                                     className="sig-input"
                                 >
                                     {tipos.map((tipo) => (
-                                        <option key={tipo.value} value={tipo.value}>{tipo.label}</option>
+                                        <option key={tipo.value} value={tipo.value} disabled={tipo.disabled}>
+                                            {tipo.label}
+                                        </option>
                                     ))}
                                 </select>
                             </label>
@@ -195,11 +197,20 @@ export default function BoletimMedicaoIndex({
                             <button
                                 type="submit"
                                 disabled={form.processing || !form.data.contract_id || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(form.data.periodo_referencia) || !form.data.tipo}
-                                className="sig-btn sig-btn-primary justify-center disabled:opacity-50"
+                                className="sig-btn sig-btn-primary self-end justify-center whitespace-nowrap disabled:opacity-50"
                             >
                                 <Plus size={16} />
                                 Abrir Boletim
                             </button>
+
+                            <div className="grid gap-1.5 text-xs text-[var(--ink-500)] sm:grid-cols-3 lg:col-span-2 xl:col-span-4">
+                                {tipos.map((tipo) => (
+                                    <p key={tipo.value}>
+                                        <strong className="text-[var(--ink-700)]">{tipo.label}:</strong>{' '}
+                                        {tipo.description}
+                                    </p>
+                                ))}
+                            </div>
                         </form>
                     </section>
                 )}
@@ -236,7 +247,7 @@ export default function BoletimMedicaoIndex({
                             <ClipboardList className="mx-auto text-[var(--ink-400)]" size={34} />
                             <p className="mt-3 font-bold text-[var(--ink-900)]">Nenhum Boletim de Medição criado</p>
                             <p className="mt-1 text-sm text-[var(--ink-500)]">
-                                Clique em Cadastrar Boletim para abrir a primeira competência.
+                                Clique em Abrir Boletim para abrir a primeira competência.
                             </p>
                         </div>
                     ) : (
@@ -310,6 +321,14 @@ export default function BoletimMedicaoIndex({
                                                     className="block px-4 py-3 text-sm font-semibold text-[var(--ink-800)] hover:bg-[var(--surface-muted)]"
                                                 >
                                                     Sintético
+                                                </a>
+                                                <a
+                                                    href={boletimReportUrl(boletim, 'fluxo_fr')}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="block px-4 py-3 text-sm font-semibold text-[var(--ink-800)] hover:bg-[var(--surface-muted)]"
+                                                >
+                                                    Fluxo das FRs
                                                 </a>
                                             </div>
                                         )}

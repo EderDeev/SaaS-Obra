@@ -352,7 +352,8 @@ class AssistantRetriever
                 "OS: {$order->codigo} - {$order->titulo}",
                 "Contrato: {$order->contract?->code} - {$order->contract?->name}",
                 "Status: {$order->status}",
-                'Prazo: '.($order->prazo_execucao?->format('d/m/Y') ?? 'não informado'),
+                'Início previsto: '.($order->prazo_inicio?->format('d/m/Y') ?? 'não informado'),
+                'Finalização prevista: '.($order->prazo_finalizacao?->format('d/m/Y') ?? 'não informada'),
                 'Custo previsto: R$ '.number_format((float) $order->custo_previsto, 2, ',', '.'),
                 "Descrição: {$order->descricao}",
             ]);

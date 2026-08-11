@@ -25,7 +25,7 @@ class MedicaoBiController extends Controller
 
         $contractId = $filters['contract_id'] ?? null;
         $boletimId = $filters['boletim_id'] ?? null;
-        $contractIds = MedicaoPermissions::contractIdsFor($request->user(), $tenant, MedicaoPermissions::REPORTS);
+        $contractIds = MedicaoPermissions::contractIdsFor($request->user(), $tenant, MedicaoPermissions::BI);
 
         $contracts = Contract::query()
             ->where('tenant_id', $tenant->id)

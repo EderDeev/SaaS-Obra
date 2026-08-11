@@ -21,6 +21,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'sequencial',
     'titulo',
     'descricao',
+    'prazo_inicio',
+    'prazo_finalizacao',
     'prazo_execucao',
     'custo_previsto',
     'custo_observacao',
@@ -33,6 +35,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'approval_decided_at',
     'approval_decided_by_id',
     'approval_observation',
+    'execution_started_at',
+    'execution_started_by_id',
+    'completed_at',
+    'completed_by_id',
+    'completion_summary',
+    'cancelled_at',
+    'cancelled_by_id',
+    'cancellation_reason',
 ])]
 class OrdemServico extends Model
 {
@@ -43,12 +53,17 @@ class OrdemServico extends Model
     protected function casts(): array
     {
         return [
+            'prazo_inicio' => 'date',
+            'prazo_finalizacao' => 'date',
             'prazo_execucao' => 'date',
             'sequencial' => 'integer',
             'custo_previsto' => 'decimal:2',
             'submitted_for_review_at' => 'datetime',
             'analyzed_at' => 'datetime',
             'approval_decided_at' => 'datetime',
+            'execution_started_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'cancelled_at' => 'datetime',
         ];
     }
 
@@ -127,6 +142,26 @@ class OrdemServico extends Model
     public function analises(): HasMany
     {
         return $this->hasMany(OrdemServicoAnalise::class);
+    }
+
+    public function comentarios(): HasMany
+    {
+        return $this->hasMany(OrdemServicoComentario::class);
+    }
+
+    public function executionStartedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'execution_started_by_id');
+    }
+
+    public function completedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'completed_by_id');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by_id');
     }
 
     public function folhasRosto(): HasMany

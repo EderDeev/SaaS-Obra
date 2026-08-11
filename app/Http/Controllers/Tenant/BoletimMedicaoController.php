@@ -68,24 +68,44 @@ class BoletimMedicaoController extends Controller
             'contracts' => $contracts,
             'boletins' => $boletins,
             'tipos' => [
-                ['value' => 'normal', 'label' => 'Normal'],
-                ['value' => 'reequilibrio', 'label' => 'Reequilíbrio'],
-                ['value' => 'contingencia', 'label' => 'Contingência'],
+                [
+                    'value' => 'normal',
+                    'label' => 'Normal',
+                    'description' => 'Medição periódica dos serviços executados no contrato.',
+                    'disabled' => false,
+                ],
+                [
+                    'value' => 'reequilibrio',
+                    'label' => 'Reequilíbrio (Em breve)',
+                    'description' => 'Registrará a recomposição econômico-financeira do contrato.',
+                    'disabled' => true,
+                ],
+                [
+                    'value' => 'contingencia',
+                    'label' => 'Contingência (Em breve)',
+                    'description' => 'Atenderá medições excepcionais fora do fluxo periódico normal.',
+                    'disabled' => true,
+                ],
             ],
         ]);
     }
 
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
-        $validated = $request->validate([
-            'contract_id' => [
-                'required',
-                'integer',
-                Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+        $validated = $request->validate(
+            [
+                'contract_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+                ],
+                'periodo_referencia' => ['required', 'string', 'regex:/^(0[1-9]|1[0-2])\/\d{2}$/'],
+                'tipo' => ['required', Rule::in(['normal'])],
             ],
-            'periodo_referencia' => ['required', 'string', 'regex:/^(0[1-9]|1[0-2])\/\d{2}$/'],
-            'tipo' => ['required', Rule::in(['normal', 'reequilibrio', 'contingencia'])],
-        ]);
+            [
+                'tipo.in' => 'Reequilíbrio e contingência estarão disponíveis em breve.',
+            ]
+        );
 
         [$month, $year] = explode('/', $validated['periodo_referencia']);
         $periodo = sprintf('20%s-%s-01', $year, $month);
@@ -119,7 +139,7 @@ class BoletimMedicaoController extends Controller
             ]);
         });
 
-        return back()->with('success', 'Boletim de Medição criado com sucesso.');
+        return back()->with('success', 'Boletim de Medição aberto com sucesso.');
     }
 
     public function freeze(Tenant $tenant, BoletimMedicao $boletim): RedirectResponse

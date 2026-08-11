@@ -8,6 +8,22 @@ const formatCurrency = (value) =>
 const formatDecimal = (value) =>
     new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(value || 0));
 
+const reportColumnWeight = (header) => {
+    if (['descricao', 'comentarios_medicao', 'observacao', 'responsaveis'].includes(header.key)) {
+        return 3.5;
+    }
+
+    if (['evento', 'executado_por'].includes(header.key)) {
+        return 2.2;
+    }
+
+    if (['item', 'codigo_item', 'fr', 'os', 'unidade', 'etapa', 'setor_reajuste', 'referencia'].includes(header.key)) {
+        return 1.15;
+    }
+
+    return header.numeric ? 1.7 : 1.5;
+};
+
 const integerToWords = (value) => {
     const units = ['', 'um', 'dois', 'tr\u00EAs', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
     const teens = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
@@ -101,11 +117,17 @@ export default function MedicaoRelatoriosIndex({
     const rows = reportData.rows || [];
     const headers = reportData.headers || [];
     const totals = reportData.totals || {};
+    const totalColumnWeight = headers.reduce((total, header) => total + reportColumnWeight(header), 0);
     const exportParams = new URLSearchParams({
         contract_id: selectedContractId || '',
         boletim_id: selectedBoletimId || '',
     });
-    const exportRoutes = selectedReport === 'resumo'
+    const exportRoutes = selectedReport === 'fluxo_fr'
+        ? {
+            excel: 'tenant.medicao.relatorios.fluxo-fr.excel',
+            pdf: 'tenant.medicao.relatorios.fluxo-fr.pdf',
+        }
+        : selectedReport === 'resumo'
         ? {
             excel: 'tenant.medicao.relatorios.resumo.excel',
             pdf: 'tenant.medicao.relatorios.resumo.pdf',
@@ -139,6 +161,8 @@ export default function MedicaoRelatoriosIndex({
         : selectedReport === 'analise_pleito'
             ? 'total_aprovado_medicao'
             : 'total_reajustado';
+    const isFlowReport = selectedReport === 'fluxo_fr';
+    const eventCount = rows.filter((row) => !row._is_group).length;
     const resumoTotalRow = selectedReport === 'resumo' ? rows.find((row) => row._is_summary) : null;
     const resumoPeriodo = Number(resumoTotalRow?.no_periodo_p0 || totals.no_periodo_p0 || 0);
     const resumoReajuste = Number(resumoTotalRow?.valor_reajuste_periodo || totals.valor_reajuste_periodo || 0);
@@ -263,8 +287,10 @@ export default function MedicaoRelatoriosIndex({
                                 </>
                             )}
                             <div className="grid gap-1 text-right text-sm">
-                                <span className="font-semibold text-[var(--ink-500)]">{rows.length} linha(s)</span>
-                                <strong className="text-emerald-700">{formatCurrency(totals[totalMoneyKey])}</strong>
+                                <span className="font-semibold text-[var(--ink-500)]">
+                                    {isFlowReport ? `${eventCount} evento(s)` : `${rows.length} linha(s)`}
+                                </span>
+                                {!isFlowReport && <strong className="text-emerald-700">{formatCurrency(totals[totalMoneyKey])}</strong>}
                             </div>
                         </div>
                     </header>
@@ -273,7 +299,9 @@ export default function MedicaoRelatoriosIndex({
                         <div className="p-10 text-center">
                             <FileSpreadsheet className="mx-auto text-[var(--ink-400)]" size={34} />
                             <p className="mt-3 font-bold text-[var(--ink-900)]">
-                                {selectedBoletimId ? 'Nenhum pleito encontrado' : 'Filtre para gerar o relatório'}
+                                {selectedBoletimId
+                                    ? isFlowReport ? 'Nenhum registro de fluxo encontrado' : 'Nenhum pleito encontrado'
+                                    : 'Filtre para gerar o relatório'}
                             </p>
                             {!selectedBoletimId && (
                                 <p className="mt-1 text-sm text-[var(--ink-500)]">
@@ -281,18 +309,28 @@ export default function MedicaoRelatoriosIndex({
                                 </p>
                             )}
                             <p className={`mt-1 text-sm text-[var(--ink-500)] ${selectedBoletimId ? '' : 'hidden'}`}>
-                                Este BM ainda não possui itens pleiteados em Folhas de Rosto.
+                                {isFlowReport
+                                    ? 'Este BM ainda não possui eventos de análise registrados nas Folhas de Rosto.'
+                                    : 'Este BM ainda não possui itens pleiteados em Folhas de Rosto.'}
                             </p>
                         </div>
                     ) : (
-                        <div className="overflow-auto">
-                            <table className="min-w-[1500px] w-full border-collapse text-left text-xs">
+                        <div className="min-w-0 overflow-hidden">
+                            <table className={`w-full table-fixed border-collapse text-left ${headers.length > 12 ? 'text-[9px]' : 'text-[10px]'}`}>
+                                <colgroup>
+                                    {headers.map((header) => (
+                                        <col
+                                            key={`column-${header.key}`}
+                                            style={{ width: `${(reportColumnWeight(header) / totalColumnWeight) * 100}%` }}
+                                        />
+                                    ))}
+                                </colgroup>
                                 <thead className="bg-white">
                                     <tr>
                                         {headers.map((header) => (
                                             <th
                                                 key={header.key}
-                                                className={`border border-[var(--border)] px-3 py-2 font-black uppercase tracking-wide text-[var(--ink-600)] ${header.numeric ? 'whitespace-nowrap text-right' : ''}`}
+                                                className={`break-words border border-[var(--border)] px-1.5 py-2 font-black uppercase leading-tight text-[var(--ink-600)] ${header.numeric ? 'text-right' : ''}`}
                                             >
                                                 {header.label}
                                             </th>
@@ -315,7 +353,7 @@ export default function MedicaoRelatoriosIndex({
                                                 {headers.map((header) => (
                                                     <td
                                                         key={`${index}-${header.key}`}
-                                                        className={`border border-[var(--border)] px-3 py-2 align-top ${header.numeric ? 'whitespace-nowrap text-right font-semibold tabular-nums' : ''}`}
+                                                        className={`break-words border border-[var(--border)] px-1.5 py-1.5 align-top leading-tight ${header.numeric ? 'text-right font-semibold tabular-nums' : ''}`}
                                                     >
                                                         {row[header.key] === null || row[header.key] === undefined || row[header.key] === ''
                                                             ? ''
@@ -332,13 +370,13 @@ export default function MedicaoRelatoriosIndex({
                                         )
                                     ))}
                                 </tbody>
-                                {selectedReport !== 'resumo' && (
+                                {selectedReport !== 'resumo' && !isFlowReport && (
                                 <tfoot>
                                     <tr className="bg-slate-100 font-black text-[var(--ink-900)]">
                                         {headers.map((header, index) => (
                                             <td
                                                 key={`total-${header.key}`}
-                                                className={`border border-[var(--border)] px-3 py-2 ${header.numeric ? 'whitespace-nowrap text-right tabular-nums' : ''}`}
+                                                className={`break-words border border-[var(--border)] px-1.5 py-2 leading-tight ${header.numeric ? 'text-right tabular-nums' : ''}`}
                                             >
                                                 {index === 0
                                                     ? 'Total'
@@ -358,8 +396,13 @@ export default function MedicaoRelatoriosIndex({
                                 )}
                             </table>
                             {selectedReport === 'resumo' && (
-                                <div className="min-w-[980px] border-x border-b border-[var(--border)] bg-white">
-                                    <table className="w-full border-collapse text-xs">
+                                <div className="min-w-0 border-x border-b border-[var(--border)] bg-white">
+                                    <table className="w-full table-fixed border-collapse text-[10px]">
+                                        <colgroup>
+                                            <col style={{ width: '24%' }} />
+                                            <col style={{ width: '18%' }} />
+                                            <col style={{ width: '58%' }} />
+                                        </colgroup>
                                         <thead>
                                             <tr className="bg-slate-100 text-[var(--ink-900)]">
                                                 <th className="border border-[var(--border)] px-3 py-2 text-center font-black">Descrição</th>
@@ -370,9 +413,9 @@ export default function MedicaoRelatoriosIndex({
                                         <tbody>
                                             {resumoFechamento.map((row) => (
                                                 <tr key={row.label}>
-                                                    <td className="border border-[var(--border)] px-3 py-2 text-center font-semibold">{row.label}</td>
-                                                    <td className="border border-[var(--border)] px-3 py-2 text-right font-bold tabular-nums">{formatCurrency(row.value)}</td>
-                                                    <td className="border border-[var(--border)] px-3 py-2 text-center font-black uppercase">{moneyToWords(row.value)}</td>
+                                                    <td className="break-words border border-[var(--border)] px-2 py-2 text-center font-semibold">{row.label}</td>
+                                                    <td className="break-words border border-[var(--border)] px-2 py-2 text-right font-bold tabular-nums">{formatCurrency(row.value)}</td>
+                                                    <td className="break-words border border-[var(--border)] px-2 py-2 text-center font-black uppercase leading-tight">{moneyToWords(row.value)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>

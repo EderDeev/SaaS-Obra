@@ -13,10 +13,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'status_destino',
     'acao',
     'motivo',
+    'responsaveis_snapshot',
 ])]
 class FolhaRostoFluxoHistorico extends Model
 {
     protected $table = 'folha_rosto_fluxo_historicos';
+
+    protected function casts(): array
+    {
+        return [
+            'responsaveis_snapshot' => 'array',
+        ];
+    }
 
     public function folhaRosto(): BelongsTo
     {
