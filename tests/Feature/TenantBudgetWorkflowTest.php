@@ -140,6 +140,172 @@ class TenantBudgetWorkflowTest extends TestCase
         $this->assertSame('0.170000', $totalItem->valor_total_desonerado);
     }
 
+    public function test_every_step_two_configuration_can_create_a_budget(): void
+    {
+        [$tenant, $admin] = $this->tenantWithAdmin('step-two-create-matrix');
+        $roundingMethods = [
+            'round_all_2',
+            'round_compositions_2',
+            'round_and_truncate_unit',
+            'truncate_all_2',
+            'none',
+        ];
+        $socialCharges = ['desonerado', 'nao_desonerado'];
+        $bdiTypes = ['unit_price', 'total_budget'];
+        $bdiRates = ['0,00', '80,00', '100,00'];
+        $case = 0;
+
+        foreach ($roundingMethods as $rounding) {
+            foreach ($socialCharges as $charges) {
+                foreach ($bdiTypes as $bdiType) {
+                    foreach ($bdiRates as $bdiRate) {
+                        $case++;
+                        $code = 'MATRIX-'.str_pad((string) $case, 3, '0', STR_PAD_LEFT);
+
+                        $this->actingAs($admin)
+                            ->post(route('tenant.orcamentos.store', $tenant), [
+                                'codigo' => $code,
+                                'descricao' => "Cenario {$code}",
+                                'categoria' => 'Outros',
+                                'permitir_insumos_preco_zerado' => false,
+                                'arredondamento' => $rounding,
+                                'encargos_sociais' => $charges,
+                                'bdi_tipo' => $bdiType,
+                                'bdi_percentual' => $bdiRate,
+                                'base_references' => [[
+                                    'codigo' => 'SINAPI-PA-04-2026',
+                                    'nome' => 'SINAPI',
+                                    'uf' => 'PA',
+                                    'localidade' => 'Para',
+                                    'data' => '04/2026',
+                                ]],
+                            ])
+                            ->assertRedirect()
+                            ->assertSessionHasNoErrors();
+
+                        $budget = Orcamento::query()->where('codigo', $code)->firstOrFail();
+
+                        $this->assertSame($rounding, $budget->arredondamento);
+                        $this->assertSame($charges, $budget->encargos_sociais);
+                        $this->assertSame($bdiType, $budget->bdi_tipo);
+                        $this->assertSame(str_replace(',', '.', $bdiRate).'0000', $budget->bdi_percentual);
+                    }
+                }
+            }
+        }
+
+        $this->assertSame(60, $case);
+    }
+
+    public function test_every_step_two_configuration_calculates_consistent_totals(): void
+    {
+        [$tenant, $admin] = $this->tenantWithAdmin('step-two-financial-matrix');
+        $roundingMethods = [
+            'round_all_2',
+            'round_compositions_2',
+            'round_and_truncate_unit',
+            'truncate_all_2',
+            'none',
+        ];
+        $socialCharges = ['desonerado', 'nao_desonerado'];
+        $bdiTypes = ['unit_price', 'total_budget'];
+        $bdiRates = [0, 80, 100];
+        $insumo = OrcamentoInsumo::create([
+            'tenant_id' => $tenant->id,
+            'created_by_id' => $admin->id,
+            'banco' => 'PROPRIA',
+            'tipo' => 'material',
+            'classificacao' => 'Material',
+            'codigo_insumo' => 'MATRIX-PRICE',
+            'descricao' => 'Insumo para matriz financeira',
+            'unidade' => 'UN',
+            'origem_preco' => 'manual',
+            'preco_nao_desonerado' => 17.7777,
+            'preco_desonerado' => 10.9999,
+            'data_referencia' => '2026-07-01',
+        ]);
+        $case = 0;
+
+        foreach ($roundingMethods as $rounding) {
+            foreach ($socialCharges as $charges) {
+                foreach ($bdiTypes as $bdiType) {
+                    foreach ($bdiRates as $bdiRate) {
+                        $case++;
+                        $context = "{$rounding}/{$charges}/{$bdiType}/BDI {$bdiRate}";
+                        $budget = $this->budget($tenant, $admin, 'CALC-'.$case, [
+                            'arredondamento' => $rounding,
+                            'encargos_sociais' => $charges,
+                            'bdi_tipo' => $bdiType,
+                            'bdi_percentual' => $bdiRate,
+                        ]);
+                        $stage = $this->stage($tenant, $budget, $admin, '1', 'Servicos');
+
+                        $this->actingAs($admin)
+                            ->post(route('tenant.orcamentos.etapas.insumos.store', [$tenant, $budget, $stage]), [
+                                'orcamento_insumo_id' => $insumo->id,
+                                'quantidade' => '3',
+                                'aplicar_bdi' => true,
+                            ])
+                            ->assertRedirect()
+                            ->assertSessionHasNoErrors();
+
+                        $item = OrcamentoItem::query()->where('orcamento_id', $budget->id)->firstOrFail();
+                        $expectedNonExempt = $this->expectedBudgetValues(17.7777, 3, $bdiRate, $rounding, $bdiType);
+                        $expectedExempt = $this->expectedBudgetValues(10.9999, 3, $bdiRate, $rounding, $bdiType);
+
+                        $this->assertSame($expectedNonExempt['unit'], $item->valor_unitario_nao_desonerado, "{$context} unit non-exempt");
+                        $this->assertSame($expectedNonExempt['with_bdi'], $item->valor_com_bdi_nao_desonerado, "{$context} BDI non-exempt");
+                        $this->assertSame($expectedNonExempt['total'], $item->valor_total_nao_desonerado, "{$context} total non-exempt");
+                        $this->assertSame($expectedExempt['unit'], $item->valor_unitario_desonerado, "{$context} unit exempt");
+                        $this->assertSame($expectedExempt['with_bdi'], $item->valor_com_bdi_desonerado, "{$context} BDI exempt");
+                        $this->assertSame($expectedExempt['total'], $item->valor_total_desonerado, "{$context} total exempt");
+
+                        $freshBudget = $budget->fresh();
+                        $selectedTotal = $charges === 'nao_desonerado'
+                            ? $freshBudget->valor_nao_desonerado
+                            : $freshBudget->valor_desonerado;
+                        $expectedSelectedTotal = $charges === 'nao_desonerado'
+                            ? $expectedNonExempt['total']
+                            : $expectedExempt['total'];
+
+                        $this->assertSame($expectedSelectedTotal, $selectedTotal, "{$context} selected total");
+                    }
+                }
+            }
+        }
+
+        $this->assertSame(60, $case);
+    }
+
+    public function test_bdi_percentage_rejects_invalid_or_out_of_range_values(): void
+    {
+        [$tenant, $admin] = $this->tenantWithAdmin('step-two-bdi-validation');
+
+        foreach (['-0,01', '100,01', 'abc', '1.000,00'] as $index => $invalidRate) {
+            $this->actingAs($admin)
+                ->post(route('tenant.orcamentos.store', $tenant), [
+                    'codigo' => 'INVALID-BDI-'.$index,
+                    'descricao' => 'Cenario com BDI invalido',
+                    'categoria' => 'Outros',
+                    'permitir_insumos_preco_zerado' => false,
+                    'arredondamento' => 'truncate_all_2',
+                    'encargos_sociais' => 'desonerado',
+                    'bdi_tipo' => 'unit_price',
+                    'bdi_percentual' => $invalidRate,
+                    'base_references' => [[
+                        'codigo' => 'SINAPI-PA-04-2026',
+                        'nome' => 'SINAPI',
+                        'uf' => 'PA',
+                        'localidade' => 'Para',
+                        'data' => '04/2026',
+                    ]],
+                ])
+                ->assertSessionHasErrors('bdi_percentual');
+
+            $this->assertDatabaseMissing('orcamentos', ['codigo' => 'INVALID-BDI-'.$index]);
+        }
+    }
+
     public function test_zero_price_requires_budget_opt_in_and_a_manual_value(): void
     {
         [$tenant, $admin] = $this->tenantWithAdmin('zero-price-lab');
@@ -366,7 +532,7 @@ class TenantBudgetWorkflowTest extends TestCase
             'categoria' => 'Outros',
             'permitir_insumos_preco_zerado' => $overrides['permitir_insumos_preco_zerado'] ?? false,
             'arredondamento' => $overrides['arredondamento'] ?? 'truncate_all_2',
-            'encargos_sociais' => 'desonerado',
+            'encargos_sociais' => $overrides['encargos_sociais'] ?? 'desonerado',
             'bdi_tipo' => $overrides['bdi_tipo'] ?? 'unit_price',
             'bdi_percentual' => $overrides['bdi_percentual'] ?? 0,
             'status' => 'draft',
@@ -410,5 +576,40 @@ class TenantBudgetWorkflowTest extends TestCase
             'preco_desonerado' => $price,
             'data_referencia' => '2026-07-01',
         ]);
+    }
+
+    private function expectedBudgetValues(
+        float $rawUnit,
+        float $quantity,
+        float $bdiPercent,
+        string $rounding,
+        string $bdiType,
+    ): array {
+        $unitMethod = in_array($rounding, ['round_all_2', 'round_compositions_2'], true)
+            ? 'round'
+            : ($rounding === 'none' ? 'none' : 'truncate');
+        $totalMethod = in_array($rounding, ['round_all_2', 'round_compositions_2', 'round_and_truncate_unit'], true)
+            ? 'round'
+            : ($rounding === 'none' ? 'none' : 'truncate');
+        $calculate = static function (float $value, string $method): float {
+            return match ($method) {
+                'round' => round($value, 2),
+                'truncate' => floor(($value + 0.000000001) * 100) / 100,
+                default => $value,
+            };
+        };
+        $unit = $calculate($rawUnit, $unitMethod);
+        $multiplier = 1 + ($bdiPercent / 100);
+        $withBdi = $calculate($unit * $multiplier, $unitMethod);
+        $rawTotal = $bdiType === 'total_budget'
+            ? $unit * $quantity * $multiplier
+            : $withBdi * $quantity;
+        $total = $calculate($rawTotal, $totalMethod);
+
+        return [
+            'unit' => number_format($unit, 6, '.', ''),
+            'with_bdi' => number_format($withBdi, 6, '.', ''),
+            'total' => number_format($total, 6, '.', ''),
+        ];
     }
 }

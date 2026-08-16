@@ -100,12 +100,19 @@ class TenantRncTest extends TestCase
 
     public function test_tenant_user_can_access_rnc_create_form(): void
     {
-        [$tenant, $user] = $this->tenantScenario();
+        [$tenant, $user, $contract, $obra] = $this->tenantScenario();
 
         $this->actingAs($user)
             ->get(route('tenant.qualidade.rnc.create', $tenant))
             ->assertOk()
-            ->assertSee('Tenant\/Qualidade\/RelatorioNaoConformidade\/Create', false);
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Qualidade/RelatorioNaoConformidade/Create')
+                ->has('contracts', 1)
+                ->where('contracts.0.id', $contract->id)
+                ->where('contracts.0.code', $contract->code)
+                ->has('obras', 1)
+                ->where('obras.0.id', $obra->id)
+                ->where('obras.0.contract_id', $contract->id));
     }
 
     public function test_tenant_user_can_edit_rnc(): void
@@ -357,6 +364,11 @@ class TenantRncTest extends TestCase
 
         [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
         $rnc = $this->createRnc($tenant, $user, $contract, $obra, $contratante, $contratada);
+        $rnc->update([
+            'descricao_problema' => "Primeiro paragrafo.\n\nSegundo paragrafo.",
+            'observacao' => "Item 1\nItem 2\n\nItem 3",
+            'acoes_corretivas_recomendadas' => "Acao inicial.\n\nAcao complementar.",
+        ]);
 
         $path = $this->fakePhotoUpload()->store("tenant-{$tenant->id}/rnc/{$rnc->id}", 'public');
         $rnc->photos()->create([

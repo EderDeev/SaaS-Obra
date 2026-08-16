@@ -79,6 +79,54 @@ class TenantDocumentationTest extends TestCase
         Queue::assertPushed(ProcessGedDocumentOcrJob::class, 1);
     }
 
+    public function test_bulk_download_honors_archive_original_and_formatted_filename_options(): void
+    {
+        Storage::fake('public');
+        [$tenant, $user, $contract] = $this->documentationContext(DocumentationPermissions::all(), oneContract: true);
+        $document = $this->document($tenant, $contract, $user);
+        $archivePath = "ged/{$tenant->id}/archive/documento-1.pdf";
+
+        $document->update(['archive_path' => $archivePath]);
+        Storage::disk('public')->put($document->original_path, 'conteudo-original');
+        Storage::disk('public')->put($archivePath, 'conteudo-arquivado');
+
+        $archiveOnly = $this->actingAs($user)->get(route('tenant.ged.bulk-download', $tenant).'?'.http_build_query([
+            'ids' => (string) $document->id,
+            'include_archive' => 1,
+            'include_original' => 0,
+            'use_formatted_name' => 0,
+        ]));
+        $archiveOnly->assertOk()->assertHeader('content-type', 'application/zip');
+        $this->assertSame(['documento-1.pdf' => 'conteudo-arquivado'], $this->zipEntries($archiveOnly));
+
+        $originalOnly = $this->actingAs($user)->get(route('tenant.ged.bulk-download', $tenant).'?'.http_build_query([
+            'ids' => (string) $document->id,
+            'include_archive' => 0,
+            'include_original' => 1,
+            'use_formatted_name' => 0,
+        ]));
+        $originalOnly->assertOk();
+        $this->assertSame(['documento-1.pdf' => 'conteudo-original'], $this->zipEntries($originalOnly));
+
+        $bothFormatted = $this->actingAs($user)->get(route('tenant.ged.bulk-download', $tenant).'?'.http_build_query([
+            'ids' => (string) $document->id,
+            'include_archive' => 1,
+            'include_original' => 1,
+            'use_formatted_name' => 1,
+        ]));
+        $bothFormatted->assertOk();
+        $this->assertSame([
+            '001-2026 - Documento 1 - arquivado.pdf' => 'conteudo-arquivado',
+            '001-2026 - Documento 1 - original.pdf' => 'conteudo-original',
+        ], $this->zipEntries($bothFormatted));
+
+        $this->actingAs($user)->get(route('tenant.ged.bulk-download', $tenant).'?'.http_build_query([
+            'ids' => (string) $document->id,
+            'include_archive' => 0,
+            'include_original' => 0,
+        ]))->assertUnprocessable();
+    }
+
     public function test_document_acl_controls_direct_read_and_edit_after_macro_permission(): void
     {
         [$tenant, $owner, $contract] = $this->documentationContext(DocumentationPermissions::all(), oneContract: true);
@@ -673,6 +721,28 @@ class TenantDocumentationTest extends TestCase
     private function pdfUpload(string $name, string $marker): UploadedFile
     {
         return UploadedFile::fake()->createWithContent($name, $this->pdfContent($marker));
+    }
+
+    private function zipEntries($response): array
+    {
+        $path = tempnam(sys_get_temp_dir(), 'ged-test-zip-');
+        file_put_contents($path, $response->streamedContent());
+        $zip = new \ZipArchive();
+
+        try {
+            $this->assertTrue($zip->open($path));
+            $entries = [];
+
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                $name = $zip->getNameIndex($index);
+                $entries[$name] = $zip->getFromIndex($index);
+            }
+
+            return $entries;
+        } finally {
+            $zip->close();
+            @unlink($path);
+        }
     }
 
     private function pdfContent(string $marker): string

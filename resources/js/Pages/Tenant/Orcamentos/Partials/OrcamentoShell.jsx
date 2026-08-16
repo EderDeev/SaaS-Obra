@@ -38,9 +38,9 @@ export default function OrcamentoShell({
         <AuthenticatedLayout>
             <Head title={title} />
 
-            <section className="sig-content fade-in">
+            <section className="budget-mobile-page sig-content fade-in">
                 {showHeader && (
-                    <header className="flex flex-wrap items-start justify-between gap-4">
+                    <header className="budget-module-header flex flex-wrap items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
                             <div className="eyebrow flex items-center gap-2">
                                 <Calculator size={14} />
@@ -50,7 +50,7 @@ export default function OrcamentoShell({
                             <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--ink-500)]">{subtitle}</p>
                         </div>
                         {actions && (
-                            <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+                            <div className="budget-module-actions flex max-w-full flex-wrap items-center justify-end gap-2">
                                 {actions}
                             </div>
                         )}
@@ -58,7 +58,7 @@ export default function OrcamentoShell({
                 )}
 
                 {showNav && (
-                    <nav className="mt-6 flex flex-wrap gap-2">
+                    <nav className="budget-module-nav mt-6 flex flex-wrap gap-2">
                         {navItems.map((item) => {
                             const Icon = item.icon;
 

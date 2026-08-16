@@ -1135,6 +1135,12 @@ function BudgetItemsTable({
         return map;
     }, new Map());
     const rootEtapas = childEtapasByParent.get('') ?? [];
+    const activeMobileEtapa = etapas.find((etapa) => etapa.id === editingEtapaId);
+    const activeMobileItem = etapas.flatMap((etapa) => etapa.itens ?? []).find((item) => item.id === editingItemId);
+    const activeCompositionEtapa = etapas.find((etapa) => etapa.id === compositionFormEtapaId);
+    const activeInsumoEtapa = etapas.find((etapa) => etapa.id === insumoFormEtapaId);
+    const hasMobileForm = showEtapaForm || activeMobileEtapa || activeMobileItem || activeCompositionEtapa || activeInsumoEtapa;
+    const mobileEtapaCards = [];
     const renderEtapaBranch = (etapa, level = 0) => {
         const etapaOrder = String(etapa.item ?? etapa.ordem ?? '');
         const childEtapas = childEtapasByParent.get(etapaOrder) ?? [];
@@ -1256,8 +1262,146 @@ function BudgetItemsTable({
         );
     };
 
+    const collectMobileEtapaCards = (etapa, level = 0) => {
+        const etapaOrder = String(etapa.item ?? etapa.ordem ?? '');
+        const children = childEtapasByParent.get(etapaOrder) ?? [];
+
+        mobileEtapaCards.push(
+            <article
+                key={`mobile-etapa-${etapa.id}`}
+                className={`budget-mobile-etapa ${etapa.is_hidden ? 'budget-row-hidden' : ''}`}
+                style={{ '--budget-depth': level }}
+            >
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="budget-summary-label">Etapa {etapa.item}</p>
+                        <h3 className="mt-1 break-words text-sm font-bold text-[var(--ink-900)]">{etapa.descricao}</h3>
+                    </div>
+                    <strong className="mono shrink-0 text-sm text-[var(--ink-900)]">{formatPlainMoney(etapa.valor_total)}</strong>
+                </div>
+                {etapa.is_hidden && <span className="budget-hidden-pill !ml-0 mt-2">Itens ocultos</span>}
+                {canManage && (
+                    <div className="budget-mobile-actions mt-3">
+                        <button type="button" onClick={() => onAddEtapa(etapa)}><ListTree size={14} /> Etapa</button>
+                        <button type="button" onClick={() => onAddComposicao(etapa)}><Blocks size={14} /> Composição</button>
+                        <button type="button" onClick={() => onAddInsumo(etapa)}><Box size={14} /> Insumo</button>
+                        <button type="button" onClick={() => onEditEtapa(etapa)}><Pencil size={14} /> Editar</button>
+                        <button type="button" onClick={() => onToggleEtapaVisibility(etapa)}>
+                            {etapa.is_hidden ? <Eye size={14} /> : <EyeOff size={14} />}
+                            {etapa.is_hidden ? 'Mostrar' : 'Ocultar'}
+                        </button>
+                        <button className="!text-rose-600" type="button" onClick={() => onDeleteEtapa(etapa)}><Trash2 size={14} /> Excluir</button>
+                    </div>
+                )}
+            </article>,
+        );
+
+        if (!etapa.is_hidden) {
+            (etapa.itens ?? []).forEach((item) => {
+                const isInsumo = item.item_type === 'insumo';
+
+                mobileEtapaCards.push(
+                    <article
+                        key={`mobile-item-${item.id}`}
+                        className={`budget-mobile-item ${isInsumo ? 'budget-row-insumo' : 'budget-row-composicao'}`}
+                        style={{ '--budget-depth': level + 1 }}
+                    >
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="budget-item-kind">{isInsumo ? 'ins' : 'comp'}</span>
+                                    <strong className="text-xs text-[var(--ink-700)]">Item {item.item}</strong>
+                                    <BudgetBankBadge bank={item.banco} />
+                                </div>
+                                <p className="mono mt-2 text-xs font-bold text-[var(--primary)]">{item.codigo}</p>
+                                <h3 className="mt-1 break-words text-sm font-semibold leading-5 text-[var(--ink-900)]">{item.descricao}</h3>
+                            </div>
+                            <strong className="mono shrink-0 text-sm text-[var(--ink-900)]">{formatPlainMoney(item.valor_total)}</strong>
+                        </div>
+                        <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-black/5 pt-3 text-xs">
+                            <MobileBudgetValue label="Unidade" value={item.unidade} />
+                            <MobileBudgetValue label="Quantidade" value={formatPlainMoney(item.quantidade)} />
+                            <MobileBudgetValue label="Valor unitário" value={formatPlainMoney(item.valor_unitario)} />
+                            <MobileBudgetValue label="Com BDI" value={formatPlainMoney(item.valor_com_bdi)} />
+                        </dl>
+                        {canManage && (
+                            <div className="budget-mobile-actions mt-3">
+                                <button type="button" onClick={() => onEditItem(item)}><Pencil size={14} /> Editar</button>
+                                <button type="button" onClick={() => onToggleItemBdi(item)}><BadgePercent size={14} /> BDI</button>
+                                <button className="!text-rose-600" type="button" onClick={() => onDeleteItem(item)}><Trash2 size={14} /> Excluir</button>
+                            </div>
+                        )}
+                    </article>,
+                );
+            });
+        }
+
+        children.forEach((child) => collectMobileEtapaCards(child, level + 1));
+    };
+
+    rootEtapas.forEach((etapa) => collectMobileEtapaCards(etapa));
+
     return (
-        <div className="budget-table-wrap">
+        <>
+        <div className="budget-mobile-items-list">
+            {mobileEtapaCards.length > 0 ? mobileEtapaCards : (
+                <div className="budget-empty">Clique em adicionar etapa para criar a primeira divisão do orçamento.</div>
+            )}
+        </div>
+        {hasMobileForm && (
+            <div className="budget-mobile-form-wrap">
+                <table className="budget-mobile-form-table">
+                    <tbody>
+                        {showEtapaForm && (
+                            <EtapaFormRow form={etapaForm} onCancel={onCancelEtapa} onSave={onSaveEtapa} />
+                        )}
+                        {activeMobileEtapa && (
+                            <EtapaEditRow form={editEtapaForm} onCancel={onCancelEditEtapa} onSave={onSaveEditEtapa} />
+                        )}
+                        {activeMobileItem && (
+                            <BudgetItemEditRow
+                                form={editItemForm}
+                                item={activeMobileItem}
+                                onCancel={onCancelEditItem}
+                                onSave={onSaveEditItem}
+                            />
+                        )}
+                        {activeCompositionEtapa && (
+                            <ComposicaoFormRow
+                                form={compositionForm}
+                                options={compositionOptions}
+                                loading={compositionLoading}
+                                search={compositionSearch}
+                                selectedComposition={selectedComposition}
+                                encargosSociais={encargosSociais}
+                                etapa={activeCompositionEtapa}
+                                onCancel={onCancelComposicao}
+                                onSave={onSaveComposicao}
+                                onSelect={onSelectComposicao}
+                                onSetSearch={onSetCompositionSearch}
+                            />
+                        )}
+                        {activeInsumoEtapa && (
+                            <InsumoFormRow
+                                encargosSociais={encargosSociais}
+                                etapa={activeInsumoEtapa}
+                                form={insumoForm}
+                                loading={insumoLoading}
+                                onCancel={onCancelInsumo}
+                                onSave={onSaveInsumo}
+                                onSelect={onSelectInsumo}
+                                onSetSearch={onSetInsumoSearch}
+                                options={insumoOptions}
+                                permitirInsumosPrecoZerado={permitirInsumosPrecoZerado}
+                                search={insumoSearch}
+                                selectedInsumo={selectedInsumo}
+                            />
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        )}
+        <div className="budget-table-wrap budget-desktop-items-table">
             <table className="budget-table">
                 <colgroup>
                     <col className="budget-col-arrow" />
@@ -1315,6 +1459,16 @@ function BudgetItemsTable({
                     )}
                 </tbody>
             </table>
+        </div>
+        </>
+    );
+}
+
+function MobileBudgetValue({ label, value }) {
+    return (
+        <div className="min-w-0">
+            <dt className="text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--ink-400)]">{label}</dt>
+            <dd className="mono mt-1 break-words font-semibold text-[var(--ink-800)]">{value ?? '-'}</dd>
         </div>
     );
 }

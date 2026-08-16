@@ -193,9 +193,9 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                 </div>
 
                 <div data-tour="ged-trash-list" className="overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm">
-                            <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-[var(--ink-500)]">
+                    <div className="min-w-0">
+                        <table className="block w-full text-sm md:table">
+                            <thead className="hidden bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-[var(--ink-500)] md:table-header-group">
                                 <tr>
                                     <th className="w-10 px-4 py-3">
                                         <DocumentSelectionToggle checked={allPageSelected} disabled={showTourData} onToggle={togglePageSelection} />
@@ -205,7 +205,7 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                                     <th className="px-4 py-3">Acoes</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-[var(--border)]">
+                            <tbody className="grid gap-3 p-3 md:table-row-group md:p-0">
                                 {!hasDocuments && (
                                     <tr>
                                         <td colSpan="4" className="px-5 py-10 text-center text-sm text-[var(--ink-500)]">
@@ -219,18 +219,18 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                                     const remaining = remainingDays(document.deleted_at, trashDelayDays);
 
                                     return (
-                                        <tr key={document.id} data-tour={index === 0 ? 'ged-trash-item' : undefined} className={`align-middle hover:bg-emerald-50/40 ${selected ? 'bg-emerald-50/60' : ''}`}>
-                                            <td className="px-4 py-3">
+                                        <tr key={document.id} data-tour={index === 0 ? 'ged-trash-item' : undefined} className={`grid min-w-0 grid-cols-[32px_minmax(0,1fr)] gap-x-2 gap-y-3 rounded-xl border border-[var(--border)] p-3 align-middle hover:bg-emerald-50/40 md:table-row md:rounded-none md:border-0 md:p-0 ${selected ? 'bg-emerald-50/60' : ''}`}>
+                                            <td className="row-span-3 block pt-1 md:table-cell md:px-4 md:py-3">
                                                 <DocumentSelectionToggle checked={selected} disabled={showTourData} onToggle={() => toggleDocumentSelection(document.id)} />
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="block min-w-0 md:table-cell md:px-4 md:py-3">
                                                 <div className="flex items-start gap-3">
                                                     <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                                                         <FileText size={18} />
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <div className="font-semibold text-[var(--ink-900)]">{document.title}</div>
-                                                        <div className="mt-1 text-xs text-[var(--ink-500)]">
+                                                        <div className="break-words font-semibold text-[var(--ink-900)]">{document.title}</div>
+                                                        <div className="mt-1 break-all text-xs text-[var(--ink-500)]">
                                                             {document.original_filename || document.document_number || 'Sem arquivo'} · Excluido em {formatDateTime(document.deleted_at)}
                                                         </div>
                                                         <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-[var(--ink-500)]">
@@ -240,11 +240,12 @@ export default function GedTrash({ tenant, documents, trashDelayDays = 30 }) {
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="block text-xs text-[var(--ink-600)] md:table-cell md:px-4 md:py-3 md:text-sm">
+                                                <span className="ged-label mr-2 md:hidden">Restantes</span>
                                                 {remaining === null ? '--' : `${remaining} dia${remaining === 1 ? '' : 's'}`}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex flex-wrap gap-2">
+                                            <td className="block md:table-cell md:px-4 md:py-3">
+                                                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                                                     <button type="button" disabled={showTourData} className="sig-btn sig-btn-secondary !min-h-9 !px-3" onClick={() => restoreSelected([document.id])}>
                                                         <RotateCcw size={15} />
                                                         Restaurar

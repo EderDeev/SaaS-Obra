@@ -12,7 +12,11 @@ use App\Models\RdoDiario;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ActivityPermissions;
+use App\Support\ContractPermissions;
+use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
+use App\Support\MedicaoPermissions;
+use App\Support\OrdemServicoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
 use App\Support\TenantRoles;
@@ -36,6 +40,10 @@ class DashboardController extends Controller
         $rncContractIds = $this->permittedContractIds($user, $tenant, $contractIds, RncPermissions::class, RncPermissions::VIEW);
         $documentationContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DocumentationPermissions::class, DocumentationPermissions::VIEW);
         $documentationEmailContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DocumentationPermissions::class, DocumentationPermissions::EMAIL);
+        $rdoContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DiarioObraPermissions::class, DiarioObraPermissions::VIEW);
+        $medicaoContractIds = $this->permittedContractIds($user, $tenant, $contractIds, MedicaoPermissions::class, MedicaoPermissions::VIEW);
+        $ordemServicoContractIds = $this->permittedContractIds($user, $tenant, $contractIds, OrdemServicoPermissions::class, OrdemServicoPermissions::VIEW);
+        $additiveContractIds = $this->permittedContractIds($user, $tenant, $contractIds, ContractPermissions::class, ContractPermissions::VIEW);
 
         $activities = $tenant->activities()
             ->whereIn('contract_id', $activityContractIds)
@@ -58,6 +66,11 @@ class DashboardController extends Controller
         $openRncs = $rncs->where('status', 'aberta');
         $pendingProjects = $projects->whereIn('status', ['em_analise', 'em_aprovacao']);
         $today = today();
+        $activitiesDueSoon = $openActivities->filter(
+            fn ($activity): bool => $activity->due_date !== null
+                && ! $activity->due_date->isBefore($today)
+                && $activity->due_date->lte($today->copy()->addDays(7))
+        );
 
         $documents = DocumentationPermissions::scopeReadableDocuments(GedDocument::query(), $user, $tenant)
             ->where('tenant_id', $tenant->id)
@@ -67,25 +80,25 @@ class DashboardController extends Controller
             ->get(['id', 'tenant_id', 'contract_id', 'title', 'status', 'created_at']);
         $rdos = RdoDiario::query()
             ->where('tenant_id', $tenant->id)
-            ->whereIn('contract_id', $contractIds)
+            ->whereIn('contract_id', $rdoContractIds)
             ->with('contract:id,code,name')
             ->latest('reference_date')
             ->get(['id', 'tenant_id', 'contract_id', 'code', 'reference_date', 'status', 'created_at']);
         $boletins = BoletimMedicao::query()
             ->where('tenant_id', $tenant->id)
-            ->whereIn('contract_id', $contractIds)
+            ->whereIn('contract_id', $medicaoContractIds)
             ->with('contract:id,code,name')
             ->latest('periodo')
             ->get(['id', 'tenant_id', 'contract_id', 'codigo', 'periodo', 'status', 'created_at']);
         $ordens = OrdemServico::query()
             ->where('tenant_id', $tenant->id)
-            ->whereIn('contract_id', $contractIds)
+            ->whereIn('contract_id', $ordemServicoContractIds)
             ->with('contract:id,code,name')
             ->latest()
             ->get(['id', 'tenant_id', 'contract_id', 'codigo', 'titulo', 'status', 'prazo_inicio', 'prazo_finalizacao', 'created_at']);
         $additives = ContractAdditive::query()
             ->where('tenant_id', $tenant->id)
-            ->whereIn('contract_id', $contractIds)
+            ->whereIn('contract_id', $additiveContractIds)
             ->with('contract:id,code,name')
             ->latest()
             ->limit(5)
@@ -113,10 +126,28 @@ class DashboardController extends Controller
                     ->orWhereHas('assignees', fn (Builder $query): Builder => $query->where('users.id', $user->id));
             })
             ->with('contract:id,code,name')
+            ->select([
+                'activities.id',
+                'activities.tenant_id',
+                'activities.contract_id',
+                'activities.created_by_id',
+                'activities.assigned_to_id',
+                'activities.title',
+                'activities.activity_type',
+                'activities.category',
+                'activities.visibility',
+                'activities.status',
+                'activities.priority',
+                'activities.due_date',
+            ])
+            ->withCount('checklistItems')
+            ->withCount([
+                'checklistItems as completed_checklist_items_count' => fn (Builder $query): Builder => $query->where('is_completed', true),
+            ])
             ->orderByRaw('case when due_date is null then 1 else 0 end')
             ->orderBy('due_date')
             ->limit(6)
-            ->get(['id', 'tenant_id', 'contract_id', 'created_by_id', 'assigned_to_id', 'title', 'category', 'visibility', 'status', 'priority', 'due_date']);
+            ->get();
 
         return Inertia::render('Tenant/Dashboard', [
             'tenant' => $tenant,
@@ -127,6 +158,7 @@ class DashboardController extends Controller
                 'openActivities' => $openActivities->count(),
                 'overdueActivities' => $openActivities->filter(fn ($activity): bool => $activity->due_date !== null && $activity->due_date->isBefore($today))->count(),
                 'activitiesDueToday' => $openActivities->filter(fn ($activity): bool => $activity->due_date?->isSameDay($today) ?? false)->count(),
+                'activitiesDueSoon' => $activitiesDueSoon->count(),
                 'openRncs' => $openRncs->count(),
                 'overdueRncs' => $openRncs->filter(fn ($rnc): bool => $rnc->prazo_resposta_acao_corretiva !== null && $rnc->prazo_resposta_acao_corretiva->isBefore($today))->count(),
                 'pendingProjects' => $pendingProjects->count(),
@@ -172,20 +204,8 @@ class DashboardController extends Controller
                 ]),
             ],
             'myActivities' => $myActivities,
-            'attentionItems' => $this->attentionItems($tenant, $myActivities, $pendingProjects, $openRncs, $pendingTriage, $documentsInProgress, $rdoAwaitingReview, $openBoletins, $pendingOrders),
+            'attentionItems' => $this->attentionItems($tenant, $openActivities, $pendingProjects, $openRncs, $pendingTriage, $documentsInProgress, $rdoAwaitingReview, $openBoletins, $pendingOrders),
             'recentEvents' => $this->recentEvents($tenant, $activities, $projects, $rncs, $documents, $rdos, $boletins, $ordens, $additives),
-            'recentContracts' => $contracts
-                ->with(['obra:id,nome', 'clienteEmpresa:id,nome', 'construtoraEmpresa:id,nome', 'gerenciadoraEmpresa:id,nome'])
-                ->withCount([
-                    'activities as open_activities_count' => fn (Builder $query): Builder => $query
-                        ->visibleTo($user)
-                        ->where('status', '!=', 'done'),
-                    'relatorioNaoConformidades as open_rncs_count' => fn (Builder $query): Builder => $query->where('status', 'aberta'),
-                    'projectDocuments as pending_projects_count' => fn (Builder $query): Builder => $query->whereIn('status', ['em_analise', 'em_aprovacao']),
-                ])
-                ->latest()
-                ->limit(5)
-                ->get(),
             'capabilities' => [
                 'activities' => ActivityPermissions::canAny($user, $tenant, ActivityPermissions::VIEW),
                 'createActivity' => ActivityPermissions::canAny($user, $tenant, ActivityPermissions::CREATE),
@@ -195,6 +215,10 @@ class DashboardController extends Controller
                 'createRnc' => RncPermissions::canAny($user, $tenant, RncPermissions::CREATE),
                 'documentation' => DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::VIEW),
                 'documentationEmail' => DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::EMAIL),
+                'rdo' => DiarioObraPermissions::canAny($user, $tenant, DiarioObraPermissions::VIEW),
+                'measurements' => MedicaoPermissions::canAny($user, $tenant, MedicaoPermissions::VIEW),
+                'serviceOrders' => OrdemServicoPermissions::canAny($user, $tenant, OrdemServicoPermissions::VIEW),
+                'additives' => ContractPermissions::canAny($user, $tenant, ContractPermissions::VIEW),
             ],
         ]);
     }
@@ -247,64 +271,109 @@ class DashboardController extends Controller
 
     private function attentionItems(Tenant $tenant, Collection $activities, Collection $projects, Collection $rncs, Collection $pendingTriage, Collection $documentsInProgress, Collection $rdos, Collection $boletins, Collection $ordens): array
     {
+        $today = today();
+
         return collect()
-            ->merge($activities->map(fn ($activity): array => [
-                'type' => 'Atividade',
-                'title' => $activity->title,
-                'subtitle' => $activity->contract?->code.' - '.($activity->due_date?->format('d/m/Y') ?: 'sem prazo'),
-                'tone' => $activity->due_date?->isPast() ? 'red' : 'blue',
-                'url' => route('tenant.activities.index', $tenant, false),
-            ]))
+            ->merge($activities
+                ->filter(fn ($activity): bool => $activity->due_date !== null && $activity->due_date->lte($today->copy()->addDays(7)))
+                ->map(function ($activity) use ($tenant, $today): array {
+                    $days = $today->diffInDays($activity->due_date, false);
+                    $isOverdue = $days < 0;
+
+                    return [
+                        'type' => 'Atividade',
+                        'title' => $activity->title,
+                        'subtitle' => $activity->contract?->code.' - prazo em '.$activity->due_date->format('d/m/Y'),
+                        'badge' => $isOverdue
+                            ? 'Vencida ha '.abs($days).' dia(s)'
+                            : ($days === 0 ? 'Vence hoje' : 'Vence em '.$days.' dia(s)'),
+                        'group' => $isOverdue ? 'critical' : 'due',
+                        'tone' => $isOverdue ? 'red' : 'amber',
+                        'priority' => $isOverdue ? 0 : 10 + $days,
+                        'url' => route('tenant.activities.index', $tenant, false),
+                    ];
+                }))
             ->merge($projects->take(4)->map(fn ($project): array => [
                 'type' => 'Projeto',
                 'title' => $project->title,
                 'subtitle' => $project->contract?->code.' - '.($project->status === 'em_aprovacao' ? 'aguardando aprovacao' : 'aguardando analise'),
+                'badge' => $project->status === 'em_aprovacao' ? 'Em aprovacao' : 'Em analise',
+                'group' => 'workflow',
                 'tone' => 'amber',
+                'priority' => 20,
                 'url' => route('tenant.projects.review.index', $tenant, false),
             ]))
-            ->merge($rncs->take(4)->map(fn ($rnc): array => [
-                'type' => 'RNC',
-                'title' => 'RNC '.$rnc->formatted_number,
-                'subtitle' => $rnc->contract?->code.' - '.($rnc->prazo_resposta_acao_corretiva?->format('d/m/Y') ?: 'sem prazo de resposta'),
-                'tone' => $rnc->prazo_resposta_acao_corretiva?->isPast() ? 'red' : 'amber',
-                'url' => route('tenant.qualidade.rnc.show', [$tenant, $rnc], false),
-            ]))
+            ->merge($rncs->take(4)->map(function ($rnc) use ($tenant, $today): array {
+                $isOverdue = $rnc->prazo_resposta_acao_corretiva?->isBefore($today) ?? false;
+
+                return [
+                    'type' => 'RNC',
+                    'title' => 'RNC '.$rnc->formatted_number,
+                    'subtitle' => $rnc->contract?->code.' - '.($rnc->prazo_resposta_acao_corretiva?->format('d/m/Y') ?: 'sem prazo de resposta'),
+                    'badge' => $isOverdue ? 'Resposta atrasada' : 'Acao pendente',
+                    'group' => $isOverdue ? 'critical' : 'workflow',
+                    'tone' => $isOverdue ? 'red' : 'amber',
+                    'priority' => $isOverdue ? 1 : 21,
+                    'url' => route('tenant.qualidade.rnc.show', [$tenant, $rnc], false),
+                ];
+            }))
             ->merge($pendingTriage->take(3)->map(fn ($message): array => [
                 'type' => 'Triagem de e-mail',
                 'title' => $message->subject ?: 'E-mail sem assunto',
                 'subtitle' => $message->rule?->contract?->code.' - escolha o PDF principal',
+                'badge' => 'Triagem pendente',
+                'group' => 'workflow',
                 'tone' => 'amber',
+                'priority' => 22,
                 'url' => route('tenant.ged.triage', $tenant, false),
             ]))
             ->merge($documentsInProgress->take(3)->map(fn ($document): array => [
                 'type' => 'Documentação',
                 'title' => $document->title,
                 'subtitle' => $document->contract?->code.' - processamento de OCR',
+                'badge' => 'Processando OCR',
+                'group' => 'workflow',
                 'tone' => 'blue',
+                'priority' => 30,
                 'url' => route('tenant.ged.index', $tenant, false),
             ]))
             ->merge($rdos->take(3)->map(fn ($rdo): array => [
                 'type' => 'RDO',
                 'title' => $rdo->code,
                 'subtitle' => $rdo->contract?->code.' - aguardando fluxo',
+                'badge' => $rdo->status === 'devolvido_construtora' ? 'Devolvido' : 'Aguardando fluxo',
+                'group' => $rdo->status === 'devolvido_construtora' ? 'critical' : 'workflow',
                 'tone' => $rdo->status === 'devolvido_construtora' ? 'red' : 'amber',
+                'priority' => $rdo->status === 'devolvido_construtora' ? 2 : 23,
                 'url' => route('tenant.diario-obra.rdo.dashboard', $tenant, false),
             ]))
             ->merge($boletins->take(3)->map(fn ($boletim): array => [
                 'type' => 'Medição',
                 'title' => $boletim->codigo,
                 'subtitle' => $boletim->contract?->code.' - lançamento aberto',
+                'badge' => 'Lancamento aberto',
+                'group' => 'workflow',
                 'tone' => 'blue',
+                'priority' => 31,
                 'url' => route('tenant.medicao.boletim-medicao.index', $tenant, false),
             ]))
             ->merge($ordens->take(3)->map(fn ($ordem): array => [
                 'type' => 'Ordem de serviço',
                 'title' => $ordem->codigo.' - '.$ordem->titulo,
                 'subtitle' => $ordem->contract?->code.' - aguardando '.str_replace('_', ' ', $ordem->status),
+                'badge' => 'Aguardando decisao',
+                'group' => 'workflow',
                 'tone' => 'amber',
+                'priority' => 24,
                 'url' => route('tenant.ordem-servico.analise.index', $tenant, false),
             ]))
-            ->take(10)
+            ->sortBy('priority')
+            ->take(8)
+            ->map(function (array $item): array {
+                unset($item['priority']);
+
+                return $item;
+            })
             ->values()
             ->all();
     }

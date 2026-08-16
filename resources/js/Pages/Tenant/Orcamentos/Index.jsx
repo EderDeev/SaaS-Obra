@@ -29,14 +29,7 @@ export default function OrcamentosIndex({
                 </div>
             )}
 
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 className="text-lg font-semibold text-[var(--ink-900)]">Orçamentos cadastrados</h2>
-                    <p className="mt-1 text-sm text-[var(--ink-500)]">
-                        Estruture a base do orçamento antes de adicionar composições e insumos.
-                    </p>
-                </div>
-
+            <div className="mb-5 flex flex-wrap items-center justify-end gap-3">
                 <div className="flex flex-wrap gap-2">
                     <button className="sig-btn sig-btn-secondary" type="button" onClick={() => startBudgetTour(tenant.slug)}>
                         <Plane size={16} />

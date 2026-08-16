@@ -113,8 +113,8 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
         <AuthenticatedLayout>
             <Head title="RNC - Responsáveis" />
 
-            <section className="sig-content grid gap-6 2xl:grid-cols-[400px_minmax(0,1fr)]">
-                <form className="sig-card p-5" onSubmit={submit}>
+            <section className="sig-content quality-mobile-page grid gap-6 2xl:grid-cols-[400px_minmax(0,1fr)]">
+                <form className="sig-card min-w-0 p-4 sm:p-5" onSubmit={submit}>
                     <div className="flex items-center gap-2 text-[var(--ink-500)]">
                         <ShieldCheck size={14} />
                         <span className="eyebrow">Relatório de Não Conformidade</span>
@@ -232,7 +232,7 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                         </div>
                     </div>
 
-                    <button className="sig-btn sig-btn-primary mt-5" disabled={form.processing || !form.data.contract_id || !form.data.user_id}>
+                    <button className="sig-btn sig-btn-primary mt-5 w-full sm:w-auto" disabled={form.processing || !form.data.contract_id || !form.data.user_id}>
                         <Plus size={15} />
                         Salvar responsável
                     </button>

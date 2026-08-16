@@ -55,9 +55,9 @@ export default function RncAcaoCorretiva({ tenant, rnc, acoesCorretivas }) {
         <AuthenticatedLayout>
             <Head title={`Acao corretiva - RNC ${rnc.formatted_number}`} />
 
-            <section className="sig-content">
-                <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-                    <div>
+            <section className="sig-content quality-mobile-page">
+                <div className="quality-page-header mb-6 flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <ClipboardCheck size={14} />
                             <span className="eyebrow">Acao corretiva</span>
@@ -69,7 +69,7 @@ export default function RncAcaoCorretiva({ tenant, rnc, acoesCorretivas }) {
                             {rnc.obra?.codigo} - {rnc.obra?.nome}
                         </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="quality-page-actions flex flex-wrap gap-2">
                         <Link href={route('tenant.qualidade.rnc.index', tenant.slug)} className="sig-btn sig-btn-secondary">
                             <ArrowLeft size={15} />
                             Voltar

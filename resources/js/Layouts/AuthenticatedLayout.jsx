@@ -90,6 +90,12 @@ export default function AuthenticatedLayout({ children }) {
     const projectTourNavigationSection = ['tree', 'viewer'].includes(activeProjectTourScreen)
         ? 'viewer'
         : activeProjectTourScreen;
+    const budgetTourScreen = route().current('tenant.orcamentos.tour-preview') ? props.screen : null;
+    const budgetTourNavigationSection = ['composicoes', 'composicao-sinapi', 'composicao-sicro'].includes(budgetTourScreen)
+        ? 'composicoes'
+        : ['orcamento-criacao', 'orcamento-regras', 'orcamento'].includes(budgetTourScreen)
+            ? 'orcamento'
+            : budgetTourScreen;
     const rncTourScreen = route().current('tenant.qualidade.rnc.tour-preview') ? props.screen : null;
     const diarioObraTourScreen = route().current('tenant.diario-obra.tour-preview') ? props.screen : null;
     const canManageTenantUsers = Boolean(userCan.view_users);
@@ -371,17 +377,17 @@ export default function AuthenticatedLayout({ children }) {
             {
                 label: 'Listar Orçamentos',
                 href: route('tenant.orcamentos.index', tenant.slug),
-                active: route().current('tenant.orcamentos.index'),
+                active: route().current('tenant.orcamentos.index') || budgetTourNavigationSection === 'orcamento',
             },
             {
                 label: 'Composições',
                 href: route('tenant.orcamentos.composicoes.index', tenant.slug),
-                active: route().current('tenant.orcamentos.composicoes.*'),
+                active: route().current('tenant.orcamentos.composicoes.*') || budgetTourNavigationSection === 'composicoes',
             },
             {
                 label: 'Insumos',
                 href: route('tenant.orcamentos.insumos.index', tenant.slug),
-                active: route().current('tenant.orcamentos.insumos.*'),
+                active: route().current('tenant.orcamentos.insumos.*') || budgetTourNavigationSection === 'insumos',
             },
         ]
         : [];

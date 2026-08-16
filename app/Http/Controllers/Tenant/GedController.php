@@ -2402,25 +2402,42 @@ class GedController extends Controller
 
         abort_unless($zipPath && $zip->open($zipPath, ZipArchive::OVERWRITE) === true, 500, 'Não foi possível gerar o ZIP.');
 
+        $distinguishVersions = $includeArchive && $includeOriginal;
+        $usedFilenames = [];
+        $filesAdded = 0;
+
         foreach ($documents as $document) {
             $disk = Storage::disk($document->storage_disk ?: 'public');
 
             if ($includeArchive && $document->archive_path && $disk->exists($document->archive_path)) {
                 $zip->addFromString(
-                    $this->bulkDownloadFilename($document, true, $useFormattedName),
+                    $this->uniqueBulkDownloadFilename(
+                        $this->bulkDownloadFilename($document, true, $useFormattedName, $distinguishVersions),
+                        $usedFilenames,
+                    ),
                     $disk->get($document->archive_path),
                 );
+                $filesAdded++;
             }
 
             if ($includeOriginal && $document->original_path && $disk->exists($document->original_path)) {
                 $zip->addFromString(
-                    $this->bulkDownloadFilename($document, false, $useFormattedName),
+                    $this->uniqueBulkDownloadFilename(
+                        $this->bulkDownloadFilename($document, false, $useFormattedName, $distinguishVersions),
+                        $usedFilenames,
+                    ),
                     $disk->get($document->original_path),
                 );
+                $filesAdded++;
             }
         }
 
         $zip->close();
+
+        if ($filesAdded === 0) {
+            @unlink($zipPath);
+            abort(404, 'Nenhum dos arquivos selecionados está disponível para download.');
+        }
 
         return response()->streamDownload(function () use ($zipPath) {
             readfile($zipPath);
@@ -2430,24 +2447,49 @@ class GedController extends Controller
         ]);
     }
 
-    private function bulkDownloadFilename(GedDocument $document, bool $archive, bool $formatted): string
+    private function bulkDownloadFilename(GedDocument $document, bool $archive, bool $formatted, bool $distinguishVersion = false): string
     {
+        $versionSuffix = $distinguishVersion ? ($archive ? ' - arquivado' : ' - original') : '';
+
         if (! $formatted) {
             $filename = $archive
                 ? ($document->archive_path ? basename($document->archive_path) : "{$document->title}.pdf")
                 : ($document->original_filename ?: "{$document->title}.{$document->extension}");
+
+            if ($versionSuffix !== '') {
+                $extension = pathinfo($filename, PATHINFO_EXTENSION);
+                $base = pathinfo($filename, PATHINFO_FILENAME);
+                $filename = $base.$versionSuffix.($extension !== '' ? '.'.$extension : '');
+            }
         } else {
             $extension = $archive ? 'pdf' : ($document->extension ?: pathinfo($document->original_filename ?: '', PATHINFO_EXTENSION) ?: 'bin');
             $base = collect([$document->document_number, $document->title])
                 ->filter()
                 ->implode(' - ');
-            $filename = ($base ?: 'documento-'.$document->id).'.'.$extension;
+            $filename = ($base ?: 'documento-'.$document->id).$versionSuffix.'.'.$extension;
         }
 
         return Str::of($filename)
             ->replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '-')
             ->squish()
             ->toString();
+    }
+
+    private function uniqueBulkDownloadFilename(string $filename, array &$usedFilenames): string
+    {
+        $candidate = $filename;
+        $extension = pathinfo($filename, PATHINFO_EXTENSION);
+        $base = pathinfo($filename, PATHINFO_FILENAME);
+        $counter = 2;
+
+        while (isset($usedFilenames[mb_strtolower($candidate)])) {
+            $candidate = $base.' ('.$counter.')'.($extension !== '' ? '.'.$extension : '');
+            $counter++;
+        }
+
+        $usedFilenames[mb_strtolower($candidate)] = true;
+
+        return $candidate;
     }
 
     private function accessibleGedContracts(Request $request, Tenant $tenant, string $permission = DocumentationPermissions::VIEW)
@@ -3925,4 +3967,3 @@ class GedController extends Controller
         ]);
     }
 }
-

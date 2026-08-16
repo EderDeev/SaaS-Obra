@@ -172,9 +172,9 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
         <AuthenticatedLayout>
             <Head title="Relatório de Não Conformidade" />
 
-            <section className="sig-content">
-                <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-                    <div>
+            <section className="sig-content quality-mobile-page">
+                <div className="quality-page-header mb-6 flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <ClipboardX size={14} />
                             <span className="eyebrow">Qualidade</span>
@@ -184,7 +184,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                             {rncs.length} RNCs cadastradas em {tenant.name}
                         </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="quality-page-actions flex flex-wrap gap-2">
                         <button type="button" className="sig-btn sig-btn-secondary" onClick={() => startRncTour(tenant.slug)}>
                             <Plane size={15} />
                             Iniciar tour
@@ -205,7 +205,53 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                 )}
 
                 {rncs.length > 0 ? (
-                    <section className="sig-card overflow-hidden">
+                    <>
+                    <div className="grid gap-3 md:hidden">
+                        {rncs.map((rnc) => (
+                            <article key={rnc.id} className="sig-card min-w-0 overflow-hidden p-4">
+                                <div className="flex min-w-0 items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="mono text-[15px] font-bold text-[var(--ink-900)]">{rnc.formatted_number}</div>
+                                        <div className="mt-1 break-words text-[13px] font-semibold text-[var(--ink-800)]">
+                                            {rnc.obra?.codigo} - {rnc.obra?.nome}
+                                        </div>
+                                        <div className="mono mt-1 text-[11px] text-[var(--ink-500)]">{rnc.contract?.code}</div>
+                                    </div>
+                                    <span className="sig-pill shrink-0">{rnc.status}</span>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <span className="sig-pill sig-pill-blue">{rncDisciplinaLabel(rnc)}</span>
+                                    <span className={`sig-pill ${gravityClass[rnc.gravidade] || ''}`}>{rnc.gravidade}</span>
+                                </div>
+
+                                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3">
+                                    <Meta label="Abertura" value={shortDate(rnc.opened_at)} />
+                                    <Meta label="Fotos" value={`${rnc.photos_count || 0} foto(s)`} />
+                                    <Meta label="Contratante" value={rnc.contratante?.sigla || rnc.contratante?.nome} />
+                                    <Meta label="Contratada" value={rnc.contratada?.sigla || rnc.contratada?.nome} />
+                                </div>
+
+                                <div className="mt-3 flex min-w-0 items-start gap-1.5 text-[12px] text-[var(--ink-500)]">
+                                    <MapPin size={13} className="mt-0.5 shrink-0" />
+                                    <span className="min-w-0 break-all">
+                                        {rnc.latitude && rnc.longitude ? `${rnc.latitude}, ${rnc.longitude}` : 'Sem coordenada'}
+                                    </span>
+                                </div>
+
+                                <details className="group mt-4">
+                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-bold text-[var(--primary)]">
+                                        Acoes da RNC
+                                        <ChevronDown size={15} className="transition group-open:rotate-180" />
+                                    </summary>
+                                    <div className="quality-card-actions mt-2 grid grid-cols-2 gap-2 rounded-lg border border-[var(--border)] bg-white p-2">
+                                        {actions(rnc)}
+                                    </div>
+                                </details>
+                            </article>
+                        ))}
+                    </div>
+                    <section className="sig-card hidden overflow-hidden md:block">
                         <table className="sig-table">
                             <thead>
                                 <tr>
@@ -275,6 +321,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                             </tbody>
                         </table>
                     </section>
+                    </>
                 ) : (
                     <div className="sig-card p-12 text-center">
                         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-muted)] text-[var(--ink-500)]">
@@ -301,7 +348,7 @@ function Meta({ label, value }) {
     return (
         <div>
             <div className="eyebrow">{label}</div>
-            <div className="mt-1 truncate text-[13px] font-semibold text-[var(--ink-800)]">{value || '-'}</div>
+            <div className="mt-1 min-w-0 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value || '-'}</div>
         </div>
     );
 }
