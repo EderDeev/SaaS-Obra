@@ -32,7 +32,7 @@ import {
     ArchiveRestore,
     X,
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const statusLabels = {
     uploaded: 'Enviado',
@@ -256,14 +256,49 @@ function ViewButton({ active, icon: Icon, label, onClick }) {
     );
 }
 
-function FilterDropdown({ icon: Icon, label, activeLabel, children }) {
-    const [open, setOpen] = useState(false);
+function useClosePopoverOnOutside(open, onClose) {
+    const containerRef = useRef(null);
+
+    useEffect(() => {
+        if (!open) return undefined;
+
+        function closeOnOutside(event) {
+            if (event.target.closest?.('[data-ged-popover-trigger]')) {
+                return;
+            }
+
+            if (!containerRef.current?.contains(event.target)) {
+                onClose();
+            }
+        }
+
+        function closeOnEscape(event) {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        }
+
+        document.addEventListener('mousedown', closeOnOutside);
+        document.addEventListener('keydown', closeOnEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', closeOnOutside);
+            document.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [open, onClose]);
+
+    return containerRef;
+}
+
+function FilterDropdown({ icon: Icon, label, activeLabel, children, open = false, onOpenChange }) {
+    const containerRef = useClosePopoverOnOutside(open, () => onOpenChange(false));
 
     return (
-        <div className="relative min-w-0">
+        <div ref={containerRef} className="relative min-w-0">
             <button
                 type="button"
-                onClick={() => setOpen((value) => !value)}
+                data-ged-popover-trigger
+                onClick={() => onOpenChange(!open)}
                 className={`inline-flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded border px-3 text-sm font-medium transition ${
                     activeLabel
                         ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
@@ -319,8 +354,8 @@ function DocumentSelectionToggle({ checked, onToggle, className = '' }) {
     );
 }
 
-function BulkActionsDropdown({ tenant, selectedIds = [], onRotate, canOcr = false, canEdit = false }) {
-    const [open, setOpen] = useState(false);
+function BulkActionsDropdown({ tenant, selectedIds = [], onRotate, canOcr = false, canEdit = false, open = false, onOpenChange }) {
+    const containerRef = useClosePopoverOnOutside(open, () => onOpenChange(false));
 
     function reprocess() {
         if (!selectedIds.length) return;
@@ -333,16 +368,17 @@ function BulkActionsDropdown({ tenant, selectedIds = [], onRotate, canOcr = fals
             },
             {
                 preserveScroll: true,
-                onSuccess: () => setOpen(false),
+                onSuccess: () => onOpenChange(false),
             },
         );
     }
 
     return (
-        <div className="relative">
+        <div ref={containerRef} className="relative">
             <button
                 type="button"
-                onClick={() => setOpen((value) => !value)}
+                data-ged-popover-trigger
+                onClick={() => onOpenChange(!open)}
                 className="inline-flex min-h-10 items-center gap-2 rounded-l border border-emerald-700 bg-emerald-800 px-3 text-sm font-medium text-white hover:bg-emerald-900"
             >
                 <MoreHorizontal size={16} />
@@ -360,7 +396,7 @@ function BulkActionsDropdown({ tenant, selectedIds = [], onRotate, canOcr = fals
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ink-800)] hover:bg-slate-50"
                         onClick={() => {
-                            setOpen(false);
+                            onOpenChange(false);
                             onRotate?.();
                         }}
                     >
@@ -377,8 +413,8 @@ function BulkActionsDropdown({ tenant, selectedIds = [], onRotate, canOcr = fals
     );
 }
 
-function BulkDownloadDropdown({ tenant, selectedIds = [] }) {
-    const [open, setOpen] = useState(false);
+function BulkDownloadDropdown({ tenant, selectedIds = [], open = false, onOpenChange }) {
+    const containerRef = useClosePopoverOnOutside(open, () => onOpenChange(false));
     const [options, setOptions] = useState({
         include_archive: true,
         include_original: false,
@@ -403,7 +439,7 @@ function BulkDownloadDropdown({ tenant, selectedIds = [] }) {
     }
 
     return (
-        <div className="relative inline-flex">
+        <div ref={containerRef} className="relative inline-flex">
             <button
                 type="button"
                 onClick={downloadSelected}
@@ -414,7 +450,8 @@ function BulkDownloadDropdown({ tenant, selectedIds = [] }) {
             </button>
             <button
                 type="button"
-                onClick={() => setOpen((value) => !value)}
+                data-ged-popover-trigger
+                onClick={() => onOpenChange(!open)}
                 className="inline-flex min-h-10 items-center rounded-r border-y border-r border-emerald-700 bg-emerald-700 px-2 text-white hover:bg-emerald-800"
                 title="Opções de download"
             >
@@ -791,7 +828,9 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
     const [showUpload, setShowUpload] = useState(false);
     const [showRotateModal, setShowRotateModal] = useState(false);
     const [showTrashModal, setShowTrashModal] = useState(false);
+    const [openPopover, setOpenPopover] = useState(null);
     const [viewMode, setViewMode] = useState(() => (typeof window === 'undefined' ? 'table' : window.localStorage.getItem('ged:viewMode') || 'table'));
+    const [isMobileLayout, setIsMobileLayout] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
     const [showTourDemo, setShowTourDemo] = useState(() => typeof window !== 'undefined'
         && new URLSearchParams(window.location.search).get('tour') === 'documents');
@@ -828,8 +867,19 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
     const filterTags = useMemo(() => tags.filter((tag) => !filterContractId || String(tag.contract_id) === String(filterContractId)), [tags, filterContractId]);
     const filteredFilterCorrespondents = useMemo(() => filterCorrespondents.filter((correspondent) => !filterContractId || String(correspondent.contract_id) === String(filterContractId)), [filterCorrespondents, filterContractId]);
 
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(max-width: 767px)');
+        const syncLayout = () => setIsMobileLayout(mediaQuery.matches);
+
+        syncLayout();
+        mediaQuery.addEventListener?.('change', syncLayout);
+
+        return () => mediaQuery.removeEventListener?.('change', syncLayout);
+    }, []);
+
     function applyFilters(event) {
         event.preventDefault();
+        setOpenPopover(null);
 
         router.get(route('tenant.ged.index', tenant.slug), filterState, {
             preserveState: true,
@@ -839,6 +889,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
 
     function applyListingState(nextState) {
         setFilterState(nextState);
+        setOpenPopover(null);
         router.get(route('tenant.ged.index', tenant.slug), nextState, {
             preserveState: true,
             preserveScroll: true,
@@ -848,6 +899,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
     function resetFilters() {
         const clean = { q: '', status: '', type_id: '', tag_id: '', correspondent_id: '', contract_id: '', date_from: '', date_to: '', sort: 'added', direction: 'desc' };
         setFilterState(clean);
+        setOpenPopover(null);
         router.get(route('tenant.ged.index', tenant.slug), clean, {
             preserveState: true,
             preserveScroll: true,
@@ -1061,7 +1113,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
 
                             <div className="space-y-3">
                                 <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                                    <FilterDropdown icon={FileCheck2} label="Contrato" activeLabel={selectedContract ? `${selectedContract.code} - ${selectedContract.name}` : null}>
+                                    <FilterDropdown icon={FileCheck2} label="Contrato" activeLabel={selectedContract ? `${selectedContract.code} - ${selectedContract.name}` : null} open={openPopover === 'contract'} onOpenChange={(open) => setOpenPopover(open ? 'contract' : null)}>
                                         <label className="ged-label">Contrato</label>
                                         <DropdownSelect
                                             value={filterState.contract_id}
@@ -1078,22 +1130,22 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                         />
                                     </FilterDropdown>
 
-                                    <FilterDropdown icon={Tag} label="Etiquetas" activeLabel={selectedTag?.name}>
+                                    <FilterDropdown icon={Tag} label="Etiquetas" activeLabel={selectedTag?.name} open={openPopover === 'tags'} onOpenChange={(open) => setOpenPopover(open ? 'tags' : null)}>
                                         <label className="ged-label">Etiqueta</label>
                                         <DropdownSelect value={filterState.tag_id} options={filterTags} placeholder="Todas" onChange={(value) => setFilterState((state) => ({ ...state, tag_id: value }))} />
                                     </FilterDropdown>
 
-                                    <FilterDropdown icon={UserRound} label="Correspondente" activeLabel={selectedCorrespondent?.name}>
+                                    <FilterDropdown icon={UserRound} label="Correspondente" activeLabel={selectedCorrespondent?.name} open={openPopover === 'correspondent'} onOpenChange={(open) => setOpenPopover(open ? 'correspondent' : null)}>
                                         <label className="ged-label">Correspondente</label>
                                         <DropdownSelect value={filterState.correspondent_id} options={filteredFilterCorrespondents} placeholder="Todos" onChange={(value) => setFilterState((state) => ({ ...state, correspondent_id: value }))} />
                                     </FilterDropdown>
 
-                                    <FilterDropdown icon={FileText} label="Tipo de Documento" activeLabel={selectedType?.name}>
+                                    <FilterDropdown icon={FileText} label="Tipo de Documento" activeLabel={selectedType?.name} open={openPopover === 'type'} onOpenChange={(open) => setOpenPopover(open ? 'type' : null)}>
                                         <label className="ged-label">Tipo de Documento</label>
                                         <DropdownSelect value={filterState.type_id} options={filterTypes} placeholder="Todos" onChange={(value) => setFilterState((state) => ({ ...state, type_id: value }))} />
                                     </FilterDropdown>
 
-                                    <FilterDropdown icon={CalendarDays} label="Datas" activeLabel={hasDateFilter ? 'Datas' : null}>
+                                    <FilterDropdown icon={CalendarDays} label="Datas" activeLabel={hasDateFilter ? 'Datas' : null} open={openPopover === 'dates'} onOpenChange={(open) => setOpenPopover(open ? 'dates' : null)}>
                                         <div className="grid gap-3">
                                             <div>
                                                 <label className="ged-label">Criado de</label>
@@ -1124,7 +1176,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                         </div>
 
                                         <div className="w-full sm:w-56">
-                                            <FilterDropdown icon={ArrowUpDown} label="Ordenar" activeLabel={`Ordenar: ${selectedSortLabel}`}>
+                                            <FilterDropdown icon={ArrowUpDown} label="Ordenar" activeLabel={`Ordenar: ${selectedSortLabel}`} open={openPopover === 'sort'} onOpenChange={(open) => setOpenPopover(open ? 'sort' : null)}>
                                                 <div className="space-y-3">
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <button
@@ -1162,7 +1214,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                         {selectedIds.length > 0 && (
                                             <div className="inline-flex flex-wrap gap-2 sm:flex-nowrap">
                                                 {(documentationCan.manage_document_ocr || documentationCan.edit_documents) && (
-                                                    <BulkActionsDropdown tenant={tenant} selectedIds={selectedIds} onRotate={() => setShowRotateModal(true)} canOcr={documentationCan.manage_document_ocr} canEdit={documentationCan.edit_documents} />
+                                                    <BulkActionsDropdown tenant={tenant} selectedIds={selectedIds} onRotate={() => setShowRotateModal(true)} canOcr={documentationCan.manage_document_ocr} canEdit={documentationCan.edit_documents} open={openPopover === 'bulk-actions'} onOpenChange={(open) => setOpenPopover(open ? 'bulk-actions' : null)} />
                                                 )}
                                                 {documentationCan.delete_documents && <button
                                                     type="button"
@@ -1172,7 +1224,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                                     <Trash2 size={16} />
                                                     Excluir
                                                 </button>}
-                                                <BulkDownloadDropdown tenant={tenant} selectedIds={selectedIds} />
+                                                <BulkDownloadDropdown tenant={tenant} selectedIds={selectedIds} open={openPopover === 'bulk-download'} onOpenChange={(open) => setOpenPopover(open ? 'bulk-download' : null)} />
                                             </div>
                                         )}
                                     </div>
@@ -1186,9 +1238,66 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                     {showTourDemo && <TourDocumentCard tenant={tenant} />}
                     {documents.data.length === 0 && !showTourDemo && <EmptyDocuments />}
 
-                    {!showTourDemo && documents.data.length > 0 && viewMode === 'table' && (
-                        <div className="overflow-visible">
-                            <table className="min-w-full text-sm">
+                    {!showTourDemo && documents.data.length > 0 && viewMode === 'table' && isMobileLayout && (
+                        <div className="grid min-w-0 gap-3 p-3">
+                            <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-[var(--ink-600)]">
+                                <DocumentSelectionToggle checked={allPageSelected} onToggle={togglePageSelection} />
+                                Selecionar documentos desta página
+                            </div>
+                            {documents.data.map((document) => {
+                                const selected = selectedIds.includes(document.id);
+
+                                return (
+                                    <article key={document.id} className={`min-w-0 rounded-lg border p-3 shadow-sm ${selected ? 'border-emerald-700 bg-emerald-50/60' : 'border-slate-200 bg-white'}`}>
+                                        <div className="flex min-w-0 items-start gap-3">
+                                            <DocumentSelectionToggle checked={selected} onToggle={() => toggleDocumentSelection(document.id)} className="mt-0.5 shrink-0" />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex min-w-0 items-start gap-2">
+                                                    <Link
+                                                        data-tour="ged-open-document"
+                                                        href={route('tenant.ged.details', [tenant.slug, document.id])}
+                                                        className="min-w-0 flex-1 break-words text-sm font-bold leading-snug text-emerald-800 underline-offset-2 hover:underline"
+                                                    >
+                                                        {document.title}
+                                                    </Link>
+                                                    <PreviewEyeAction document={document} iconOnly previewPlacement="bottom" previewAlignClass="right-0 translate-x-0" />
+                                                </div>
+
+                                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                                    <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold text-cyan-800">{document.type?.name || 'Sem tipo'}</span>
+                                                    <DocumentTags tags={document.tags} />
+                                                    <DocumentNotesLink document={document} tenant={tenant} compact />
+                                                </div>
+
+                                                <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                                                    <div className="min-w-0">
+                                                        <dt className="font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Correspondente</dt>
+                                                        <dd className="mt-0.5 break-words text-[var(--ink-700)]">{document.correspondent?.name || 'Sem correspondente'}</dd>
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <dt className="font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Criado</dt>
+                                                        <dd className="mt-0.5 text-[var(--ink-700)]">{formatDate(document.created_at)}</dd>
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <dt className="font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Proprietário</dt>
+                                                        <dd className="mt-0.5 break-words text-[var(--ink-700)]">{document.uploader || 'Sem proprietário'}</dd>
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <dt className="font-bold uppercase tracking-[0.08em] text-[var(--ink-400)]">Páginas</dt>
+                                                        <dd className="mt-0.5 text-[var(--ink-700)]">{document.page_count || '—'}</dd>
+                                                    </div>
+                                                </dl>
+                                            </div>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {!showTourDemo && documents.data.length > 0 && viewMode === 'table' && !isMobileLayout && (
+                        <div className="min-w-0 overflow-visible">
+                            <table className="w-full text-sm">
                                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-[var(--ink-500)]">
                                     <tr>
                                         <th className="w-10 px-4 py-3">
@@ -1204,7 +1313,7 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                         <th className="px-4 py-3">Compartilhado</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-[var(--border)]">
+                                <tbody>
                                     {documents.data.map((document) => {
                                         const selected = selectedIds.includes(document.id);
 
@@ -1214,12 +1323,12 @@ export default function GedIndex({ tenant, documents, filters = {}, contracts = 
                                                 <DocumentSelectionToggle checked={selected} onToggle={() => toggleDocumentSelection(document.id)} />
                                             </td>
                                             <td className="px-4 py-3">{document.correspondent?.name || '—'}</td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
+                                            <td className="min-w-0 px-4 py-3">
+                                                <div className="flex min-w-0 flex-wrap items-center gap-2">
                                                     <Link
                                                         data-tour="ged-open-document"
                                                         href={route('tenant.ged.details', [tenant.slug, document.id])}
-                                                        className="font-semibold text-emerald-800 underline-offset-2 hover:underline"
+                                                        className="min-w-0 break-words font-semibold text-emerald-800 underline-offset-2 hover:underline"
                                                     >
                                                         {document.title}
                                                     </Link>

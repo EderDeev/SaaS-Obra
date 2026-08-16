@@ -13,7 +13,8 @@ import {
     Trash2,
     X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const tourDemoAccount = {
     id: 'tour-demo-account',
@@ -53,15 +54,67 @@ function ContractOptions({ contracts }) {
 }
 
 function TooltipLabel({ children, tip }) {
+    const triggerRef = useRef(null);
+    const [position, setPosition] = useState(null);
+
+    function showTooltip() {
+        if (!triggerRef.current || typeof window === 'undefined') return;
+
+        const rect = triggerRef.current.getBoundingClientRect();
+        const margin = 12;
+        const width = Math.min(320, window.innerWidth - (margin * 2));
+        const left = Math.min(
+            Math.max(rect.left + (rect.width / 2) - (width / 2), margin),
+            window.innerWidth - width - margin,
+        );
+        const estimatedHeight = 160;
+        const top = rect.bottom + 8 + estimatedHeight <= window.innerHeight
+            ? rect.bottom + 8
+            : Math.max(margin, rect.top - estimatedHeight - 8);
+
+        setPosition({ left, top, width, maxHeight: Math.max(80, window.innerHeight - (margin * 2)) });
+    }
+
+    useEffect(() => {
+        if (!position) return undefined;
+
+        const close = () => setPosition(null);
+        window.addEventListener('resize', close);
+        window.addEventListener('scroll', close, true);
+
+        return () => {
+            window.removeEventListener('resize', close);
+            window.removeEventListener('scroll', close, true);
+        };
+    }, [position]);
+
     return (
         <span className="ged-label inline-flex items-center gap-1.5">
             {children}
-            <span className="group relative inline-flex text-[var(--ink-400)]">
+            <button
+                ref={triggerRef}
+                type="button"
+                className="inline-flex shrink-0 text-[var(--ink-400)] hover:text-[var(--ink-600)] focus:outline-none focus:ring-2 focus:ring-blue-200"
+                aria-label={`Ajuda: ${children}`}
+                aria-expanded={Boolean(position)}
+                onMouseEnter={showTooltip}
+                onMouseLeave={() => setPosition(null)}
+                onFocus={showTooltip}
+                onBlur={() => setPosition(null)}
+                onClick={showTooltip}
+            >
                 <HelpCircle size={14} aria-hidden="true" />
-                <span className="pointer-events-none absolute left-1/2 top-full z-[240] mt-2 hidden w-80 max-w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium normal-case leading-relaxed tracking-normal text-white shadow-lg group-hover:block">
+            </button>
+            {position && typeof document !== 'undefined' && createPortal(
+                <span
+                    role="tooltip"
+                    className="pointer-events-none fixed z-[260] overflow-hidden rounded-xl bg-slate-900 px-3 py-2 text-left text-xs font-medium normal-case leading-relaxed tracking-normal text-white shadow-xl"
+                    style={position}
+                >
                     {tip}
-                </span>
-            </span>
+                </span>,
+                document.body,
+            )}
         </span>
     );
 }
@@ -86,16 +139,16 @@ function ActionButton({ children, tone = 'default', ...props }) {
 
 function Modal({ title, onClose, children, maxWidth = 'max-w-6xl' }) {
     return (
-        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/50 p-4">
-            <div className={`flex max-h-[94vh] w-full ${maxWidth} flex-col overflow-hidden rounded-2xl bg-white shadow-2xl`}>
-                <div className="flex items-center justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
-                    <h2 className="text-2xl font-bold text-[var(--ink-900)]">{title}</h2>
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
+            <div className={`flex max-h-[calc(100dvh-1rem)] w-full ${maxWidth} flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[94vh] sm:rounded-2xl`}>
+                <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-4 sm:px-6 sm:py-5">
+                    <h2 className="min-w-0 text-xl font-bold text-[var(--ink-900)] sm:text-2xl">{title}</h2>
                     <button type="button" className="rounded-lg p-2 text-[var(--ink-500)] hover:bg-slate-100" onClick={onClose}>
                         <X size={28} />
                     </button>
                 </div>
 
-                <div className="overflow-y-auto px-6 py-6">{children}</div>
+                <div className="min-w-0 overflow-y-auto overflow-x-hidden px-4 py-5 sm:px-6 sm:py-6">{children}</div>
             </div>
         </div>
     );
@@ -623,9 +676,9 @@ function RuleModal({ tenant, contracts, accounts, types, tags, correspondents, r
                     </div>
                 </div>
 
-                <div className="-mx-6 -mb-6 mt-2 flex justify-end gap-2 border-t border-[var(--border)] bg-slate-50 px-6 py-4">
-                    <button type="button" className="sig-btn sig-btn-secondary" onClick={onClose}>Cancelar</button>
-                    <button type="submit" className="sig-btn bg-emerald-800 text-white hover:bg-emerald-900" disabled={form.processing}>
+                <div className="-mx-4 -mb-5 mt-2 grid grid-cols-2 gap-2 border-t border-[var(--border)] bg-slate-50 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:flex sm:justify-end sm:px-6">
+                    <button type="button" className="sig-btn sig-btn-secondary justify-center" onClick={onClose}>Cancelar</button>
+                    <button type="submit" className="sig-btn justify-center bg-emerald-800 text-white hover:bg-emerald-900" disabled={form.processing}>
                         {form.processing ? 'Salvando...' : 'Salvar'}
                     </button>
                 </div>
@@ -677,7 +730,7 @@ function ProcessedEmailsModal({ rule, onClose }) {
     return (
         <Modal title={`E-mails processados para regra ${rule?.name || ''}`} onClose={onClose}>
             <div className="overflow-hidden rounded-xl border border-[var(--border)]">
-                <div className="grid grid-cols-[40px_1.4fr_1fr_1fr_0.6fr_1fr] border-b border-[var(--border)] bg-slate-50 px-4 py-3 text-sm font-semibold text-[var(--ink-800)]">
+                <div className="hidden grid-cols-[40px_1.4fr_1fr_1fr_0.6fr_1fr] border-b border-[var(--border)] bg-slate-50 px-4 py-3 text-sm font-semibold text-[var(--ink-800)] md:grid">
                     <label className="flex items-center">
                         <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                     </label>
@@ -691,19 +744,19 @@ function ProcessedEmailsModal({ rule, onClose }) {
                 {rows.length === 0 ? (
                     <div className="px-4 py-5 text-sm text-[var(--ink-500)]">Nenhum e-mail processado para esta regra.</div>
                 ) : rows.map((row) => (
-                    <div key={row.id} className="grid grid-cols-[40px_1.4fr_1fr_1fr_0.6fr_1fr] items-center border-b border-[var(--border)] px-4 py-3 text-sm last:border-b-0">
-                        <label className="flex items-center">
+                    <div key={row.id} className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)] gap-x-2 gap-y-3 border-b border-[var(--border)] px-4 py-4 text-sm last:border-b-0 md:grid-cols-[40px_1.4fr_1fr_1fr_0.6fr_1fr] md:items-center md:gap-0 md:py-3">
+                        <label className="row-span-5 flex items-start pt-1 md:row-span-1 md:items-center md:pt-0">
                             <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={() => toggleOne(row.id)} />
                         </label>
-                        <div className="truncate font-medium">{row.subject || 'Sem assunto'}</div>
-                        <div>{formatDateTime(row.received_at)}</div>
-                        <div>{formatDateTime(row.processed_at)}</div>
+                        <div className="min-w-0 font-medium md:truncate">{row.subject || 'Sem assunto'}</div>
+                        <div><span className="ged-label mr-2 md:hidden">Recebido</span>{formatDateTime(row.received_at)}</div>
+                        <div><span className="ged-label mr-2 md:hidden">Processado</span>{formatDateTime(row.processed_at)}</div>
                         <div>
                             {row.status === 'success' && <CheckCircle2 size={18} className="text-emerald-700" />}
                             {row.status === 'pending_triage' && <span className="sig-pill sig-pill-amber">Triagem</span>}
                             {row.status !== 'success' && row.status !== 'pending_triage' && <span className="sig-pill sig-pill-red">Erro</span>}
                         </div>
-                        <div className="truncate text-xs text-[var(--ink-500)]" title={row.error || ''}>
+                        <div className="break-words text-xs text-[var(--ink-500)] md:truncate" title={row.error || ''}>
                             {row.error || '—'}
                         </div>
                     </div>
@@ -781,7 +834,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
         <AuthenticatedLayout>
             <Head title="E-mail" />
 
-            <div className="mx-auto w-full max-w-[calc(100vw-3rem)] space-y-10 px-4 pb-8 pt-4 sm:max-w-[calc(100vw-4rem)] sm:px-6 lg:px-8">
+            <div className="ged-mobile-page mx-auto w-full space-y-8 px-4 pb-8 pt-5 sm:space-y-10 sm:px-6 lg:px-8">
                 {(flash.success || flash.error) && (
                     <div className={`rounded-2xl border px-5 py-4 text-sm font-semibold ${flash.success ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
                         {flash.success || flash.error}
@@ -789,8 +842,8 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                 )}
 
                 <section data-tour="ged-email-overview">
-                    <div className="mb-3 flex flex-wrap items-center gap-4">
-                        <h1 className="text-3xl font-bold text-[var(--ink-900)]">Contas de e-mail</h1>
+                    <div className="mb-3 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+                        <h1 className="text-2xl font-bold text-[var(--ink-900)] sm:text-3xl">Contas de e-mail</h1>
                         <button type="button" className="sig-btn sig-btn-secondary border-emerald-800 text-emerald-800" onClick={() => setModal('account')}>
                             <PlusCircle size={18} />
                             Adicionar Conta
@@ -798,7 +851,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                     </div>
 
                     <div data-tour="ged-email-accounts" className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
-                        <div className="grid grid-cols-12 border-b border-[var(--border)] px-5 py-4 text-base font-medium text-[var(--ink-900)]">
+                        <div className="hidden grid-cols-12 border-b border-[var(--border)] px-5 py-4 text-base font-medium text-[var(--ink-900)] md:grid">
                             <div className="col-span-3">Nome</div>
                             <div className="col-span-3">Servidor</div>
                             <div className="col-span-3">Usuário</div>
@@ -808,15 +861,15 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                         {visibleAccounts.length === 0 ? (
                             <div className="px-5 py-5 text-[var(--ink-600)]">Nenhuma conta de e-mail definida.</div>
                         ) : visibleAccounts.map((account, index) => (
-                            <div key={account.id} data-tour={index === 0 ? 'ged-email-account-example' : undefined} className="grid min-h-28 grid-cols-12 items-center border-b border-[var(--border)] px-5 py-4 text-base text-[var(--ink-900)] last:border-b-0">
-                                <div className="col-span-3 flex items-center gap-2 text-emerald-800">
+                            <div key={account.id} data-tour={index === 0 ? 'ged-email-account-example' : undefined} className="grid min-w-0 gap-3 border-b border-[var(--border)] px-4 py-4 text-sm text-[var(--ink-900)] last:border-b-0 md:min-h-28 md:grid-cols-12 md:items-center md:px-5 md:text-base">
+                                <div className="flex min-w-0 items-center gap-2 text-emerald-800 md:col-span-3">
                                     <span>{account.name}</span>
                                     <Mail size={20} />
                                 </div>
-                                <div className="col-span-3">{account.host}</div>
-                                <div className="col-span-3">{account.username}</div>
-                                <div className="col-span-3 flex flex-wrap items-center gap-3">
-                                    <div className="inline-flex overflow-hidden rounded-md border border-slate-400 bg-white">
+                                <div className="min-w-0 break-all md:col-span-3 md:break-normal">{account.host}</div>
+                                <div className="min-w-0 break-all md:col-span-3 md:break-normal">{account.username}</div>
+                                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap md:col-span-3 md:items-center md:gap-3">
+                                    <div className="grid w-full grid-cols-3 overflow-hidden rounded-md border border-slate-400 bg-white sm:inline-flex sm:w-auto">
                                         <ActionButton title="Editar" disabled={account._tourDemo} onClick={() => setModal({ type: 'account', account })}>
                                             <Edit3 size={20} />
                                             Editar
@@ -841,8 +894,8 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                 </section>
 
                 <section data-tour="ged-email-rules">
-                    <div className="mb-3 flex flex-wrap items-center gap-4">
-                        <h2 className="text-3xl font-bold text-[var(--ink-900)]">Regras de e-mail</h2>
+                    <div className="mb-3 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+                        <h2 className="text-2xl font-bold text-[var(--ink-900)] sm:text-3xl">Regras de e-mail</h2>
                         <button type="button" className="sig-btn sig-btn-secondary border-emerald-800 text-emerald-800" onClick={() => setModal('rule')}>
                             <PlusCircle size={18} />
                             Adicionar Regra
@@ -850,7 +903,7 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                     </div>
 
                     <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
-                        <div className="grid grid-cols-12 border-b border-[var(--border)] px-5 py-4 text-base font-medium text-[var(--ink-900)]">
+                        <div className="hidden grid-cols-12 border-b border-[var(--border)] px-5 py-4 text-base font-medium text-[var(--ink-900)] md:grid">
                             <div className="col-span-2">Nome</div>
                             <div className="col-span-1">Ordem de exibição</div>
                             <div className="col-span-2">Conta</div>
@@ -862,19 +915,19 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                         {visibleRules.length === 0 ? (
                             <div className="px-5 py-5 text-base text-[var(--ink-900)]">Nenhuma regra de e-mail definida.</div>
                         ) : visibleRules.map((rule, index) => (
-                            <div key={rule.id} data-tour={index === 0 ? 'ged-email-rule-example' : undefined} className="grid grid-cols-12 items-center border-b border-[var(--border)] px-5 py-4 text-base last:border-b-0">
-                                <div className="col-span-2 font-medium">{rule.name}</div>
-                                <div className="col-span-1">{rule.priority}</div>
-                                <div className="col-span-2">{rule.account?.name || '—'}</div>
-                                <div className="col-span-2">
+                            <div key={rule.id} data-tour={index === 0 ? 'ged-email-rule-example' : undefined} className="grid min-w-0 grid-cols-2 gap-3 border-b border-[var(--border)] px-4 py-4 text-sm last:border-b-0 md:grid-cols-12 md:items-center md:px-5 md:text-base">
+                                <div className="col-span-2 min-w-0 font-medium md:col-span-2">{rule.name}</div>
+                                <div className="md:col-span-1"><span className="ged-label mr-2 md:hidden">Ordem</span>{rule.priority}</div>
+                                <div className="min-w-0 truncate md:col-span-2">{rule.account?.name || '—'}</div>
+                                <div className="md:col-span-2">
                                     <span className={rule.is_active ? 'sig-pill sig-pill-green' : 'sig-pill sig-pill-muted'}>
                                         {rule.is_active ? 'Ativa' : 'Inativa'}
                                     </span>
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-2 md:col-span-2">
                                     <button
                                         type="button"
-                                        className="sig-btn sig-btn-secondary min-h-9 px-3 py-1 text-xs"
+                                        className="sig-btn sig-btn-secondary min-h-9 w-full justify-center px-3 py-1 text-xs md:w-auto"
                                         disabled={rule._tourDemo}
                                         onClick={() => setModal({ type: 'processed', rule })}
                                     >
@@ -883,8 +936,8 @@ export default function GedEmail({ tenant, contracts = [], accounts = [], rules 
                                         {rule.processed_messages_count ? ` (${rule.processed_messages_count})` : ''}
                                     </button>
                                 </div>
-                                <div className="col-span-3">
-                                    <div className="inline-flex overflow-hidden rounded-md border border-slate-400 bg-white">
+                                <div className="col-span-2 md:col-span-3">
+                                    <div className="grid w-full grid-cols-2 overflow-hidden rounded-md border border-slate-400 bg-white md:inline-flex md:w-auto">
                                         <ActionButton title="Editar" disabled={rule._tourDemo} onClick={() => setModal({ type: 'rule', rule })}>
                                             <Edit3 size={18} />
                                             Editar

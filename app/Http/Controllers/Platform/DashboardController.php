@@ -48,11 +48,6 @@ class DashboardController extends Controller
                 ])
                 ->values(),
             'storageUsage' => $storageUsage,
-            'recentTenants' => Tenant::query()
-                ->withCount(['users', 'contracts'])
-                ->latest()
-                ->limit(5)
-                ->get(['id', 'name', 'slug', 'plan', 'status', 'created_at']),
         ]);
     }
 

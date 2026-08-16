@@ -93,6 +93,7 @@ const convertImageToJpeg = (file) => new Promise((resolve) => {
 
 export default function RelatorioNaoConformidadeCreate({
     tenant,
+    contracts = [],
     obras,
     empresas,
     projects = [],
@@ -103,7 +104,10 @@ export default function RelatorioNaoConformidadeCreate({
 }) {
     const page = usePage();
     const isEditing = mode === 'edit' && rnc;
-    const defaultObraId = rnc?.obra_id ?? obras[0]?.id ?? '';
+    const defaultObraId = rnc?.obra_id ?? '';
+    const defaultContractId = rnc?.contract_id
+        ?? obras.find((obra) => String(obra.id) === String(defaultObraId))?.contract_id
+        ?? '';
     const initialOpenedAt = dateInput(rnc?.opened_at) || today();
     const [selectedPhotos, setSelectedPhotos] = useState(() => (rnc?.photos || []).map((photo) => ({
         id: `existing-${photo.id}`,
@@ -116,6 +120,7 @@ export default function RelatorioNaoConformidadeCreate({
     })));
     const selectedPhotosRef = useRef([]);
     const form = useForm({
+        contract_id: defaultContractId,
         obra_id: defaultObraId,
         project_document_ids: (
             rnc?.project_documents?.length
@@ -148,31 +153,41 @@ export default function RelatorioNaoConformidadeCreate({
             return;
         }
 
+        const draftObra = obras.find((obra) => String(obra.id) === String(assistantDraft.obra_id));
+
         form.setData((current) => ({
             ...current,
             ...assistantDraft,
+            contract_id: assistantDraft.contract_id ?? draftObra?.contract_id ?? '',
             project_document_ids: [],
         }));
     }, []);
 
+    const obrasForSelectedContract = useMemo(
+        () => obras.filter((obra) => String(obra.contract_id) === String(form.data.contract_id)),
+        [obras, form.data.contract_id],
+    );
     const selectedObra = useMemo(
         () => obras.find((obra) => String(obra.id) === String(form.data.obra_id)),
         [obras, form.data.obra_id],
     );
     const errorMessages = Object.values(form.errors || {}).filter(Boolean);
     const empresasForSelectedContract = useMemo(
-        () => empresas.filter((empresa) => String(empresa.contract_id) === String(selectedObra?.contract_id)),
-        [empresas, selectedObra?.contract_id],
+        () => empresas.filter((empresa) => String(empresa.contract_id) === String(form.data.contract_id)),
+        [empresas, form.data.contract_id],
     );
     const projectsForSelectedObra = useMemo(
         () => projects.filter((project) => String(project.obra_id) === String(selectedObra?.id)),
         [projects, selectedObra?.id],
     );
     const disciplinasForSelectedContract = useMemo(
-        () => disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(selectedObra?.contract_id)),
-        [disciplinas, selectedObra?.contract_id],
+        () => disciplinas.filter((disciplina) => String(disciplina.contract_id) === String(form.data.contract_id)),
+        [disciplinas, form.data.contract_id],
     );
-    const canCreate = obras.length > 0 && empresasForSelectedContract.length >= 2 && disciplinasForSelectedContract.length > 0;
+    const canCreate = Boolean(form.data.contract_id)
+        && Boolean(form.data.obra_id)
+        && empresasForSelectedContract.length >= 2
+        && disciplinasForSelectedContract.length > 0;
     const selectedContratanteEmpresa = useMemo(
         () => empresasForSelectedContract.find((empresa) => String(empresa.id) === String(form.data.contratante_empresa_id)),
         [empresasForSelectedContract, form.data.contratante_empresa_id],
@@ -193,6 +208,34 @@ export default function RelatorioNaoConformidadeCreate({
             }
         });
     }, []);
+
+    const setContract = (contractId) => {
+        const validObraIds = obras
+            .filter((obra) => String(obra.contract_id) === String(contractId))
+            .map((obra) => obra.id);
+        const validCompanyIds = empresas
+            .filter((empresa) => String(empresa.contract_id) === String(contractId))
+            .map((empresa) => empresa.id);
+        const validDisciplinaIds = disciplinas
+            .filter((disciplina) => String(disciplina.contract_id) === String(contractId))
+            .map((disciplina) => disciplina.id);
+        const currentObraId = validObraIds.includes(Number(form.data.obra_id)) ? form.data.obra_id : '';
+        const validProjectIds = projects
+            .filter((project) => String(project.obra_id) === String(currentObraId))
+            .map((project) => project.id);
+
+        form.setData({
+            ...form.data,
+            contract_id: contractId,
+            obra_id: currentObraId,
+            project_document_ids: form.data.project_document_ids
+                .map(Number)
+                .filter((projectId) => validProjectIds.includes(projectId)),
+            disciplina_id: validDisciplinaIds.includes(Number(form.data.disciplina_id)) ? form.data.disciplina_id : '',
+            contratante_empresa_id: validCompanyIds.includes(Number(form.data.contratante_empresa_id)) ? form.data.contratante_empresa_id : '',
+            contratada_empresa_id: validCompanyIds.includes(Number(form.data.contratada_empresa_id)) ? form.data.contratada_empresa_id : '',
+        });
+    };
 
     const setObra = (obraId) => {
         const obra = obras.find((item) => String(item.id) === String(obraId));
@@ -331,10 +374,10 @@ export default function RelatorioNaoConformidadeCreate({
         <AuthenticatedLayout>
             <Head title={isEditing ? `Editar RNC ${rnc.formatted_number}` : 'Nova RNC'} />
 
-            <section className="sig-content">
-                <form className="sig-card p-5" onSubmit={submit}>
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
+            <section className="sig-content quality-mobile-page">
+                <form className="sig-card min-w-0 p-4 sm:p-5" onSubmit={submit}>
+                    <div className="quality-page-header flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0">
                             <div className="flex items-center gap-2 text-[var(--ink-500)]">
                                 <ClipboardX size={14} />
                                 <span className="eyebrow">Qualidade</span>
@@ -367,23 +410,38 @@ export default function RelatorioNaoConformidadeCreate({
                     )}
 
                     <div className="mt-5 grid gap-3">
+                        <Field label="Contrato">
+                            <select
+                                value={form.data.contract_id}
+                                onChange={(event) => setContract(event.target.value)}
+                                required
+                            >
+                                <option value="">Selecione o contrato</option>
+                                {contracts.map((contract) => (
+                                    <option key={contract.id} value={contract.id}>
+                                        {contract.code} - {contract.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
                         <Field label="Obra" error={form.errors.obra_id}>
-                            <select value={form.data.obra_id} onChange={(event) => setObra(event.target.value)} required>
-                                <option value="">Selecione a obra</option>
-                                {obras.map((obra) => (
+                            <select
+                                value={form.data.obra_id}
+                                onChange={(event) => setObra(event.target.value)}
+                                disabled={!form.data.contract_id}
+                                required
+                            >
+                                <option value="">
+                                    {form.data.contract_id ? 'Selecione a obra' : 'Selecione o contrato primeiro'}
+                                </option>
+                                {obrasForSelectedContract.map((obra) => (
                                     <option key={obra.id} value={obra.id}>
                                         {obra.codigo} - {obra.nome}
                                     </option>
                                 ))}
                             </select>
                         </Field>
-
-                        {selectedObra?.contract && (
-                            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-                                <div className="mono text-[12px] font-semibold text-[var(--ink-700)]">{selectedObra.contract.code}</div>
-                                <div className="text-[12px] text-[var(--ink-500)]">{selectedObra.contract.name}</div>
-                            </div>
-                        )}
 
                         <label className="block">
                             <span className="eyebrow mb-1 block">Projetos vinculados</span>

@@ -54,7 +54,9 @@ class OrcamentoController extends Controller
 
     private const SICRO3_CALCULATION_METHOD = 'sicro3_round_4_2';
 
-    private const CALCULATION_METHODS = ['truncate_2', 'round_2', 'none', 'sicro3_round_4_2'];
+    private const SINAPI_CALCULATION_METHODS = ['truncate_2', 'round_2', 'none'];
+
+    private const CALCULATION_METHODS = [...self::SINAPI_CALCULATION_METHODS, self::SICRO3_CALCULATION_METHOD];
 
     private const ORCAMENTO_ROUNDING_METHODS = [
         'round_all_2',
@@ -162,7 +164,15 @@ class OrcamentoController extends Controller
 
         $screen = (string) $request->query('screen', 'insumos');
 
-        if (! in_array($screen, ['insumos', 'composicoes', 'orcamento'], true)) {
+        if (! in_array($screen, [
+            'insumos',
+            'composicoes',
+            'composicao-sinapi',
+            'composicao-sicro',
+            'orcamento-criacao',
+            'orcamento-regras',
+            'orcamento',
+        ], true)) {
             $screen = 'insumos';
         }
 
@@ -224,9 +234,9 @@ class OrcamentoController extends Controller
 
         $bdiPercentual = $this->parseDecimal($data['bdi_percentual']);
 
-        if ($bdiPercentual === null || $bdiPercentual < 0) {
+        if ($bdiPercentual === null || (float) $bdiPercentual < 0 || (float) $bdiPercentual > 100) {
             throw ValidationException::withMessages([
-                'bdi_percentual' => 'Informe um percentual de BDI valido.',
+                'bdi_percentual' => 'Informe um percentual de BDI entre 0,00 e 100,00.',
             ]);
         }
 
@@ -303,9 +313,9 @@ class OrcamentoController extends Controller
         $encargosHorista = $this->parseOptionalPercentage($data['encargos_horista'] ?? null, 'encargos_horista');
         $encargosMensalista = $this->parseOptionalPercentage($data['encargos_mensalista'] ?? null, 'encargos_mensalista');
 
-        if ($bdiPercentual === null || (float) $bdiPercentual < 0) {
+        if ($bdiPercentual === null || (float) $bdiPercentual < 0 || (float) $bdiPercentual > 100) {
             throw ValidationException::withMessages([
-                'bdi_percentual' => 'Informe um percentual de BDI válido.',
+                'bdi_percentual' => 'Informe um percentual de BDI entre 0,00 e 100,00.',
             ]);
         }
 
@@ -1300,9 +1310,9 @@ class OrcamentoController extends Controller
 
         $bdiPercentual = $this->parseDecimal($data['bdi_percentual'] ?? null);
 
-        if ($bdiPercentual === null || (float) $bdiPercentual < 0) {
+        if ($bdiPercentual === null || (float) $bdiPercentual < 0 || (float) $bdiPercentual > 100) {
             throw ValidationException::withMessages([
-                'bdi_percentual' => 'Informe um percentual de BDI valido.',
+                'bdi_percentual' => 'Informe um percentual de BDI entre 0,00 e 100,00.',
             ]);
         }
 
@@ -1556,6 +1566,38 @@ class OrcamentoController extends Controller
             ->all();
 
         $model = mb_strtoupper($data['modelo']);
+        $validationErrors = [];
+
+        if ($model === 'SINAPI' && ! in_array($data['metodo_calculo'], self::SINAPI_CALCULATION_METHODS, true)) {
+            $validationErrors['metodo_calculo'] = 'Selecione um metodo de calculo valido para a composicao SINAPI.';
+        }
+
+        if (collect($baseReferences)->contains(fn (array $reference): bool => mb_strtoupper($reference['nome']) !== $model)) {
+            $validationErrors['base_references'] = 'Selecione somente bases de referencia do modelo escolhido.';
+        }
+
+        $production = $this->parseDecimal($data['producao_equipe'] ?? null);
+        $additionalLabor = $this->parseDecimal($data['adicional_mao_obra'] ?? null);
+        $rainFactor = $this->parseDecimal($data['fator_influencia_chuvas'] ?? null);
+
+        if ($model === 'SICRO3') {
+            if ($production === null || (float) $production <= 0) {
+                $validationErrors['producao_equipe'] = 'Informe uma producao de equipe maior que zero.';
+            }
+
+            if (trim((string) ($data['adicional_mao_obra'] ?? '')) !== '' && ($additionalLabor === null || (float) $additionalLabor < 0)) {
+                $validationErrors['adicional_mao_obra'] = 'Informe um valor adicional igual ou maior que zero.';
+            }
+
+            if (trim((string) ($data['fator_influencia_chuvas'] ?? '')) !== '' && ($rainFactor === null || (float) $rainFactor < 0)) {
+                $validationErrors['fator_influencia_chuvas'] = 'Informe um FIC igual ou maior que zero.';
+            }
+        }
+
+        if ($validationErrors !== []) {
+            throw ValidationException::withMessages($validationErrors);
+        }
+
         $composicao = OrcamentoComposicao::create([
             'tenant_id' => $tenant->id,
             'created_by_id' => $request->user()->id,
@@ -1566,9 +1608,9 @@ class OrcamentoController extends Controller
             'uf' => mb_strtoupper($data['uf']),
             'modelo' => $model,
             'metodo_calculo' => $model === 'SICRO3' ? self::SICRO3_CALCULATION_METHOD : $data['metodo_calculo'],
-            'producao_equipe' => $model === 'SICRO3' ? ($this->parseDecimal($data['producao_equipe'] ?? null) ?? '1.000000') : null,
-            'adicional_mao_obra' => $model === 'SICRO3' ? $this->parseDecimal($data['adicional_mao_obra'] ?? null) : null,
-            'fator_influencia_chuvas' => $model === 'SICRO3' ? $this->parseDecimal($data['fator_influencia_chuvas'] ?? null) : null,
+            'producao_equipe' => $model === 'SICRO3' ? $production : null,
+            'adicional_mao_obra' => $model === 'SICRO3' ? $additionalLabor : null,
+            'fator_influencia_chuvas' => $model === 'SICRO3' ? $rainFactor : null,
             'observacao' => $data['observacao'] ? trim($data['observacao']) : null,
             'base_references' => $baseReferences,
         ]);
@@ -6540,6 +6582,7 @@ class OrcamentoController extends Controller
                 ->values()
                 ->all(),
             'types' => [
+                ['value' => 'SICRO3', 'label' => 'SICRO3'],
                 ['value' => 'ASTU - ASSENTAMENTO DE TUBOS E PECAS', 'label' => 'ASTU - Assentamento de tubos e pecas'],
                 ['value' => 'CANT - CANTEIRO DE OBRAS', 'label' => 'CANT - Canteiro de obras'],
                 ['value' => 'COBE - COBERTURA', 'label' => 'COBE - Cobertura'],

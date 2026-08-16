@@ -76,6 +76,7 @@ export default function CreateOrcamento({ tenant, options = {} }) {
 
     const validateStepTwo = () => {
         const errors = {};
+        const bdiPercentual = parsePercentageInput(form.data.bdi_percentual);
 
         if (!form.data.arredondamento) {
             errors.arredondamento = 'Selecione o arredondamento.';
@@ -91,6 +92,8 @@ export default function CreateOrcamento({ tenant, options = {} }) {
 
         if (!String(form.data.bdi_percentual).trim()) {
             errors.bdi_percentual = 'Informe o percentual de BDI.';
+        } else if (bdiPercentual === null || bdiPercentual < 0 || bdiPercentual > 100) {
+            errors.bdi_percentual = 'Informe um percentual entre 0,00 e 100,00.';
         }
 
         return errors;
@@ -429,10 +432,12 @@ function CalculationStep({
                 <Field className="mt-4 max-w-xl" label="Percentual de BDI (%)" error={form.errors.bdi_percentual}>
                     <input
                         className="sig-input"
+                        inputMode="decimal"
+                        maxLength={6}
                         placeholder="0,00"
                         type="text"
                         value={form.data.bdi_percentual}
-                        onChange={(event) => onChange('bdi_percentual', event.target.value)}
+                        onChange={(event) => onChange('bdi_percentual', formatPercentageWhileTyping(event.target.value))}
                     />
                 </Field>
             </div>
@@ -447,6 +452,32 @@ function CalculationStep({
             </div>
         </section>
     );
+}
+
+function parsePercentageInput(value) {
+    const normalized = String(value ?? '').trim().replace(',', '.');
+
+    if (normalized === '' || !/^\d{1,3}(?:\.\d{0,2})?$/.test(normalized)) {
+        return null;
+    }
+
+    const parsed = Number(normalized);
+
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatPercentageWhileTyping(value) {
+    const digits = String(value ?? '').replace(/\D/g, '').slice(0, 5);
+
+    if (!digits) {
+        return '';
+    }
+
+    return (Number(digits) / 100).toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        useGrouping: false,
+    });
 }
 
 function ReferenceStep({

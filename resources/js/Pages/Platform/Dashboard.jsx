@@ -32,18 +32,6 @@ const planColors = {
     enterprise: 'bg-slate-700',
 };
 
-const statusPills = {
-    active: 'sig-pill-green',
-    trial: 'sig-pill-blue',
-    suspended: 'sig-pill-red',
-};
-
-const recentStatusLabels = {
-    active: 'Ativo',
-    trial: 'Em teste',
-    suspended: 'Suspenso',
-};
-
 const storageModules = [
     ['documentation', 'Documentação'],
     ['projects', 'Projetos'],
@@ -54,12 +42,12 @@ const storageModules = [
     ['service_orders', 'OS'],
 ];
 
-export default function PlatformDashboard({ stats, tenantStatuses, tenantPlans, storageUsage, recentTenants }) {
+export default function PlatformDashboard({ stats, tenantStatuses, tenantPlans, storageUsage }) {
     return (
         <AuthenticatedLayout>
             <Head title="Visão da Plataforma" />
 
-            <section className="sig-content fade-in">
+            <section className="sig-content min-w-0 overflow-x-hidden fade-in">
                 <header className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-end">
                     <div className="min-w-0 flex-1">
                         <div className="eyebrow">Plataforma</div>
@@ -106,12 +94,12 @@ export default function PlatformDashboard({ stats, tenantStatuses, tenantPlans, 
                 </div>
 
                 <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(260px,0.65fr)_minmax(0,1.35fr)]">
-                    <section className="sig-card p-5">
+                    <section className="sig-card min-w-0 p-5">
                         <div className="flex items-start gap-3">
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-700">
                                 <Layers3 size={18} />
                             </span>
-                            <div>
+                            <div className="min-w-0">
                                 <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Distribuição dos tenants</h2>
                                 <p className="mt-0.5 text-xs text-[var(--ink-500)]">Situação operacional e planos contratados.</p>
                             </div>
@@ -128,14 +116,45 @@ export default function PlatformDashboard({ stats, tenantStatuses, tenantPlans, 
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-700">
                                 <HardDrive size={18} />
                             </span>
-                            <div>
+                            <div className="min-w-0">
                                 <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Consumo por tenant e módulo</h2>
                                 <p className="mt-0.5 text-xs text-[var(--ink-500)]">Armazenamento registrado em gigabytes.</p>
                             </div>
                         </header>
 
                         {storageUsage.length > 0 ? (
-                            <div className="overflow-x-auto">
+                            <>
+                            <div className="divide-y divide-[var(--border)] lg:hidden">
+                                {storageUsage.map((tenant) => (
+                                    <article key={tenant.id} className="min-w-0 px-4 py-4">
+                                        <div className="flex min-w-0 items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <h3 className="break-words text-sm font-semibold text-[var(--ink-900)]">{tenant.name}</h3>
+                                                <p className="mt-0.5 break-all text-xs text-[var(--ink-500)]">{tenant.slug}</p>
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <div className="eyebrow">Total</div>
+                                                <div className="mono mt-1 whitespace-nowrap text-xs font-semibold text-[var(--ink-900)]">
+                                                    {formatGigabytes(tenant.total_bytes)}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                                            {storageModules.map(([key, label]) => (
+                                                <div key={key} className="min-w-0 border-t border-slate-100 pt-2">
+                                                    <dt className="truncate text-[11px] font-medium text-[var(--ink-500)]">{label}</dt>
+                                                    <dd className="mono mt-1 whitespace-nowrap text-xs font-semibold text-[var(--ink-700)]">
+                                                        {formatGigabytes(tenant.modules[key])}
+                                                    </dd>
+                                                </div>
+                                            ))}
+                                        </dl>
+                                    </article>
+                                ))}
+                            </div>
+
+                            <div className="hidden overflow-x-auto lg:block">
                                 <table className="sig-table min-w-[940px]">
                                     <thead>
                                         <tr>
@@ -164,43 +183,13 @@ export default function PlatformDashboard({ stats, tenantStatuses, tenantPlans, 
                                     </tbody>
                                 </table>
                             </div>
+                            </>
                         ) : (
                             <p className="px-5 py-8 text-center text-sm text-[var(--ink-500)]">Nenhum tenant cadastrado.</p>
                         )}
                     </section>
                 </div>
 
-                <section className="sig-card mt-4 overflow-hidden">
-                    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-                        <div>
-                            <h2 className="text-[15px] font-semibold text-[var(--ink-900)]">Tenants adicionados recentemente</h2>
-                            <p className="mt-0.5 text-xs text-[var(--ink-500)]">Últimas entradas na plataforma.</p>
-                        </div>
-                        <Link href={route('platform.tenants.index')} className="text-sm font-semibold text-[var(--primary)] hover:underline">
-                            Ver todos
-                        </Link>
-                    </header>
-
-                    {recentTenants.length > 0 ? (
-                        <div className="divide-y divide-[var(--border)]">
-                            {recentTenants.map((tenant) => (
-                                <div key={tenant.id} className="grid gap-3 px-5 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-                                    <div className="min-w-0">
-                                        <div className="truncate text-sm font-semibold text-[var(--ink-900)]">{tenant.name}</div>
-                                        <div className="mt-0.5 truncate text-xs text-[var(--ink-500)]">{tenant.slug}</div>
-                                    </div>
-                                    <span className={`sig-pill ${statusPills[tenant.status] || 'sig-pill-muted'}`}>
-                                        <span className="sig-pill-dot" />
-                                        {recentStatusLabels[tenant.status] || tenant.status}
-                                    </span>
-                                    <time className="text-xs text-[var(--ink-500)]">{formatDate(tenant.created_at)}</time>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="px-5 py-8 text-center text-sm text-[var(--ink-500)]">Nenhum tenant cadastrado.</p>
-                    )}
-                </section>
             </section>
         </AuthenticatedLayout>
     );
@@ -208,15 +197,15 @@ export default function PlatformDashboard({ stats, tenantStatuses, tenantPlans, 
 
 function Metric({ icon: Icon, label, value, sub, tone }) {
     return (
-        <div className="sig-card p-[18px]">
+        <div className="sig-card min-w-0 p-[18px]">
             <div className="flex items-center justify-between gap-3">
                 <span className="eyebrow">{label}</span>
                 <span className={`flex h-8 w-8 items-center justify-center rounded-md ${tone}`}>
                     <Icon size={16} />
                 </span>
             </div>
-            <div className="mono mt-2 text-[26px] font-semibold text-[var(--ink-900)]">{value}</div>
-            <p className="mt-0.5 text-[12.5px] text-[var(--ink-500)]">{sub}</p>
+            <div className="mono mt-2 break-words text-[26px] font-semibold text-[var(--ink-900)]">{value}</div>
+            <p className="mt-0.5 break-words text-[12.5px] text-[var(--ink-500)]">{sub}</p>
         </div>
     );
 }
@@ -256,14 +245,4 @@ function formatGigabytes(bytes) {
         minimumFractionDigits: 2,
         maximumFractionDigits: precision,
     }).format(gigabytes)} GB`;
-}
-
-function formatDate(value) {
-    if (!value) return '';
-
-    return new Intl.DateTimeFormat('pt-BR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-    }).format(new Date(value));
 }

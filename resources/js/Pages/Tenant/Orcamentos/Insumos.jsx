@@ -1,6 +1,5 @@
 import { router, useForm, usePage } from '@inertiajs/react';
-import ConfirmActionButton from '@/Components/ConfirmActionButton';
-import { Building2, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, FolderTree, Globe2, Pencil, Plus, Search, Trash2, UploadCloud, X } from 'lucide-react';
+import { Building2, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Globe2, Plus, Search, UploadCloud, X } from 'lucide-react';
 import { cloneElement, useEffect, useMemo, useState } from 'react';
 import OrcamentoShell from './Partials/OrcamentoShell';
 
@@ -65,8 +64,6 @@ export default function OrcamentosInsumos({
     typeOptions = [],
     typeOptionsByBank = {},
     dateOptions = [],
-    grupoOptions = [],
-    grupos = [],
     canManageTenantInsumos = false,
     canManageGlobalInsumos = false,
     canImportTenantInsumos = false,
@@ -89,7 +86,6 @@ export default function OrcamentosInsumos({
     const createForm = useForm({
         scope: 'tenant',
         tipo: '',
-        grupo_id: '',
         codigo_insumo: '',
         descricao: '',
         unidade: '',
@@ -110,7 +106,6 @@ export default function OrcamentosInsumos({
         data: currentMonthReference(),
         tipo_column: '',
         codigo_column: '',
-        grupo_column: '',
         descricao_column: '',
         unidade_column: '',
         preco_desonerado_column: '',
@@ -138,7 +133,6 @@ export default function OrcamentosInsumos({
 
     const visiblePanels = useMemo(() => ({
         create: canManageTenantInsumos,
-        groups: canManageTenantInsumos,
         importTenant: canImportTenantInsumos,
         importGlobal: canManageGlobalInsumos,
     }), [canImportTenantInsumos, canManageGlobalInsumos, canManageTenantInsumos]);
@@ -238,11 +232,6 @@ export default function OrcamentosInsumos({
             eyebrow="Orçamentos · Bases de preço"
             actions={(
                 <>
-                    {visiblePanels.groups && (
-                        <ActionButton active={activePanel === 'groups'} icon={FolderTree} onClick={() => togglePanel('groups')}>
-                            Grupos
-                        </ActionButton>
-                    )}
                     {visiblePanels.importTenant && (
                         <ActionButton active={activePanel === 'importTenant'} icon={Building2} onClick={() => togglePanel('importTenant')}>
                             Importar base própria
@@ -278,17 +267,8 @@ export default function OrcamentosInsumos({
             {createModalOpen && (
                 <CreateInsumoModal
                     form={createForm}
-                    grupoOptions={grupoOptions}
                     onClose={closeCreateModal}
                     onSubmit={submitCreate}
-                />
-            )}
-
-            {activePanel === 'groups' && (
-                <InsumoGroupsPanel
-                    grupos={grupos}
-                    onClose={() => setActivePanel(null)}
-                    tenant={tenant}
                 />
             )}
 
@@ -355,7 +335,7 @@ function SearchPanel({
     return (
         <section className="mb-5">
             <div
-                className="mb-4 flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible"
+                className="budget-filter-chips mb-4 flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible"
                 style={{ scrollbarWidth: 'none' }}
             >
                 <TypeChip
@@ -592,163 +572,7 @@ function ImportResultFeedback({ result }) {
     );
 }
 
-function InsumoGroupsPanel({ grupos = [], onClose, tenant }) {
-    const [editingId, setEditingId] = useState(null);
-    const createForm = useForm({
-        nome: '',
-        descricao: '',
-    });
-    const editForm = useForm({
-        nome: '',
-        descricao: '',
-    });
-
-    const submitCreate = (event) => {
-        event.preventDefault();
-
-        createForm.post(route('tenant.orcamentos.insumos.grupos.store', tenant.slug), {
-            preserveScroll: true,
-            onSuccess: () => createForm.reset(),
-        });
-    };
-
-    const startEdit = (grupo) => {
-        setEditingId(grupo.id);
-        editForm.setData({
-            nome: grupo.nome ?? '',
-            descricao: grupo.descricao ?? '',
-        });
-    };
-
-    const cancelEdit = () => {
-        setEditingId(null);
-        editForm.reset();
-        editForm.clearErrors();
-    };
-
-    const submitEdit = (event, grupo) => {
-        event.preventDefault();
-
-        editForm.patch(route('tenant.orcamentos.insumos.grupos.update', [tenant.slug, grupo.id]), {
-            preserveScroll: true,
-            onSuccess: cancelEdit,
-        });
-    };
-
-    return (
-        <section className="sig-card mb-5 overflow-hidden">
-            <PanelHeader
-                description="Organize os insumos proprios por grupos, como materiais hidraulicos, equipamentos ou familias de servicos."
-                icon={FolderTree}
-                onClose={onClose}
-                title="Grupos de insumos"
-            />
-
-            <div className="grid gap-5 p-5 xl:grid-cols-[minmax(280px,360px)_1fr]">
-                <form className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4" onSubmit={submitCreate}>
-                    <h3 className="text-sm font-semibold text-[var(--ink-900)]">Novo grupo</h3>
-                    <p className="mt-1 text-xs text-[var(--ink-500)]">Os grupos criados aqui aparecem no cadastro manual de insumo.</p>
-
-                    <div className="mt-4 grid gap-3">
-                        <Field label="Nome" error={createForm.errors.nome}>
-                            <input value={createForm.data.nome} onChange={(event) => createForm.setData('nome', event.target.value)} placeholder="Ex: Equipamentos de compactacao" />
-                        </Field>
-                        <Field label="Descricao" error={createForm.errors.descricao}>
-                            <textarea
-                                value={createForm.data.descricao}
-                                onChange={(event) => createForm.setData('descricao', event.target.value)}
-                                placeholder="Opcional"
-                                style={{ minHeight: 78, paddingTop: 10, resize: 'vertical' }}
-                            />
-                        </Field>
-                    </div>
-
-                    <div className="mt-4 flex justify-end">
-                        <button className="sig-btn sig-btn-primary" disabled={createForm.processing} type="submit">
-                            <Plus size={15} />
-                            {createForm.processing ? 'Salvando...' : 'Criar grupo'}
-                        </button>
-                    </div>
-                </form>
-
-                <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
-                    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-                        <div>
-                            <h3 className="text-sm font-semibold text-[var(--ink-900)]">Grupos cadastrados</h3>
-                            <p className="mt-1 text-xs text-[var(--ink-500)]">{grupos.length} grupo(s) ativo(s)</p>
-                        </div>
-                    </header>
-
-                    {grupos.length === 0 ? (
-                        <div className="p-6 text-sm text-[var(--ink-500)]">
-                            Nenhum grupo cadastrado ainda.
-                        </div>
-                    ) : (
-                        <div className="divide-y divide-[var(--border)]">
-                            {grupos.map((grupo) => {
-                                const isEditing = editingId === grupo.id;
-
-                                return (
-                                    <article key={grupo.id} className="p-4">
-                                        {isEditing ? (
-                                            <form className="grid gap-3" onSubmit={(event) => submitEdit(event, grupo)}>
-                                                <div className="grid gap-3 lg:grid-cols-2">
-                                                    <Field label="Nome" error={editForm.errors.nome}>
-                                                        <input value={editForm.data.nome} onChange={(event) => editForm.setData('nome', event.target.value)} />
-                                                    </Field>
-                                                    <Field label="Descricao" error={editForm.errors.descricao}>
-                                                        <input value={editForm.data.descricao} onChange={(event) => editForm.setData('descricao', event.target.value)} placeholder="Opcional" />
-                                                    </Field>
-                                                </div>
-                                                <div className="flex flex-wrap justify-end gap-2">
-                                                    <button className="sig-btn sig-btn-secondary" type="button" onClick={cancelEdit}>Cancelar</button>
-                                                    <button className="sig-btn sig-btn-primary" disabled={editForm.processing} type="submit">
-                                                        {editForm.processing ? 'Salvando...' : 'Salvar grupo'}
-                                                    </button>
-                                                </div>
-                                            </form>
-                                        ) : (
-                                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                                <div className="min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <h4 className="text-sm font-semibold text-[var(--ink-900)]">{grupo.nome}</h4>
-                                                        <span className="rounded-full bg-[var(--primary-50)] px-2 py-0.5 text-[10px] font-bold text-[var(--primary)]">
-                                                            {grupo.insumos_count ?? 0} insumo(s)
-                                                        </span>
-                                                    </div>
-                                                    {grupo.descricao && (
-                                                        <p className="mt-1 text-xs leading-5 text-[var(--ink-500)]">{grupo.descricao}</p>
-                                                    )}
-                                                </div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    <button className="sig-btn sig-btn-secondary sig-btn-sm" type="button" onClick={() => startEdit(grupo)}>
-                                                        <Pencil size={13} />
-                                                        Editar
-                                                    </button>
-                                                    <ConfirmActionButton
-                                                        title="Excluir grupo"
-                                                        message={`Deseja mesmo excluir o grupo ${grupo.nome}? Os insumos vinculados ficarao sem grupo, mas o historico sera mantido.`}
-                                                        confirmLabel="Excluir grupo"
-                                                        onConfirm={() => router.delete(route('tenant.orcamentos.insumos.grupos.destroy', [tenant.slug, grupo.id]), { preserveScroll: true })}
-                                                    >
-                                                        <Trash2 size={13} />
-                                                        Excluir
-                                                    </ConfirmActionButton>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </article>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </section>
-    );
-}
-
-function CreateInsumoModal({ form, grupoOptions = [], onClose, onSubmit }) {
+function CreateInsumoModal({ form, onClose, onSubmit }) {
     const isEquipment = form.data.tipo === 'equipment';
     const updateTipo = (value) => {
         form.setData({
@@ -820,13 +644,6 @@ function CreateInsumoModal({ form, grupoOptions = [], onClose, onSubmit }) {
                             <Field label="Tipo" error={form.errors.tipo}>
                                 <select value={form.data.tipo} onChange={(event) => updateTipo(event.target.value)}>
                                     {types.map((type) => <option key={type.value || 'empty'} value={type.value}>{type.label}</option>)}
-                                </select>
-                            </Field>
-
-                            <Field label="Grupo" error={form.errors.grupo_id}>
-                                <select value={form.data.grupo_id} onChange={(event) => form.setData('grupo_id', event.target.value)}>
-                                    <option value="">Sem grupo</option>
-                                    {grupoOptions.map((grupo) => <option key={grupo.value} value={grupo.value}>{grupo.label}</option>)}
                                 </select>
                             </Field>
 
@@ -979,7 +796,6 @@ function ImportOwnInsumoPanel({ form, onClose, onSubmit }) {
                 <div className="grid max-w-3xl gap-4">
                     <ColumnLetterField form={form} field="tipo_column" label="Letra da coluna de Tipo" />
                     <ColumnLetterField form={form} field="codigo_column" label="Letra da coluna do Codigo" />
-                    <ColumnLetterField form={form} field="grupo_column" label="Letra da coluna do Grupo" optional />
                     <ColumnLetterField form={form} field="descricao_column" label="Letra da coluna da Descricao" />
                     <ColumnLetterField form={form} field="unidade_column" label="Letra da coluna da Unidade" />
                     <ColumnLetterField form={form} field="preco_desonerado_column" label="Letra da coluna do Preco Unitario Desonerado" optional />
@@ -989,9 +805,6 @@ function ImportOwnInsumoPanel({ form, onClose, onSubmit }) {
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-xs leading-5 text-[var(--ink-500)]">
                     <p>
                         <strong>Tipo:</strong> campo obrigatorio. Informe a coluna que contem o tipo de cada linha, como Material, Equipamento, Mao de obra ou Servico.
-                    </p>
-                    <p>
-                        <strong>Grupo:</strong> campo opcional. Se informado, o nome ou ID precisa existir previamente em Grupos.
                     </p>
                 </div>
 

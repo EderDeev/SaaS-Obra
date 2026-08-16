@@ -7,10 +7,22 @@ const activeStorageKey = 'budgets:tour-active';
 const navigationStorageKey = 'budgets:tour-navigating';
 const startedAtStorageKey = 'budgets:tour-started-at';
 const maxTourAgeMs = 30 * 60 * 1000;
-const sections = ['insumos', 'composicoes', 'orcamento'];
+const sections = [
+    'insumos',
+    'composicoes',
+    'composicao-sinapi',
+    'composicao-sicro',
+    'orcamento-criacao',
+    'orcamento-regras',
+    'orcamento',
+];
 const sectionActionLabels = {
     insumos: 'Ir para composições',
-    composicoes: 'Montar orçamento',
+    composicoes: 'Ver composição SINAPI',
+    'composicao-sinapi': 'Ver composição SICRO',
+    'composicao-sicro': 'Criar orçamento',
+    'orcamento-criacao': 'Configurar cálculos',
+    'orcamento-regras': 'Montar orçamento',
     orcamento: 'Concluir tutorial',
 };
 
@@ -50,16 +62,72 @@ const stepsBySection = {
         },
         {
             target: '[data-tour="budget-compositions-detail"]',
-            title: 'Entender o cálculo',
-            content: 'O custo de cada insumo é multiplicado pelo coeficiente. A soma forma o custo unitário da composição.',
+            title: 'Localizar uma composição',
+            content: 'Filtre por banco, estado e tipo. Abra uma composição para conferir seus itens e a memória de cálculo.',
+            placement: 'top',
+        },
+    ],
+    'composicao-sinapi': [
+        {
+            target: '[data-tour="budget-sinapi-header"]',
+            title: 'Composição SINAPI',
+            content: 'No SINAPI, a composição apresenta unidade, referência e custos desonerado e não desonerado por estado.',
+            placement: 'bottom',
+        },
+        {
+            target: '[data-tour="budget-sinapi-items"]',
+            title: 'Itens analíticos do SINAPI',
+            content: 'Cada insumo ou composição auxiliar possui coeficiente e preço unitário. A soma dos totais forma o custo da composição.',
+            placement: 'top',
+        },
+    ],
+    'composicao-sicro': [
+        {
+            target: '[data-tour="budget-sicro-header"]',
+            title: 'Composição SICRO',
+            content: 'O SICRO organiza a composição por categorias e considera produção da equipe e fator de influência da chuva.',
+            placement: 'bottom',
+        },
+        {
+            target: '[data-tour="budget-sicro-categories"]',
+            title: 'Categorias do SICRO',
+            content: 'Equipamentos, mão de obra, materiais, atividades auxiliares e transportes ficam separados para facilitar a conferência do custo.',
+            placement: 'top',
+        },
+    ],
+    'orcamento-criacao': [
+        {
+            target: '[data-tour="budget-create-header"]',
+            title: 'Criar um orçamento',
+            content: 'Comece informando código, descrição, cliente, categoria e prazo de entrega.',
+            placement: 'bottom',
+        },
+        {
+            target: '[data-tour="budget-create-general"]',
+            title: 'Informações gerais',
+            content: 'Esses dados identificam o orçamento. Permita preço zerado somente quando o valor for preenchido manualmente depois.',
+            placement: 'top',
+        },
+    ],
+    'orcamento-regras': [
+        {
+            target: '[data-tour="budget-create-calculation"]',
+            title: 'Regras de cálculo',
+            content: 'Defina arredondamento, encargos sociais, incidência do BDI e percentual antes de montar os itens.',
+            placement: 'bottom',
+        },
+        {
+            target: '[data-tour="budget-create-bases"]',
+            title: 'Bases de referência',
+            content: 'Selecione SINAPI, SICRO ou ambas e escolha a UF e a versão que serão usadas nos preços do orçamento.',
             placement: 'top',
         },
     ],
     orcamento: [
         {
             target: '[data-tour="budget-sheet-header"]',
-            title: 'Etapa 3 de 3: orçamento',
-            content: 'Crie o orçamento, escolha as bases de preço, encargos, arredondamento e a forma de aplicação do BDI.',
+            title: 'Montagem do orçamento',
+            content: 'Com as regras salvas, o orçamento fica pronto para receber etapas, composições e insumos.',
             placement: 'bottom',
         },
         {

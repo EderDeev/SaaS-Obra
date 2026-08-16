@@ -74,7 +74,7 @@ class PlatformDashboardTest extends TestCase
                 ->where('storageUsage.0.modules.rnc', 0)
                 ->where('storageUsage.0.total_bytes', 2_048)
                 ->has('storageUsage', 3)
-                ->has('recentTenants', 3)
+                ->missing('recentTenants')
             );
     }
 

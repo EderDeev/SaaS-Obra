@@ -1,5 +1,5 @@
 import { Link, router, useForm } from '@inertiajs/react';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, CircleQuestionMark, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import OrcamentoShell from '../Partials/OrcamentoShell';
 
@@ -38,7 +38,9 @@ export default function CreateComposicao({ tenant, options = {} }) {
     });
     const referenceChoices = useMemo(() => {
         const groups = new Map();
-        const stateReferences = allReferences.filter((reference) => reference.uf === form.data.uf);
+        const stateReferences = allReferences.filter(
+            (reference) => reference.uf === form.data.uf && reference.nome === form.data.modelo,
+        );
 
         stateReferences.forEach((reference) => {
             const key = `${reference.nome}|${reference.uf}`;
@@ -80,10 +82,14 @@ export default function CreateComposicao({ tenant, options = {} }) {
     const updateModelo = (value) => {
         form.clearErrors('modelo', 'producao_equipe', 'adicional_mao_obra', 'fator_influencia_chuvas');
         selectDefaultReference(value, form.data.uf);
+        const defaultSinapiType = types.find((type) => type.value !== 'SICRO3')?.value ?? '';
 
         form.setData({
             ...form.data,
             modelo: value,
+            tipo_composicao: value === 'SICRO3'
+                ? 'SICRO3'
+                : (form.data.tipo_composicao === 'SICRO3' ? defaultSinapiType : form.data.tipo_composicao),
             producao_equipe: value === 'SICRO3' && !form.data.producao_equipe ? '1,0000' : form.data.producao_equipe,
             adicional_mao_obra: value === 'SICRO3' ? form.data.adicional_mao_obra : '',
             fator_influencia_chuvas: value === 'SICRO3' ? form.data.fator_influencia_chuvas : '',
@@ -121,6 +127,24 @@ export default function CreateComposicao({ tenant, options = {} }) {
 
         if (form.data.modelo !== 'SICRO3' && !form.data.metodo_calculo) {
             errors.metodo_calculo = 'Selecione o metodo de calculo.';
+        }
+
+        if (form.data.modelo === 'SICRO3') {
+            const production = parseLocalizedDecimal(form.data.producao_equipe);
+            const additionalLabor = parseLocalizedDecimal(form.data.adicional_mao_obra);
+            const rainFactor = parseLocalizedDecimal(form.data.fator_influencia_chuvas);
+
+            if (production === null || production <= 0) {
+                errors.producao_equipe = 'Informe uma producao de equipe maior que zero.';
+            }
+
+            if (form.data.adicional_mao_obra.trim() && (additionalLabor === null || additionalLabor < 0)) {
+                errors.adicional_mao_obra = 'Informe um valor adicional igual ou maior que zero.';
+            }
+
+            if (form.data.fator_influencia_chuvas.trim() && (rainFactor === null || rainFactor < 0)) {
+                errors.fator_influencia_chuvas = 'Informe um FIC igual ou maior que zero.';
+            }
         }
 
         return errors;
@@ -264,6 +288,9 @@ function StepTabs({ step, onStepChange }) {
 
 function GeneralStep({ calculationMethods, form, onChange, onModeloChange, onNext, onStateChange, states, types }) {
     const isSicro3 = form.data.modelo === 'SICRO3';
+    const availableTypes = isSicro3
+        ? types.filter((type) => type.value === 'SICRO3')
+        : types.filter((type) => type.value !== 'SICRO3');
 
     return (
         <section className="p-5">
@@ -304,7 +331,7 @@ function GeneralStep({ calculationMethods, form, onChange, onModeloChange, onNex
                         value={form.data.tipo_composicao}
                         onChange={(event) => onChange('tipo_composicao', event.target.value)}
                     >
-                        {types.map((type) => (
+                        {availableTypes.map((type) => (
                             <option key={type.value} value={type.value}>
                                 {type.label}
                             </option>
@@ -387,33 +414,45 @@ function GeneralStep({ calculationMethods, form, onChange, onModeloChange, onNex
 
             {isSicro3 && (
                 <div className="mt-5 grid gap-4 lg:grid-cols-3">
-                    <Field label="Producao de Equipe" error={form.errors.producao_equipe}>
+                    <Field
+                        label={<HelpLabel label="Producao de Equipe" text="Quantidade de servico produzida pela equipe no periodo. Ela converte o custo horario da equipe em custo unitario de execucao." />}
+                        error={form.errors.producao_equipe}
+                    >
                         <input
                             className="sig-input"
+                            inputMode="decimal"
                             placeholder="1,0000"
                             type="text"
                             value={form.data.producao_equipe}
-                            onChange={(event) => onChange('producao_equipe', event.target.value)}
+                            onChange={(event) => onChange('producao_equipe', sanitizeDecimalInput(event.target.value))}
                         />
                     </Field>
 
-                    <Field label="Adicional de Mao de Obra" error={form.errors.adicional_mao_obra}>
+                    <Field
+                        label={<HelpLabel label="Adicional de Mao de Obra" text="Valor complementar somado ao custo horario da equipe antes da divisao pela producao. Deixe vazio quando nao houver adicional." />}
+                        error={form.errors.adicional_mao_obra}
+                    >
                         <input
                             className="sig-input"
+                            inputMode="decimal"
                             placeholder="Opcional"
                             type="text"
                             value={form.data.adicional_mao_obra}
-                            onChange={(event) => onChange('adicional_mao_obra', event.target.value)}
+                            onChange={(event) => onChange('adicional_mao_obra', sanitizeDecimalInput(event.target.value))}
                         />
                     </Field>
 
-                    <Field label="Fator de Influencia de Chuvas - FIC" error={form.errors.fator_influencia_chuvas}>
+                    <Field
+                        label={<HelpLabel label="Fator de Influencia de Chuvas - FIC" text="Coeficiente que acrescenta ao custo unitario o impacto previsto das chuvas sobre equipamento e mao de obra." />}
+                        error={form.errors.fator_influencia_chuvas}
+                    >
                         <input
                             className="sig-input"
+                            inputMode="decimal"
                             placeholder="Opcional"
                             type="text"
                             value={form.data.fator_influencia_chuvas}
-                            onChange={(event) => onChange('fator_influencia_chuvas', event.target.value)}
+                            onChange={(event) => onChange('fator_influencia_chuvas', sanitizeDecimalInput(event.target.value))}
                         />
                     </Field>
                 </div>
@@ -601,4 +640,45 @@ function Field({ children, className = '', error, label }) {
 
 function ErrorMessage({ message }) {
     return <p className="mt-1 text-xs font-semibold text-rose-600">{message}</p>;
+}
+
+function HelpLabel({ label, text }) {
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            {label}
+            <span className="group relative inline-flex" tabIndex={0}>
+                <CircleQuestionMark aria-hidden="true" className="text-[var(--ink-400)]" size={13} />
+                <span
+                    className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 w-64 -translate-x-1/2 rounded-md bg-[var(--ink-900)] px-3 py-2 text-[11px] font-medium normal-case leading-4 text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+                    role="tooltip"
+                >
+                    {text}
+                </span>
+            </span>
+        </span>
+    );
+}
+
+function sanitizeDecimalInput(value) {
+    const normalized = String(value ?? '')
+        .replace(/\./g, ',')
+        .replace(/[^\d,]/g, '');
+    const [integerPart = '', ...decimalParts] = normalized.split(',');
+    const decimal = decimalParts.join('').slice(0, 6);
+
+    return normalized.includes(',')
+        ? `${integerPart.slice(0, 12)},${decimal}`
+        : integerPart.slice(0, 12);
+}
+
+function parseLocalizedDecimal(value) {
+    const normalized = String(value ?? '').trim().replace(',', '.');
+
+    if (!/^\d+(?:\.\d{0,6})?$/.test(normalized)) {
+        return null;
+    }
+
+    const parsed = Number(normalized);
+
+    return Number.isFinite(parsed) ? parsed : null;
 }

@@ -1317,7 +1317,7 @@ function Sicro3AnalyticSection({
                     {items.length} {items.length === 1 ? 'item' : 'itens'}
                 </span>
             </div>
-            <div className="overflow-x-auto">
+            <div className="budget-sicro-desktop overflow-x-auto">
                 <table className={`w-full table-fixed border-collapse text-left text-xs ${section.minWidth}`}>
                     <Sicro3SectionHead readOnly={readOnly} section={section} />
                     <tbody className="divide-y divide-slate-100 bg-white">
@@ -1369,7 +1369,75 @@ function Sicro3AnalyticSection({
                     </tbody>
                 </table>
             </div>
+            <div className="budget-sicro-mobile">
+                {items.length === 0 ? (
+                    <p className="px-4 py-5 text-center text-sm text-[var(--ink-400)]">Nenhum item nesta categoria.</p>
+                ) : items.map((item) => (
+                    <Sicro3MobileItem
+                        key={item.id}
+                        item={item}
+                        readOnly={readOnly}
+                        section={section}
+                        tenant={tenant}
+                    />
+                ))}
+                <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold">
+                    <span>{isTransportSection ? 'Custo total de transporte' : `Total ${section.label.toLocaleLowerCase('pt-BR')}`}</span>
+                    <strong className="font-mono">{formatCurrency(isTransportSection ? 0 : subtotalOnerado, 4)}</strong>
+                </div>
+                {section.key === 'mao_de_obra' ? (
+                    <div className="divide-y divide-slate-100 border-t border-slate-100 bg-white">
+                        <Sicro3MobileSummary label="Custo horário de execução" value={summary?.custo_horario_execucao_onerado} />
+                        <Sicro3MobileSummary label="Custo unitário de execução" value={summary?.custo_unitario_execucao_onerado} />
+                        <Sicro3MobileSummary label="Custo FIC" value={summary?.custo_fic_onerado} />
+                    </div>
+                ) : null}
+            </div>
         </section>
+    );
+}
+
+function Sicro3MobileItem({ item, readOnly, section, tenant }) {
+    const unitValue = sicro3DisplayUnit(item, 'onerado');
+    const totalValue = sicro3DisplayTotal(item, 'onerado');
+    const referenceCode = item.sicro3_referenced_item_code || item.codigo;
+    const description = ['fixed', 'transport'].includes(section.columns) ? sicro3ReferenceDescription(item) : item.descricao;
+    const transport = [
+        item.sicro3_transport_ln_code ? `LN ${item.sicro3_transport_ln_code}` : null,
+        item.sicro3_transport_rp_code ? `RP ${item.sicro3_transport_rp_code}` : null,
+        item.sicro3_transport_p_code ? `P ${item.sicro3_transport_p_code}` : null,
+        item.sicro3_transport_fe_code ? `FE ${item.sicro3_transport_fe_code}` : null,
+    ].filter(Boolean).join(' · ');
+
+    return (
+        <article className="border-t border-slate-100 px-4 py-3 first:border-t-0">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="font-mono text-xs font-bold text-blue-600">{referenceCode}</p>
+                    <h4 className="mt-1 break-words text-sm font-semibold leading-5 text-[var(--ink-900)]">{description}</h4>
+                </div>
+                <strong className="shrink-0 font-mono text-sm">{formatCurrency(totalValue, 4)}</strong>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                <MobileValue label="Quantidade" value={formatNumber(item.coeficiente, 5)} />
+                <MobileValue label="Unidade" value={item.unidade || '-'} />
+                <MobileValue label="Preço unitário" value={formatCurrency(unitValue, 4)} />
+                {section.columns === 'equipment' && <MobileValue label="Utilização oper." value={formatNumber(item.sicro3_utilizacao_operativa ?? 1, 2)} />}
+            </dl>
+            {transport && <p className="mt-3 break-words text-[11px] font-medium text-[var(--ink-500)]">Transporte: {transport}</p>}
+            {!readOnly && (
+                <p className="mt-3 text-[11px] text-[var(--ink-400)]">Use a visualização em tela maior para editar este analítico.</p>
+            )}
+        </article>
+    );
+}
+
+function Sicro3MobileSummary({ label, value }) {
+    return (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 text-xs">
+            <span className="text-[var(--ink-600)]">{label}</span>
+            <strong className="font-mono">{formatCurrency(value ?? 0, 4)}</strong>
+        </div>
     );
 }
 

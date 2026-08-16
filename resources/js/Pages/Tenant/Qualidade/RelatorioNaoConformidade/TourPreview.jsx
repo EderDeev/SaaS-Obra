@@ -53,7 +53,7 @@ export default function RncTourPreview({ tenant, screen = 'responsibles' }) {
     return (
         <AuthenticatedLayout>
             <Head title="Tutorial operacional de RNC" />
-            <section className="sig-content">
+            <section className="sig-content quality-mobile-page">
                 {screen === 'responsibles' && <ResponsiblesPreview />}
                 {screen === 'create' && <CreatePreview />}
                 {screen === 'notify' && <NotifyPreview />}
@@ -160,7 +160,12 @@ function ResponsiblesPreview() {
                     </div>
                     <h2 className="mt-1 text-[15px] font-semibold text-[var(--ink-900)]">3 responsável(is) cadastrado(s)</h2>
                 </header>
-                <div className="overflow-x-auto">
+                <div className="grid gap-3 p-4 lg:hidden">
+                    <ResponsibleCard name="Marina Costa" email="marina@empresa.com" role="Responsável Operacional" />
+                    <ResponsibleCard name="Carlos Almeida" email="carlos@construtora.com" role="Responsável da Construtora" />
+                    <ResponsibleCard name="Ana Ribeiro" email="ana@cliente.com" role="Responsável de Acompanhamento" />
+                </div>
+                <div className="hidden overflow-x-auto lg:block">
                     <table className="sig-table min-w-[820px]">
                         <thead><tr><th>Usuário</th><th>Contrato</th><th>Responsabilidade</th><th>Cadastrado em</th><th>Ações</th></tr></thead>
                         <tbody>
@@ -267,7 +272,34 @@ function NotifyPreview() {
                 actions={<button type="button" className="sig-btn sig-btn-primary"><Plus size={15} /> Nova RNC</button>}
             />
             <section className="sig-card overflow-hidden">
-                <table className="sig-table">
+                <article data-tour="rnc-notify-row" className="p-4 md:hidden">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <strong className="mono text-[var(--primary)]">001-2026</strong>
+                            <div className="mt-1 text-xs text-[var(--ink-500)]">RNC aberta</div>
+                        </div>
+                        <span className="sig-pill sig-pill-blue">aberta</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="sig-pill sig-pill-blue">DRE - Drenagem</span>
+                        <span className="sig-pill sig-pill-red">Grave</span>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <Meta label="Obra" value="001 - Corredor Troncal" />
+                        <Meta label="Contrato" value="025/2026" />
+                        <Meta label="Contratante" value="XCLI" />
+                        <Meta label="Contratada" value="XCTR" />
+                        <Meta label="Abertura" value="23 jul. 2026" />
+                        <Meta label="Registro" value="4 fotos · coordenadas informadas" />
+                    </div>
+                    <div data-tour="rnc-notify-action" className="quality-card-actions mt-4 grid grid-cols-2 gap-2">
+                        <button type="button" className="sig-btn sig-btn-primary sig-btn-sm"><Bell size={14} /> Notificar</button>
+                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm"><Eye size={14} /> Abrir</button>
+                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm">Editar</button>
+                        <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm"><Download size={14} /> PDF</button>
+                    </div>
+                </article>
+                <table className="sig-table hidden md:table">
                     <thead><tr><th>RNC</th><th>Disciplina / Gravidade</th><th>Obra</th><th>Empresas</th><th>Abertura</th><th>Status</th><th>Ações</th></tr></thead>
                     <tbody>
                         <tr data-tour="rnc-notify-row">
@@ -411,12 +443,12 @@ function EvidencePreview() {
 function FinalPdfPreview() {
     return (
         <div className="overflow-hidden bg-[#262626] shadow-xl">
-            <div className="grid h-14 grid-cols-[1fr_auto_1fr] items-center bg-[#3b3b3b] px-4 text-sm text-white/85">
+            <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center bg-[#3b3b3b] px-3 text-sm text-white/85 sm:grid-cols-[1fr_auto_1fr] sm:px-4">
                 <div className="flex items-center gap-5">
                     <Menu size={19} />
                     <span className="font-medium">pdf</span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="hidden items-center gap-3 sm:flex">
                     <span className="bg-[#202124] px-2 py-1 text-white">1</span>
                     <span>/</span>
                     <span>3</span>
@@ -428,15 +460,15 @@ function FinalPdfPreview() {
                     <FileText size={17} />
                     <RotateCw size={17} />
                 </div>
-                <div data-tour="rnc-final-pdf-actions" className="flex items-center justify-end gap-5">
+                <div data-tour="rnc-final-pdf-actions" className="flex items-center justify-end gap-4 sm:gap-5">
                     <Download size={18} />
                     <Printer size={18} />
                     <MoreVertical size={18} />
                 </div>
             </div>
 
-            <div className="grid h-[900px] grid-cols-[210px_minmax(0,1fr)]">
-                <aside className="border-r border-white/15 bg-[#292a2c] px-7 py-5">
+            <div className="grid min-w-0 grid-cols-1 md:h-[900px] md:grid-cols-[210px_minmax(0,1fr)]">
+                <aside className="hidden border-r border-white/15 bg-[#292a2c] px-7 py-5 md:block">
                     <PdfThumbnail page="1" active>
                         <div className="mx-auto mt-2 h-2 w-14 bg-slate-700" />
                         <div className="mx-auto mt-2 h-1 w-20 bg-slate-300" />
@@ -463,25 +495,25 @@ function FinalPdfPreview() {
                     </PdfThumbnail>
                 </aside>
 
-                <main className="overflow-auto bg-[#262626] px-3 py-1">
+                <main className="min-w-0 overflow-hidden bg-[#262626] px-2 py-2 md:overflow-auto md:px-3 md:py-1">
                     <article
-                        className="mx-auto aspect-[210/297] w-full max-w-[794px] bg-white px-[30px] py-[26px] font-sans text-[#182033] shadow-lg"
+                        className="mx-auto min-h-[620px] w-full max-w-[794px] bg-white px-3 py-4 font-sans text-[#182033] shadow-lg sm:aspect-[210/297] sm:px-[30px] sm:py-[26px]"
                     >
-                        <header data-tour="rnc-final-pdf" className="grid grid-cols-[28%_44%_28%] items-center text-center">
+                        <header data-tour="rnc-final-pdf" className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center text-center sm:grid-cols-[28%_44%_28%]">
                             <CompanyLogo variant="client" />
                             <div>
-                                <h1 className="text-[22px] font-bold leading-[1.25] text-[#0b1020]">
+                                <h1 className="text-[13px] font-bold leading-[1.25] text-[#0b1020] sm:text-[22px]">
                                     Relatório de Não Conformidade
                                 </h1>
                                 <p className="mt-1 text-[11px] text-[#5b6479]">Xconstruction · RNC 001-2026</p>
-                                <p className="mt-2 text-[11px] leading-[1.45] text-[#5b6479]">
+                                <p className="mt-2 break-words text-[9px] leading-[1.45] text-[#5b6479] sm:text-[11px]">
                                     Projetos vinculados: 0252026-001-DRE-EP-PRJ-001-R02 - Projeto de drenagem do trecho 2
                                 </p>
                             </div>
                             <CompanyLogo variant="contractor" />
                         </header>
 
-                        <div className="mt-6 grid grid-cols-4 gap-x-5 gap-y-4">
+                        <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4 sm:gap-x-5">
                             <PdfMeta label="Contrato" value="025/2026 - Corredor Troncal" />
                             <PdfMeta label="Obra" value="001 - Corredor Troncal" />
                             <PdfMeta label="Data de abertura" value="23/07/2026" />
@@ -491,7 +523,7 @@ function FinalPdfPreview() {
                             <PdfMeta label="Local" value="Picos / PI" />
                             <PdfMeta label="Disciplina" value={<PdfBadge tone="blue">DRE - Drenagem</PdfBadge>} />
                         </div>
-                        <div className="mt-4 grid grid-cols-3 gap-x-5">
+                        <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 sm:gap-x-5">
                             <PdfMeta label="Gravidade" value={<PdfBadge tone="red">Grave</PdfBadge>} />
                             <PdfMeta label="Latitude" value="-23.5565569" />
                             <PdfMeta label="Longitude" value="-46.6491232" />
@@ -633,7 +665,18 @@ function DashboardPreview() {
                 </section>
                 <section className="sig-card overflow-hidden xl:col-span-2">
                     <header className="border-b border-[var(--border)] px-5 py-4"><span className="eyebrow">Últimas RNCs registradas</span></header>
-                    <table className="sig-table"><thead><tr><th>RNC</th><th>Obra</th><th>Disciplina</th><th>Status</th><th>Abertura</th></tr></thead><tbody><tr><td className="mono font-semibold text-[var(--primary)]">001-2026</td><td>001 - Corredor Troncal</td><td>DRE - Drenagem</td><td><span className="sig-pill sig-pill-green">finalizada</span></td><td>23 jul. 2026</td></tr></tbody></table>
+                    <article className="p-4 md:hidden">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <span className="mono font-semibold text-[var(--primary)]">001-2026</span>
+                            <span className="sig-pill sig-pill-green">finalizada</span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                            <Meta label="Obra" value="001 - Corredor Troncal" />
+                            <Meta label="Disciplina" value="DRE - Drenagem" />
+                            <Meta label="Abertura" value="23 jul. 2026" />
+                        </div>
+                    </article>
+                    <table className="sig-table hidden md:table"><thead><tr><th>RNC</th><th>Obra</th><th>Disciplina</th><th>Status</th><th>Abertura</th></tr></thead><tbody><tr><td className="mono font-semibold text-[var(--primary)]">001-2026</td><td>001 - Corredor Troncal</td><td>DRE - Drenagem</td><td><span className="sig-pill sig-pill-green">finalizada</span></td><td>23 jul. 2026</td></tr></tbody></table>
                 </section>
                 <section className="sig-card p-5">
                     <span className="eyebrow">Gravidade</span>
@@ -683,6 +726,28 @@ function ResponsibleRow({ name, email, role }) {
             <td><span className="text-sm font-semibold">23/07/2026</span><span className="block text-xs text-[var(--ink-500)]">11:40</span></td>
             <td><div className="flex gap-2"><button type="button" className="sig-btn sig-btn-secondary sig-btn-sm">Editar</button><button type="button" className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]">Remover</button></div></td>
         </tr>
+    );
+}
+
+function ResponsibleCard({ name, email, role }) {
+    return (
+        <article className="min-w-0 rounded-lg border border-[var(--border)] bg-white p-3">
+            <div className="flex min-w-0 items-center gap-3">
+                <span className="sig-avatar shrink-0">{name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span>
+                <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm">{name}</strong>
+                    <span className="block truncate text-xs text-[var(--ink-500)]">{email}</span>
+                </span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <Meta label="Contrato" value="025/2026 - Corredor Troncal" />
+                <Meta label="Responsabilidade" value={role} />
+            </div>
+            <div className="quality-card-actions mt-3 grid grid-cols-2 gap-2">
+                <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm">Editar</button>
+                <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]">Remover</button>
+            </div>
+        </article>
     );
 }
 

@@ -1190,6 +1190,7 @@ function ActiveSection({ activeSection, document, users, permissionGroups, looku
 function DocumentViewer({ document }) {
     const [page, setPage] = useState(1);
     const [zoom, setZoom] = useState('100');
+    const [isMobileLayout, setIsMobileLayout] = useState(false);
     const pageCount = document.page_count || 1;
     const extension = String(document.extension || '').toLowerCase();
     const mimeType = String(document.mime_type || '').toLowerCase();
@@ -1199,32 +1200,71 @@ function DocumentViewer({ document }) {
     const isVideo = mimeType.startsWith('video/');
     const canRenderInline = hasPdfPreview || isImage || isVideo;
 
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(max-width: 767px)');
+        const syncLayout = () => setIsMobileLayout(mediaQuery.matches);
+
+        syncLayout();
+        mediaQuery.addEventListener?.('change', syncLayout);
+
+        return () => mediaQuery.removeEventListener?.('change', syncLayout);
+    }, []);
+
+    const safePage = Math.min(Math.max(Number(page) || 1, 1), pageCount);
     const viewerUrl = useMemo(() => {
-        const safePage = Math.min(Math.max(Number(page) || 1, 1), pageCount);
         if (!hasPdfPreview) return document.preview_url;
 
+        if (isMobileLayout) {
+            return `${document.preview_url}#page=${safePage}&view=FitH&toolbar=0&navpanes=0`;
+        }
+
         return `${document.preview_url}#page=${safePage}&zoom=${zoom}&toolbar=0&navpanes=0`;
-    }, [document.preview_url, hasPdfPreview, page, pageCount, zoom]);
+    }, [document.preview_url, hasPdfPreview, isMobileLayout, safePage, zoom]);
+
+    function changePage(nextPage) {
+        setPage(Math.min(Math.max(Number(nextPage) || 1, 1), pageCount));
+    }
 
     return (
         <div className="flex min-h-[calc(100vh-190px)] flex-col rounded-xl border border-slate-300 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3">
+            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white p-2 sm:static sm:gap-3 sm:p-3">
                 {hasPdfPreview ? (
                     <div className="flex flex-wrap items-center gap-2">
                         <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
-                            <span className="border-r border-slate-300 bg-slate-50 px-3 py-2">Página</span>
+                            <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center border-r border-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() => changePage(safePage - 1)}
+                                disabled={safePage <= 1}
+                                title="Página anterior"
+                                aria-label="Página anterior"
+                            >
+                                <ArrowLeft size={16} />
+                            </button>
+                            <span className="hidden border-r border-slate-300 bg-slate-50 px-3 py-2 sm:inline">Página</span>
                             <input
                                 type="number"
                                 min="1"
                                 max={pageCount}
                                 value={page}
                                 onChange={(event) => setPage(event.target.value)}
-                                className="w-16 border-0 px-2 py-2 outline-none"
+                                onBlur={() => changePage(page)}
+                                className="w-11 border-0 px-1 py-2 text-center outline-none sm:w-16 sm:px-2"
                             />
-                            <span className="border-l border-slate-300 bg-slate-50 px-3 py-2">de {pageCount}</span>
+                            <span className="border-l border-slate-300 bg-slate-50 px-2 py-2 sm:px-3">de {pageCount}</span>
+                            <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center border-l border-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() => changePage(safePage + 1)}
+                                disabled={safePage >= pageCount}
+                                title="Próxima página"
+                                aria-label="Próxima página"
+                            >
+                                <ArrowRight size={16} />
+                            </button>
                         </div>
 
-                        <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
+                        <div className="hidden overflow-hidden rounded-lg border border-slate-300 text-sm sm:flex">
                             <button type="button" className="border-r border-slate-300 px-3 py-2" onClick={() => setZoom((value) => String(Math.max(Number(value) - 10, 50)))}>-</button>
                             <select value={zoom} onChange={(event) => setZoom(event.target.value)} className="border-0 px-3 py-2 outline-none">
                                 <option value="75">75%</option>
@@ -1243,28 +1283,28 @@ function DocumentViewer({ document }) {
                 )}
 
                 <div className="flex flex-wrap items-center gap-2">
-                    <a href={document.download_url} className="sig-btn sig-btn-secondary !min-h-9 !px-3">
+                    <a href={document.download_url} className="sig-btn sig-btn-secondary !min-h-9 !px-2 sm:!px-3">
                         <Download size={16} />
-                        Baixar
+                        <span className="hidden sm:inline">Baixar</span>
                     </a>
-                    <button type="button" className="sig-btn sig-btn-secondary !min-h-9 !px-3">
+                    <button type="button" className="sig-btn sig-btn-secondary !hidden !min-h-9 !px-3 sm:!inline-flex">
                         <MoreHorizontal size={16} />
                         Ações
                     </button>
-                    <button type="button" className="sig-btn sig-btn-secondary !min-h-9 !px-3">
+                    <button type="button" className="sig-btn sig-btn-secondary !hidden !min-h-9 !px-3 sm:!inline-flex">
                         <Send size={16} />
                         Enviar
                     </button>
                 </div>
             </div>
 
-            <div className="min-h-0 flex-1 bg-slate-100 p-2">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 p-1 sm:p-2">
                 {hasPdfPreview && (
                     <iframe
                         key={viewerUrl}
                         src={viewerUrl}
                         title={document.title}
-                        className="h-full min-h-[680px] w-full border-8 border-neutral-500 bg-white"
+                        className="h-[72dvh] min-h-[520px] w-full min-w-0 border-2 border-neutral-500 bg-white sm:h-full sm:min-h-[680px] sm:border-8"
                     />
                 )}
 

@@ -11,8 +11,8 @@ const pageSteps = [
     },
     {
         target: '[data-tour="overview-metrics"]',
-        title: 'Indicadores principais',
-        content: 'Acompanhe contratos ativos, atividades abertas, RNCs e projetos que aguardam análise ou aprovação.',
+        title: 'Resumo das pendências',
+        content: 'Veja primeiro atividades vencidas ou próximas do prazo, projetos em fluxo e RNCs abertas.',
         placement: 'bottom',
     },
     {
@@ -24,13 +24,13 @@ const pageSteps = [
     {
         target: '[data-tour="overview-monitoring"]',
         title: 'Acompanhamento',
-        content: 'Pontos de atenção, gráficos, suas atividades e eventos recentes ajudam a priorizar o trabalho.',
+        content: 'Filtre pontos de atenção, acompanhe suas atividades e consulte o histórico recente do workspace.',
         placement: 'top',
     },
     {
-        target: '[data-tour="overview-contracts"]',
-        title: 'Contratos recentes',
-        content: 'Acesse rapidamente os contratos e veja a quantidade de atividades, RNCs e projetos pendentes em cada um.',
+        target: '[data-tour="overview-indicators"]',
+        title: 'Indicadores do workspace',
+        content: 'Os gráficos mostram como atividades, projetos e RNCs estão distribuídos por etapa e categoria.',
         placement: 'top',
     },
 ];

@@ -309,16 +309,16 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
         <AuthenticatedLayout>
             <Head title="Acessar contrato" />
 
-            <section className="sig-content fade-in">
-                <div data-tour="contracts-overview" className="flex flex-wrap items-end gap-6">
-                    <div className="min-w-0 flex-1">
+            <section className="contracts-index-page sig-content fade-in">
+                <div data-tour="contracts-overview" className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:gap-6">
+                    <div className="w-full min-w-0 sm:flex-1">
                         <div className="eyebrow">Workspace · Contratos</div>
                         <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Acessar contrato</h1>
                         <p className="mt-1 max-w-2xl text-sm text-[var(--ink-500)]">
                             Selecione um contrato para continuar no ambiente de trabalho.
                         </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                         <button className="sig-btn sig-btn-secondary" type="button" onClick={() => startContractTour(tenant.slug)}>
                             <Plane size={15} />
                             Iniciar tour

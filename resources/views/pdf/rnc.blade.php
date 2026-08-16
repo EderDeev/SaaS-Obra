@@ -141,6 +141,11 @@
             margin-bottom: 5px;
             text-transform: uppercase;
         }
+        .formatted-text {
+            line-height: 1.55;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+        }
         .photo-page {
             page-break-before: always;
         }
@@ -315,15 +320,19 @@
         <h2 class="section-title">Observa&ccedil;&otilde;es e coment&aacute;rios</h2>
         <div class="text-box">
             <h3>Descri&ccedil;&atilde;o do problema</h3>
-            <p>{{ $rnc->descricao_problema }}</p>
+            <div class="formatted-text">{!! nl2br(e($rnc->descricao_problema)) !!}</div>
         </div>
         <div class="text-box">
             <h3>Observa&ccedil;&atilde;o</h3>
-            <p>{{ $rnc->observacao ?: 'Sem observa&ccedil;&otilde;es adicionais.' }}</p>
+            @if ($rnc->observacao)
+                <div class="formatted-text">{!! nl2br(e($rnc->observacao)) !!}</div>
+            @else
+                <div class="formatted-text">Sem observa&ccedil;&otilde;es adicionais.</div>
+            @endif
         </div>
         <div class="text-box">
             <h3>A&ccedil;&otilde;es corretivas recomendadas</h3>
-            <p>{{ $rnc->acoes_corretivas_recomendadas }}</p>
+            <div class="formatted-text">{!! nl2br(e($rnc->acoes_corretivas_recomendadas)) !!}</div>
         </div>
     </section>
 
@@ -378,7 +387,7 @@
         @if ($approvedAction)
             <div class="text-box">
                 <h3>Proposta aprovada</h3>
-                <p>{{ $approvedAction->descricao_proposta }}</p>
+                <div class="formatted-text">{!! nl2br(e($approvedAction->descricao_proposta)) !!}</div>
             </div>
             <div class="grid">
                 <div class="row">
@@ -421,7 +430,7 @@
             @if ($approvedAction->review_observation)
                 <div class="text-box">
                     <h3>Observa&ccedil;&atilde;o da an&aacute;lise</h3>
-                    <p>{{ $approvedAction->review_observation }}</p>
+                    <div class="formatted-text">{!! nl2br(e($approvedAction->review_observation)) !!}</div>
                 </div>
             @endif
         @else

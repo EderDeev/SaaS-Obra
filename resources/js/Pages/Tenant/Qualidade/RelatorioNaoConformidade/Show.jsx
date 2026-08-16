@@ -126,9 +126,9 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
         <AuthenticatedLayout>
             <Head title={`RNC ${rnc.formatted_number}`} />
 
-            <section className="sig-content">
-                <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-                    <div>
+            <section className="sig-content quality-mobile-page">
+                <div className="quality-page-header mb-6 flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <ClipboardX size={14} />
                             <span className="eyebrow">Previa do documento</span>
@@ -140,7 +140,7 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                             {rnc.obra?.codigo} - {rnc.obra?.nome}
                         </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="quality-page-actions flex flex-wrap gap-2">
                         <Link href={route('tenant.qualidade.rnc.index', tenant.slug)} className="sig-btn sig-btn-secondary">
                             <ArrowLeft size={15} />
                             Voltar
@@ -306,7 +306,22 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
 
                     <section className="border-t border-[var(--border)] p-5">
                         <div className="eyebrow">Fluxo da RNC</div>
-                        <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)]">
+                        <div className="mt-4 grid gap-3 md:hidden">
+                            {flowRows.map((row) => (
+                                <article key={row.etapa} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <strong className="min-w-0 break-words text-[13px] text-[var(--ink-900)]">{row.etapa}</strong>
+                                        <span className={`sig-pill shrink-0 ${statusPillClass(row.status)}`}>{row.status}</span>
+                                    </div>
+                                    <div className="mt-3 grid grid-cols-2 gap-3">
+                                        <Meta label="Data" value={row.data} />
+                                        <Meta label="Responsavel" value={row.responsavel} />
+                                    </div>
+                                    <p className="mt-3 break-words text-[12.5px] leading-5 text-[var(--ink-500)]">{row.detalhe}</p>
+                                </article>
+                            ))}
+                        </div>
+                        <div className="mt-4 hidden overflow-hidden rounded-lg border border-[var(--border)] md:block">
                             <table className="sig-table">
                                 <thead>
                                     <tr>
@@ -408,7 +423,7 @@ function Meta({ label, value }) {
     return (
         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
             <div className="eyebrow">{label}</div>
-            <div className="mt-1 text-[13px] font-semibold text-[var(--ink-800)]">{value || '-'}</div>
+            <div className="mt-1 min-w-0 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value || '-'}</div>
         </div>
     );
 }
@@ -417,7 +432,7 @@ function TextBlock({ title, value }) {
     return (
         <div className="mt-4 rounded-lg border border-[var(--border)] bg-white p-4">
             <h3 className="text-[13px] font-semibold text-[var(--ink-900)]">{title}</h3>
-            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[var(--ink-500)]">{value}</p>
+            <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-[var(--ink-500)]">{value}</p>
         </div>
     );
 }

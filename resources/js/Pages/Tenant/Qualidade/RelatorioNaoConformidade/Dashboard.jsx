@@ -30,9 +30,9 @@ export default function RelatorioNaoConformidadeDashboard({
         <AuthenticatedLayout>
             <Head title="Dashboard RNC" />
 
-            <section className="sig-content">
-                <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-                    <div>
+            <section className="sig-content quality-mobile-page">
+                <div className="quality-page-header mb-6 flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <Gauge size={14} />
                             <span className="eyebrow">Relatório de Não Conformidade</span>
@@ -48,7 +48,7 @@ export default function RelatorioNaoConformidadeDashboard({
                     </Link>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div className="quality-metrics-grid grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5 xl:gap-4">
                     <MetricCard icon={ClipboardX} label="Total de RNCs" value={metrics.total} tone="blue" />
                     <MetricCard icon={AlertTriangle} label="Atraso resposta" value={metrics.atrasoResposta} tone="red" />
                     <MetricCard icon={Clock3} label="Atraso execucao" value={metrics.atrasoExecucao} tone="red" />
@@ -76,7 +76,29 @@ export default function RelatorioNaoConformidadeDashboard({
                             <h2 className="mt-1 text-[15px] font-semibold">Ultimas RNCs registradas</h2>
                         </header>
                         {recentRncs.length > 0 ? (
-                            <table className="sig-table">
+                            <>
+                            <div className="grid gap-3 p-3 md:hidden">
+                                {recentRncs.map((rnc) => (
+                                    <Link
+                                        key={rnc.id}
+                                        href={route('tenant.qualidade.rnc.show', [tenant.slug, rnc.id])}
+                                        className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3"
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <span className="mono font-bold text-[var(--primary)]">{rnc.formatted_number}</span>
+                                            <span className={`sig-pill shrink-0 ${statusClass[rnc.status] || ''}`}>{rnc.status}</span>
+                                        </div>
+                                        <div className="mt-2 break-words text-[13px] font-semibold text-[var(--ink-900)]">
+                                            {rnc.obra?.codigo || '-'} - {rnc.obra?.nome || '-'}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--ink-500)]">
+                                            <span>{rncDisciplinaLabel(rnc)}</span>
+                                            <span>{shortDate(rnc.opened_at)}</span>
+                                        </div>
+                                    </Link>
+                                ))}
+                            </div>
+                            <table className="sig-table hidden md:table">
                                 <thead>
                                     <tr>
                                         <th>RNC</th>
@@ -107,6 +129,7 @@ export default function RelatorioNaoConformidadeDashboard({
                                     ))}
                                 </tbody>
                             </table>
+                            </>
                         ) : (
                             <EmptyState text="Nenhuma RNC cadastrada ainda." />
                         )}
@@ -213,13 +236,13 @@ function MetricCard({ icon: Icon, label, value, tone }) {
     };
 
     return (
-        <section className="sig-card p-4">
+        <section className="sig-card min-w-0 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <div className="eyebrow">{label}</div>
-                    <div className="mt-2 text-3xl font-semibold text-[var(--ink-900)]">{value}</div>
+                    <div className="mt-2 text-2xl font-semibold text-[var(--ink-900)] sm:text-3xl">{value}</div>
                 </div>
-                <div className={`flex h-11 w-11 items-center justify-center rounded-lg ${tones[tone] || tones.blue}`}>
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-11 sm:w-11 ${tones[tone] || tones.blue}`}>
                     <Icon size={21} />
                 </div>
             </div>

@@ -60,6 +60,20 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+@media (max-width: 639px) {
+    html:has(.contracts-index-page),
+    body:has(.contracts-index-page) {
+        scrollbar-width: none;
+    }
+
+    html:has(.contracts-index-page)::-webkit-scrollbar,
+    body:has(.contracts-index-page)::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
+    }
+}
+
 body.sig-viewer-body {
     height: 100vh;
     overflow: hidden;
@@ -1170,6 +1184,12 @@ body.sig-viewer-body .sig-main > main {
     border-radius: inherit;
 }
 
+.budget-mobile-items-list,
+.budget-sicro-mobile,
+.budget-mobile-form-wrap {
+    display: none;
+}
+
 .budget-table {
     width: 100%;
     min-width: 1080px;
@@ -1685,6 +1705,60 @@ body.sig-viewer-body .sig-main > main {
 }
 
 @media (max-width: 760px) {
+    html:has(.budget-mobile-page),
+    body:has(.budget-mobile-page) {
+        overflow-x: hidden;
+        scrollbar-width: none;
+    }
+
+    html:has(.budget-mobile-page)::-webkit-scrollbar,
+    body:has(.budget-mobile-page)::-webkit-scrollbar,
+    .budget-mobile-page *::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
+    }
+
+    .budget-mobile-page {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: clip;
+    }
+
+    .budget-module-header {
+        flex-direction: column;
+    }
+
+    .budget-module-header > div,
+    .budget-module-actions,
+    .budget-module-actions > * {
+        width: 100%;
+    }
+
+    .budget-module-actions .sig-btn,
+    .budget-module-nav .sig-btn {
+        justify-content: center;
+    }
+
+    .budget-module-nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .budget-filter-chips {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        overflow: visible;
+    }
+
+    .budget-filter-chips > * {
+        min-width: 0;
+        width: 100%;
+        justify-content: center;
+        white-space: normal;
+        text-align: center;
+    }
+
     .budget-page-header {
         align-items: stretch;
         flex-direction: column;
@@ -1701,6 +1775,122 @@ body.sig-viewer-body .sig-main > main {
 
     .budget-summary-card:first-child {
         grid-column: auto;
+    }
+
+    .budget-page-header > div:last-child,
+    .budget-page-header > div:last-child > * {
+        width: 100%;
+    }
+
+    .budget-page-header .sig-btn,
+    .budget-toolbar-btn {
+        justify-content: center;
+    }
+
+    .budget-desktop-items-table,
+    .budget-sicro-desktop {
+        display: none;
+    }
+
+    .budget-mobile-items-list,
+    .budget-sicro-mobile,
+    .budget-mobile-form-wrap {
+        display: grid;
+    }
+
+    .budget-mobile-form-wrap {
+        border-top: 1px solid var(--border);
+        background: #fff;
+        padding: 12px;
+    }
+
+    .budget-mobile-form-table,
+    .budget-mobile-form-table tbody,
+    .budget-mobile-form-table tr {
+        display: grid;
+        width: 100%;
+        min-width: 0;
+        gap: 8px;
+    }
+
+    .budget-mobile-form-table td {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        border: 0;
+        padding: 0;
+        text-align: left;
+    }
+
+    .budget-mobile-form-table td:empty {
+        display: none;
+    }
+
+    .budget-mobile-form-table input,
+    .budget-mobile-form-table select,
+    .budget-mobile-form-table textarea,
+    .budget-mobile-form-table .budget-input {
+        width: 100%;
+        max-width: 100%;
+        text-align: left;
+    }
+
+    .budget-mobile-form-table .budget-edit-actions {
+        justify-content: flex-end;
+    }
+
+    .budget-mobile-items-list {
+        gap: 0;
+    }
+
+    .budget-mobile-etapa,
+    .budget-mobile-item {
+        min-width: 0;
+        border-bottom: 1px solid var(--border);
+        padding: 14px;
+        padding-left: calc(14px + min(var(--budget-depth, 0), 3) * 7px);
+    }
+
+    .budget-mobile-etapa {
+        border-left: 3px solid #2563eb;
+        background: #eaf1fe;
+    }
+
+    .budget-mobile-item.budget-row-composicao {
+        border-left: 3px solid #16a34a;
+    }
+
+    .budget-mobile-item.budget-row-insumo {
+        border-left: 3px solid #e08a10;
+    }
+
+    .budget-mobile-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .budget-mobile-actions button {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: rgb(255 255 255 / 80%);
+        padding: 6px 9px;
+        color: var(--ink-700);
+        font-size: 11px;
+        font-weight: 650;
+    }
+
+    .budget-mobile-page table {
+        max-width: 100%;
+    }
+
+    .budget-mobile-page [class*="overflow-x-auto"] {
+        scrollbar-width: none;
     }
 }
 
@@ -1815,6 +2005,69 @@ body.sig-viewer-body .sig-main > main {
 }
 
 @media (max-width: 760px) {
+    .quality-mobile-page {
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: clip;
+        padding: 18px 12px 32px;
+    }
+
+    .quality-mobile-page .quality-page-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+    }
+
+    .quality-mobile-page .quality-page-header h1 {
+        overflow-wrap: anywhere;
+        font-size: 1.35rem;
+        line-height: 1.25;
+    }
+
+    .quality-mobile-page .quality-page-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .quality-mobile-page .quality-page-actions > *,
+    .quality-mobile-page .quality-card-actions > * {
+        width: 100%;
+        min-width: 0;
+        white-space: normal;
+    }
+
+    .quality-mobile-page .quality-metrics-grid .eyebrow {
+        min-height: 2.2em;
+        letter-spacing: 0.04em;
+    }
+
+    .quality-mobile-page .sig-card,
+    .quality-mobile-page article,
+    .quality-mobile-page aside,
+    .quality-mobile-page form,
+    .quality-mobile-page section,
+    .quality-mobile-page label,
+    .quality-mobile-page input,
+    .quality-mobile-page select,
+    .quality-mobile-page textarea {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .quality-mobile-page a[download],
+    .quality-mobile-page a[target="_blank"] {
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    .quality-mobile-page .sig-card > section,
+    .quality-mobile-page .sig-card > header {
+        padding-right: 16px;
+        padding-left: 16px;
+    }
+
     .sig-login {
         grid-template-columns: 1fr !important;
     }
