@@ -223,6 +223,23 @@ class TenantAssistantTest extends TestCase
         $this->assertStringContainsString('OCR', $guide['content']);
     }
 
+    public function test_platform_administration_tutorial_is_only_retrieved_for_platform_admin(): void
+    {
+        [$tenant, $user] = $this->tenantUserAndContract('assistente-ajuda-plataforma');
+        $question = 'Como consultar tenants, planos e o uso APS na administracao da plataforma?';
+
+        $regularSources = app(AssistantRetriever::class)->retrieve($user, $tenant, $question);
+        $this->assertNull(collect($regularSources)->firstWhere('title', 'Fluxo de Administração da plataforma'));
+
+        $user->update(['is_platform_admin' => true]);
+        $adminSources = app(AssistantRetriever::class)->retrieve($user->fresh(), $tenant, $question);
+        $guide = collect($adminSources)->firstWhere('title', 'Fluxo de Administração da plataforma');
+
+        $this->assertNotNull($guide);
+        $this->assertStringContainsString('Uso APS', $guide['content']);
+        $this->assertStringContainsString('gigabytes', $guide['content']);
+    }
+
     public function test_operational_tutorials_are_retrieved_by_module_intent(): void
     {
         [$tenant, $user, $contract] = $this->tenantUserAndContract('assistente-tutoriais-operacionais');

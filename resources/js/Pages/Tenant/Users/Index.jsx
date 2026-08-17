@@ -1,7 +1,7 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Activity, Calculator, CalendarDays, Check, ChevronRight, ClipboardList, Copy, FileKey2, FileText, FileWarning, FolderOpen, KeyRound, Link2, Pencil, Plus, Ruler, ShieldCheck, SlidersHorizontal, UserCog, UserX, Users, X } from 'lucide-react';
+import { Activity, Calculator, CalendarDays, Check, ChevronRight, ClipboardList, Copy, FileKey2, FileText, FileWarning, FolderOpen, KeyRound, Link2, Pencil, Plus, Ruler, ShieldCheck, SlidersHorizontal, UserCheck, UserCog, UserX, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const contractRoleLabels = {
@@ -312,6 +312,50 @@ export default function TenantUsersIndex({
         toggleContractPermissionForSelectedContracts(field, permission);
     };
 
+    const toggleAllUnifiedPermissions = (field, permissions) => {
+        const permissionKeys = [...new Set(permissions || [])];
+
+        if (permissionKeys.length === 0) {
+            return;
+        }
+
+        if (field === 'user_permissions' || field === 'parametrizacao_permissions' || field === 'budget_permissions') {
+            const current = form.data[field] || [];
+            const allSelected = permissionKeys.every((permission) => current.includes(permission));
+
+            form.setData(
+                field,
+                allSelected
+                    ? current.filter((permission) => !permissionKeys.includes(permission))
+                    : [...new Set([...current, ...permissionKeys])],
+            );
+            return;
+        }
+
+        const accesses = form.data.contract_accesses || [];
+
+        if (accesses.length === 0) {
+            return;
+        }
+
+        const allSelected = accesses.every((access) => {
+            const current = access[field] || [];
+
+            return permissionKeys.every((permission) => current.includes(permission));
+        });
+
+        setContractAccesses((currentAccesses) => currentAccesses.map((access) => {
+            const current = access[field] || [];
+
+            return {
+                ...access,
+                [field]: allSelected
+                    ? current.filter((permission) => !permissionKeys.includes(permission))
+                    : [...new Set([...current, ...permissionKeys])],
+            };
+        }));
+    };
+
     const setOpenContractPermissionGroup = (contractId, field) => {
         setOpenContractPermissionGroups((current) => ({
             ...current,
@@ -341,13 +385,28 @@ export default function TenantUsersIndex({
         });
     };
 
+    const reactivateMembership = (membership) => {
+        router.patch(route('tenant.users.reactivate', [page.props.currentTenant.slug, membership.id]), {}, {
+            preserveScroll: true,
+        });
+    };
+
     const resetPasswordForMembership = (membership) => {
         router.patch(route('tenant.users.reset-password', [page.props.currentTenant.slug, membership.id]), {}, {
             preserveScroll: true,
         });
     };
 
-    const firstContractAccess = form.data.contract_accesses?.[0] || {};
+    const contractAccesses = form.data.contract_accesses || [];
+    const permissionsSelectedInEveryContract = (field) => {
+        if (contractAccesses.length === 0) {
+            return [];
+        }
+
+        return (contractAccesses[0][field] || []).filter((permission) =>
+            contractAccesses.every((access) => (access[field] || []).includes(permission)),
+        );
+    };
     const unifiedPermissionGroups = {
         ...contractPermissionGroups,
         budget_permissions: { label: 'Orçamentos', permissions: budgetPermissionOptions },
@@ -355,7 +414,7 @@ export default function TenantUsersIndex({
         parametrizacao_permissions: { label: 'Parametrização', permissions: parametrizacaoPermissionOptions },
     };
     const unifiedSelectedPermissions = {
-        ...Object.fromEntries(Object.keys(contractPermissionGroups).map((field) => [field, firstContractAccess[field] || []])),
+        ...Object.fromEntries(Object.keys(contractPermissionGroups).map((field) => [field, permissionsSelectedInEveryContract(field)])),
         budget_permissions: form.data.budget_permissions || [],
         user_permissions: form.data.user_permissions || [],
         parametrizacao_permissions: form.data.parametrizacao_permissions || [],
@@ -597,6 +656,7 @@ export default function TenantUsersIndex({
                                     openGroup={openGlobalPermissionGroup}
                                     onOpenGroup={(field) => setOpenGlobalPermissionGroup((current) => current === field ? '' : field)}
                                     onToggle={toggleUnifiedPermission}
+                                    onToggleAll={toggleAllUnifiedPermissions}
                                     errors={form.errors}
                                 />
                                 {form.data.contract_accesses.length === 0 && (
@@ -721,6 +781,19 @@ export default function TenantUsersIndex({
                                                         Desativar
                                                     </ConfirmActionButton>
                                                 )}
+                                                {userPermissionCan?.deactivate_user && membership.status !== 'active' && (
+                                                    <ConfirmActionButton
+                                                        title="Reativar usuario"
+                                                        message={`Deseja reativar o acesso de ${membership.user?.name ?? 'este usuario'} a este tenant?`}
+                                                        confirmLabel="Reativar usuario"
+                                                        className="sig-btn sig-btn-secondary sig-btn-sm text-[var(--green)]"
+                                                        tone="success"
+                                                        onConfirm={() => reactivateMembership(membership)}
+                                                    >
+                                                        <UserCheck size={14} />
+                                                        Reativar
+                                                    </ConfirmActionButton>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -817,6 +890,7 @@ function PermissionModuleList({
     openGroup,
     onOpenGroup,
     onToggle,
+    onToggleAll,
     errors = {},
     errorPrefix = null,
     compact = false,
@@ -844,6 +918,8 @@ function PermissionModuleList({
                     const Icon = meta.icon;
                     const selected = selectedByGroup[field] || [];
                     const permissions = Object.entries(group.permissions || {});
+                    const permissionKeys = permissions.map(([permission]) => permission);
+                    const allSelected = permissionKeys.length > 0 && permissionKeys.every((permission) => selected.includes(permission));
                     const expanded = openGroup === field;
                     const error = errorPrefix ? errors[`${errorPrefix}.${field}`] : errors[field];
 
@@ -872,6 +948,16 @@ function PermissionModuleList({
 
                             {expanded && (
                                 <div className={`grid gap-2 bg-white ${compact ? 'px-4 pb-4' : 'px-5 pb-5'}`}>
+                                    {permissions.length > 0 && onToggleAll && (
+                                        <label className={`flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--ink-700)] ${compact ? '' : 'sm:ml-12'}`}>
+                                            <input
+                                                type="checkbox"
+                                                checked={allSelected}
+                                                onChange={() => onToggleAll(field, permissionKeys)}
+                                            />
+                                            <span>{allSelected ? 'Desmarcar todas' : 'Marcar todas'}</span>
+                                        </label>
+                                    )}
                                     {permissions.length === 0 && (
                                         <span className="text-sm text-[var(--ink-400)]">Nenhuma permissão disponível.</span>
                                     )}

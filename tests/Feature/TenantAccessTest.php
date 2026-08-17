@@ -321,7 +321,13 @@ class TenantAccessTest extends TestCase
         $this->actingAs($user)
             ->get(route('tenant.tutorials.index', $tenant))
             ->assertOk()
-            ->assertSee('Tenant\/Tutorials\/Index', false);
+            ->assertSee('Tenant\/Tutorials\/Index', false)
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Tenant/Tutorials/Index')
+                ->has('tutorials', 16)
+                ->where('tutorials.6.id', 'atividades')
+                ->where('tutorials.12.id', 'documentacao')
+                ->where('tutorials.13.id', 'projetos'));
     }
 
     public function test_tenant_user_can_access_orcamentos_pages(): void
@@ -2584,6 +2590,41 @@ class TenantAccessTest extends TestCase
             'tenant_id' => $tenant->id,
             'user_id' => $managedUser->id,
             'status' => 'inactive',
+        ]);
+    }
+
+    public function test_tenant_admin_can_reactivate_user_membership(): void
+    {
+        $tenant = Tenant::create([
+            'slug' => 'teste-reativacao',
+            'name' => 'Empresa Reativacao',
+            'plan' => 'starter',
+            'status' => 'active',
+        ]);
+        $admin = User::factory()->create();
+        $managedUser = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $admin->id,
+            'role' => 'tenant_admin',
+            'status' => 'active',
+        ]);
+        $membership = $tenant->memberships()->create([
+            'user_id' => $managedUser->id,
+            'role' => 'engineer',
+            'status' => 'inactive',
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('tenant.users.reactivate', [$tenant, $membership]))
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Usuario reativado.');
+
+        $this->assertDatabaseHas('tenant_users', [
+            'id' => $membership->id,
+            'tenant_id' => $tenant->id,
+            'user_id' => $managedUser->id,
+            'status' => 'active',
         ]);
     }
 

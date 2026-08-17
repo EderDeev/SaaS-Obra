@@ -17,7 +17,7 @@ class UserPermissions
         self::VIEW => 'Visualizar Usuarios',
         self::CREATE => 'Criar usuario',
         self::EDIT => 'Editar usuario',
-        self::DEACTIVATE => 'Desativar usuario',
+        self::DEACTIVATE => 'Ativar e desativar usuario',
     ];
 
     public static function all(): array

@@ -22,7 +22,6 @@ export default function Settings({ contracts, obras, users, filters, configurati
         responsible_user_id: configuration?.responsible_user_id || '',
         start_date: configuration?.start_date || new Date().toLocaleDateString('en-CA'),
         end_date: configuration?.end_date || '',
-        generation_time: configuration?.generation_time || '00:00',
         timezone: configuration?.timezone || 'America/Sao_Paulo',
         generation_weekdays: configuration?.generation_weekdays || [0, 1, 2, 3, 4, 5, 6],
         generate_on_holidays: configuration?.generate_on_holidays ?? true,
@@ -45,7 +44,6 @@ export default function Settings({ contracts, obras, users, filters, configurati
             responsible_user_id: configuration?.responsible_user_id || '',
             start_date: configuration?.start_date || new Date().toLocaleDateString('en-CA'),
             end_date: configuration?.end_date || '',
-            generation_time: configuration?.generation_time || '00:00',
             generation_weekdays: configuration?.generation_weekdays || [0, 1, 2, 3, 4, 5, 6],
             copy_previous_day: configuration?.copy_previous_day ?? false,
             copy_workforce: configuration?.copy_workforce ?? true,
@@ -117,8 +115,11 @@ export default function Settings({ contracts, obras, users, filters, configurati
                             <Field label="Data final (opcional)" error={errors.end_date}>
                                 <input type="date" className="sig-input w-full" value={data.end_date} onChange={(event) => setData('end_date', event.target.value)} />
                             </Field>
-                            <Field label="Horário de geração" error={errors.generation_time}>
-                                <input type="time" className="sig-input w-full" value={data.generation_time} onChange={(event) => setData('generation_time', event.target.value)} />
+                            <Field label="Horário de geração">
+                                <div className="sig-input flex w-full items-center justify-between bg-[var(--surface-muted)]">
+                                    <strong>00:05</strong>
+                                    <span className="text-xs font-semibold text-[var(--ink-500)]">Horário fixo</span>
+                                </div>
                             </Field>
                             <Field label="Responsável padrão" error={errors.responsible_user_id}>
                                 <select className="sig-input w-full" value={data.responsible_user_id} onChange={(event) => setData('responsible_user_id', event.target.value)}>

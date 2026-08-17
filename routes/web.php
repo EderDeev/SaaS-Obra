@@ -165,6 +165,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::patch('/usuarios/{membership}', [TenantUserController::class, 'update'])->name('users.update');
         Route::patch('/usuarios/{membership}/redefinir-senha', [TenantUserController::class, 'resetPassword'])->name('users.reset-password');
         Route::patch('/usuarios/{membership}/desativar', [TenantUserController::class, 'deactivate'])->name('users.deactivate');
+        Route::patch('/usuarios/{membership}/reativar', [TenantUserController::class, 'reactivate'])->name('users.reactivate');
         Route::get('/permissoes', [TenantPermissionController::class, 'index'])->name('permissions.index');
         Route::patch('/permissoes', [TenantPermissionController::class, 'update'])->name('permissions.update');
         Route::get('/contracts', [ContractController::class, 'index'])->middleware('contract.permission:view_contracts')->name('contracts.index');

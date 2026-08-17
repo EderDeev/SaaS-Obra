@@ -31,6 +31,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class RdoConfiguracao extends Model
 {
+    public const GENERATION_TIME = '00:05';
+
     protected $table = 'rdo_configuracoes';
 
     protected function casts(): array

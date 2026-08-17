@@ -92,6 +92,21 @@ class RncPermissions
         return self::RESPONSIBILITY_PROFILES[$type]['permissions'] ?? [];
     }
 
+    public static function mergeResponsibilityPermissions(string $type, array $currentPermissions): array
+    {
+        $profilePermissions = collect(self::RESPONSIBILITY_PROFILES)
+            ->flatMap(fn (array $profile): array => $profile['permissions'])
+            ->unique();
+
+        $administrativePermissions = collect(self::normalize($currentPermissions))
+            ->reject(fn (string $permission): bool => $profilePermissions->contains($permission));
+
+        return self::normalize([
+            ...self::permissionsForResponsibility($type),
+            ...$administrativePermissions,
+        ]);
+    }
+
     public static function responsibilityTypeForPermissions(array $permissions): string
     {
         $permissions = self::normalize($permissions);

@@ -385,7 +385,7 @@ class RdoController extends Controller
                 'responsible_user_id' => $configuration->responsible_user_id,
                 'start_date' => $configuration->start_date?->format('Y-m-d'),
                 'end_date' => $configuration->end_date?->format('Y-m-d'),
-                'generation_time' => substr((string) $configuration->generation_time, 0, 5),
+                'generation_time' => RdoConfiguracao::GENERATION_TIME,
                 'timezone' => $configuration->timezone,
                 'generation_weekdays' => $configuration->generation_weekdays,
                 'generate_on_holidays' => $configuration->generate_on_holidays,
@@ -430,7 +430,6 @@ class RdoController extends Controller
             ],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'generation_time' => ['required', 'date_format:H:i'],
             'timezone' => ['required', 'timezone'],
             'generation_weekdays' => ['required', 'array', 'min:1'],
             'generation_weekdays.*' => ['required', 'integer', 'between:0,6', 'distinct'],
@@ -466,6 +465,7 @@ class RdoController extends Controller
             ->merge([
                 'obra_id' => $primaryObraId,
                 'created_by_id' => $request->user()?->id,
+                'generation_time' => RdoConfiguracao::GENERATION_TIME,
             ])
             ->all();
 

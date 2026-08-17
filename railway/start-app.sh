@@ -21,7 +21,7 @@ export DB_PROTECT_DESTRUCTIVE="${DB_PROTECT_DESTRUCTIVE:-true}"
 php artisan config:clear
 php artisan storage:link || true
 
-# Mantem o agendador do RDO ativo no mesmo servico web.
+# Mantem o agendador geral ativo; o RDO executa uma unica vez por dia, as 00:05.
 php artisan schedule:work &
 
 php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600 &

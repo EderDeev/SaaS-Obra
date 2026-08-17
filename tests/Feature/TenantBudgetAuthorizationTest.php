@@ -157,7 +157,7 @@ class TenantBudgetAuthorizationTest extends TestCase
         $this->assertCount(20, $response->json('users'));
     }
 
-    public function test_user_without_global_view_permission_is_not_added_to_budget_accesses(): void
+    public function test_granting_budget_access_adds_the_required_global_permission(): void
     {
         [$tenant, $creator, $viewer] = $this->budgetUsers();
         $budget = $this->budget($tenant, $creator);
@@ -169,18 +169,29 @@ class TenantBudgetAuthorizationTest extends TestCase
         $this->actingAs($creator)
             ->put(route('tenant.orcamentos.accesses.update', [$tenant, $budget]), [
                 'accesses' => [
-                    ['user_id' => $viewer->id, 'access_level' => OrcamentoAcesso::LEVEL_VIEW],
+                    ['user_id' => $viewer->id, 'access_level' => OrcamentoAcesso::LEVEL_EDIT],
                 ],
             ])
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
-        $this->assertDatabaseMissing('orcamento_acessos', [
+        $this->assertDatabaseHas('orcamento_acessos', [
             'orcamento_id' => $budget->id,
             'user_id' => $viewer->id,
+            'access_level' => OrcamentoAcesso::LEVEL_EDIT,
         ]);
+
+        $membership = $tenant->memberships()->where('user_id', $viewer->id)->firstOrFail();
+
+        $this->assertContains(BudgetPermissions::VIEW, $membership->budget_permissions);
+        $this->assertContains(BudgetPermissions::EDIT, $membership->budget_permissions);
+
+        $this->actingAs($viewer)
+            ->get(route('tenant.orcamentos.show', [$tenant, $budget]))
+            ->assertOk();
     }
 
-    public function test_shared_edit_requires_both_record_access_and_global_edit_permission(): void
+    public function test_shared_view_and_edit_levels_control_budget_mutations(): void
     {
         [$tenant, $creator, $viewer] = $this->budgetUsers();
         $budget = $this->budget($tenant, $creator);
@@ -188,7 +199,7 @@ class TenantBudgetAuthorizationTest extends TestCase
         $this->actingAs($creator)
             ->put(route('tenant.orcamentos.accesses.update', [$tenant, $budget]), [
                 'accesses' => [
-                    ['user_id' => $viewer->id, 'access_level' => OrcamentoAcesso::LEVEL_EDIT],
+                    ['user_id' => $viewer->id, 'access_level' => OrcamentoAcesso::LEVEL_VIEW],
                 ],
             ])
             ->assertRedirect();
@@ -204,15 +215,6 @@ class TenantBudgetAuthorizationTest extends TestCase
                 'descricao' => 'Etapa bloqueada',
             ])
             ->assertForbidden();
-
-        $tenant->memberships()
-            ->where('user_id', $viewer->id)
-            ->update([
-                'budget_permissions' => [
-                    BudgetPermissions::VIEW,
-                    BudgetPermissions::EDIT,
-                ],
-            ]);
 
         $this->actingAs($creator)
             ->put(route('tenant.orcamentos.accesses.update', [$tenant, $budget]), [
