@@ -449,6 +449,80 @@ class TenantRncTest extends TestCase
         ], $link->permissions);
     }
 
+    public function test_rnc_manager_keeps_administrative_permission_when_updating_own_profile(): void
+    {
+        [$tenant, $owner, $contract] = $this->tenantScenario();
+        $manager = User::factory()->create();
+        $newResponsible = User::factory()->create();
+
+        $tenant->memberships()->create([
+            'user_id' => $manager->id,
+            'role' => 'engenheiro_qualidade',
+            'status' => 'active',
+        ]);
+
+        foreach ([$manager, $newResponsible] as $participant) {
+            $contract->participants()->create([
+                'tenant_id' => $tenant->id,
+                'user_id' => $participant->id,
+                'side' => 'manager',
+                'role' => 'member',
+                'status' => 'active',
+            ]);
+        }
+
+        RelatorioNaoConformidadeResponsavel::create([
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'user_id' => $manager->id,
+            'created_by_id' => $owner->id,
+            'status' => 'active',
+            'responsibility_type' => RncPermissions::RESPONSIBILITY_CONTRACTOR,
+            'permissions' => [
+                RncPermissions::CORRECTIVE_ACTION,
+                RncPermissions::VIEW,
+                RncPermissions::RESPONSIBLES,
+            ],
+        ]);
+
+        $this->actingAs($manager)
+            ->post(route('tenant.qualidade.rnc.responsaveis.store', $tenant), [
+                'contract_id' => $contract->id,
+                'user_id' => $manager->id,
+                'responsibility_type' => RncPermissions::RESPONSIBILITY_OPERATIONAL,
+            ])
+            ->assertRedirect();
+
+        $managerLink = RelatorioNaoConformidadeResponsavel::query()
+            ->where('contract_id', $contract->id)
+            ->where('user_id', $manager->id)
+            ->firstOrFail();
+
+        $this->assertSame([
+            RncPermissions::CREATE,
+            RncPermissions::NOTIFY,
+            RncPermissions::REVIEW,
+            RncPermissions::EVIDENCE,
+            RncPermissions::VIEW,
+            RncPermissions::RESPONSIBLES,
+        ], $managerLink->permissions);
+
+        $this->actingAs($manager)
+            ->post(route('tenant.qualidade.rnc.responsaveis.store', $tenant), [
+                'contract_id' => $contract->id,
+                'user_id' => $newResponsible->id,
+                'responsibility_type' => RncPermissions::RESPONSIBILITY_MONITORING,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('relatorio_nao_conformidade_responsaveis', [
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'user_id' => $newResponsible->id,
+            'status' => 'active',
+        ]);
+    }
+
     public function test_rnc_responsibility_profiles_have_fixed_permissions(): void
     {
         $this->assertSame([

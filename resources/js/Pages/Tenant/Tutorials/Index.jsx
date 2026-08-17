@@ -3,16 +3,24 @@ import { Head } from '@inertiajs/react';
 import {
     Activity,
     Bell,
+    Bot,
     BookOpen,
     Building2,
+    Calculator,
     CheckCircle2,
     ChevronRight,
     CircleAlert,
     ClipboardList,
+    ClipboardCheck,
     Expand,
     FolderOpen,
+    FileText,
+    HardHat,
     Image as ImageIcon,
     Lightbulb,
+    LayoutDashboard,
+    Play,
+    Ruler,
     Search,
     ShieldCheck,
     SlidersHorizontal,
@@ -304,15 +312,55 @@ const tutorials = [
     },
 ];
 
-const rolloutSteps = [
-    'Tenant',
-    'Contrato',
-    'Empresas e obras',
-    'Disciplinas',
-    'Usuários',
-    'Permissões',
-    'Operação',
+const tutorialGroupOrder = [
+    'Comece por aqui',
+    'Plataforma',
+    'Gestão',
+    'Programação',
+    'Acompanhamento',
+    'Campo',
+    'Controle',
+    'Ajuda',
+    'Administração',
 ];
+
+const tutorialOrder = [
+    'primeiros-passos',
+    'administracao-plataforma',
+    'visao-geral',
+    'contratos',
+    'atividades',
+    'orcamentos',
+    'medicao',
+    'ordem-servico',
+    'diario-obra',
+    'qualidade-rnc',
+    'documentacao',
+    'projetos',
+    'notificacoes-perfil',
+    'assistente-deming',
+    'usuarios-permissoes',
+    'parametrizacao',
+];
+
+const tutorialIconMap = {
+    Activity,
+    Bell,
+    Bot,
+    BookOpen,
+    Building2,
+    Calculator,
+    ClipboardCheck,
+    ClipboardList,
+    FileText,
+    FolderOpen,
+    HardHat,
+    LayoutDashboard,
+    Ruler,
+    ShieldCheck,
+    SlidersHorizontal,
+    Users,
+};
 
 function ScreenshotFigure({ image, onExpand }) {
     return (
@@ -336,6 +384,32 @@ function ScreenshotFigure({ image, onExpand }) {
             <figcaption className="border-t border-[var(--border)] px-4 py-3">
                 <div className="text-[13px] font-semibold text-[var(--ink-900)]">{image.title}</div>
                 <p className="mt-1 text-[12.5px] leading-5 text-[var(--ink-500)]">{image.caption}</p>
+            </figcaption>
+        </figure>
+    );
+}
+
+function TutorialVideo({ video }) {
+    return (
+        <figure className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+            <div className="relative bg-[var(--surface-muted)]">
+                <video
+                    controls
+                    preload="metadata"
+                    poster={video.poster}
+                    className="aspect-video w-full bg-[var(--ink-900)] object-contain"
+                >
+                    <source src={video.src} type="video/webm" />
+                    Seu navegador não oferece suporte à reprodução deste vídeo.
+                </video>
+                <span className="pointer-events-none absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md border border-white/80 bg-white/95 px-2.5 py-1.5 text-[11.5px] font-semibold text-[var(--ink-700)] shadow-sm">
+                    <Play size={13} fill="currentColor" />
+                    Vídeo curto
+                </span>
+            </div>
+            <figcaption className="border-t border-[var(--border)] px-4 py-3">
+                <div className="text-[13px] font-semibold text-[var(--ink-900)]">{video.title}</div>
+                <p className="mt-1 text-[12.5px] leading-5 text-[var(--ink-500)]">{video.caption}</p>
             </figcaption>
         </figure>
     );
@@ -385,7 +459,21 @@ function ScreenshotModal({ image, onClose }) {
     );
 }
 
-export default function TutorialsIndex({ tenant }) {
+export default function TutorialsIndex({ tenant, tutorials: tutorialData = tutorials }) {
+    const availableTutorials = useMemo(
+        () => tutorialData
+            .map((tutorial) => ({
+                ...tutorial,
+                videos: tutorial.videos || [],
+                icon: tutorialIconMap[tutorial.icon] || tutorial.icon || BookOpen,
+            }))
+            .sort((left, right) => {
+                const groupDifference = tutorialGroupOrder.indexOf(left.group) - tutorialGroupOrder.indexOf(right.group);
+
+                return groupDifference || tutorialOrder.indexOf(left.id) - tutorialOrder.indexOf(right.id);
+            }),
+        [tutorialData],
+    );
     const [activeTutorialId, setActiveTutorialId] = useState('primeiros-passos');
     const [expandedImage, setExpandedImage] = useState(null);
     const [query, setQuery] = useState('');
@@ -393,10 +481,10 @@ export default function TutorialsIndex({ tenant }) {
         const term = query.trim().toLowerCase();
 
         if (!term) {
-            return tutorials;
+            return availableTutorials;
         }
 
-        return tutorials.filter((tutorial) => [
+        return availableTutorials.filter((tutorial) => [
             tutorial.title,
             tutorial.summary,
             tutorial.path,
@@ -405,8 +493,8 @@ export default function TutorialsIndex({ tenant }) {
             ...tutorial.steps.flat(),
             ...tutorial.tips,
         ].join(' ').toLowerCase().includes(term));
-    }, [query]);
-    const activeTutorial = tutorials.find((tutorial) => tutorial.id === activeTutorialId) || tutorials[0];
+    }, [availableTutorials, query]);
+    const activeTutorial = availableTutorials.find((tutorial) => tutorial.id === activeTutorialId) || availableTutorials[0];
     const groupedTutorials = useMemo(
         () => filteredTutorials.reduce((groups, tutorial) => {
             groups[tutorial.group] = [...(groups[tutorial.group] || []), tutorial];
@@ -439,25 +527,10 @@ export default function TutorialsIndex({ tenant }) {
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <span className="sig-pill sig-pill-blue">{tutorials.length} guias</span>
+                        <span className="sig-pill sig-pill-blue">{availableTutorials.length} guias</span>
                         <span className="sig-pill bg-[var(--surface-muted)] text-[var(--ink-600)]">{tenant.name}</span>
                     </div>
                 </header>
-
-                <section className="border-y border-[var(--border)] bg-white px-5 py-4">
-                    <div className="eyebrow">Sequência recomendada para implantação</div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                        {rolloutSteps.map((step, index) => (
-                            <div key={step} className="flex items-center gap-2">
-                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--primary-50)] text-[12px] font-bold text-[var(--primary)]">
-                                    {index + 1}
-                                </span>
-                                <span className="text-[13px] font-semibold text-[var(--ink-700)]">{step}</span>
-                                {index < rolloutSteps.length - 1 && <ChevronRight size={14} className="text-[var(--ink-300)]" />}
-                            </div>
-                        ))}
-                    </div>
-                </section>
 
                 <section data-testid="tutorial-layout" className="tutorials-layout grid min-h-[720px] overflow-hidden border border-[var(--border)] bg-white shadow-[var(--shadow-sm)]">
                     <aside className="border-b border-[var(--border)] bg-[var(--surface-muted)] p-4 xl:border-b-0 xl:border-r">
@@ -466,11 +539,14 @@ export default function TutorialsIndex({ tenant }) {
                             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar tutorial" />
                         </label>
 
-                        <div className="mt-4 grid gap-5">
+                        <div className="mt-4 grid gap-3">
                             {Object.entries(groupedTutorials).map(([group, items]) => (
-                                <section key={group}>
-                                    <div className="eyebrow px-2">{group}</div>
-                                    <div className="mt-2 grid gap-1">
+                                <section key={group} className="overflow-hidden border border-[var(--border)] bg-white">
+                                    <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5">
+                                        <div className="eyebrow">{group}</div>
+                                        <span className="text-[11px] font-semibold tabular-nums text-[var(--ink-400)]">{items.length}</span>
+                                    </header>
+                                    <div className="grid">
                                         {items.map((tutorial) => {
                                             const Icon = tutorial.icon;
                                             const active = tutorial.id === activeTutorial.id;
@@ -479,7 +555,7 @@ export default function TutorialsIndex({ tenant }) {
                                                 <button
                                                     key={tutorial.id}
                                                     type="button"
-                                                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition ${active ? 'bg-[var(--primary-50)] text-[var(--primary)]' : 'text-[var(--ink-700)] hover:bg-white'}`}
+                                                    className={`relative flex w-full items-center gap-3 border-b border-[var(--border)] px-3 py-2.5 text-left transition last:border-b-0 ${active ? 'bg-[var(--primary-50)] text-[var(--primary)] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-[var(--primary)]' : 'text-[var(--ink-700)] hover:bg-[var(--surface-muted)]'}`}
                                                     onClick={() => selectTutorial(tutorial.id)}
                                                 >
                                                     <Icon size={16} strokeWidth={1.8} />
@@ -559,9 +635,14 @@ export default function TutorialsIndex({ tenant }) {
                                         <ImageIcon size={15} className="text-[var(--primary)]" />
                                         <h3 className="eyebrow">Telas do sistema</h3>
                                     </div>
-                                    <span className="text-[12px] text-[var(--ink-500)]">Clique em uma imagem para ampliar</span>
+                                    <span className="text-[12px] text-[var(--ink-500)]">
+                                        {activeTutorial.videos.length > 0 ? 'Assista ao percurso ou amplie uma captura' : 'Clique em uma imagem para ampliar'}
+                                    </span>
                                 </div>
-                                <div className={`mt-3 grid gap-4 ${activeTutorial.screenshots.length > 1 ? 'lg:grid-cols-2' : ''}`}>
+                                <div className={`mt-3 grid gap-4 ${activeTutorial.videos.length + activeTutorial.screenshots.length > 1 ? 'lg:grid-cols-2' : ''}`}>
+                                    {activeTutorial.videos.map((video) => (
+                                        <TutorialVideo key={video.src} video={video} />
+                                    ))}
                                     {activeTutorial.screenshots.map((image) => (
                                         <ScreenshotFigure key={image.src} image={image} onExpand={setExpandedImage} />
                                     ))}
@@ -592,7 +673,7 @@ export default function TutorialsIndex({ tenant }) {
                                 <div className="eyebrow">Continue por aqui</div>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                     {activeTutorial.related.map((tutorialId) => {
-                                        const tutorial = tutorials.find((item) => item.id === tutorialId);
+                                        const tutorial = availableTutorials.find((item) => item.id === tutorialId);
 
                                         return (
                                             <button

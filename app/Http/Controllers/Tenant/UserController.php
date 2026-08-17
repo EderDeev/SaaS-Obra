@@ -403,6 +403,18 @@ class UserController extends Controller
         return back()->with('success', 'Usuario desativado.');
     }
 
+    public function reactivate(Tenant $tenant, TenantUser $membership): RedirectResponse
+    {
+        $this->authorizeTenantUsers($tenant, UserPermissions::DEACTIVATE);
+        $this->ensureMembershipBelongsToTenant($tenant, $membership);
+
+        $membership->update([
+            'status' => 'active',
+        ]);
+
+        return back()->with('success', 'Usuario reativado.');
+    }
+
     public function resetPassword(Request $request, Tenant $tenant, TenantUser $membership): RedirectResponse
     {
         $this->authorizeTenantUsers($tenant, UserPermissions::EDIT);

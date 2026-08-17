@@ -637,11 +637,15 @@ export default function AuthenticatedLayout({ children }) {
             ...(activityCan.view_activities ? [
                 { label: 'Atividades', icon: Activity, href: route('tenant.activities.index', tenant.slug), active: route().current('tenant.activities.*') },
             ] : []),
-            { label: 'Planejamento', icon: ChartNoAxesGantt, active: false, disabled: true },
+            ...(budgetCan.view_budgets ? [
+                { label: 'Planejamento', icon: ChartNoAxesGantt, active: false, disabled: true },
+            ] : []),
             ...(budgetCan.view_budgets ? [
                 { label: 'Orçamentos', icon: Calculator, active: route().current('tenant.orcamentos.*'), children: orcamentoItems },
             ] : []),
-            { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
+            ...(medicaoItems.length > 0 ? [
+                { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
+            ] : []),
             ...(ordemServicoItems.length > 0 ? [
                 { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
             ] : []),

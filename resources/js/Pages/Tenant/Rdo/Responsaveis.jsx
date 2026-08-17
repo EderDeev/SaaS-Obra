@@ -14,7 +14,7 @@ const stageColors = {
 export default function Responsaveis({
     module = 'rdo',
     moduleLabel = 'RDO',
-    pageDescription = 'Defina quem preenche pela construtora e quem aprova pela gerenciadora e pelo cliente em cada obra ou frente de serviço.',
+    pageDescription = 'Defina os usuários responsáveis por cada etapa do RDO em cada obra ou frente de serviço.',
     routeNames = {
         index: 'tenant.diario-obra.rdo.responsaveis.index',
         store: 'tenant.diario-obra.rdo.responsaveis.store',
@@ -39,18 +39,7 @@ export default function Responsaveis({
         etapa: stages?.[0]?.value || 'construtora',
     });
 
-    const companyId = {
-        campo: contractCompanies?.construtora?.id,
-        construtora: contractCompanies?.construtora?.id,
-        gerenciadora: contractCompanies?.gerenciadora?.id,
-        cliente: contractCompanies?.cliente?.id,
-    }[form.data.etapa];
-
-    const baseEligibleUsers = useMemo(() => (
-        module === 'rda' || form.data.etapa === 'assinatura'
-            ? users
-            : users.filter((user) => Number(user.empresa_id) === Number(companyId))
-    ), [users, companyId, form.data.etapa, module]);
+    const baseEligibleUsers = users;
 
     const eligibleUsers = useMemo(() => {
         const search = userSearch.trim().toLowerCase();
@@ -144,9 +133,7 @@ export default function Responsaveis({
                         <div>
                             <h2 className="text-lg font-bold">Cadastrar responsável</h2>
                             <p className="text-sm text-[var(--ink-500)]">
-                                {module === 'rda'
-                                    ? 'Qualquer usuário ativo do tenant pode ser responsável pelo apontamento de campo.'
-                                    : 'A lista de usuários é filtrada pela empresa da etapa; na assinatura, qualquer usuário ativo do tenant pode ser escolhido.'}
+                                Qualquer usuário ativo do tenant pode ser escolhido para esta responsabilidade.
                             </p>
                         </div>
                     </header>
@@ -191,9 +178,7 @@ export default function Responsaveis({
                             />
                             {eligibleUsers.length === 0 && (
                                 <span className="text-xs text-amber-700">
-                                    {module === 'rda'
-                                        ? 'Nenhum usuário ativo encontrado para esta pesquisa.'
-                                        : 'Nenhum usuário ativo está vinculado a esta empresa ou pesquisa.'}
+                                    Nenhum usuário ativo encontrado para esta pesquisa.
                                 </span>
                             )}
                         </Field>

@@ -476,38 +476,23 @@ class OrcamentoController extends Controller
         $memberships = $tenant->memberships()
             ->where('status', 'active')
             ->whereIn('user_id', collect($data['accesses'] ?? [])->pluck('user_id'))
-            ->get(['user_id', 'role', 'budget_permissions'])
+            ->get(['id', 'user_id', 'role', 'budget_permissions'])
             ->keyBy('user_id');
 
         $accesses = collect($data['accesses'] ?? [])
             ->filter(function (array $access) use ($memberships, $orcamento): bool {
                 $membership = $memberships->get((int) $access['user_id']);
-                $permissions = $membership
-                    ? BudgetPermissions::normalize(
-                        $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
-                    )
-                    : [];
 
                 return $membership
                     && (int) $access['user_id'] !== (int) $orcamento->created_by_id
-                    && ! in_array($membership->role, [TenantRoles::OWNER, TenantRoles::ADMIN], true)
-                    && in_array(BudgetPermissions::VIEW, $permissions, true);
+                    && ! in_array($membership->role, [TenantRoles::OWNER, TenantRoles::ADMIN], true);
             })
-            ->map(function (array $access) use ($tenant, $orcamento, $request, $memberships): array {
-                $membership = $memberships->get((int) $access['user_id']);
-                $permissions = BudgetPermissions::normalize(
-                    $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
-                );
-                $level = $access['access_level'] === OrcamentoAcesso::LEVEL_EDIT
-                    && in_array(BudgetPermissions::EDIT, $permissions, true)
-                        ? OrcamentoAcesso::LEVEL_EDIT
-                        : OrcamentoAcesso::LEVEL_VIEW;
-
+            ->map(function (array $access) use ($tenant, $orcamento, $request): array {
                 return [
                     'tenant_id' => $tenant->id,
                     'orcamento_id' => $orcamento->id,
                     'user_id' => (int) $access['user_id'],
-                    'access_level' => $level,
+                    'access_level' => $access['access_level'],
                     'granted_by_id' => $request->user()->id,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -515,7 +500,23 @@ class OrcamentoController extends Controller
             })
             ->values();
 
-        DB::transaction(function () use ($tenant, $orcamento, $accesses): void {
+        DB::transaction(function () use ($tenant, $orcamento, $accesses, $memberships): void {
+            foreach ($accesses as $access) {
+                $membership = $memberships->get($access['user_id']);
+                $permissions = BudgetPermissions::normalize(
+                    $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
+                );
+                $permissions[] = BudgetPermissions::VIEW;
+
+                if ($access['access_level'] === OrcamentoAcesso::LEVEL_EDIT) {
+                    $permissions[] = BudgetPermissions::EDIT;
+                }
+
+                $membership->update([
+                    'budget_permissions' => BudgetPermissions::normalize($permissions),
+                ]);
+            }
+
             OrcamentoAcesso::query()
                 ->where('tenant_id', $tenant->id)
                 ->where('orcamento_id', $orcamento->id)
@@ -7763,12 +7764,6 @@ class OrcamentoController extends Controller
                 $isCreator = (int) $membership->user_id === (int) $orcamento->created_by_id;
                 $isAdministrator = in_array($membership->role, [TenantRoles::OWNER, TenantRoles::ADMIN], true);
                 $automatic = $isCreator || $isAdministrator;
-                $permissions = $membership->role === TenantRoles::OWNER
-                    ? BudgetPermissions::all()
-                    : BudgetPermissions::normalize(
-                        $membership->budget_permissions ?? BudgetPermissions::defaultForRole($membership->role),
-                    );
-
                 return [
                     'id' => (int) $membership->user_id,
                     'name' => $membership->user->name,
@@ -7781,8 +7776,8 @@ class OrcamentoController extends Controller
                         : $accessLevels->get($membership->user_id),
                     'automatic' => $automatic,
                     'automatic_reason' => $isCreator ? 'Criador do orçamento' : ($isAdministrator ? 'Administrador do tenant' : null),
-                    'can_view_globally' => $automatic || in_array(BudgetPermissions::VIEW, $permissions, true),
-                    'can_edit_globally' => $automatic || in_array(BudgetPermissions::EDIT, $permissions, true),
+                    'can_view_globally' => true,
+                    'can_edit_globally' => true,
                 ];
             })
             ->values()

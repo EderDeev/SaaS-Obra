@@ -58,6 +58,10 @@ class TenantRdoTest extends TestCase
             'copy_previous_day' => true,
             'submission_deadline_days' => 7,
         ]);
+        $this->assertSame(
+            RdoConfiguracao::GENERATION_TIME,
+            substr((string) RdoConfiguracao::query()->value('generation_time'), 0, 5),
+        );
         $this->assertDatabaseHas('rdo_configuracao_obras', [
             'obra_id' => $obra->id,
         ]);
@@ -69,16 +73,13 @@ class TenantRdoTest extends TestCase
         $this->assertSame('rascunho', $rdo->status);
     }
 
-    public function test_daily_generation_is_idempotent_and_respects_configured_time(): void
+    public function test_daily_generation_is_idempotent_and_uses_the_scheduled_execution_time(): void
     {
         [$tenant, $user, $contract, $obra] = $this->scenario();
-        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id, [
-            'generation_time' => '08:00',
-        ]);
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
         $generator = app(RdoDailyGenerator::class);
 
-        $this->assertSame(0, $generator->generateDue(CarbonImmutable::parse('2026-06-23 07:59:00', 'America/Sao_Paulo')->utc()));
-        $this->assertSame(1, $generator->generateDue(CarbonImmutable::parse('2026-06-23 08:00:00', 'America/Sao_Paulo')->utc()));
+        $this->assertSame(1, $generator->generateDue(CarbonImmutable::parse('2026-06-23 00:05:00', 'America/Sao_Paulo')->utc()));
         $this->assertSame(0, $generator->generateDue(CarbonImmutable::parse('2026-06-23 09:00:00', 'America/Sao_Paulo')->utc()));
 
         $this->assertSame(1, RdoDiario::query()->where('rdo_configuracao_id', $configuration->id)->count());
@@ -556,6 +557,36 @@ class TenantRdoTest extends TestCase
                     && str_contains((string) data_get($mail->viewData, 'rdoUrl'), '/diario-obra/rdo/');
             }
         );
+    }
+
+    public function test_rdo_responsibility_accepts_active_user_from_any_company(): void
+    {
+        [$tenant, $owner, $contract, $obra] = $this->scenario();
+        $responsible = User::factory()->create();
+        $tenant->memberships()->create([
+            'user_id' => $responsible->id,
+            'role' => 'tenant_member',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($owner)
+            ->post(route('tenant.diario-obra.rdo.responsaveis.store', $tenant), [
+                'contract_id' => $contract->id,
+                'obra_id' => $obra->id,
+                'user_id' => $responsible->id,
+                'etapa' => 'gerenciadora',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('rdo_responsaveis', [
+            'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
+            'obra_id' => $obra->id,
+            'user_id' => $responsible->id,
+            'etapa' => 'gerenciadora',
+            'status' => 'active',
+        ]);
     }
 
     public function test_rdo_responsibilities_are_scoped_by_front_and_each_stage_waits_for_all_fronts(): void

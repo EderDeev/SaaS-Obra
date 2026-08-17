@@ -21,6 +21,7 @@ use App\Models\GedTag;
 use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Support\DocumentationPermissions;
+use App\Support\JsonMetadataSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -1756,12 +1757,28 @@ class GedController extends Controller
 
     private function decodePdfString(string $value): string
     {
-        $value = preg_replace('/\\\\([nrtbf()\\\\])/', '$1', $value) ?? $value;
-        $value = trim($value);
+        $value = preg_replace_callback(
+            '/\\\\([0-7]{1,3})/',
+            static fn (array $matches): string => chr(octdec($matches[1])),
+            $value,
+        ) ?? $value;
+        $value = strtr($value, [
+            '\\n' => "\n",
+            '\\r' => "\r",
+            '\\t' => "\t",
+            '\\b' => "\x08",
+            '\\f' => "\x0C",
+            '\\(' => '(',
+            '\\)' => ')',
+            '\\\\' => '\\',
+        ]);
+        if (str_starts_with($value, "\xFE\xFF")) {
+            $value = mb_convert_encoding(substr($value, 2), 'UTF-8', 'UTF-16BE');
+        } elseif (str_starts_with($value, "\xFF\xFE")) {
+            $value = mb_convert_encoding(substr($value, 2), 'UTF-8', 'UTF-16LE');
+        }
 
-        return mb_check_encoding($value, 'UTF-8')
-            ? $value
-            : mb_convert_encoding($value, 'UTF-8', 'UTF-8, Windows-1252, ISO-8859-1');
+        return JsonMetadataSanitizer::sanitizeString(trim($value));
     }
 
     private function logGedEvent(GedDocument $document, string $type, string $title, ?string $description = null, array $properties = []): void

@@ -19,11 +19,6 @@ class RdoDailyGenerator
             ->orderBy('id')
             ->each(function (RdoConfiguracao $configuration) use ($now, &$created): void {
                 $localNow = $now->setTimezone($configuration->timezone);
-                $generationTime = substr((string) $configuration->generation_time, 0, 5);
-
-                if ($localNow->format('H:i') < $generationTime) {
-                    return;
-                }
 
                 if ($this->generateForConfiguration($configuration, $localNow->startOfDay(), true)) {
                     $created++;

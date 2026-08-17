@@ -115,7 +115,10 @@ class RncResponsavelController extends Controller
             'created_by_id' => $request->user()->id,
             'status' => 'active',
             'responsibility_type' => $data['responsibility_type'],
-            'permissions' => RncPermissions::permissionsForResponsibility($data['responsibility_type']),
+            'permissions' => RncPermissions::mergeResponsibilityPermissions(
+                $data['responsibility_type'],
+                $responsavel->permissions ?: [],
+            ),
         ]);
         $responsavel->save();
 

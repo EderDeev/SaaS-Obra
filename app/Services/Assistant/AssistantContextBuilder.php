@@ -17,11 +17,16 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
+use App\Support\ContractPermissions;
+use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
+use App\Support\MedicaoPermissions;
+use App\Support\OrdemServicoPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
 use App\Support\TenantRoles;
+use App\Support\TutorialCatalog;
 use App\Support\UserPermissions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -235,7 +240,7 @@ class AssistantContextBuilder
     private function moduleCatalogSource(Tenant $tenant, array $capabilities): array
     {
         $content = collect($this->workflowCatalog())
-            ->filter(fn (array $guide, string $key): bool => ($capabilities[$key]['view'] ?? false) && $guide['enabled'])
+            ->filter(fn (array $guide): bool => ($capabilities[$guide['capability']]['view'] ?? false) && $guide['enabled'])
             ->map(fn (array $guide): string => "- {$guide['label']}: {$guide['summary']}")
             ->implode("\n");
 
@@ -253,9 +258,9 @@ class AssistantContextBuilder
         $needle = Str::ascii(Str::lower($question.' '.($currentPath ?? '')));
 
         return collect($this->workflowCatalog())
-            ->filter(fn (array $guide, string $key): bool => ($capabilities[$key]['view'] ?? false) && $guide['enabled'])
+            ->filter(fn (array $guide): bool => ($capabilities[$guide['capability']]['view'] ?? false) && $guide['enabled'])
             ->map(function (array $guide, string $key) use ($needle): array {
-                $score = collect([$key, $guide['label'], ...$guide['aliases']])
+                $score = collect([$key, $guide['capability'], $guide['label'], ...$guide['aliases']])
                     ->sum(fn (string $alias): int => str_contains($needle, Str::ascii(Str::lower($alias))) ? 1 : 0);
 
                 return ['guide' => $guide, 'score' => $score];
@@ -266,7 +271,9 @@ class AssistantContextBuilder
             ->map(fn (array $item): array => $this->source(
                 'Ajuda',
                 'Fluxo de '.$item['guide']['label'],
-                route($item['guide']['route'], $tenant),
+                str_starts_with($item['guide']['route'], 'platform.')
+                    ? route($item['guide']['route'])
+                    : route($item['guide']['route'], $tenant),
                 $item['guide']['tutorial'] ?? $item['guide']['workflow'],
                 900 + ($item['score'] * 10)
             ))
@@ -279,8 +286,13 @@ class AssistantContextBuilder
         $isAdmin = $this->access->isTenantAdministrator($user, $tenant);
 
         return [
+            'platform_admin' => $this->capability('Administração da plataforma', (bool) $user->is_platform_admin),
             'dashboard' => $this->capability('Visão geral', $hasTenantAccess),
-            'contracts' => $this->capability('Contratos', $hasTenantAccess),
+            'contracts' => $this->capability(
+                'Contratos',
+                ContractPermissions::canAny($user, $tenant, ContractPermissions::VIEW),
+                $this->allowedLabels(ContractPermissions::labels(), fn (string $permission): bool => ContractPermissions::canAny($user, $tenant, $permission))
+            ),
             'activities' => $this->capability(
                 'Atividades',
                 ActivityPermissions::canAny($user, $tenant, ActivityPermissions::VIEW),
@@ -292,9 +304,21 @@ class AssistantContextBuilder
                 BudgetPermissions::can($user, $tenant, BudgetPermissions::VIEW),
                 $this->allowedLabels(BudgetPermissions::labels(), fn (string $permission): bool => BudgetPermissions::can($user, $tenant, $permission))
             ),
-            'measurement' => $this->capability('Medição', $hasTenantAccess),
-            'service_orders' => $this->capability('Ordem de Serviço', $hasTenantAccess),
-            'field' => $this->capability('Diário de Obra (RDO e RDA)', $hasTenantAccess),
+            'measurement' => $this->capability(
+                'Medição',
+                MedicaoPermissions::canAny($user, $tenant, MedicaoPermissions::VIEW),
+                $this->allowedLabels(MedicaoPermissions::labels(), fn (string $permission): bool => MedicaoPermissions::canAny($user, $tenant, $permission))
+            ),
+            'service_orders' => $this->capability(
+                'Ordem de Serviço',
+                OrdemServicoPermissions::canAny($user, $tenant, OrdemServicoPermissions::VIEW),
+                $this->allowedLabels(OrdemServicoPermissions::labels(), fn (string $permission): bool => OrdemServicoPermissions::canAny($user, $tenant, $permission))
+            ),
+            'field' => $this->capability(
+                'Diário de Obra (RDO e RDA)',
+                DiarioObraPermissions::canAny($user, $tenant, DiarioObraPermissions::VIEW),
+                $this->allowedLabels(DiarioObraPermissions::labels(), fn (string $permission): bool => DiarioObraPermissions::canAny($user, $tenant, $permission))
+            ),
             'documents' => $this->capability(
                 'Documentação',
                 DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::VIEW),
@@ -404,6 +428,12 @@ class AssistantContextBuilder
     }
 
     private function workflowCatalog(): array
+    {
+        return TutorialCatalog::assistantGuides();
+    }
+
+    /** @deprecated The canonical catalog is maintained by TutorialCatalog. */
+    private function legacyWorkflowCatalog(): array
     {
         return [
             'contracts' => [

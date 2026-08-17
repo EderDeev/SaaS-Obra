@@ -93,7 +93,7 @@ class RdoResponsavelController extends Controller
         return Inertia::render('Tenant/Rdo/Responsaveis', [
             'module' => 'rdo',
             'moduleLabel' => 'RDO',
-            'pageDescription' => 'Defina quem preenche pela construtora e quem aprova pela gerenciadora e pelo cliente em cada obra ou frente de serviço.',
+            'pageDescription' => 'Defina os usuários responsáveis por cada etapa do RDO em cada obra ou frente de serviço.',
             'routeNames' => [
                 'index' => 'tenant.diario-obra.rdo.responsaveis.index',
                 'store' => 'tenant.diario-obra.rdo.responsaveis.store',
@@ -129,24 +129,14 @@ class RdoResponsavelController extends Controller
             'A frente de serviço selecionada não pertence ao contrato.'
         );
 
-        $expectedCompanyId = match ($validated['etapa']) {
-            'construtora' => $contract->construtora_empresa_id,
-            'gerenciadora' => $contract->fiscalizadora_empresa_id,
-            'cliente' => $contract->cliente_empresa_id,
-            'assinatura' => null,
-        };
-        abort_if($validated['etapa'] !== 'assinatura' && ! $expectedCompanyId, 422, 'Vincule a empresa desta etapa ao contrato antes de cadastrar o responsável.');
         abort_unless(
             TenantUser::query()
                 ->where('tenant_id', $tenant->id)
                 ->where('user_id', $validated['user_id'])
-                ->when($expectedCompanyId, fn ($query) => $query->where('empresa_id', $expectedCompanyId))
                 ->where('status', 'active')
                 ->exists(),
             422,
-            $validated['etapa'] === 'assinatura'
-                ? 'O usuário selecionado não possui vínculo ativo neste tenant.'
-                : 'O usuário selecionado não pertence à empresa responsável por esta etapa.'
+            'O usuário selecionado não possui vínculo ativo neste tenant.'
         );
 
         $responsavel = RdoResponsavel::withTrashed()->firstOrNew([

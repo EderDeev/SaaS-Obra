@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\JsonMetadataSanitizer;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -51,6 +52,16 @@ class GedDocument extends Model
             'metadata' => 'array',
             'processed_at' => 'datetime',
         ];
+    }
+
+    public function setMetadataAttribute(mixed $value): void
+    {
+        $this->attributes['metadata'] = $value === null
+            ? null
+            : json_encode(
+                JsonMetadataSanitizer::sanitize($value),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+            );
     }
 
     public function tenant(): BelongsTo

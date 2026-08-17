@@ -1,4 +1,4 @@
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, CircleCheck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 export default function ConfirmActionButton({
@@ -8,10 +8,13 @@ export default function ConfirmActionButton({
     confirmLabel = 'Excluir',
     cancelLabel = 'Cancelar',
     className = 'sig-btn sig-btn-secondary sig-btn-sm text-[var(--red)]',
+    tone = 'danger',
     disabled = false,
     onConfirm,
 }) {
     const [open, setOpen] = useState(false);
+    const isSuccess = tone === 'success';
+    const ConfirmationIcon = isSuccess ? CircleCheck : AlertTriangle;
 
     useEffect(() => {
         if (!open) {
@@ -59,8 +62,8 @@ export default function ConfirmActionButton({
                         onMouseDown={(event) => event.stopPropagation()}
                     >
                         <header className="flex items-start gap-4 border-b border-[var(--border)] px-5 py-4">
-                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--red-50)] text-[var(--red)]">
-                                <AlertTriangle size={21} />
+                            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${isSuccess ? 'bg-[var(--green-50)] text-[var(--green)]' : 'bg-[var(--red-50)] text-[var(--red)]'}`}>
+                                <ConfirmationIcon size={21} />
                             </span>
                             <div className="min-w-0 flex-1">
                                 <h2 id="confirm-action-title" className="text-[16px] font-semibold text-[var(--ink-900)]">
@@ -90,7 +93,7 @@ export default function ConfirmActionButton({
                             </button>
                             <button
                                 type="button"
-                                className="sig-btn sig-btn-primary bg-[var(--red)] hover:bg-[var(--red)]"
+                                className={`sig-btn sig-btn-primary ${isSuccess ? 'bg-[var(--green)] hover:bg-[var(--green)]' : 'bg-[var(--red)] hover:bg-[var(--red)]'}`}
                                 onClick={confirm}
                             >
                                 {confirmLabel}
