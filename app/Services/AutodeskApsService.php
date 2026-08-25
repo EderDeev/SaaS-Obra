@@ -3,11 +3,11 @@
 namespace App\Services;
 
 use App\Models\ProjectDocumentVersion;
+use App\Services\Storage\StoredFileMaterializer;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -15,6 +15,10 @@ class AutodeskApsService
 {
     private const BASE_URL = 'https://developer.api.autodesk.com';
     private const CHUNK_SIZE = 5_242_880;
+
+    public function __construct(private readonly StoredFileMaterializer $fileMaterializer)
+    {
+    }
 
     public function isConfigured(): bool
     {
@@ -122,30 +126,30 @@ class AutodeskApsService
             return $version->refresh();
         }
 
-        $absolutePath = Storage::disk($version->storageDisk())->path($version->file_path);
+        return $this->fileMaterializer->withLocalPath(
+            $version->storageDisk(),
+            $version->file_path,
+            function (string $absolutePath) use ($version): ProjectDocumentVersion {
+                $this->ensureBucketExists();
 
-        if (! is_file($absolutePath)) {
-            throw new RuntimeException('Arquivo local nao encontrado para envio a APS.');
-        }
+                $objectKey = $this->objectKey($version);
+                $object = $this->uploadObject($objectKey, $absolutePath, $version->mime_type ?: 'application/octet-stream');
+                $objectId = $object['objectId'] ?? "urn:adsk.objects:os.object:{$this->bucketKey()}/{$objectKey}";
+                $urn = $this->urnify($objectId);
 
-        $this->ensureBucketExists();
+                $this->startTranslation($urn);
 
-        $objectKey = $this->objectKey($version);
-        $object = $this->uploadObject($objectKey, $absolutePath, $version->mime_type ?: 'application/octet-stream');
-        $objectId = $object['objectId'] ?? "urn:adsk.objects:os.object:{$this->bucketKey()}/{$objectKey}";
-        $urn = $this->urnify($objectId);
+                $version->forceFill([
+                    'aps_object_id' => $objectId,
+                    'aps_urn' => $urn,
+                    'derivative_status' => 'queued',
+                    'submitted_to_aps_at' => now(),
+                    'processed_at' => null,
+                ])->save();
 
-        $this->startTranslation($urn);
-
-        $version->forceFill([
-            'aps_object_id' => $objectId,
-            'aps_urn' => $urn,
-            'derivative_status' => 'queued',
-            'submitted_to_aps_at' => now(),
-            'processed_at' => null,
-        ])->save();
-
-        return $version->refresh();
+                return $version->refresh();
+            },
+        );
     }
 
     public function deleteVersionFromAps(ProjectDocumentVersion $version): ProjectDocumentVersion
