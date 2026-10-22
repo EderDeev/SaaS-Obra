@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'description',
     'activity_type',
     'category',
+    'os_dnit_order_id',
     'visibility',
     'status',
     'priority',
@@ -61,6 +62,11 @@ class Activity extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to_id');
+    }
+
+    public function osDnitOrder(): BelongsTo
+    {
+        return $this->belongsTo(OsDnitOrder::class);
     }
 
     public function assignees(): BelongsToMany

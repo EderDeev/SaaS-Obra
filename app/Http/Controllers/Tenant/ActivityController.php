@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\ActivityChecklistItem;
 use App\Models\Contract;
+use App\Models\OsDnitOrder;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ActivityAssignedNotification;
@@ -14,9 +15,12 @@ use App\Notifications\ActivityCommentedNotification;
 use App\Notifications\ActivityFileUploadedNotification;
 use App\Notifications\ActivityStatusChangedNotification;
 use App\Support\ActivityPermissions;
+use App\Support\OsDnitContractAccess;
+use App\Support\OsDnitPermissions;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +48,8 @@ class ActivityController extends Controller
         'budget' => 'Orçamento',
         'measurement' => 'Medição',
         'documentation' => 'Documentação',
-        'service_order' => 'Ordem de Serviço',
+        'service_order' => 'Liberação de Serviço',
+        'os_dnit' => 'Ordem de Serviço DNIT',
         'construction_diary' => 'Diário de Obra',
         'contract' => 'Contrato',
         'administrative' => 'Administrativo',
@@ -68,6 +73,7 @@ class ActivityController extends Controller
 
         $contractIds = $contracts->pluck('id');
         $assignmentCounts = $this->activityAssignmentCounts($tenant, $contracts);
+        $osDnitContractIds = OsDnitPermissions::contractIds($request->user(), $tenant, OsDnitPermissions::VIEW);
 
         $activities = $tenant->activities()
             ->whereIn('contract_id', $contractIds)
@@ -79,6 +85,7 @@ class ActivityController extends Controller
                     ->orWhere('completed_at', '>', now()->subDays(5));
             })
             ->with([
+                'osDnitOrder' => fn ($query) => $query->where('tenant_id', $tenant->id)->whereIn('contract_id', $osDnitContractIds)->select(['id', 'contract_id', 'request_number', 'subject']),
                 'contract:id,code,name,obra_id',
                 'contract.obra:id,nome',
                 'assignee:id,name,email,avatar_url',
@@ -120,6 +127,23 @@ class ActivityController extends Controller
             'canDeleteActivities' => ActivityPermissions::canAny($request->user(), $tenant, ActivityPermissions::DELETE),
             'canViewActivityMetrics' => $contracts->contains(fn (Contract $contract): bool => ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW_METRICS, $contract)),
         ]);
+    }
+
+    public function osDnitOptions(Request $request, Tenant $tenant): JsonResponse
+    {
+        $data = $request->validate(['contract_id' => ['required', 'integer'], 'q' => ['nullable', 'string', 'max:120']]);
+        $contract = $tenant->contracts()->findOrFail($data['contract_id']);
+        abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW, $contract)
+            && (ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::CREATE, $contract)
+                || ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::EDIT, $contract)), 403);
+        abort_unless(OsDnitContractAccess::contracts($request->user(), $tenant, OsDnitPermissions::VIEW)->whereKey($contract->id)->exists(), 403);
+        $orders = OsDnitOrder::where('tenant_id', $tenant->id)->where('contract_id', $contract->id)
+            ->when(trim($data['q'] ?? ''), function ($query, $term) {
+                $term = '%'.mb_strtolower($term).'%';
+                $query->where(fn ($query) => $query->whereRaw('LOWER(request_number) LIKE ?', [$term])->orWhereRaw('LOWER(subject) LIKE ?', [$term]));
+            })->latest('id')->limit(21)->get(['id', 'request_number', 'subject']);
+        return response()->json(['orders' => $orders->take(20)->values(), 'has_more' => $orders->count() > 20])
+            ->header('Cache-Control', 'private, no-store');
     }
 
     public function metrics(Request $request, Tenant $tenant): Response
@@ -319,6 +343,7 @@ class ActivityController extends Controller
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
         abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::VIEW, $contract), 403);
         abort_unless(ActivityPermissions::can($request->user(), $tenant, ActivityPermissions::CREATE, $contract), 403);
+        $data['os_dnit_order_id'] = $this->validateOsDnitReference($request, $tenant, $contract, $data['category'] ?? 'project');
 
         $assignedUserIds = collect($data['assigned_to_ids'] ?? [])
             ->filter()
@@ -345,6 +370,7 @@ class ActivityController extends Controller
                 'description' => $data['description'] ?? null,
                 'activity_type' => $data['activity_type'] ?? Activity::TYPE_ACTIVITY,
                 'category' => $data['category'] ?? 'project',
+                'os_dnit_order_id' => $data['os_dnit_order_id'],
                 'visibility' => $data['visibility'] ?? Activity::VISIBILITY_PUBLIC,
                 'status' => 'todo',
                 'priority' => $data['priority'],
@@ -408,6 +434,7 @@ class ActivityController extends Controller
             'new_checklist_items' => ['nullable', 'array', 'max:50'],
             'new_checklist_items.*' => ['required', 'string', 'max:500'],
         ]);
+        $data['os_dnit_order_id'] = $this->validateOsDnitReference($request, $tenant, $contract, $data['category'] ?? $activity->category ?? 'project');
 
         $checklistItems = collect($data['checklist_items'] ?? [])
             ->map(fn (array $item): array => [
@@ -454,6 +481,7 @@ class ActivityController extends Controller
                 'title' => $data['title'],
                 'description' => $data['description'] ?? null,
                 'category' => $data['category'] ?? $activity->category ?? 'project',
+                'os_dnit_order_id' => $data['os_dnit_order_id'],
                 'visibility' => $data['visibility'] ?? $activity->visibility,
                 'priority' => $data['priority'],
                 'due_date' => $data['due_date'] ?? null,
@@ -572,6 +600,21 @@ class ActivityController extends Controller
         $activity->delete();
 
         return back()->with('success', 'Atividade excluida. O registro foi mantido no historico.');
+    }
+
+    private function validateOsDnitReference(Request $request, Tenant $tenant, Contract $contract, string $category): ?int
+    {
+        if ($category !== 'os_dnit') return null;
+        if (!OsDnitContractAccess::contracts($request->user(), $tenant, OsDnitPermissions::VIEW)->whereKey($contract->id)->exists()) {
+            throw ValidationException::withMessages(['os_dnit_order_id' => 'Você precisa de acesso às OSs DNIT deste contrato para selecionar uma ordem de serviço.']);
+        }
+        $data = $request->validate([
+            'os_dnit_order_id' => ['required', 'integer', Rule::exists('os_dnit_orders', 'id')
+                ->where('tenant_id', $tenant->id)->where('contract_id', $contract->id)->whereNull('deleted_at')],
+        ], ['os_dnit_order_id.required' => 'Selecione a ordem de serviço DNIT.',
+            'os_dnit_order_id.exists' => 'Selecione uma OS DNIT disponível neste contrato.'],
+            ['os_dnit_order_id' => 'ordem de serviço DNIT']);
+        return (int) $data['os_dnit_order_id'];
     }
 
     private function updateStatus(Request $request, Tenant $tenant, Contract $contract, Activity $activity): RedirectResponse

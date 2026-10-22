@@ -46,6 +46,8 @@ class AssistantRetriever
         $this->context
             ->sources($user, $tenant, $contractIds, $question, $currentPath)
             ->each(fn (array $source) => $sources->push($source));
+        app(OsDnitAssistantContext::class)->sources($user, $tenant, $question, $currentPath)
+            ->each(fn (array $source) => $sources->push($source));
 
         $this->contractSources($tenant, $contractIds, $terms)->each(fn (array $source) => $sources->push($source));
         $this->activitySources($user, $tenant, $terms)->each(fn (array $source) => $sources->push($source));
@@ -358,7 +360,7 @@ class AssistantRetriever
                 "Descrição: {$order->descricao}",
             ]);
 
-            return $this->source('Ordem de Serviço', "{$order->codigo} - {$order->titulo}", route('tenant.ordem-servico.os.index', $tenant->slug), $content);
+            return $this->source('Liberação de Serviço', "{$order->codigo} - {$order->titulo}", route('tenant.ordem-servico.os.index', $tenant->slug), $content);
         });
 
         $bulletinQuery = BoletimMedicao::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds)->with('contract:id,code,name');

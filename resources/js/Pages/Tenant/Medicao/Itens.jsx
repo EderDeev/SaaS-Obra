@@ -2,6 +2,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import {
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     ClipboardList,
     FileSpreadsheet,
     GitBranch,
@@ -284,6 +286,7 @@ export default function MedicaoItens({
     orcamentos = [],
     selectedContractId = null,
     items = [],
+    pagination = {},
     additives = [],
     filters = {},
     stats = {},
@@ -434,6 +437,20 @@ export default function MedicaoItens({
             route('tenant.medicao.item.index', tenant.slug),
             { contract_id: selectedContractId || '' },
             { preserveScroll: true, preserveState: true, replace: true },
+        );
+    };
+
+    const changeItemsPage = (page) => {
+        const targetPage = Math.max(1, Math.min(Number(pagination.last_page || 1), Number(page || 1)));
+
+        router.get(
+            route('tenant.medicao.item.index', tenant.slug),
+            {
+                contract_id: selectedContractId || '',
+                ...itemFilters,
+                page: targetPage,
+            },
+            { preserveScroll: false, preserveState: true, replace: true },
         );
     };
 
@@ -1366,6 +1383,37 @@ export default function MedicaoItens({
                                         </div>
                                     </article>
                                 ))}
+                            </div>
+
+                            <div className="flex flex-col gap-3 border-t border-[var(--border)] bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="text-sm text-[var(--ink-500)]">
+                                    Exibindo <strong className="text-[var(--ink-700)]">{pagination.from || 0}</strong> a{' '}
+                                    <strong className="text-[var(--ink-700)]">{pagination.to || 0}</strong> de{' '}
+                                    <strong className="text-[var(--ink-700)]">{pagination.total || 0}</strong> itens
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => changeItemsPage(Number(pagination.current_page || 1) - 1)}
+                                        disabled={Number(pagination.current_page || 1) <= 1}
+                                        className="sig-btn sig-btn-secondary h-9 px-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <ChevronLeft size={15} />
+                                        Anterior
+                                    </button>
+                                    <span className="min-w-24 text-center text-xs font-bold text-[var(--ink-600)]">
+                                        Página {pagination.current_page || 1} de {pagination.last_page || 1}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => changeItemsPage(Number(pagination.current_page || 1) + 1)}
+                                        disabled={Number(pagination.current_page || 1) >= Number(pagination.last_page || 1)}
+                                        className="sig-btn sig-btn-secondary h-9 px-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        Próxima
+                                        <ChevronRight size={15} />
+                                    </button>
+                                </div>
                             </div>
                         </>
                     )}

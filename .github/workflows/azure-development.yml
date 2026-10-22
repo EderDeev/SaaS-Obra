@@ -1,13 +1,7 @@
 name: Azure development deploy
 
 on:
-  workflow_run:
-    workflows:
-      - CI
-    branches:
-      - staging
-    types:
-      - completed
+  # Development is on demand. CI completion must not start paid compute.
   workflow_dispatch:
 
 permissions:
@@ -25,9 +19,7 @@ env:
 jobs:
   deploy:
     name: Build and deploy Azure development
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -68,10 +60,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VITE_APP_NAME=Deming
+            VITE_APP_NAME=SigWorks
             VITE_MAPBOX_ACCESS_TOKEN=${{ secrets.VITE_MAPBOX_ACCESS_TOKEN }}
 
       - name: Sign in to Azure with OIDC
+        id: azure_login
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -113,3 +106,26 @@ jobs:
 
           echo "Azure development health check failed."
           exit 1
+
+      - name: Pause development after deployment
+        if: always() && steps.azure_login.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          REVISIONS="$(az containerapp revision list \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_CONTAINER_APP }}" \
+            --query "[?properties.active].name" --output tsv)"
+          while IFS= read -r REVISION; do
+            if [[ -n "$REVISION" ]]; then
+              az containerapp revision deactivate \
+                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+                --name "${{ vars.AZURE_CONTAINER_APP }}" \
+                --revision "$REVISION" --only-show-errors --output none
+            fi
+          done <<< "$REVISIONS"
+          ACTIVE="$(az containerapp revision list \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_CONTAINER_APP }}" \
+            --query "length([?properties.active])" --output tsv)"
+          test "$ACTIVE" = 0

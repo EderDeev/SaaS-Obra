@@ -25,7 +25,7 @@
             right: 0;
             text-align: right;
         }
-        .footer:after { content: "P\00E1gina " counter(page) " de " counter(pages); }
+        .footer:after { content: "P\00E1gina " counter(page); }
         .header td { vertical-align: middle; }
         .logo-cell { height: 52px; text-align: center; width: 24%; }
         .logo-cell img { max-height: 42px; max-width: 145px; }
@@ -182,7 +182,8 @@
         return '<span class="logo-fallback">'.e($empresaCurta($empresa, $fallback)).'</span>';
     };
     $statusLabel = fn ($value) => match ($value) {
-        'em_aprovacao' => 'Em aprovação',
+        'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
+        'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
         'devolvido_construtora' => 'Devolvido',
         'pendente_comprovacao' => 'Pendente de comprovação',
         'arquivado' => 'Arquivado',
@@ -311,7 +312,7 @@
                 <td colspan="2">
                     <div class="document-title">Relatório Diário de Obra</div>
                     <div class="document-subtitle">{{ $tenant->name }} · {{ $rdo->code }} · {{ $statusLabel($rdo->status) }}</div>
-                    <div class="center"><span class="system-mark">Deming</span></div>
+                    <div class="center"><span class="system-mark">SigWorks</span></div>
                 </td>
                 <td class="logo-cell">{!! $logoBox('construtora', $contract->construtoraEmpresa, 'Logo da empresa') !!}</td>
             </tr>
@@ -502,10 +503,10 @@
                     @foreach ($photoPage->chunk(2) as $row)
                         <tr>
                             @foreach ($row as $photo)
-                                @php $path = public_path('storage/'.data_get($photo, 'path')); @endphp
+                                @php $imageData = $photoDataUri(data_get($photo, 'path')); @endphp
                                 <td class="photo-cell">
-                                    @if (data_get($photo, 'path') && file_exists($path))
-                                        <img src="{{ $path }}" alt="Foto RDO">
+                                    @if ($imageData)
+                                        <img src="{{ $imageData }}" alt="Foto RDO">
                                     @else
                                         <span class="muted">Imagem não encontrada</span>
                                     @endif
@@ -530,6 +531,68 @@
     @endforeach
 @endforeach
 
+@if ($inspections->isNotEmpty())
+    <section class="page">
+        <table class="header">
+            <tr>
+                <td class="logo-cell">{!! $logoBox('cliente', $contract->clienteEmpresa, 'Logo do cliente') !!}</td>
+                <td colspan="3">
+                    <div class="document-title">Registro independente da fiscalização</div>
+                    <div class="document-subtitle">{{ $rdo->code }} · Atestações e constatações da gerenciadora</div>
+                </td>
+                <td class="logo-cell">{!! $logoBox('gerenciadora', $contract->gerenciadoraEmpresa, 'Logo da gerenciadora') !!}</td>
+            </tr>
+        </table>
+        @foreach ($inspections as $inspection)
+            <div class="section">
+                <table>
+                    <tr><td class="bar" colspan="4">Versão V{{ str_pad((string) $inspection->version_number, 2, '0', STR_PAD_LEFT) }} · {{ $inspection->obra ? "{$inspection->obra->codigo} - {$inspection->obra->nome}" : 'Frente de serviço' }}</td></tr>
+                    <tr>
+                        <td colspan="2"><span class="label">Fiscal responsável</span>{{ $inspection->user?->name ?: '-' }}</td>
+                        <td><span class="label">Situação</span>{{ $inspection->status === 'concluido' ? 'Concluído' : 'Rascunho' }}</td>
+                        <td><span class="label">Concluído em</span>{{ $fmtDateTime($inspection->submitted_at) }}</td>
+                    </tr>
+                    <tr><td colspan="4"><span class="label">Resumo da fiscalização</span>{!! nl2br(e($inspection->resumo_fiscalizacao ?: '-')) !!}</td></tr>
+                    <tr>
+                        <td colspan="2"><span class="label">Serviços atestados</span>{!! nl2br(e($inspection->servicos_atestados ?: '-')) !!}</td>
+                        <td colspan="2"><span class="label">Ocorrências constatadas</span>{!! nl2br(e($inspection->ocorrencias ?: '-')) !!}</td>
+                    </tr>
+                    <tr><td colspan="3"><span class="label">Orientações</span>{!! nl2br(e($inspection->orientacoes ?: '-')) !!}</td><td><span class="label">Evidências</span>{{ count($inspection->evidencias ?? []) }} arquivo(s)</td></tr>
+                </table>
+            </div>
+        @endforeach
+    </section>
+@endif
+
+@if ($divergences->isNotEmpty())
+    <section class="page">
+        <table class="header">
+            <tr>
+                <td class="logo-cell">{!! $logoBox('cliente', $contract->clienteEmpresa, 'Logo do cliente') !!}</td>
+                <td colspan="3">
+                    <div class="document-title">Matriz de divergências</div>
+                    <div class="document-subtitle">{{ $rdo->code }} · Registros preservados por parte</div>
+                </td>
+                <td class="logo-cell">{!! $logoBox('construtora', $contract->construtoraEmpresa, 'Logo da construtora') !!}</td>
+            </tr>
+        </table>
+        @foreach ($divergences as $item)
+            <div class="section">
+                <table>
+                    <tr><td class="bar" colspan="4">{{ $item->titulo }} · {{ $item->topico }} · V{{ str_pad((string) $item->version_number, 2, '0', STR_PAD_LEFT) }}</td></tr>
+                    <tr><td colspan="2"><span class="label">Relato da construtora</span>{!! nl2br(e($item->versao_construtora)) !!}</td><td colspan="2"><span class="label">Constatação da gerenciadora</span>{!! nl2br(e($item->versao_gerenciadora)) !!}</td></tr>
+                    <tr><td colspan="4"><span class="label">Resposta da construtora</span>{!! nl2br(e($item->resposta_construtora ?: '-')) !!}</td></tr>
+                    <tr><td colspan="4"><span class="label">Conclusão da gerenciadora</span>{!! nl2br(e($item->conclusao_gerenciadora ?: '-')) !!}</td></tr>
+                    <tr>
+                        <td colspan="2"><span class="label">Decisão do cliente</span>{{ $item->decisao_cliente ? ucfirst(str_replace('_', ' ', $item->decisao_cliente)) : '-' }}</td>
+                        <td colspan="2"><span class="label">Manifestação final</span>{!! nl2br(e($item->comentario_cliente ?: '-')) !!}</td>
+                    </tr>
+                </table>
+            </div>
+        @endforeach
+    </section>
+@endif
+
 @if ($analyses->isNotEmpty())
     <section class="page">
         <table class="header">
@@ -542,6 +605,22 @@
                 <td class="logo-cell">{!! $logoBox('construtora', $contract->construtoraEmpresa, 'Logo da empresa') !!}</td>
             </tr>
         </table>
+        @if ($versions->isNotEmpty())
+            <div class="section">
+                <table>
+                    <tr><td class="bar" colspan="4">Versões apresentadas pela construtora</td></tr>
+                    <tr><th>Versão</th><th>Tipo</th><th>Responsável</th><th>Data do envio</th></tr>
+                    @foreach ($versions as $version)
+                        <tr>
+                            <td class="center strong">V{{ str_pad((string) $version->version_number, 2, '0', STR_PAD_LEFT) }}</td>
+                            <td>{{ $version->trigger === 'initial_submission' ? 'Envio inicial' : 'Reenvio após ajustes' }}</td>
+                            <td>{{ $version->createdBy?->name ?: '-' }}</td>
+                            <td>{{ $fmtDateTime($version->submitted_at) }}</td>
+                        </tr>
+                    @endforeach
+                </table>
+            </div>
+        @endif
         <div class="section">
             <table>
                 <tr>
@@ -559,7 +638,14 @@
                         <td>{{ match ($analysis->decisao) { 'approve' => 'Aprovado', 'approve_with_reservations' => 'Aprovado com ressalvas', 'return' => 'Devolvido', default => 'Enviado para análise' } }}</td>
                         <td>{{ $analysis->user?->name ?: '-' }}</td>
                         <td>{{ $analysis->obra ? "{$analysis->obra->codigo} - {$analysis->obra->nome}" : '-' }}</td>
-                        <td>{{ $analysis->comentario ?: '-' }}</td>
+                        <td>
+                            {{ $analysis->comentario ?: '-' }}
+                            @if (data_get($analysis->detalhes, 'reservation.obligation'))
+                                <br><strong>Ressalva:</strong> {{ data_get($analysis->detalhes, 'reservation.obligation') }}
+                                <br><strong>Responsável:</strong> {{ data_get($analysis->detalhes, 'reservation.responsible') ?: '-' }}
+                                <br><strong>Prazo:</strong> {{ data_get($analysis->detalhes, 'reservation.due_date') ?: '-' }}
+                            @endif
+                        </td>
                     </tr>
                 @endforeach
             </table>

@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Models\User;
 use App\Support\ActivityPermissions;
+use App\Support\OsDnitPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -69,6 +70,12 @@ class AssistantAccessScope
             $this->contractIds($user, $tenant),
             ActivityPermissions::contractIdsFor($user, $tenant, ActivityPermissions::VIEW)
         );
+    }
+
+    /** OS DNIT never inherits the administrator bypass used by other modules. */
+    public function osDnitContractIds(User $user, Tenant $tenant, string $permission = OsDnitPermissions::VIEW): Collection
+    {
+        return collect(OsDnitPermissions::contractIds($user, $tenant, $permission))->map(fn ($id) => (int) $id)->values();
     }
 
     /** @return Collection<int, int> */

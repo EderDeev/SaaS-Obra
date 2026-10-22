@@ -31,7 +31,7 @@ class ResetPasswordNotification extends Notification
         ]);
 
         return (new MailMessage)
-            ->subject('Redefinição de senha - Deming')
+            ->subject('Redefinição de senha - SigWorks')
             ->view('emails.password-reset', [
                 'user' => $notifiable,
                 'resetUrl' => $resetUrl,

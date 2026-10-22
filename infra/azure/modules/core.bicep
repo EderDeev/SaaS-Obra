@@ -23,7 +23,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
       enableLogAccessUsingOnlyResourcePermissions: true
     }
     workspaceCapping: {
-      dailyQuotaGb: json('0.15')
+      dailyQuotaGb: json('0.05')
     }
   }
   #disable-next-line BCP187 // Azure accepts workspace SKU although the generated type omits it.

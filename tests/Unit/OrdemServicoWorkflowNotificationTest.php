@@ -27,7 +27,7 @@ class OrdemServicoWorkflowNotificationTest extends TestCase
         $this->assertSame('Analisar OS', data_get($mail->viewData, 'actionLabel'));
         $this->assertStringContainsString('/ordem-servico/analise', data_get($mail->viewData, 'url'));
         $this->assertStringContainsString(
-            'Deming · Ordem de Serviço',
+            'SigWorks · Ordem de Serviço',
             app('mailer')->render($mail->view, $mail->viewData)
         );
     }

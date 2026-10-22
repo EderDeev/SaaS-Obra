@@ -288,8 +288,8 @@ export default function AiAssistantChat({ tenant }) {
                     type="button"
                     onClick={() => setOpen(true)}
                     className="fixed bottom-5 right-5 z-40 grid h-12 w-12 place-items-center rounded-full bg-[#155EEF] text-white shadow-[0_10px_28px_rgba(21,94,239,0.28)] transition hover:bg-[#004EEB] focus:outline-none focus:ring-4 focus:ring-[#D1E0FF]"
-                    aria-label="Abrir Assistente Deming"
-                    title="Assistente Deming"
+                    aria-label="Abrir Assistente SigWorks"
+                    title="Assistente SigWorks"
                 >
                     <MessageCircle size={23} />
                 </button>
@@ -298,14 +298,14 @@ export default function AiAssistantChat({ tenant }) {
             {open && (
                 <section
                     className="fixed inset-x-3 bottom-3 z-[70] flex h-[min(680px,calc(100dvh-24px))] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[#F8FAFC] shadow-[0_22px_60px_rgba(15,23,42,0.22)] sm:inset-x-auto sm:bottom-5 sm:right-5 sm:h-[min(640px,calc(100dvh-40px))] sm:w-[420px]"
-                    aria-label="Assistente Deming"
+                    aria-label="Assistente SigWorks"
                 >
                     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-white px-4">
                         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#EFF4FF] text-[#155EEF]">
                             <Bot size={20} />
                         </span>
                         <div className="min-w-0 flex-1">
-                            <h2 className="truncate text-sm font-bold text-[var(--ink-900)]">Assistente Deming</h2>
+                            <h2 className="truncate text-sm font-bold text-[var(--ink-900)]">Assistente SigWorks</h2>
                             {displayedQuota?.limit ? (
                                 <div
                                     className="mt-0.5"

@@ -7249,7 +7249,7 @@ class OrcamentoController extends Controller
     {
         $spreadsheet = new Spreadsheet;
         $spreadsheet->getProperties()
-            ->setCreator('Deming')
+            ->setCreator('SigWorks')
             ->setTitle('Orcamento Sintetico - '.$orcamento->codigo)
             ->setSubject('Relatorio sintetico de orcamento');
 
@@ -7274,7 +7274,7 @@ class OrcamentoController extends Controller
         }
 
         $sheet->mergeCells('A1:C2');
-        $sheet->setCellValue('A1', 'Deming');
+        $sheet->setCellValue('A1', 'SigWorks');
         $sheet->getStyle('A1:C2')->applyFromArray([
             'font' => ['bold' => true, 'size' => 22, 'color' => ['rgb' => '0B5FFF']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
@@ -7448,7 +7448,7 @@ class OrcamentoController extends Controller
     {
         $spreadsheet = new Spreadsheet;
         $spreadsheet->getProperties()
-            ->setCreator('Deming')
+            ->setCreator('SigWorks')
             ->setTitle('Resumo do Orcamento - '.$orcamento->codigo)
             ->setSubject('Relatorio resumo de orcamento');
 
@@ -7473,7 +7473,7 @@ class OrcamentoController extends Controller
         }
 
         $sheet->mergeCells('A1:C2');
-        $sheet->setCellValue('A1', 'Deming');
+        $sheet->setCellValue('A1', 'SigWorks');
         $sheet->getStyle('A1:C2')->applyFromArray([
             'font' => ['bold' => true, 'size' => 22, 'color' => ['rgb' => '0B5FFF']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],

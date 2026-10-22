@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'code',
     'reference_date',
     'status',
+    'current_version',
     'generated_automatically',
     'mobile_local_uuid',
     'submitted_at',
@@ -38,6 +39,7 @@ class RdoDiario extends Model
     {
         return [
             'reference_date' => 'date',
+            'current_version' => 'integer',
             'generated_automatically' => 'boolean',
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
@@ -79,6 +81,21 @@ class RdoDiario extends Model
     public function analises(): HasMany
     {
         return $this->hasMany(RdoAnalise::class, 'rdo_diario_id');
+    }
+
+    public function versoes(): HasMany
+    {
+        return $this->hasMany(RdoVersao::class, 'rdo_diario_id');
+    }
+
+    public function fiscalizacaoRegistros(): HasMany
+    {
+        return $this->hasMany(RdoFiscalizacaoRegistro::class, 'rdo_diario_id');
+    }
+
+    public function divergencias(): HasMany
+    {
+        return $this->hasMany(RdoDivergencia::class, 'rdo_diario_id');
     }
 
     public function signatureRequests(): HasMany

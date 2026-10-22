@@ -1,0 +1,15 @@
+{
+  "structural": {
+    "chapters": 25,
+    "topics": 65,
+    "sourceFiles": 137,
+    "localImages": 29,
+    "routes": 376,
+    "configurationNames": 192,
+    "missingSources": 0,
+    "missingImages": 0,
+    "uniqueIds": true,
+    "runtimeNetworkDependencies": 0
+  },
+  "visualReview": "Pendente"
+}

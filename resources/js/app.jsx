@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client';
 
 const viteAppName = import.meta.env.VITE_APP_NAME;
 const bladeAppName = document.querySelector('meta[name="app-name"]')?.getAttribute('content');
-const appName = [bladeAppName, viteAppName, 'Deming']
+const appName = [bladeAppName, viteAppName, 'SigWorks']
     .find((name) => name && !String(name).includes('${'));
 
 createInertiaApp({

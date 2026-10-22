@@ -12,7 +12,7 @@
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">
                     <tr>
                         <td style="background:#0b5fff;color:#ffffff;padding:22px 26px;">
-                            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Deming</div>
+                            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">SigWorks</div>
                             <h1 style="margin:10px 0 0;font-size:22px;line-height:1.3;">Assinatura de RDO solicitada</h1>
                         </td>
                     </tr>
@@ -63,7 +63,7 @@
                                     @endif
                                     <td>
                                         <a href="{{ $rdoUrl }}" style="display:inline-block;background:#ffffff;color:#0b5fff;text-decoration:none;border:1px solid #0b5fff;border-radius:9px;padding:11px 18px;font-size:14px;font-weight:700;">
-                                            Visualizar RDO no Deming
+                                            Visualizar RDO no SigWorks
                                         </a>
                                     </td>
                                 </tr>

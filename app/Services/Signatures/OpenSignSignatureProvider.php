@@ -42,7 +42,7 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
             'file' => base64_encode($pdf),
             'title' => $request->title,
             'note' => 'Assinatura digital do RDO '.$request->rdo?->code,
-            'description' => 'Documento gerado pelo Deming para assinatura dos responsáveis.',
+            'description' => 'Documento gerado pelo SigWorks para assinatura dos responsáveis.',
             'timeToCompleteDays' => (int) config('signatures.opensign.time_to_complete_days', 15),
             'send_email' => true,
             'email_subject' => 'Assinatura solicitada: {{document_title}}',
@@ -242,7 +242,7 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
 <div style="margin:0;background:#f4f6fb;padding:28px 12px;font-family:Arial,Helvetica,sans-serif;color:#111827">
   <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden">
     <div style="background:#0b5fff;color:#ffffff;padding:22px 26px">
-      <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Deming</div>
+      <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">SigWorks</div>
       <h1 style="margin:10px 0 0;font-size:22px;line-height:1.3">Assinatura de RDO solicitada</h1>
     </div>
     <div style="padding:26px">

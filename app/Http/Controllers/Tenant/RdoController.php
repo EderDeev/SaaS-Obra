@@ -8,12 +8,15 @@ use App\Models\Obra;
 use App\Models\RdoAnalise;
 use App\Models\RdoConfiguracao;
 use App\Models\RdoDiario;
+use App\Models\RdoDivergencia;
 use App\Models\RdoEquipamentoCadastro;
+use App\Models\RdoFiscalizacaoRegistro;
 use App\Models\RdoMaoObraCadastro;
 use App\Models\RdaApontamento;
 use App\Models\RdoResponsavel;
 use App\Models\RdoSecaoRegistro;
 use App\Models\RdoSubcontratadaCadastro;
+use App\Models\RdoVersao;
 use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Models\User;
@@ -77,7 +80,8 @@ class RdoController extends Controller
 
         $statusLabels = [
             'rascunho' => 'Rascunho',
-            'em_aprovacao' => 'Em análise',
+            'em_analise_gerenciadora' => 'Na gerenciadora',
+            'em_aprovacao_cliente' => 'No cliente',
             'devolvido_construtora' => 'Retornado',
             'pendente_comprovacao' => 'Com ressalvas',
             'pronto_assinatura' => 'Aguardando envio',
@@ -138,7 +142,7 @@ class RdoController extends Controller
 
                 $obraStats[$key]['total']++;
                 $obraStats[$key]['progress_sum'] += $progress;
-                if ($rdo->status === 'em_aprovacao') {
+                if (in_array($rdo->status, ['em_analise_gerenciadora', 'em_aprovacao_cliente'], true)) {
                     $obraStats[$key]['em_analise']++;
                 }
                 if ($rdo->status === 'arquivado') {
@@ -563,6 +567,15 @@ class RdoController extends Controller
             'copiedFrom:id,code,reference_date',
             'configuracao.obras:id,nome,codigo',
             'secoes',
+            'versoes.createdBy:id,name,email',
+            'fiscalizacaoRegistros.user:id,name,email',
+            'fiscalizacaoRegistros.empresa:id,nome,sigla',
+            'fiscalizacaoRegistros.obra:id,nome,codigo',
+            'divergencias.obra:id,nome,codigo',
+            'divergencias.createdBy:id,name,email',
+            'divergencias.respondedBy:id,name,email',
+            'divergencias.concludedBy:id,name,email',
+            'divergencias.clientDecidedBy:id,name,email',
             'signatureRequests.signers',
         ]);
         $capabilities = $this->flowCapabilities($tenant, $rdo, request()->user());
@@ -585,7 +598,15 @@ class RdoController extends Controller
                 'flow_actions' => $capabilities['actions'],
                 'flow_obra_ids' => $capabilities['flow_obra_ids'],
                 'active_stage' => $capabilities['active_stage'],
+                'can_manage_inspection' => $capabilities['can_manage_inspection'],
+                'can_create_divergence' => $capabilities['can_create_divergence'],
+                'can_respond_divergence' => $capabilities['can_respond_divergence'],
+                'can_conclude_divergence' => $capabilities['can_conclude_divergence'],
+                'can_decide_divergence' => $capabilities['can_decide_divergence'],
                 'approval_comments' => $this->approvalCommentsByStage($rdo),
+                'inspection_records' => $this->inspectionPayload($rdo),
+                'divergences' => $this->divergencePayload($rdo),
+                'versions' => $this->versionPayload($rdo),
                 'digital_signature_enabled' => (bool) ($rdo->configuracao?->digital_signature_enabled ?? true),
                 'can_manage_signatures' => DiarioObraPermissions::can(
                     request()->user(),
@@ -775,8 +796,69 @@ class RdoController extends Controller
                 return $items;
             });
 
+        $versionEvents = RdoVersao::query()
+            ->with('createdBy:id,name,email')
+            ->where('tenant_id', $tenant->id)
+            ->where('rdo_diario_id', $rdo->id)
+            ->latest('version_number')
+            ->limit($limit)
+            ->get()
+            ->map(fn (RdoVersao $version) => [
+                'id' => 'version-'.$version->id,
+                'type' => 'version',
+                'tone' => 'primary',
+                'title' => 'Versão V'.str_pad((string) $version->version_number, 2, '0', STR_PAD_LEFT).' apresentada',
+                'description' => $version->trigger === 'initial_submission' ? 'Envio inicial da construtora' : 'Reenvio após ajustes ou comprovações',
+                'actor' => $version->createdBy?->name,
+                'company' => null,
+                'obra' => null,
+                'comment' => null,
+                'created_at' => $version->submitted_at ?: $version->created_at,
+            ]);
+        $inspectionEvents = RdoFiscalizacaoRegistro::query()
+            ->with(['user:id,name,email', 'empresa:id,nome,sigla', 'obra:id,codigo,nome'])
+            ->where('tenant_id', $tenant->id)
+            ->where('rdo_diario_id', $rdo->id)
+            ->latest('updated_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (RdoFiscalizacaoRegistro $record) => [
+                'id' => 'inspection-'.$record->id,
+                'type' => 'inspection',
+                'tone' => $record->status === 'concluido' ? 'success' : 'warning',
+                'title' => 'Fiscalização V'.str_pad((string) $record->version_number, 2, '0', STR_PAD_LEFT).' · '.($record->status === 'concluido' ? 'Concluída' : 'Rascunho'),
+                'description' => $record->resumo_fiscalizacao,
+                'actor' => $record->user?->name,
+                'company' => $record->empresa?->nome,
+                'obra' => $record->obra ? "{$record->obra->codigo} - {$record->obra->nome}" : null,
+                'comment' => $record->orientacoes,
+                'created_at' => $record->submitted_at ?: $record->updated_at,
+            ]);
+        $divergenceEvents = RdoDivergencia::query()
+            ->with(['createdBy:id,name,email', 'obra:id,codigo,nome'])
+            ->where('tenant_id', $tenant->id)
+            ->where('rdo_diario_id', $rdo->id)
+            ->latest('updated_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (RdoDivergencia $item) => [
+                'id' => 'divergence-'.$item->id,
+                'type' => 'divergence',
+                'tone' => in_array($item->status, ['resolvida', 'decidida_cliente'], true) ? 'success' : 'warning',
+                'title' => 'Divergência · '.$item->titulo,
+                'description' => $item->topico.' · '.$this->divergenceStatusLabel($item->status),
+                'actor' => $item->createdBy?->name,
+                'company' => null,
+                'obra' => $item->obra ? "{$item->obra->codigo} - {$item->obra->nome}" : null,
+                'comment' => $item->comentario_cliente ?: $item->conclusao_gerenciadora ?: $item->resposta_construtora,
+                'created_at' => $item->updated_at,
+            ]);
+
         $events = $events
             ->merge($analysisEvents)
+            ->merge($versionEvents)
+            ->merge($inspectionEvents)
+            ->merge($divergenceEvents)
             ->merge($signatureEvents)
             ->filter(fn (array $event) => $event['created_at'] !== null)
             ->sortByDesc('created_at')
@@ -931,6 +1013,10 @@ class RdoController extends Controller
             'comment' => ['nullable', 'string', 'max:5000'],
             'comments_by_obra' => ['nullable', 'array'],
             'comments_by_obra.*' => ['nullable', 'string', 'max:5000'],
+            'reservations_by_obra' => ['nullable', 'array'],
+            'reservations_by_obra.*.obligation' => ['nullable', 'string', 'max:5000'],
+            'reservations_by_obra.*.responsible' => ['nullable', 'string', 'max:180'],
+            'reservations_by_obra.*.due_date' => ['nullable', 'date'],
             'obra_ids' => ['nullable', 'array', 'min:1'],
             'obra_ids.*' => ['integer', Rule::in($capabilities['flow_obra_ids'])],
         ]);
@@ -938,6 +1024,13 @@ class RdoController extends Controller
         $comment = trim((string) ($validated['comment'] ?? ''));
         $commentsByObra = collect($validated['comments_by_obra'] ?? [])
             ->mapWithKeys(fn ($value, $key) => [(int) $key => trim((string) $value)])
+            ->all();
+        $reservationsByObra = collect($validated['reservations_by_obra'] ?? [])
+            ->mapWithKeys(fn ($value, $key) => [(int) $key => [
+                'obligation' => trim((string) ($value['obligation'] ?? '')),
+                'responsible' => trim((string) ($value['responsible'] ?? '')),
+                'due_date' => $value['due_date'] ?? null,
+            ]])
             ->all();
         abort_unless(isset($capabilities['actions'][$action]), 403);
 
@@ -959,22 +1052,43 @@ class RdoController extends Controller
         if ($action === 'submit') {
             $this->ensureReadyForSubmission($rdo, $obraIds, $request->headers->has('X-Inertia'));
         }
-        $requiresComment = $rdo->status === 'em_aprovacao'
-            || in_array($action, ['approve_with_reservations', 'return'], true);
+        $isReviewStage = in_array($rdo->status, ['em_analise_gerenciadora', 'em_aprovacao_cliente'], true);
+        $requiresComment = $isReviewStage
+            || in_array($action, ['approve_with_reservations', 'return'], true)
+            || ($action === 'submit' && $rdo->status !== 'rascunho');
         if ($requiresComment) {
-            $missingCommentObraIds = $rdo->status === 'em_aprovacao'
+            $missingCommentObraIds = $isReviewStage
                 ? array_values(array_filter($obraIds, fn (int $obraId) => ($commentsByObra[$obraId] ?? '') === ''))
                 : [];
 
-            if ($request->headers->has('X-Inertia') && ($rdo->status === 'em_aprovacao' ? ! empty($missingCommentObraIds) : $comment === '')) {
+            if ($request->headers->has('X-Inertia') && ($isReviewStage ? ! empty($missingCommentObraIds) : $comment === '')) {
                 throw ValidationException::withMessages([
-                    $rdo->status === 'em_aprovacao' ? 'comments_by_obra' : 'comment' => $rdo->status === 'em_aprovacao'
+                    $isReviewStage ? 'comments_by_obra' : 'comment' => $isReviewStage
                         ? 'Informe o parecer das frentes selecionadas para continuar.'
                         : 'Informe o comentário ou a resposta para continuar.',
                 ]);
             }
 
-            abort_if($rdo->status === 'em_aprovacao' ? ! empty($missingCommentObraIds) : $comment === '', 422, 'Informe o comentário ou a resposta para continuar.');
+            abort_if($isReviewStage ? ! empty($missingCommentObraIds) : $comment === '', 422, 'Informe o comentário ou a resposta para continuar.');
+        }
+        if ($action === 'approve_with_reservations') {
+            $missingReservationObraIds = array_values(array_filter($obraIds, function (int $obraId) use ($reservationsByObra): bool {
+                $reservation = $reservationsByObra[$obraId] ?? [];
+
+                return empty($reservation['obligation']) || empty($reservation['responsible']) || empty($reservation['due_date']);
+            }));
+            if ($missingReservationObraIds) {
+                throw ValidationException::withMessages([
+                    'reservations_by_obra' => 'Informe obrigação, responsável e prazo para cada frente aprovada com ressalvas.',
+                ]);
+            }
+        }
+        if ($stage === 'gerenciadora' && in_array($action, ['approve', 'approve_with_reservations'], true)) {
+            $this->ensureInspectionCompleted($rdo, $obraIds);
+            $this->ensureManagerDivergencesResolved($rdo);
+        }
+        if ($stage === 'cliente' && in_array($action, ['approve', 'approve_with_reservations'], true)) {
+            $this->ensureClientDivergencesDecided($rdo);
         }
         abort_if(empty($obraIds), 422, 'Não há frentes pendentes atribuídas a este usuário nesta etapa.');
         $membership = TenantUser::query()
@@ -982,10 +1096,16 @@ class RdoController extends Controller
             ->where('user_id', $request->user()->id)
             ->first();
 
-        [$newStatus, $message] = DB::transaction(function () use ($tenant, $rdo, $request, $membership, $stage, $action, $comment, $commentsByObra, $oldStatus, $obraIds): array {
+        [$newStatus, $message] = DB::transaction(function () use ($tenant, $rdo, $request, $membership, $stage, $action, $comment, $commentsByObra, $reservationsByObra, $oldStatus, $obraIds): array {
+            if ($action === 'submit') {
+                $nextVersion = (int) $rdo->current_version + 1;
+                $rdo->update(['current_version' => $nextVersion]);
+                $this->createSubmissionSnapshot($tenant, $rdo, $request->user(), $oldStatus, $nextVersion);
+            }
+            $rdoVersion = max(1, (int) $rdo->current_version);
             $analysisIds = [];
             foreach ($obraIds as $obraId) {
-                $obraComment = $rdo->status === 'em_aprovacao'
+                $obraComment = in_array($rdo->status, ['em_analise_gerenciadora', 'em_aprovacao_cliente'], true)
                     ? ($commentsByObra[$obraId] ?? '')
                     : $comment;
 
@@ -998,6 +1118,12 @@ class RdoController extends Controller
                     'etapa' => $stage,
                     'decisao' => $action,
                     'comentario' => $obraComment !== '' ? $obraComment : null,
+                    'detalhes' => [
+                        'rdo_version' => $rdoVersion,
+                        'reservation' => $action === 'approve_with_reservations'
+                            ? ($reservationsByObra[$obraId] ?? null)
+                            : null,
+                    ],
                     'status_anterior' => $oldStatus,
                     'status_novo' => $oldStatus,
                 ])->id;
@@ -1011,7 +1137,7 @@ class RdoController extends Controller
             }
             $rdo->update([
                 'status' => $nextStatus,
-                'submitted_at' => $action === 'submit' && $nextStatus === 'em_aprovacao' ? now() : $rdo->submitted_at,
+                'submitted_at' => $action === 'submit' && $nextStatus === 'em_analise_gerenciadora' ? now() : $rdo->submitted_at,
                 'approved_at' => $nextStatus === 'arquivado' ? now() : null,
             ]);
 
@@ -1021,6 +1147,314 @@ class RdoController extends Controller
         $this->notifyFlowRecipients($tenant, $rdo->fresh('contract'), $request->user(), $newStatus, $message);
 
         return back()->with('success', $message);
+    }
+
+    public function saveInspection(Request $request, Tenant $tenant, RdoDiario $rdo): RedirectResponse
+    {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
+        $rdo->loadMissing(['contract', 'configuracao.obras']);
+        $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
+        abort_unless($capabilities['can_manage_inspection'], 403);
+
+        $validated = $request->validate([
+            'obra_id' => ['required', 'integer', Rule::in($capabilities['flow_obra_ids'])],
+            'resumo_fiscalizacao' => ['required', 'string', 'max:10000'],
+            'servicos_atestados' => ['nullable', 'string', 'max:10000'],
+            'ocorrencias' => ['nullable', 'string', 'max:10000'],
+            'orientacoes' => ['nullable', 'string', 'max:10000'],
+            'status' => ['required', Rule::in(['rascunho', 'concluido'])],
+            'evidencias' => ['nullable', 'array', 'max:10'],
+            'evidencias.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:15360'],
+        ]);
+
+        $membership = TenantUser::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('user_id', $request->user()->id)
+            ->first();
+        $record = RdoFiscalizacaoRegistro::query()->firstOrNew([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'obra_id' => (int) $validated['obra_id'],
+            'version_number' => max(1, (int) $rdo->current_version),
+        ]);
+        $evidence = collect($record->evidencias ?? []);
+
+        foreach ($request->file('evidencias', []) as $upload) {
+            $path = $upload->store("rdo/{$tenant->id}/{$rdo->id}/fiscalizacao", 'public');
+            $evidence->push([
+                'name' => $upload->getClientOriginalName(),
+                'path' => $path,
+                'mime_type' => $upload->getMimeType(),
+                'size' => $upload->getSize(),
+                'uploaded_at' => now()->toIso8601String(),
+            ]);
+        }
+
+        $record->fill([
+            'user_id' => $request->user()->id,
+            'empresa_id' => $membership?->empresa_id,
+            'resumo_fiscalizacao' => $validated['resumo_fiscalizacao'],
+            'servicos_atestados' => $validated['servicos_atestados'] ?? null,
+            'ocorrencias' => $validated['ocorrencias'] ?? null,
+            'orientacoes' => $validated['orientacoes'] ?? null,
+            'evidencias' => $evidence->values()->all(),
+            'status' => $validated['status'],
+            'submitted_at' => $validated['status'] === 'concluido' ? now() : null,
+        ])->save();
+
+        return back()->with('success', $validated['status'] === 'concluido'
+            ? 'Registro da fiscalização concluído com sucesso.'
+            : 'Rascunho da fiscalização salvo com sucesso.');
+    }
+
+    public function storeDivergence(Request $request, Tenant $tenant, RdoDiario $rdo): RedirectResponse
+    {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
+        $rdo->loadMissing(['contract', 'configuracao.obras']);
+        $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
+        abort_unless($capabilities['can_create_divergence'], 403);
+
+        $validated = $request->validate([
+            'obra_id' => ['required', 'integer', Rule::in($capabilities['flow_obra_ids'])],
+            'topico' => ['required', 'string', 'max:80'],
+            'titulo' => ['required', 'string', 'max:180'],
+            'versao_construtora' => ['required', 'string', 'max:10000'],
+            'versao_gerenciadora' => ['required', 'string', 'max:10000'],
+        ]);
+
+        RdoDivergencia::create([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'obra_id' => $validated['obra_id'],
+            'created_by_id' => $request->user()->id,
+            'version_number' => max(1, (int) $rdo->current_version),
+            'topico' => $validated['topico'],
+            'titulo' => $validated['titulo'],
+            'versao_construtora' => $validated['versao_construtora'],
+            'versao_gerenciadora' => $validated['versao_gerenciadora'],
+            'status' => 'aberta',
+        ]);
+
+        return back()->with('success', 'Divergência registrada sem alterar o relato da construtora.');
+    }
+
+    public function updateDivergence(
+        Request $request,
+        Tenant $tenant,
+        RdoDiario $rdo,
+        RdoDivergencia $divergencia,
+    ): RedirectResponse {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
+        abort_unless((int) $divergencia->tenant_id === (int) $tenant->id && (int) $divergencia->rdo_diario_id === (int) $rdo->id, 404);
+        $rdo->loadMissing(['contract', 'configuracao.obras']);
+        $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
+        $validated = $request->validate([
+            'action' => ['required', Rule::in(['respond', 'conclude', 'client_decide'])],
+            'response' => ['nullable', 'string', 'max:10000'],
+            'conclusion' => ['nullable', 'string', 'max:10000'],
+            'outcome' => ['nullable', Rule::in(['resolvida', 'aguarda_cliente'])],
+            'client_decision' => ['nullable', Rule::in(['aceita_gerenciadora', 'aceita_construtora', 'aceita_com_ressalvas'])],
+            'client_comment' => ['nullable', 'string', 'max:10000'],
+        ]);
+
+        if ($validated['action'] === 'respond') {
+            abort_unless($capabilities['can_respond_divergence'] && $divergencia->status === 'aberta', 403);
+            abort_if(trim((string) ($validated['response'] ?? '')) === '', 422, 'Informe a resposta da construtora.');
+            $divergencia->update([
+                'status' => 'respondida',
+                'responded_by_id' => $request->user()->id,
+                'resposta_construtora' => trim($validated['response']),
+                'responded_at' => now(),
+            ]);
+
+            return back()->with('success', 'Resposta da construtora registrada na divergência.');
+        }
+
+        if ($validated['action'] === 'conclude') {
+            abort_unless($capabilities['can_conclude_divergence'] && $divergencia->status === 'respondida', 403);
+            abort_if(trim((string) ($validated['conclusion'] ?? '')) === '' || empty($validated['outcome']), 422, 'Informe a conclusão e o encaminhamento da divergência.');
+            $divergencia->update([
+                'status' => $validated['outcome'],
+                'concluded_by_id' => $request->user()->id,
+                'conclusao_gerenciadora' => trim($validated['conclusion']),
+                'concluded_at' => now(),
+            ]);
+
+            return back()->with('success', $validated['outcome'] === 'resolvida'
+                ? 'Divergência concluída pela gerenciadora.'
+                : 'Divergência encaminhada para decisão do cliente.');
+        }
+
+        abort_unless($capabilities['can_decide_divergence'] && $divergencia->status === 'aguarda_cliente', 403);
+        abort_if(empty($validated['client_decision']), 422, 'Selecione a decisão do cliente.');
+        $divergencia->update([
+            'status' => 'decidida_cliente',
+            'client_decided_by_id' => $request->user()->id,
+            'decisao_cliente' => $validated['client_decision'],
+            'comentario_cliente' => trim((string) ($validated['client_comment'] ?? '')) ?: null,
+            'client_decided_at' => now(),
+        ]);
+
+        return back()->with('success', 'Decisão do cliente registrada na divergência.');
+    }
+
+    private function createSubmissionSnapshot(
+        Tenant $tenant,
+        RdoDiario $rdo,
+        User $user,
+        string $statusBeforeSubmission,
+        int $versionNumber,
+    ): void {
+        $rdo->loadMissing(['configuracao.obras', 'secoes']);
+        $sections = $rdo->secoes
+            ->groupBy('obra_id')
+            ->map(fn ($items, $obraId) => [
+                'obra_id' => (int) $obraId,
+                'sections' => $items->mapWithKeys(fn (RdoSecaoRegistro $section) => [
+                    $section->secao => $section->dados,
+                ])->all(),
+            ])
+            ->values()
+            ->all();
+
+        RdoVersao::create([
+            'tenant_id' => $tenant->id,
+            'rdo_diario_id' => $rdo->id,
+            'created_by_id' => $user->id,
+            'version_number' => $versionNumber,
+            'trigger' => $statusBeforeSubmission === 'rascunho' ? 'initial_submission' : 'resubmission',
+            'status' => $statusBeforeSubmission,
+            'sections_snapshot' => [
+                'reference_date' => $rdo->reference_date?->format('Y-m-d'),
+                'obra_ids' => $rdo->configuracao?->obras->pluck('id')->map(fn ($id) => (int) $id)->all() ?? [],
+                'sections_by_obra' => $sections,
+            ],
+            'submitted_at' => now(),
+        ]);
+    }
+
+    private function ensureInspectionCompleted(RdoDiario $rdo, array $obraIds): void
+    {
+        $completedObraIds = RdoFiscalizacaoRegistro::query()
+            ->where('rdo_diario_id', $rdo->id)
+            ->where('version_number', max(1, (int) $rdo->current_version))
+            ->where('status', 'concluido')
+            ->whereIn('obra_id', $obraIds)
+            ->pluck('obra_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($missing = array_values(array_diff($obraIds, $completedObraIds))) {
+            throw ValidationException::withMessages([
+                'action' => 'Conclua o registro independente da fiscalização nas frentes selecionadas antes de emitir o parecer.',
+                'inspection_obra_ids' => $missing,
+            ]);
+        }
+    }
+
+    private function ensureManagerDivergencesResolved(RdoDiario $rdo): void
+    {
+        $hasPending = RdoDivergencia::query()
+            ->where('rdo_diario_id', $rdo->id)
+            ->whereIn('status', ['aberta', 'respondida'])
+            ->exists();
+
+        if ($hasPending) {
+            throw ValidationException::withMessages([
+                'action' => 'Conclua as divergências respondidas ou devolva o RDO à construtora antes de aprovar.',
+            ]);
+        }
+    }
+
+    private function ensureClientDivergencesDecided(RdoDiario $rdo): void
+    {
+        if (RdoDivergencia::query()->where('rdo_diario_id', $rdo->id)->where('status', 'aguarda_cliente')->exists()) {
+            throw ValidationException::withMessages([
+                'action' => 'Registre a decisão do cliente nas divergências pendentes antes de concluir o parecer.',
+            ]);
+        }
+    }
+
+    private function inspectionPayload(RdoDiario $rdo): array
+    {
+        return $rdo->fiscalizacaoRegistros
+            ->sortByDesc('version_number')
+            ->map(fn (RdoFiscalizacaoRegistro $record) => [
+                'id' => $record->id,
+                'obra_id' => (int) $record->obra_id,
+                'obra' => $record->obra?->only(['id', 'codigo', 'nome']),
+                'version_number' => (int) $record->version_number,
+                'is_current_version' => (int) $record->version_number === max(1, (int) $rdo->current_version),
+                'summary' => $record->resumo_fiscalizacao,
+                'services_attested' => $record->servicos_atestados,
+                'occurrences' => $record->ocorrencias,
+                'guidance' => $record->orientacoes,
+                'status' => $record->status,
+                'status_label' => $record->status === 'concluido' ? 'Concluído' : 'Rascunho',
+                'user' => $record->user?->only(['id', 'name', 'email']),
+                'company' => $record->empresa?->only(['id', 'nome', 'sigla']),
+                'submitted_at' => $record->submitted_at?->format('d/m/Y H:i'),
+                'evidence' => collect($record->evidencias ?? [])->map(fn (array $item) => [
+                    ...$item,
+                    'url' => ! empty($item['path']) ? Storage::disk('public')->url($item['path']) : null,
+                ])->values()->all(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function divergencePayload(RdoDiario $rdo): array
+    {
+        return $rdo->divergencias
+            ->sortByDesc('created_at')
+            ->map(fn (RdoDivergencia $item) => [
+                'id' => $item->id,
+                'obra_id' => (int) $item->obra_id,
+                'obra' => $item->obra?->only(['id', 'codigo', 'nome']),
+                'version_number' => (int) $item->version_number,
+                'topic' => $item->topico,
+                'title' => $item->titulo,
+                'contractor_version' => $item->versao_construtora,
+                'manager_version' => $item->versao_gerenciadora,
+                'status' => $item->status,
+                'status_label' => match ($item->status) {
+                    'respondida' => 'Respondida pela construtora',
+                    'resolvida' => 'Resolvida pela gerenciadora',
+                    'aguarda_cliente' => 'Aguardando cliente',
+                    'decidida_cliente' => 'Decidida pelo cliente',
+                    default => 'Aberta',
+                },
+                'created_by' => $item->createdBy?->only(['id', 'name', 'email']),
+                'contractor_response' => $item->resposta_construtora,
+                'responded_by' => $item->respondedBy?->only(['id', 'name', 'email']),
+                'responded_at' => $item->responded_at?->format('d/m/Y H:i'),
+                'manager_conclusion' => $item->conclusao_gerenciadora,
+                'concluded_by' => $item->concludedBy?->only(['id', 'name', 'email']),
+                'concluded_at' => $item->concluded_at?->format('d/m/Y H:i'),
+                'client_decision' => $item->decisao_cliente,
+                'client_comment' => $item->comentario_cliente,
+                'client_decided_by' => $item->clientDecidedBy?->only(['id', 'name', 'email']),
+                'client_decided_at' => $item->client_decided_at?->format('d/m/Y H:i'),
+                'created_at' => $item->created_at?->format('d/m/Y H:i'),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function versionPayload(RdoDiario $rdo): array
+    {
+        return $rdo->versoes
+            ->sortByDesc('version_number')
+            ->map(fn (RdoVersao $version) => [
+                'id' => $version->id,
+                'number' => (int) $version->version_number,
+                'trigger' => $version->trigger,
+                'trigger_label' => $version->trigger === 'initial_submission' ? 'Envio inicial' : 'Reenvio após ajustes',
+                'created_by' => $version->createdBy?->only(['id', 'name', 'email']),
+                'submitted_at' => $version->submitted_at?->format('d/m/Y H:i'),
+            ])
+            ->values()
+            ->all();
     }
 
     private function preparePhotoSectionData(
@@ -1232,8 +1666,10 @@ class RdoController extends Controller
             'reference_date' => $rdo->reference_date?->format('Y-m-d'),
             'reference_date_formatted' => $rdo->reference_date?->format('d/m/Y'),
             'status' => $rdo->status,
+            'current_version' => (int) $rdo->current_version,
             'status_label' => match ($rdo->status) {
-                'em_aprovacao' => 'Aprovação da gerenciadora e do cliente',
+                'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
+                'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
                 'devolvido_construtora' => 'Devolvido à construtora',
                 'pendente_comprovacao' => 'Pendente de comprovação',
                 'arquivado' => 'Aprovado e arquivado',
@@ -1437,7 +1873,8 @@ class RdoController extends Controller
         }
 
         return match ($rdo->status) {
-            'em_aprovacao' => 'Aprovação da gerenciadora e do cliente',
+            'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
+            'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
             'devolvido_construtora' => 'Devolvido à construtora',
             'pendente_comprovacao' => 'Pendente de comprovação',
             default => 'Rascunho',
@@ -1449,7 +1886,8 @@ class RdoController extends Controller
         return match ($rdo->status) {
             'rascunho' => $submissionReady ? 'Enviar análise' : 'Preencher',
             'devolvido_construtora', 'pendente_comprovacao' => 'Corrigir',
-            'em_aprovacao' => 'Análise',
+            'em_analise_gerenciadora' => 'Fiscalizar',
+            'em_aprovacao_cliente' => 'Manifestar',
             'arquivado' => 'Visualizar',
             default => 'Visualizar',
         };
@@ -1458,7 +1896,18 @@ class RdoController extends Controller
     private function flowCapabilities(Tenant $tenant, RdoDiario $rdo, ?User $user): array
     {
         if (! $user) {
-            return ['can_edit' => false, 'editable_obra_ids' => [], 'flow_obra_ids' => [], 'active_stage' => null, 'actions' => []];
+            return [
+                'can_edit' => false,
+                'editable_obra_ids' => [],
+                'flow_obra_ids' => [],
+                'active_stage' => null,
+                'actions' => [],
+                'can_manage_inspection' => false,
+                'can_create_divergence' => false,
+                'can_respond_divergence' => false,
+                'can_conclude_divergence' => false,
+                'can_decide_divergence' => false,
+            ];
         }
 
         $membership = TenantUser::query()
@@ -1475,7 +1924,9 @@ class RdoController extends Controller
         $assignedObraIds = $stage
             ? $this->responsibleObraIds($tenant, $rdo, $user, $stage, $isAdmin, $membership)
             : [];
-        $pendingObraIds = $this->pendingObraIds($rdo, $stage, $assignedObraIds);
+        $pendingObraIds = $stage
+            ? $this->pendingObraIds($rdo, $stage, $assignedObraIds)
+            : [];
         $editableObraIds = in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)
             && $canFill
             ? $this->responsibleObraIds($tenant, $rdo, $user, 'construtora', $isAdmin, $membership)
@@ -1485,7 +1936,7 @@ class RdoController extends Controller
 
         if ($stage === 'construtora' && in_array($rdo->status, $editableStatuses, true)) {
             $pendingObraIds = empty($this->missingSubmissionObraIds($rdo))
-                ? $this->pendingObraIds($rdo, 'construtora', $allObraIds)
+                ? $allObraIds
                 : [];
         }
 
@@ -1506,6 +1957,11 @@ class RdoController extends Controller
             'flow_obra_ids' => array_values($pendingObraIds),
             'active_stage' => $stage,
             'actions' => $actions,
+            'can_manage_inspection' => $canReview && $stage === 'gerenciadora' && ! empty($pendingObraIds),
+            'can_create_divergence' => $canReview && $stage === 'gerenciadora' && ! empty($pendingObraIds),
+            'can_respond_divergence' => $canFill && $stage === 'construtora' && in_array($rdo->status, ['devolvido_construtora', 'pendente_comprovacao'], true),
+            'can_conclude_divergence' => $canReview && $stage === 'gerenciadora',
+            'can_decide_divergence' => $canReview && $stage === 'cliente',
         ];
     }
 
@@ -1514,7 +1970,7 @@ class RdoController extends Controller
         return [
             'approve' => ['label' => 'Aprovar', 'tone' => 'success', 'comment_required' => true],
             'approve_with_reservations' => ['label' => 'Aprovar com ressalvas', 'tone' => 'warning', 'comment_required' => true],
-            'return' => ['label' => 'Devolver à construtora', 'tone' => 'danger', 'comment_required' => true],
+            'return' => ['label' => 'Rejeitar e devolver', 'tone' => 'danger', 'comment_required' => true],
         ];
     }
 
@@ -1526,18 +1982,12 @@ class RdoController extends Controller
         ?TenantUser $membership,
     ): ?string
     {
-        if ($rdo->status !== 'em_aprovacao') {
-            return 'construtora';
-        }
-
-        foreach (['gerenciadora', 'cliente'] as $stage) {
-            $assigned = $this->responsibleObraIds($tenant, $rdo, $user, $stage, $isAdmin, $membership);
-            if ($this->pendingObraIds($rdo, $stage, $assigned)) {
-                return $stage;
-            }
-        }
-
-        return null;
+        return match ($rdo->status) {
+            'rascunho', 'devolvido_construtora', 'pendente_comprovacao' => 'construtora',
+            'em_analise_gerenciadora' => 'gerenciadora',
+            'em_aprovacao_cliente' => 'cliente',
+            default => null,
+        };
     }
 
     private function responsibleObraIds(
@@ -1594,20 +2044,12 @@ class RdoController extends Controller
 
     private function approvalCommentsByStage(RdoDiario $rdo): array
     {
-        if ($rdo->status !== 'em_aprovacao') {
-            return [
-                'gerenciadora' => [],
-                'cliente' => [],
-            ];
-        }
-
-        $comments = RdoAnalise::query()
+        $query = RdoAnalise::query()
             ->with(['user:id,name'])
             ->where('rdo_diario_id', $rdo->id)
             ->whereIn('etapa', ['gerenciadora', 'cliente'])
-            ->where('created_at', '>=', $this->stageStartedAt($rdo))
-            ->latest('created_at')
-            ->get()
+            ->latest('created_at');
+        $comments = $this->analysesForCurrentVersion($rdo, $query)
             ->groupBy('etapa')
             ->map(fn ($items) => $items
                 ->filter(fn (RdoAnalise $analysis) => filled($analysis->comentario))
@@ -1635,12 +2077,13 @@ class RdoController extends Controller
             ? ['submit']
             : ['approve', 'approve_with_reservations'];
 
-        return RdoAnalise::query()
+        $query = RdoAnalise::query()
             ->where('rdo_diario_id', $rdo->id)
             ->where('etapa', $stage)
-            ->where('created_at', '>=', $this->stageStartedAt($rdo))
             ->whereIn('decisao', $decisions)
-            ->whereNotNull('obra_id')
+            ->whereNotNull('obra_id');
+
+        return $this->analysesForCurrentVersion($rdo, $query)
             ->pluck('obra_id')
             ->map(fn ($id) => (int) $id)
             ->unique()
@@ -1658,17 +2101,17 @@ class RdoController extends Controller
             ->value('created_at') ?? $rdo->created_at;
     }
 
-    private function jointApprovalCompleted(RdoDiario $rdo): bool
+    private function analysesForCurrentVersion(RdoDiario $rdo, $query)
     {
-        $allObraIds = $rdo->configuracao->obras->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if ((int) $rdo->current_version > 0) {
+            $version = (int) $rdo->current_version;
 
-        foreach (['gerenciadora', 'cliente'] as $stage) {
-            if (array_diff($allObraIds, $this->decidedObraIds($rdo, $stage))) {
-                return false;
-            }
+            return $query->get()->filter(
+                fn (RdoAnalise $analysis): bool => (int) data_get($analysis->detalhes, 'rdo_version') === $version
+            )->values();
         }
 
-        return true;
+        return $query->where('created_at', '>=', $this->stageStartedAt($rdo))->get();
     }
 
     private function requiredSubmissionSections(): array
@@ -1886,31 +2329,31 @@ class RdoController extends Controller
         }
 
         if ($stage === 'construtora') {
-            return ['em_aprovacao', $rdo->status === 'pendente_comprovacao'
-                ? 'Comprovações enviadas para aprovação conjunta da gerenciadora e do cliente.'
-                : 'Todas as frentes foram enviadas para aprovação conjunta da gerenciadora e do cliente.'];
+            return ['em_analise_gerenciadora', $rdo->status === 'pendente_comprovacao'
+                ? 'Comprovações enviadas para nova verificação da gerenciadora.'
+                : 'Todas as frentes foram enviadas para análise da gerenciadora.'];
         }
 
-        if (! $this->jointApprovalCompleted($rdo)) {
-            return [$rdo->status, 'Decisão registrada. O RDO aguarda os demais pareceres da gerenciadora e do cliente.'];
+        if ($stage === 'gerenciadora') {
+            return ['em_aprovacao_cliente', 'A gerenciadora concluiu a fiscalização e encaminhou o RDO para manifestação do cliente.'];
         }
 
-        $hasReservations = RdoAnalise::query()
+        $reservationQuery = RdoAnalise::query()
             ->where('rdo_diario_id', $rdo->id)
             ->whereIn('etapa', ['gerenciadora', 'cliente'])
-            ->where('created_at', '>=', $this->stageStartedAt($rdo))
-            ->where('decisao', 'approve_with_reservations')
-            ->exists();
+            ->where('decisao', 'approve_with_reservations');
+        $hasReservations = $this->analysesForCurrentVersion($rdo, $reservationQuery)->isNotEmpty();
 
         return $hasReservations
-            ? ['pendente_comprovacao', 'A aprovação conjunta foi concluída com ressalvas; a construtora deve enviar as comprovações.']
-            : ['arquivado', 'Gerenciadora e cliente aprovaram todas as frentes; o RDO foi arquivado.'];
+            ? ['pendente_comprovacao', 'O cliente aceitou o RDO com ressalvas; a construtora deve atender as obrigações e enviar comprovações.']
+            : ['arquivado', 'O cliente concluiu a manifestação e o RDO foi aprovado e arquivado.'];
     }
 
     private function notifyFlowRecipients(Tenant $tenant, RdoDiario $rdo, User $actor, string $newStatus, string $message): void
     {
         $stage = match ($newStatus) {
-            'em_aprovacao' => 'aprovacao_conjunta',
+            'em_analise_gerenciadora' => 'gerenciadora',
+            'em_aprovacao_cliente' => 'cliente',
             'devolvido_construtora', 'pendente_comprovacao' => 'construtora',
             default => null,
         };
@@ -1920,16 +2363,15 @@ class RdoController extends Controller
                     ->where('rdo_responsaveis.tenant_id', $tenant->id)
                     ->where('rdo_responsaveis.modulo', 'rdo')
                     ->where('rdo_responsaveis.contract_id', $rdo->contract_id)
-                    ->when($stage === 'aprovacao_conjunta',
-                        fn ($query) => $query->whereIn('rdo_responsaveis.etapa', ['gerenciadora', 'cliente']),
-                        fn ($query) => $query->where('rdo_responsaveis.etapa', $stage))
+                    ->where('rdo_responsaveis.etapa', $stage)
                     ->where('rdo_responsaveis.status', 'active'))
                 ->get()
             : collect();
 
         if ($users->isEmpty()) {
             $companyIds = match ($newStatus) {
-                'em_aprovacao' => [$rdo->contract?->fiscalizadora_empresa_id, $rdo->contract?->cliente_empresa_id],
+                'em_analise_gerenciadora' => [$rdo->contract?->fiscalizadora_empresa_id],
+                'em_aprovacao_cliente' => [$rdo->contract?->cliente_empresa_id],
                 'devolvido_construtora', 'pendente_comprovacao' => [$rdo->contract?->construtora_empresa_id],
                 'arquivado' => [$rdo->contract?->construtora_empresa_id, $rdo->contract?->fiscalizadora_empresa_id],
                 default => [],
@@ -2015,12 +2457,24 @@ class RdoController extends Controller
     private function statusLabel(?string $status): string
     {
         return match ($status) {
-            'em_aprovacao' => 'Em aprovação',
+            'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
+            'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
             'devolvido_construtora' => 'Devolvido à construtora',
             'pendente_comprovacao' => 'Pendente de comprovação',
             'arquivado' => 'Arquivado',
             'rascunho' => 'Rascunho',
             default => $status ?: '-',
+        };
+    }
+
+    private function divergenceStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'respondida' => 'Respondida pela construtora',
+            'resolvida' => 'Resolvida pela gerenciadora',
+            'aguarda_cliente' => 'Aguardando decisão do cliente',
+            'decidida_cliente' => 'Decidida pelo cliente',
+            default => 'Aberta',
         };
     }
 }

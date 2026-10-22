@@ -1,4 +1,4 @@
-Deming
+SigWorks
 Assinatura de RDO solicitada
 
 Olá, {{ $notifiable->name }}.
@@ -17,5 +17,5 @@ Assinar documento:
 O OpenSign enviará o convite de assinatura em uma mensagem separada.
 @endif
 
-Visualizar RDO no Deming:
+Visualizar RDO no SigWorks:
 {{ $rdoUrl }}

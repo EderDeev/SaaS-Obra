@@ -11,6 +11,9 @@ use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\OrdemServicoPermissions;
+use App\Support\OsDnitPermissions;
+use App\Support\OsDnitContractAccess;
+use App\Support\OsDnitWorkflowAccess;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -86,6 +89,18 @@ class HandleInertiaRequests extends Middleware
                 'reset_password' => fn () => $request->session()->get('reset_password'),
             ],
             'currentTenant' => fn () => $tenantForNavigation(),
+            'osDnitPermissions' => \Inertia\Inertia::always(function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+                $matrix = $request->user() && $tenant ? OsDnitPermissions::matrix($request->user(), $tenant) : [];
+                return ['byContract' => $matrix, 'can' => collect(OsDnitPermissions::all())->mapWithKeys(fn ($permission) => [
+                    $permission => collect($matrix)->contains(fn ($permissions) => in_array($permission, $permissions, true)),
+                ])->all()];
+            }),
+            'osDnitNavigation' => \Inertia\Inertia::always(function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+                return ['pending_analysis_count' => $request->user() && $tenant
+                    ? OsDnitWorkflowAccess::pendingOrders($request->user(), $tenant)->count() : 0];
+            }),
             'currentTenantRole' => function () use ($request, $tenantForNavigation): ?string {
                 $tenant = $tenantForNavigation();
 
@@ -112,7 +127,9 @@ class HandleInertiaRequests extends Middleware
                     ->select(['id', 'tenant_id', 'code', 'name', 'status'])
                     ->orderBy('code');
 
-                $contractIds = ContractPermissions::contractIdsFor($user, $tenant, ContractPermissions::VIEW);
+                $contractIds = $request->routeIs('tenant.os-dnit.*')
+                    ? OsDnitContractAccess::contracts($user, $tenant, OsDnitPermissions::VIEW)->pluck('id')
+                    : ContractPermissions::contractIdsFor($user, $tenant, ContractPermissions::VIEW);
 
                 if ($contractIds !== null) {
                     $query->whereKey($contractIds);

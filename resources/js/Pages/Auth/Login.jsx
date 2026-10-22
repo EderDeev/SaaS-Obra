@@ -19,7 +19,7 @@ export default function Login({ canResetPassword, status }) {
 
     return (
         <>
-            <Head title="Acessar Deming" />
+            <Head title="Acessar SigWorks" />
 
             <main className="sig-login grid min-h-screen grid-cols-[1fr_1.05fr] bg-[var(--bg)]">
                 <section className="flex flex-col px-6 py-8 sm:px-10 lg:px-14">
@@ -31,9 +31,6 @@ export default function Login({ canResetPassword, status }) {
                             <h1 className="mt-3 text-[32px] font-semibold leading-tight text-[var(--ink-900)]">
                                 Bem-vindo de volta.
                             </h1>
-                            <p className="mt-2 text-[14.5px] leading-6 text-[var(--ink-500)]">
-                                Acesse seu ambiente de trabalho para acompanhar contratos, medições e cronogramas.
-                            </p>
 
                             {status && (
                                 <div className="mt-6 rounded-lg border border-[var(--green-50)] bg-[var(--green-50)] px-4 py-3 text-sm text-[var(--green)]">
@@ -95,26 +92,25 @@ export default function Login({ canResetPassword, status }) {
                                 className={`sig-btn sig-btn-primary mt-6 w-full ${form.processing ? 'opacity-60' : ''}`}
                                 disabled={form.processing}
                             >
-                                Acessar Deming
+                                Acessar SigWorks
                                 <ArrowRight size={16} />
                             </button>
 
                             <div className="sig-card mt-8 flex items-start gap-3 p-4">
                                 <HardHat size={20} className="mt-0.5 text-[var(--primary)]" />
                                 <p className="text-[12.5px] leading-5 text-[var(--ink-500)]">
-                                    Suporte operacional · <a className="font-semibold text-[var(--primary)]">suporte@deming.com.br</a>
+                                    Suporte operacional · <a href="mailto:suporte@sigworks.com.br" className="font-semibold text-[var(--primary)]">suporte@sigworks.com.br</a>
                                 </p>
                             </div>
                         </form>
                     </div>
 
                     <footer className="flex flex-wrap justify-between gap-3 text-xs text-[var(--ink-400)]">
-                        <span>Deming · Gestão de obras civis</span>
-                        <span>Ambiente seguro para equipes e contratos</span>
+                        <span>SigWorks · Gestão de obras civis</span>
                     </footer>
                 </section>
 
-                <section className="sig-login-art relative flex flex-col justify-between overflow-hidden bg-[#0b1020] p-14 text-white">
+                <section className="sig-login-art relative flex flex-col justify-center overflow-hidden bg-[#0b1020] p-14 text-white">
                     <svg className="absolute inset-0 h-full w-full opacity-[0.18]" aria-hidden="true">
                         <defs>
                             <pattern id="sig-bp" width="36" height="36" patternUnits="userSpaceOnUse">
@@ -129,22 +125,12 @@ export default function Login({ canResetPassword, status }) {
                     </svg>
 
                     <div className="relative z-10">
-                        <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.08em]">
-                            Plataforma integrada
-                        </span>
-                    </div>
-
-                    <div className="relative z-10">
                         <h2 className="max-w-[480px] text-4xl font-semibold leading-tight">
-                            Do canteiro à medição final, tudo em um único ambiente.
+                            Toda a gestão do contrato em uma única plataforma.
                         </h2>
                         <p className="mt-4 max-w-[440px] text-[14.5px] leading-6 text-white/70">
-                            Deming conecta engenheiros, fiscais e administrativo em um fluxo transparente de contratos, cronogramas e prestações de conta.
+                            Acompanhe os serviços, organize as tarefas da equipe e consulte os documentos do contrato.
                         </p>
-                    </div>
-
-                    <div className="relative z-10 text-xs text-white/45">
-                        Gestão operacional, financeira e documental em tempo real.
                     </div>
                 </section>
             </main>

@@ -2,6 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
+/* OS DNIT: keep long contract names and form controls within narrow screens. */
+.os-dnit-page,
+.os-dnit-dialog,
+.os-dnit-confirm {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+:is(.os-dnit-page, .os-dnit-dialog) :is(fieldset, input, select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.os-dnit-confirm {
+    max-height: calc(100dvh - 1rem);
+    overflow-y: auto;
+}
+
+@media (max-width: 639px) {
+    .sig-content.os-dnit-page {
+        padding-bottom: calc(80px + env(safe-area-inset-bottom));
+    }
+
+    :is(.os-dnit-page, .os-dnit-dialog, .os-dnit-confirm) :is(button, .sig-btn) {
+        min-height: 44px;
+    }
+
+    :is(.os-dnit-page, .os-dnit-dialog, .os-dnit-confirm) .sig-btn {
+        max-width: 100%;
+        white-space: normal;
+        line-height: 1.35;
+    }
+
+    :is(.os-dnit-page, .os-dnit-dialog, .os-dnit-confirm) .sig-btn svg {
+        flex-shrink: 0;
+    }
+
+    :is(.os-dnit-page, .os-dnit-dialog) :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+        min-height: 44px;
+        font-size: 16px;
+    }
+
+    :is(.os-dnit-page, .os-dnit-dialog) input:is([type='checkbox'], [type='radio']) {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+    }
+
+    .os-dnit-page nav[aria-label^='Paginação'] a {
+        display: inline-flex;
+        min-width: 44px;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .os-dnit-dialog {
+        max-height: calc(100dvh - 1rem);
+    }
+
+    .os-dnit-analysis-footer {
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .os-dnit-analysis-footer > div {
+        display: grid;
+        width: 100%;
+        min-width: 0;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .os-dnit-analysis-footer > div > button:nth-child(3) {
+        grid-column: 1 / -1;
+    }
+
+    .os-dnit-confirm footer > button {
+        flex: 1 1 100%;
+    }
+}
+
+/* Allow every modal action to be reached in landscape and with a keyboard open. */
+@media (max-width: 1023px) and (max-height: 500px) {
+    .os-dnit-analysis[open] {
+        display: block;
+        overflow-y: auto;
+    }
+
+    .os-dnit-analysis-form {
+        display: block;
+    }
+
+    .os-dnit-analysis-body {
+        overflow-y: visible;
+    }
+}
+
 :root {
     --primary: #0b5fff;
     --primary-600: #0a55e6;
@@ -459,18 +555,45 @@ body.sig-viewer-body .sig-main > main {
 .sig-logo {
     display: inline-flex;
     align-items: center;
+    width: auto;
+    height: var(--sig-logo-height, 38px);
+    max-width: 100%;
+    flex-shrink: 0;
     line-height: 1;
 }
 
 .sig-logo-image {
     display: block;
     width: auto;
-    max-width: 154px;
+    height: 100%;
+    max-width: 100%;
     object-fit: contain;
 }
 
-.sig-logo-icon-only .sig-logo-image {
+/* Original approved PNG: preserve its pixels and aspect ratio. The frame only
+   excludes the transparent outer margins of its 2078 x 757 canvas.
+   Whole CSS pixel dimensions avoid additional subpixel interpolation. */
+.sig-logo-with-wordmark {
+    position: relative;
+    width: var(--sig-logo-width);
+    overflow: hidden;
+}
+
+.sig-logo-with-wordmark .sig-logo-image {
+    position: absolute;
+    width: var(--sig-logo-image-width);
     max-width: none;
+    height: auto;
+    left: var(--sig-logo-image-left);
+    top: var(--sig-logo-image-top);
+}
+
+.sig-logo-icon-only {
+    width: var(--sig-logo-height, 28px);
+}
+
+.sig-logo-icon-only .sig-logo-image {
+    object-fit: contain;
 }
 
 .sig-nav-item {

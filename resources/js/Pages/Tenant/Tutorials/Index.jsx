@@ -87,7 +87,7 @@ const tutorials = [
             ['Revise plano e situação', 'Na administração de tenants, mantenha plano e situação atualizados conforme o atendimento da empresa.'],
         ],
         screenshots: [
-            screenshot('login', 'Primeiro acesso ao Deming', 'O owner recebe o endereço de acesso e utiliza as credenciais provisórias recebidas por e-mail.'),
+            screenshot('login', 'Primeiro acesso ao SigWorks', 'O owner recebe o endereço de acesso e utiliza as credenciais provisórias recebidas por e-mail.'),
         ],
         tips: [
             'O identificador do tenant é utilizado na URL: mantenha-o curto, único e sem espaços.',
@@ -521,7 +521,7 @@ export default function TutorialsIndex({ tenant, tutorials: tutorialData = tutor
                             <BookOpen size={15} />
                             <span className="eyebrow">Central de tutoriais</span>
                         </div>
-                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Guia de utilização do Deming</h1>
+                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Guia de utilização do SigWorks</h1>
                         <p className="mt-1 max-w-3xl text-sm text-[var(--ink-500)]">
                             Consulte fluxos completos, boas práticas e telas reais da aplicação para implantar e operar cada módulo.
                         </p>

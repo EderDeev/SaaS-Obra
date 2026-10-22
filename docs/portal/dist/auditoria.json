@@ -1,0 +1,600 @@
+{
+  "snapshot": {
+    "reviewDate": "21/10/2026",
+    "generatedAt": "2026-10-22T12:52:52.575256+00:00",
+    "baseCommit": "4615a114eee0f680fe5bc604dcd3968e3a664c3d",
+    "branch": "staging",
+    "hasLocalChanges": true,
+    "chapters": 25,
+    "topics": 65,
+    "routeCount": 376,
+    "configurationNames": 192
+  },
+  "notes": [
+    "Texto conferido em fontes locais; infraestrutura em execução não auditada.",
+    "Capturas ilustrativas do acervo do projeto; nomenclaturas antigas podem aparecer.",
+    "Inventário de configuração extraído apenas de config/*.php; sem ler .env."
+  ],
+  "sources": [
+    {
+      "path": ".github/workflows/azure-development.yml",
+      "sha256": "777312a8fd22f1538ac6987645c4958480e85f1715b893f00f747e22b5e1bf05"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "41dd345432c7227a4f1a6813fdc098b715ea8475798a551b0ee723652f69ec50"
+    },
+    {
+      "path": ".github/workflows/post-deploy-smoke.yml",
+      "sha256": "d716a7c3fe839976e2e6362140dfc105f46421aba70f02820b050cec7947877e"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "d22e875d02761667c96931d0106f6073220a73dcaffd8f984b7e1aacd68e7f35"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "b5707b022daea09ac0f657e6471c73f8c2508d58eeb9d8641a39ef8d1e01843f"
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "8f4f33c171c66caaa04efcb572256c484ca537bd4ba9e0df570286c33997ee59"
+    },
+    {
+      "path": "README.md",
+      "sha256": "ac5a3a68c03feba1f16a62c1506e756ea88d70bd256715fa1c144504b168c05d"
+    },
+    {
+      "path": "app/Http/Controllers/Api/Mobile/MobileAuthController.php",
+      "sha256": "1884f9e2b8ca8ebc3743fd56e2ba918f0e370e42cff159a42f9241b1b822cafd"
+    },
+    {
+      "path": "app/Http/Controllers/Api/OpenSignWebhookController.php",
+      "sha256": "9ee9bb7c7d0bef28b6ad22c918dfe82b3e8f509e455917cb2b6816d71470123a"
+    },
+    {
+      "path": "app/Http/Controllers/NotificationController.php",
+      "sha256": "04a3d7288810afe650b625c77ddeb20902f39a8aacd421426773b7beeca48e47"
+    },
+    {
+      "path": "app/Http/Controllers/Platform/ApsUsageController.php",
+      "sha256": "bee95c49b81ab8214cb3fe4aaf6c5dc0ea47734dfbd1c0ded3aa308c13f90d1a"
+    },
+    {
+      "path": "app/Http/Controllers/Platform/TenantController.php",
+      "sha256": "94d65bf29a7e2f6051536c5984d617900dfaff605c263ca0d46bb37f33d9fb5f"
+    },
+    {
+      "path": "app/Http/Controllers/ProfileController.php",
+      "sha256": "feb017b2f4b96860f73d10bb2cc10d46648e0a6ae4746133002940de35488d29"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ActivityController.php",
+      "sha256": "1ea2b48a4e35a5572bc0ad2250e867b8b30d8f32ea6316099cc18ead2f7f21c2"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/AssistantController.php",
+      "sha256": "43792b7d960eab1420803b11618d5c29bbdde4bc3b7547257ef4b296487cceca"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/BoletimMedicaoController.php",
+      "sha256": "fe43bb13c746baa345686aefc5200af17c6995ba5bda5793b9d5b67ffffa39dd"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ContractAdditiveController.php",
+      "sha256": "a8dad60d29aea48929f377e4f65ba499ea66d930003b997bcc2557cd3c4e9cf3"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ContractController.php",
+      "sha256": "86fe4897a3185245ecc64db86b6e815cb75a498966cf2a087aa4a7976ae2a00d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/FolhaRostoController.php",
+      "sha256": "667211e5b71fb53660aa16e93f8b108be201b416b9725f5faf7c5fc54d79834b"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/GedController.php",
+      "sha256": "d1a4331b09129a8615e30b710dfb3cf64bed0fd916a3f7e74862915debaf0102"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/MedicaoBiController.php",
+      "sha256": "0fb447cfaaa2990c1bed5c76f245a21ea525ca6f47f4acd822bf756df186cf0d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/MedicaoController.php",
+      "sha256": "693f30f3e0468843b389b2fa34f6bd3dfbe6871d78b17b3ce88de17886123a07"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/MedicaoRelatorioController.php",
+      "sha256": "085acff83b852fae62ad36689e38a213468ea92f8925f398c71f5d4d50b71c4b"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OrcamentoController.php",
+      "sha256": "34d3d646f2fcc822b047f2f971ead51b8e0cf0c5fb195bb33f226081d889de1f"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OrdemServicoController.php",
+      "sha256": "74907f99ba8c1d71c6a302919ded1a635f9ccf1e6d09cd9ba010a12493ede56a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OrdemServicoMetricsController.php",
+      "sha256": "5d6983456066ab420be8b86be3008b0e44c3e14a3edba21d1c0459d96b551040"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitDashboardController.php",
+      "sha256": "4032b9938928cf77c96c6e3ecf19aa450e970e2932edadef611095366b5ccf9d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitOrderController.php",
+      "sha256": "ef0fb8859ae66cd1b27e93602d5cd438cbb6d7de0b8e75e43692cbe042286286"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitProductController.php",
+      "sha256": "d44e2b6a25524ba39a33cda9f2449c87fe98a8a18883438235e9eedcf73ffec6"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitResponsibleController.php",
+      "sha256": "1334162f0d426871f6f49fb4b6dbd9751d3c8c809cb17a8c0f2a1e2cc96af23d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitSettingsController.php",
+      "sha256": "f70a5fb9fc6f21cd7514d202ac80778c78c53208aa5de603a601f4dde121a3f3"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitWorkflowController.php",
+      "sha256": "a63ded082dfb35fba20d3be4eb082f47639c49c292376b67cd9d41fcef35cccb"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/DisciplinaController.php",
+      "sha256": "f91c191e3a732ecee47d9f8bdcd1d9b6ee02dc68526871ddf46f11103be0a2c8"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/ObraController.php",
+      "sha256": "a303992e6c1321ef02e691d14e4a682c50f91607fb5f3980d18e4b3f357359a6"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/PermissionController.php",
+      "sha256": "4e1f4dbdbb178fd63aa816657d8bd0fc89af4066850027cf0b87b57f5348f7a6"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectController.php",
+      "sha256": "da17d3b395cf89234ef07ffd27d2b6bb3b8d6de3ccd121a08ae19961165356d5"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectReviewController.php",
+      "sha256": "78b0afa0970ca346a40ecbbde8088a3fd5d438566ef67e21b4bdd83702cbd813"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectSubmissionBatchController.php",
+      "sha256": "ae964052edb76ea913a4b61251fb1971122d129ff0aeca923387df407bd26c79"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectViewerController.php",
+      "sha256": "887f03b287ced51da875b42adb05dcc42dc5794f485a429424fbb3ae5e07489a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RelatorioNaoConformidadeController.php",
+      "sha256": "725b9ae4d923c7387fefb36ca46dfd54230c21728060b22406230210ae9cded7"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RncAcaoCorretivaController.php",
+      "sha256": "c4c560250c6ad7a29ed94ff125c8cc3ad21ebe0bb2dc06754ec13cb652594c79"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RncEvidenciaController.php",
+      "sha256": "f0008a9be6550b6b2ff3ba43c007fe7d849a97727abb716e88479b0d4ae157c7"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdaController.php",
+      "sha256": "b39adecf0f56f055c54fed3a1ab693784a0048f5b1d7376750980e2c6f68f31a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdoController.php",
+      "sha256": "5464b7bafcbcbb1ab07a94035bf3054c4e5ea7e94b7708f4d28ed7261ce2d79e"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/UserController.php",
+      "sha256": "fae91054bc56142c5edd8abca7f949268644037b0c3c77cbb2cac0ec49c9aad3"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureMobileApiToken.php",
+      "sha256": "2438db2dd0381ab97b3aca9215dce4fcbe54a28f8b2a9b6e4da391a922fbc0d4"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureOsDnitPermission.php",
+      "sha256": "272de5bfe2ddd8e11c6d3bec939fc0c83b130cfda89d1afefec2cd4d7c51d18f"
+    },
+    {
+      "path": "app/Http/Middleware/EnsurePasswordWasChanged.php",
+      "sha256": "21b53da0d2cb8e47d494ee10c334dbb4b52ba295e17eb89573ca4519985acf22"
+    },
+    {
+      "path": "app/Http/Middleware/EnsurePlatformAdmin.php",
+      "sha256": "26133c39bbc869813abf2edf0e7be758931861bb1156d5512971621fd5bc5f9e"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureTenantAccess.php",
+      "sha256": "1d2d63766272acc516239a8d7b577661a21ff25d6bcad8187d05b24f57db5337"
+    },
+    {
+      "path": "app/Http/Middleware/ResolveTenant.php",
+      "sha256": "afea0e84aa714938e507bb25333ae72764a7a55f588de7b5e9f8fc694ad8f2a3"
+    },
+    {
+      "path": "app/Models/Activity.php",
+      "sha256": "86d7c92985343db1f1fe32ea2bb1e371e9828a75cf14588325c218c89f703966"
+    },
+    {
+      "path": "app/Models/Contract.php",
+      "sha256": "946ee9c3a6b8899685fb3b0ad2acbff35e821fcbf9ad50e2c218a21ab02d148f"
+    },
+    {
+      "path": "app/Models/ContractParticipant.php",
+      "sha256": "a7c55b153d166806efbb46f5484a827a3e5e9625335c98c38638e34d7db007ab"
+    },
+    {
+      "path": "app/Models/GedDocument.php",
+      "sha256": "1c5e2213cc083e6e41344102b8d56b48ef8b3107b0efe1a2f06363ac2ee1227c"
+    },
+    {
+      "path": "app/Models/GedEmailAccount.php",
+      "sha256": "de7b0da8497e50f8c4eb4e19d87d1b2dfeadf66c39aaf19c9a6991c2d998c286"
+    },
+    {
+      "path": "app/Models/MobileApiToken.php",
+      "sha256": "3772cfafe7708c6e04a1ea92f06eafd8515e1a0042393bde72435e25e421f113"
+    },
+    {
+      "path": "app/Models/OsDnitOrder.php",
+      "sha256": "0fd047b40513e209ff9eaa59b06cc1744e2855a83b07a5f6e39542a6dada4be3"
+    },
+    {
+      "path": "app/Models/RdoDivergencia.php",
+      "sha256": "d7a4cb45e832d8e03efc0d1d16de1e59fdf6187cd94195d557a367a268a550a7"
+    },
+    {
+      "path": "app/Models/RdoVersao.php",
+      "sha256": "2f86f57a3a7fecae4700580e84a9a7953f91056cdc1894ae8755f0c1e6551bdf"
+    },
+    {
+      "path": "app/Models/User.php",
+      "sha256": "222463d1836fd8d7c0473b36d35641b178eee3b01dcefaeb4121da1555001a48"
+    },
+    {
+      "path": "app/Notifications/OsDnitFlowChangedNotification.php",
+      "sha256": "501300857694022f3b9b6994d670842c81a33f55bc36633889cb06a4c1e72590"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantAccessScope.php",
+      "sha256": "63bb5767a3cc778f3d8b183c76b5a740968d489a21b3de45d475822ac4d93b53"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantActionResolver.php",
+      "sha256": "68ec5b9818bd8d8f013bd0580a4a923d6c86074120c8e7e30cc1380bcb7a0be0"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantContextBuilder.php",
+      "sha256": "3988026d2c6c014a682ccff28c564ecec3342f31e8ac2eddbbecd05b8539db98"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantQuotaService.php",
+      "sha256": "1c17a2126522168f75935120e870451e68ec3775140dea841ed93f46ae768184"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantRetriever.php",
+      "sha256": "b61aa4dcc3d4f5614dfccc20967d16a707c30cb02cba37f3601311d62de809da"
+    },
+    {
+      "path": "app/Services/Assistant/OpenAiAssistant.php",
+      "sha256": "c7f2860d9854a749d1d379eadaf9fbda68402c9076f0417f59319d710571a787"
+    },
+    {
+      "path": "app/Services/Assistant/OsDnitAssistantContext.php",
+      "sha256": "8dd9078da14dcd64f2583d3fdbd5f8b815087bd78f1d784deb24e4d56e634621"
+    },
+    {
+      "path": "app/Services/AutodeskApsService.php",
+      "sha256": "c15e9e477b280eeb247b7f1b7281ce3f18bef91b6815d7e853d3861bf96ca27f"
+    },
+    {
+      "path": "app/Services/GedOcrService.php",
+      "sha256": "2ddcb4610728f58b99e1d747fb0317f4a81949127b1958fc48d61541e9a7ac72"
+    },
+    {
+      "path": "app/Services/OsDnitFlowNotifier.php",
+      "sha256": "6bcb8b867f5135f67f508f038af8f2779295401f4b8430034cdc5ae5d84ec402"
+    },
+    {
+      "path": "app/Services/OsDnitFlowRecipients.php",
+      "sha256": "5f7e42554dc592f3d7ca5dcaf8cd2729eeece8307194168f4986a84c4da9ebc9"
+    },
+    {
+      "path": "app/Services/OsDnitOrderHistory.php",
+      "sha256": "460689c30b15399586485db68422fba6559189060403173ea9f0e6628130f1ab"
+    },
+    {
+      "path": "app/Services/OsDnitOrderNumber.php",
+      "sha256": "d20514999a6658b6fda7dd5a605cbdf3564e261e60820801bf5febe7469a3444"
+    },
+    {
+      "path": "app/Services/OsDnitPdfRenderer.php",
+      "sha256": "5b7470b2b4d888c0fdbe92967c698bceda2123cf5adbe6bae4ed2c21f9e4f138"
+    },
+    {
+      "path": "app/Services/RdoDailyGenerator.php",
+      "sha256": "5b4d294f7774b3dd14afb4dc16012f714b1c1a993cf5a998ff246112f7a1da0c"
+    },
+    {
+      "path": "app/Services/RdoSignatureService.php",
+      "sha256": "e385e2042ebf94fd71cbed8658a842b3efe9e1cbe302b3cf79da1dba2bb00a28"
+    },
+    {
+      "path": "app/Services/Signatures/LocalSignatureProvider.php",
+      "sha256": "81658e14558c6d649e91942f0fea81ec8c52e04a91e977936f232d6216eb9bfc"
+    },
+    {
+      "path": "app/Services/Signatures/OpenSignSignatureProvider.php",
+      "sha256": "b938a5393dd59f5f6db10e767605f0435f8781ba334d1e99d84ddff2c3820e8f"
+    },
+    {
+      "path": "app/Services/Storage/StoredFileMaterializer.php",
+      "sha256": "03de1753608d0683ba8af9e23fcbecadc21d1e6bbac5aab195098bbf92a5096e"
+    },
+    {
+      "path": "app/Support/ActivityPermissions.php",
+      "sha256": "dd8b45802380635549d272137f20222ad91d28a99a8f79499abda58d64743bcc"
+    },
+    {
+      "path": "app/Support/BudgetPermissions.php",
+      "sha256": "16b478227cda7e3c90bbe65e85f55cf91a424f9574d85f42df5ed9d664ca2b1d"
+    },
+    {
+      "path": "app/Support/DocumentationPermissions.php",
+      "sha256": "1eff5a89d18fcf0ea673dfcec92ee2314756d970662d083cb9f578bd7348f522"
+    },
+    {
+      "path": "app/Support/MedicaoPermissions.php",
+      "sha256": "185b3dcaf9b01d6a4f82f85c7d1e737585816f80a329237cfbf1b3ed4039a8a7"
+    },
+    {
+      "path": "app/Support/OrdemServicoPermissions.php",
+      "sha256": "afe6a27b2eccfe41bb52d1c1cfb398cb6d6ca1d97dddcca94aa7568f45f9bacd"
+    },
+    {
+      "path": "app/Support/OsDnitContractAccess.php",
+      "sha256": "d41aef29eaee5df3032b04ce50492180cc217e7c75ff13e6b9be94c27f2a7d06"
+    },
+    {
+      "path": "app/Support/OsDnitPermissions.php",
+      "sha256": "9d7fd0cb5228c071b47cd2c227d641d0b192c6b8b2af4dff3b7b2fdf61a5171b"
+    },
+    {
+      "path": "app/Support/OsDnitWorkflowAccess.php",
+      "sha256": "37b611be0dfd80bbae7078f16152dbb84aa0ddea03b1d359d7e5b74bf97ad5df"
+    },
+    {
+      "path": "app/Support/RncPermissions.php",
+      "sha256": "0b587986e3c644eae36accbb721dbfae3f99fff7771868d2a640ccf72f51f94d"
+    },
+    {
+      "path": "app/Support/TenantRoles.php",
+      "sha256": "e53d2d6b2fb8ec35d5036dc7b783e18fb5e06a97f174ad719dea8aeedacf0a9b"
+    },
+    {
+      "path": "app/Support/TutorialCatalog.php",
+      "sha256": "bef425ad7f44c345e95173389f0ec1aba426336ad5e51fdcf9a9486428facb45"
+    },
+    {
+      "path": "azure/start-app.sh",
+      "sha256": "397c585cfb8932c10d2396f110b85428975b025f2c1e20c6952492fb8106ea25"
+    },
+    {
+      "path": "bootstrap/app.php",
+      "sha256": "f7ffe5720583827ab40081dec27a08f84c1a97f5efa04e7bda164345a5131fbb"
+    },
+    {
+      "path": "composer.json",
+      "sha256": "26d5f1f4ffa9ff5a297cd08cc35fa248ae2c94f12097e81bd7c8491e0109c3e2"
+    },
+    {
+      "path": "config/app.php",
+      "sha256": "ddfdad99d7a64fc82bcdb775242bd31ceadf513be7508754fd17d74e238f6182"
+    },
+    {
+      "path": "config/database.php",
+      "sha256": "4e21320bbdc09ab110165e469d5e18c087c61fa92cdc826db88af1b087cadd95"
+    },
+    {
+      "path": "config/filesystems.php",
+      "sha256": "a1b8955a0c10ac5ad8eb865c80dff172b118420364547bc2da43bc7358cece85"
+    },
+    {
+      "path": "config/ged.php",
+      "sha256": "5d474b9a37e18da03f208088460d035a95bad9c96a9e64d32f6e1ea0f8e8f920"
+    },
+    {
+      "path": "config/mail.php",
+      "sha256": "05482232a33b8fdd2991ea0a5b15399d975be9acfd8d67d1b949b185cf58b695"
+    },
+    {
+      "path": "config/os_dnit.php",
+      "sha256": "23f95c0406a08d21aa318a02cf630184b14e7d72ff1576a0a906da2644aa71c3"
+    },
+    {
+      "path": "config/projects.php",
+      "sha256": "85b2547879d3413cffc590c32d0553405cf3d9cbe476fc70a56e5f129bc2e3e1"
+    },
+    {
+      "path": "config/queue.php",
+      "sha256": "60944b16dd8f32bc6efb63a9f0379bbf54c75fda239ec9e352ab555e3195385c"
+    },
+    {
+      "path": "config/services.php",
+      "sha256": "e67dec5c2ebdb2cd0b12aebbf65c8a52b0a843dc06a5fdeadf0202658d3dd093"
+    },
+    {
+      "path": "config/signatures.php",
+      "sha256": "4c519a6e69e454c9a45338ad8835126ef0a8a4480bfd23a33d75ac39f1c9fead"
+    },
+    {
+      "path": "database/migrations/2026_10_21_180000_add_os_dnit_permissions_and_soft_deletes.php",
+      "sha256": "b2c0c5131efa461ba945847afff97d368f516e56ffa6934fa899e20e6394eebb"
+    },
+    {
+      "path": "database/migrations/2026_10_21_190000_link_activities_to_os_dnit_orders.php",
+      "sha256": "0dc94ff07187b91f3af96d5800024d051c6e0eb14446cf571ca62539696bb19a"
+    },
+    {
+      "path": "docs/azure-operacao.md",
+      "sha256": "b6bc3b6b55b3959becd7034c36b6c63689fdb8754550d2c4f424278fb5b3f50a"
+    },
+    {
+      "path": "docs/ci-cd.md",
+      "sha256": "95784ef9d4f3b74293b221f175efd1cd897853d623c954448ea84ae714edcf55"
+    },
+    {
+      "path": "docs/os-dnit.md",
+      "sha256": "31554bcddfb63459ee11f61190e8d10727c574e44b42fea91a1dc9569b80bd22"
+    },
+    {
+      "path": "docs/portal/README.md",
+      "sha256": "6fa8655b875f1fdaa5d258acab853d6f580341f41e814a4976af7a95eb680b5f"
+    },
+    {
+      "path": "docs/portal/app.js",
+      "sha256": "4710da9b0d0afc58abd9f52537e804104340880e0bb9a95ecb5c4385a99c7941"
+    },
+    {
+      "path": "docs/portal/build_portal.py",
+      "sha256": "ba9913314d7911b579461e4ccb63fadbdb79b4d62ff9462d7622a3fdb8425b72"
+    },
+    {
+      "path": "docs/portal/content.py",
+      "sha256": "e9e3e40d6166ad57ca3c109fc997e032c97d7bba5da38897ae2e5bcf1bd7e3c9"
+    },
+    {
+      "path": "docs/portal/diagrams.py",
+      "sha256": "18493ccb71c760b4301be83bee565ed5c2a0420d75404eae31231f21ebe7400f"
+    },
+    {
+      "path": "docs/portal/routes-snapshot.json",
+      "sha256": "15582ada9140a4bc9a1f286edd57a530cd06d216099cee7ba1964325d2d6e277"
+    },
+    {
+      "path": "docs/portal/shell.html",
+      "sha256": "44166b1ad0ef50652db7dafe41ff071d5ca55c8127619dd8970d7b16b235d4d1"
+    },
+    {
+      "path": "docs/portal/styles.css",
+      "sha256": "92b90751f08097afb52b5109b9821170547389be8a0c7394b83ed680e3657113"
+    },
+    {
+      "path": "docs/railway.md",
+      "sha256": "25daec9dce33b355c76e3231a62cb2bee5b5604b3b6cb304be10f83bc2053cde"
+    },
+    {
+      "path": "infra/azure/modules/core.bicep",
+      "sha256": "d3f4ef8481957929c6994855d4a4bcd7bf4e69a26aadeb10f0f9b780e0657288"
+    },
+    {
+      "path": "package.json",
+      "sha256": "226521cb3688e86ccce60df96f6e72cf3daeb3666e68818773bffa78ee597363"
+    },
+    {
+      "path": "phpunit.xml",
+      "sha256": "c0d5c4a19d12a88411340657a838cf48555d599e0b17e1cf69e3e4fe2fa34a9b"
+    },
+    {
+      "path": "railway.toml",
+      "sha256": "800709d796ebf45c0c23951d8ec78f20db3bbd7c90c9a3ba6c34497e78664cb6"
+    },
+    {
+      "path": "railway/init-app.sh",
+      "sha256": "2bd9feaeac2d9502599750ff28f7ec2115ce87f60dfdc18a84e971de78c1df6b"
+    },
+    {
+      "path": "railway/start-app.sh",
+      "sha256": "2578fd77afea2a84fd5cb28e54426b2ca7a508524b6b73d14aa6362ad94bcb12"
+    },
+    {
+      "path": "railway/start-worker.sh",
+      "sha256": "ce67367e836ea4097c506523f766af076ab1feb516b3e3e90a50fd623161e689"
+    },
+    {
+      "path": "resources/js/Components/ActivityOsDnitSelect.jsx",
+      "sha256": "c9fee532fac699cf6c28861ee098bc1eaa62b2f06328140b711a8932d1c634b1"
+    },
+    {
+      "path": "resources/js/Layouts/AuthenticatedLayout.jsx",
+      "sha256": "19dca9c886bd8d771c02f01e738ae5cf04ee4f90a17a8ee64df59cedf7fe9051"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/Orders.jsx",
+      "sha256": "614051e7ca0843b26088be31e8e34cde8119e366f7f3f07295e4942872a44aed"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Index.jsx",
+      "sha256": "510d477961de7da31c4b6424447c06caafb68b213bf0d48f820b606733dad62b"
+    },
+    {
+      "path": "resources/js/Utils/assistantDraft.js",
+      "sha256": "f468d7cb6eca782efbd318a72f25c5d9bad89962dd122d6cc8c633cd4332953c"
+    },
+    {
+      "path": "routes/api.php",
+      "sha256": "a0b8a1c8d9f4af076e8159aede15af849573bc60e184f04fe536b6204b8abbf4"
+    },
+    {
+      "path": "routes/console.php",
+      "sha256": "ad62eca74bf888871d451196d7bc12f57ff2f9305abd82f7fcafba6ce5e36846"
+    },
+    {
+      "path": "routes/web.php",
+      "sha256": "554515e0069ebfb9153d4b34178ff1563d33d20227198d0b22cd97ad6b8a5497"
+    },
+    {
+      "path": "scripts/azure-dev-session.py",
+      "sha256": "a3f1c5da4a6522e55e550e5f5a9ce9f1479a423075e7bcba3c2929aa4c99767d"
+    },
+    {
+      "path": "server.php",
+      "sha256": "798026fb2e8755d145533859054cfd2b6f4ef9451085fd43cb27c27d3787b94c"
+    },
+    {
+      "path": "tests/bootstrap.php",
+      "sha256": "0f1ec82cd29d603e7666d981bc68dde8ba3776722367e11e6dbd8dc033b277d1"
+    }
+  ],
+  "images": [
+    "assets/admin-plataforma-atual.png",
+    "assets/aps.svg",
+    "assets/arquitetura.svg",
+    "assets/atividades-atual.png",
+    "assets/cicd.svg",
+    "assets/contratos-atual.png",
+    "assets/diario-obra-atual.png",
+    "assets/documentacao-atual.png",
+    "assets/integracoes.svg",
+    "assets/logos/docker.svg",
+    "assets/logos/github.svg",
+    "assets/logos/laravel.svg",
+    "assets/logos/php.svg",
+    "assets/logos/postgresql.svg",
+    "assets/logos/react.svg",
+    "assets/logos/tailwindcss.svg",
+    "assets/logos/vite.svg",
+    "assets/medicao-atual.png",
+    "assets/orcamentos-atual.png",
+    "assets/ordem-servico-atual.png",
+    "assets/os-dnit.svg",
+    "assets/parametrizacao-atual.png",
+    "assets/permissoes-atual.png",
+    "assets/projetos-atual.png",
+    "assets/qualidade-rnc-atual.png",
+    "assets/rag.svg",
+    "assets/tenant.svg",
+    "assets/usuarios-atual.png",
+    "assets/visao-geral-atual.png"
+  ],
+  "externalAssets": []
+}

@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_APP_NAME: ${VITE_APP_NAME:-Deming}
+        VITE_APP_NAME: ${VITE_APP_NAME:-SigWorks}
         VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
     command: sh ./railway/start-app.sh
     env_file:

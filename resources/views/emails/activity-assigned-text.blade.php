@@ -1,4 +1,4 @@
-Deming
+SigWorks
 Nova atividade atribuida
 
 Ola, {{ $notifiable->name }}.

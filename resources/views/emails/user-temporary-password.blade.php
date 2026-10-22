@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Seu acesso ao Deming</title>
+    <title>Seu acesso ao SigWorks</title>
 </head>
 <body style="margin:0;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#111827;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6fb;padding:28px 12px;">
@@ -12,7 +12,7 @@
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">
                     <tr>
                         <td style="background:#0b5fff;color:#ffffff;padding:22px 26px;">
-                            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Deming</div>
+                            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">SigWorks</div>
                             <h1 style="margin:10px 0 0;font-size:22px;line-height:1.3;">Seu acesso foi criado</h1>
                         </td>
                     </tr>

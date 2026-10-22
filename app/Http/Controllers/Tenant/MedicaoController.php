@@ -101,6 +101,13 @@ class MedicaoController extends Controller
             $items = $items->sortByDesc(fn (array $item): float => (float) ($item['valor_total'] ?? 0))->values();
         }
 
+        $totalItems = $items->count();
+        $totalValue = $this->totalValueForItems($items);
+        $perPage = 50;
+        $lastPage = max(1, (int) ceil($totalItems / $perPage));
+        $currentPage = min(max(1, $request->integer('page', 1)), $lastPage);
+        $paginatedItems = $items->forPage($currentPage, $perPage)->values();
+
         $orcamentos = $tenant->orcamentos()
             ->withCount(['etapas', 'itens'])
             ->where('status', 'closed')
@@ -151,11 +158,19 @@ class MedicaoController extends Controller
             'orcamentos' => $orcamentos->values(),
             'selectedContractId' => $selectedContractId,
             'filters' => $filters,
-            'items' => $items,
+            'items' => $paginatedItems,
+            'pagination' => [
+                'current_page' => $currentPage,
+                'last_page' => $lastPage,
+                'per_page' => $perPage,
+                'total' => $totalItems,
+                'from' => $totalItems > 0 ? (($currentPage - 1) * $perPage) + 1 : null,
+                'to' => $totalItems > 0 ? min($currentPage * $perPage, $totalItems) : null,
+            ],
             'additives' => $additives->values(),
             'stats' => [
-                'total_items' => $items->count(),
-                'total_value' => $this->totalValueForItems($items),
+                'total_items' => $totalItems,
+                'total_value' => $totalValue,
             ],
         ]);
     }

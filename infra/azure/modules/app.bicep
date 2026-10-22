@@ -66,7 +66,7 @@ resource application 'Microsoft.App/containerApps@2024-03-01' = {
             '/app/azure/start-app.sh'
           ]
           env: [
-            { name: 'APP_NAME', value: 'Deming' }
+            { name: 'APP_NAME', value: 'SigWorks' }
             { name: 'APP_ENV', value: 'staging' }
             { name: 'APP_DEBUG', value: 'false' }
             { name: 'APP_KEY', secretRef: 'app-key' }

@@ -9,11 +9,16 @@ use App\Models\RdoMaoObraCadastro;
 use App\Models\RdoSecaoRegistro;
 use App\Models\RdoSubcontratadaCadastro;
 use App\Models\Tenant;
+use App\Services\Storage\StoredFileMaterializer;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 
 class RdoPdfRenderer
 {
+    public function __construct(private readonly StoredFileMaterializer $fileMaterializer)
+    {
+    }
+
     public function render(Tenant $tenant, RdoDiario $rdo)
     {
         $rdo->loadMissing([
@@ -28,6 +33,15 @@ class RdoPdfRenderer
             'analises.user:id,name,email',
             'analises.empresa:id,nome,sigla',
             'analises.obra:id,codigo,nome',
+            'versoes.createdBy:id,name,email',
+            'fiscalizacaoRegistros.user:id,name,email',
+            'fiscalizacaoRegistros.empresa:id,nome,sigla',
+            'fiscalizacaoRegistros.obra:id,codigo,nome',
+            'divergencias.obra:id,codigo,nome',
+            'divergencias.createdBy:id,name,email',
+            'divergencias.respondedBy:id,name,email',
+            'divergencias.concludedBy:id,name,email',
+            'divergencias.clientDecidedBy:id,name,email',
         ]);
 
         $sections = $rdo->secoes
@@ -43,11 +57,15 @@ class RdoPdfRenderer
             'obras' => $rdo->configuracao?->obras ?? collect([$rdo->obra])->filter(),
             'sections' => $sections,
             'analyses' => $rdo->analises->sortBy('created_at')->values(),
+            'versions' => $rdo->versoes->sortBy('version_number')->values(),
+            'inspections' => $rdo->fiscalizacaoRegistros->sortBy(fn ($record) => sprintf('%06d-%010d', $record->version_number, $record->obra_id))->values(),
+            'divergences' => $rdo->divergencias->sortBy('created_at')->values(),
             'logos' => [
                 'cliente' => $this->companyLogoDataUri($rdo->contract?->clienteEmpresa),
                 'gerenciadora' => $this->companyLogoDataUri($rdo->contract?->gerenciadoraEmpresa),
                 'construtora' => $this->companyLogoDataUri($rdo->contract?->construtoraEmpresa),
             ],
+            'photoDataUri' => fn (?string $path): ?string => $this->photoDataUri($path),
             'catalogs' => [
                 'mao_obra' => RdoMaoObraCadastro::query()
                     ->where('tenant_id', $tenant->id)
@@ -74,7 +92,23 @@ class RdoPdfRenderer
             return null;
         }
 
-        return $this->containedPdfImageDataUri(Storage::disk('public')->path($empresa->logo_path), 180, 62);
+        return $this->fileMaterializer->withLocalPath(
+            'public',
+            $empresa->logo_path,
+            fn (string $localPath): ?string => $this->containedPdfImageDataUri($localPath, 180, 62),
+        );
+    }
+
+    private function photoDataUri(?string $path): ?string
+    {
+        if (! $path || ! Storage::disk('public')->exists($path)) {
+            return null;
+        }
+
+        $contents = Storage::disk('public')->get($path);
+        $mimeType = Storage::disk('public')->mimeType($path) ?: 'image/jpeg';
+
+        return 'data:'.$mimeType.';base64,'.base64_encode($contents);
     }
 
     private function containedPdfImageDataUri(string $sourcePath, int $targetCanvasWidth, int $targetCanvasHeight): ?string

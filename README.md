@@ -1,6 +1,8 @@
-# Deming
+# SigWorks
 
 SaaS multi-tenant para gerenciamento de obras.
+
+Documentação visual completa: [portal HTML separado](docs/portal/README.md), com guia dos módulos, acessos, arquitetura, integrações e operação segura. Abra `docs/portal/dist/index.html` para consultar offline.
 
 - Laravel 13 + Inertia.js + React + Tailwind CSS
 - Usuários globais com vínculos por tenant e por contrato
@@ -228,7 +230,7 @@ O projeto inclui `railway.toml` com:
 Variáveis obrigatórias no serviço da aplicação:
 
 ```text
-APP_NAME="Deming"
+APP_NAME="SigWorks"
 APP_ENV=production
 APP_DEBUG=false
 APP_KEY=base64:...
@@ -371,7 +373,7 @@ Para email real:
 MAIL_MAILER=brevo
 BREVO_API_KEY=xkeysib-sua-chave-api-v3
 MAIL_FROM_ADDRESS=email-verificado-no-brevo@seudominio.com
-MAIL_FROM_NAME=Deming
+MAIL_FROM_NAME=SigWorks
 ```
 
 Use uma chave de API v3 da Brevo, não a chave SMTP. O `MAIL_FROM_ADDRESS`

@@ -12,7 +12,7 @@ param environmentName string = 'dev'
 @description('Resource group that contains the development environment.')
 param resourceGroupName string = 'rg-deming-${environmentName}'
 
-@description('Monthly cost budget for the development resource group, in USD.')
+@description('Monthly alert budget in the subscription billing currency. This does not stop consumption.')
 param monthlyBudgetAmount int = 1
 
 @description('Email that receives development cost alerts.')

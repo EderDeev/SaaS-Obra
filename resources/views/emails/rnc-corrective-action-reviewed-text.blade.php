@@ -1,4 +1,4 @@
-Deming
+SigWorks
 {{ $approved ? 'Proposta de acao corretiva aprovada' : 'Proposta de acao corretiva reprovada' }}
 
 Ola, {{ $notifiable->name }}.

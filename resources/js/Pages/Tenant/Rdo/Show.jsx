@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, ClipboardList, CloudSun, Construction, FileText, History, ImagePlus, MessageSquareText, Plus, RefreshCw, Save, Send, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, ClipboardList, CloudSun, Construction, FileText, History, ImagePlus, MessageSquareText, Plus, RefreshCw, Save, Scale, Send, ShieldCheck, Trash2, Upload, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const sections = [
@@ -45,9 +45,15 @@ export default function Show({ rdo, catalogs = {} }) {
     const [importingRdaId, setImportingRdaId] = useState(null);
     const [previewRda, setPreviewRda] = useState(null);
     const [deadlineModalOpen, setDeadlineModalOpen] = useState(false);
+    const [inspectionOpen, setInspectionOpen] = useState(false);
+    const [divergenceOpen, setDivergenceOpen] = useState(false);
+    const [divergenceAction, setDivergenceAction] = useState(null);
     const sectionForm = useForm({ obra_id: '', dados: {}, fotos: [] });
     const completeForm = useForm({ obra_id: '', secoes: {}, fotos: [] });
-    const flowForm = useForm({ comment: '', comments_by_obra: {}, obra_ids: rdo.flow_obra_ids || [] });
+    const flowForm = useForm({ comment: '', comments_by_obra: {}, reservations_by_obra: {}, obra_ids: rdo.flow_obra_ids || [] });
+    const inspectionForm = useForm({ obra_id: rdo.flow_obra_ids?.[0] || '', resumo_fiscalizacao: '', servicos_atestados: '', ocorrencias: '', orientacoes: '', status: 'concluido', evidencias: [] });
+    const divergenceForm = useForm({ obra_id: rdo.flow_obra_ids?.[0] || '', topico: 'Atividades e ocorrências', titulo: '', versao_construtora: '', versao_gerenciadora: '' });
+    const divergenceActionForm = useForm({ action: '', response: '', conclusion: '', outcome: 'resolvida', client_decision: 'aceita_gerenciadora', client_comment: '' });
     const manualSignatureForm = useForm({ signed_pdf: null });
     const allObras = rdo.obras || [rdo.obra];
     const fillLocked = rdo.can_edit && !rdo.can_fill;
@@ -129,7 +135,8 @@ export default function Show({ rdo, catalogs = {} }) {
         router.post(route('tenant.diario-obra.rdo.flow', [currentTenant.slug, rdo.id]), {
             action,
             comment: action === 'submit' && rdo.status === 'rascunho' ? '' : flowForm.data.comment,
-            comments_by_obra: rdo.status === 'em_aprovacao' ? flowForm.data.comments_by_obra : {},
+            comments_by_obra: ['em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) ? flowForm.data.comments_by_obra : {},
+            reservations_by_obra: action === 'approve_with_reservations' ? flowForm.data.reservations_by_obra : {},
             obra_ids: action === 'submit'
                 ? (rdo.flow_obra_ids || [])
                 : (flowForm.data.obra_ids?.length ? flowForm.data.obra_ids : (rdo.flow_obra_ids || [])),
@@ -137,8 +144,60 @@ export default function Show({ rdo, catalogs = {} }) {
             preserveScroll: true,
             preserveState: false,
             onError: (errors) => flowForm.setError(errors),
-            onSuccess: () => flowForm.setData({ ...flowForm.data, comment: '', comments_by_obra: {} }),
+            onSuccess: () => flowForm.setData({ ...flowForm.data, comment: '', comments_by_obra: {}, reservations_by_obra: {} }),
             onFinish: () => setFlowProcessing(false),
+        });
+    };
+
+    const openInspection = (record = null) => {
+        const obraId = Number(record?.obra_id || rdo.flow_obra_ids?.[0] || rdo.obras?.[0]?.id || '');
+        inspectionForm.clearErrors();
+        inspectionForm.setData({
+            obra_id: obraId,
+            resumo_fiscalizacao: record?.summary || '',
+            servicos_atestados: record?.services_attested || '',
+            ocorrencias: record?.occurrences || '',
+            orientacoes: record?.guidance || '',
+            status: record?.status || 'concluido',
+            evidencias: [],
+        });
+        setInspectionOpen(true);
+    };
+
+    const saveInspection = (event) => {
+        event.preventDefault();
+        inspectionForm.post(route('tenant.diario-obra.rdo.inspection.store', [currentTenant.slug, rdo.id]), {
+            forceFormData: true,
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => setInspectionOpen(false),
+        });
+    };
+
+    const saveDivergence = (event) => {
+        event.preventDefault();
+        divergenceForm.post(route('tenant.diario-obra.rdo.divergences.store', [currentTenant.slug, rdo.id]), {
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => {
+                setDivergenceOpen(false);
+                divergenceForm.reset();
+            },
+        });
+    };
+
+    const openDivergenceAction = (item, action) => {
+        divergenceActionForm.clearErrors();
+        divergenceActionForm.setData({ action, response: '', conclusion: '', outcome: 'resolvida', client_decision: 'aceita_gerenciadora', client_comment: '' });
+        setDivergenceAction({ item, action });
+    };
+
+    const saveDivergenceAction = (event) => {
+        event.preventDefault();
+        divergenceActionForm.patch(route('tenant.diario-obra.rdo.divergences.update', [currentTenant.slug, rdo.id, divergenceAction.item.id]), {
+            preserveScroll: true,
+            preserveState: false,
+            onSuccess: () => setDivergenceAction(null),
         });
     };
 
@@ -311,6 +370,15 @@ export default function Show({ rdo, catalogs = {} }) {
                     })}
                 </div>
 
+                <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                    <InspectionPanel rdo={rdo} onOpen={openInspection} />
+                    <DivergencePanel
+                        rdo={rdo}
+                        onCreate={() => setDivergenceOpen(true)}
+                        onAction={openDivergenceAction}
+                    />
+                </div>
+
                 <div className="mt-5">
                     <WorkflowPanel rdo={rdo} form={flowForm} processing={flowProcessing} onAction={changeFlow} onOpenHistory={openHistory} />
                 </div>
@@ -373,7 +441,193 @@ export default function Show({ rdo, catalogs = {} }) {
                     onClose={() => setDeadlineModalOpen(false)}
                 />
             )}
+            {inspectionOpen && (
+                <InspectionModal
+                    rdo={rdo}
+                    form={inspectionForm}
+                    onClose={() => !inspectionForm.processing && setInspectionOpen(false)}
+                    onSubmit={saveInspection}
+                />
+            )}
+            {divergenceOpen && (
+                <DivergenceModal
+                    rdo={rdo}
+                    form={divergenceForm}
+                    onClose={() => !divergenceForm.processing && setDivergenceOpen(false)}
+                    onSubmit={saveDivergence}
+                />
+            )}
+            {divergenceAction && (
+                <DivergenceActionModal
+                    context={divergenceAction}
+                    form={divergenceActionForm}
+                    onClose={() => !divergenceActionForm.processing && setDivergenceAction(null)}
+                    onSubmit={saveDivergenceAction}
+                />
+            )}
         </AuthenticatedLayout>
+    );
+}
+
+function InspectionPanel({ rdo, onOpen }) {
+    const currentRecords = (rdo.inspection_records || []).filter((item) => item.is_current_version);
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
+            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+                <div className="flex items-start gap-3">
+                    <span className="rounded-lg bg-emerald-50 p-2 text-emerald-700"><ShieldCheck size={20} /></span>
+                    <div>
+                        <span className="eyebrow">Camada da gerenciadora</span>
+                        <h2 className="mt-1 text-lg font-black">Registro da fiscalização</h2>
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">Atestação e fatos próprios, sem alterar o relato da construtora.</p>
+                    </div>
+                </div>
+                {rdo.can_manage_inspection && (
+                    <button type="button" onClick={() => onOpen()} className="sig-btn sig-btn-primary">
+                        <Plus size={16} /> Registrar
+                    </button>
+                )}
+            </header>
+            <div className="divide-y divide-[var(--border)]">
+                {currentRecords.length ? currentRecords.map((record) => (
+                    <article key={record.id} className="p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p className="font-bold">{record.obra ? `${record.obra.codigo} - ${record.obra.nome}` : 'Frente de serviço'}</p>
+                                <p className="mt-1 text-sm text-[var(--ink-600)]">{record.summary}</p>
+                                <p className="mt-2 text-xs text-[var(--ink-500)]">
+                                    Versão V{String(record.version_number).padStart(2, '0')} · {record.user?.name || 'Fiscalização'}{record.submitted_at ? ` · ${record.submitted_at}` : ''}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${record.status === 'concluido' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{record.status_label}</span>
+                                {rdo.can_manage_inspection && rdo.flow_obra_ids?.includes(Number(record.obra_id)) && (
+                                    <button type="button" onClick={() => onOpen(record)} className="sig-btn">Editar</button>
+                                )}
+                            </div>
+                        </div>
+                    </article>
+                )) : (
+                    <p className="p-5 text-sm text-[var(--ink-500)]">
+                        {rdo.status === 'rascunho' ? 'O registro será aberto após o envio da construtora.' : 'Nenhum registro da fiscalização foi concluído nesta versão.'}
+                    </p>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function DivergencePanel({ rdo, onCreate, onAction }) {
+    const items = rdo.divergences || [];
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
+            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+                <div className="flex items-start gap-3">
+                    <span className="rounded-lg bg-amber-50 p-2 text-amber-700"><Scale size={20} /></span>
+                    <div>
+                        <span className="eyebrow">Rastreabilidade</span>
+                        <h2 className="mt-1 text-lg font-black">Divergências registradas</h2>
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">Versões das partes, resposta, conclusão e decisão final.</p>
+                    </div>
+                </div>
+                {rdo.can_create_divergence && (
+                    <button type="button" onClick={onCreate} className="sig-btn">
+                        <Plus size={16} /> Nova divergência
+                    </button>
+                )}
+            </header>
+            <div className="max-h-[28rem] divide-y divide-[var(--border)] overflow-y-auto">
+                {items.length ? items.map((item) => (
+                    <article key={item.id} className="p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold uppercase text-amber-700">{item.topic} · V{String(item.version_number).padStart(2, '0')}</p>
+                                <h3 className="mt-1 font-black">{item.title}</h3>
+                                <p className="mt-1 text-xs text-[var(--ink-500)]">{item.obra ? `${item.obra.codigo} - ${item.obra.nome}` : 'Frente não identificada'} · {item.created_at}</p>
+                            </div>
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">{item.status_label}</span>
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            <div className="rounded-lg bg-slate-50 p-3"><span className="eyebrow">Construtora</span><p className="mt-1 whitespace-pre-wrap text-sm">{item.contractor_version}</p></div>
+                            <div className="rounded-lg bg-blue-50/60 p-3"><span className="eyebrow">Gerenciadora</span><p className="mt-1 whitespace-pre-wrap text-sm">{item.manager_version}</p></div>
+                        </div>
+                        {item.contractor_response && <p className="mt-2 rounded-lg border border-slate-200 p-3 text-sm"><strong>Resposta da construtora:</strong> {item.contractor_response}</p>}
+                        {item.manager_conclusion && <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm"><strong>Conclusão da gerenciadora:</strong> {item.manager_conclusion}</p>}
+                        {item.client_decision && <p className="mt-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-sm"><strong>Decisão do cliente:</strong> {item.client_decision.replaceAll('_', ' ')}{item.client_comment ? ` · ${item.client_comment}` : ''}</p>}
+                        <div className="mt-3 flex flex-wrap justify-end gap-2">
+                            {rdo.can_respond_divergence && item.status === 'aberta' && <button type="button" onClick={() => onAction(item, 'respond')} className="sig-btn sig-btn-primary">Responder</button>}
+                            {rdo.can_conclude_divergence && item.status === 'respondida' && <button type="button" onClick={() => onAction(item, 'conclude')} className="sig-btn sig-btn-primary">Concluir análise</button>}
+                            {rdo.can_decide_divergence && item.status === 'aguarda_cliente' && <button type="button" onClick={() => onAction(item, 'client_decide')} className="sig-btn sig-btn-primary">Registrar decisão</button>}
+                        </div>
+                    </article>
+                )) : <p className="p-5 text-sm text-[var(--ink-500)]">Nenhuma divergência foi registrada neste RDO.</p>}
+            </div>
+        </section>
+    );
+}
+
+function InspectionModal({ rdo, form, onClose, onSubmit }) {
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+            <form onSubmit={onSubmit} className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+                <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-[var(--border)] bg-white px-5 py-4">
+                    <div><span className="eyebrow">Gerenciadora · versão V{String(rdo.current_version).padStart(2, '0')}</span><h2 className="mt-1 text-xl font-black">Registro da fiscalização</h2></div>
+                    <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar"><X size={20} /></button>
+                </header>
+                <div className="grid gap-4 p-5 md:grid-cols-2">
+                    <Field label="Obra / frente"><select className="sig-input" value={form.data.obra_id} onChange={(e) => form.setData('obra_id', Number(e.target.value))}>{(rdo.obras || []).filter((obra) => rdo.flow_obra_ids?.includes(Number(obra.id))).map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}</select></Field>
+                    <Field label="Situação do registro"><select className="sig-input" value={form.data.status} onChange={(e) => form.setData('status', e.target.value)}><option value="rascunho">Salvar rascunho</option><option value="concluido">Concluir fiscalização</option></select></Field>
+                    <div className="md:col-span-2"><Field label="Resumo da fiscalização"><textarea className="sig-input min-h-28" value={form.data.resumo_fiscalizacao} onChange={(e) => form.setData('resumo_fiscalizacao', e.target.value)} required /></Field></div>
+                    <Field label="Serviços atestados"><textarea className="sig-input min-h-24" value={form.data.servicos_atestados} onChange={(e) => form.setData('servicos_atestados', e.target.value)} /></Field>
+                    <Field label="Ocorrências constatadas"><textarea className="sig-input min-h-24" value={form.data.ocorrencias} onChange={(e) => form.setData('ocorrencias', e.target.value)} /></Field>
+                    <div className="md:col-span-2"><Field label="Orientações da fiscalização"><textarea className="sig-input min-h-24" value={form.data.orientacoes} onChange={(e) => form.setData('orientacoes', e.target.value)} /></Field></div>
+                    <div className="md:col-span-2"><Field label="Evidências (imagens ou PDF)"><label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm font-bold text-slate-600 hover:border-[var(--primary)]"><Upload size={18} /> Selecionar arquivos<input type="file" multiple accept="image/*,.pdf" className="hidden" onChange={(e) => form.setData('evidencias', Array.from(e.target.files || []))} /></label>{form.data.evidencias?.length > 0 && <p className="mt-2 text-xs text-[var(--ink-500)]">{form.data.evidencias.length} arquivo(s) selecionado(s)</p>}</Field></div>
+                    {Object.values(form.errors).map((error, index) => <p key={index} className="text-sm font-semibold text-red-600 md:col-span-2">{error}</p>)}
+                </div>
+                <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-[var(--border)] bg-white px-5 py-4"><button type="button" onClick={onClose} className="sig-btn">Cancelar</button><button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><Save size={16} /> {form.processing ? 'Salvando...' : 'Salvar registro'}</button></footer>
+            </form>
+        </div>
+    );
+}
+
+function DivergenceModal({ rdo, form, onClose, onSubmit }) {
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+            <form onSubmit={onSubmit} className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+                <header className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4"><div><span className="eyebrow">Matriz de divergências</span><h2 className="mt-1 text-xl font-black">Registrar versões distintas do fato</h2></div><button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100"><X size={20} /></button></header>
+                <div className="grid gap-4 p-5 md:grid-cols-2">
+                    <Field label="Obra / frente"><select className="sig-input" value={form.data.obra_id} onChange={(e) => form.setData('obra_id', Number(e.target.value))}>{(rdo.obras || []).filter((obra) => rdo.flow_obra_ids?.includes(Number(obra.id))).map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}</select></Field>
+                    <Field label="Tópico"><select className="sig-input" value={form.data.topico} onChange={(e) => form.setData('topico', e.target.value)}><option>Atividades e ocorrências</option><option>Mão de obra</option><option>Equipamentos</option><option>Clima</option><option>Prazo</option><option>Qualidade</option><option>Segurança</option><option>Outro</option></select></Field>
+                    <div className="md:col-span-2"><Field label="Título"><input className="sig-input" value={form.data.titulo} onChange={(e) => form.setData('titulo', e.target.value)} required /></Field></div>
+                    <Field label="Versão registrada pela construtora"><textarea className="sig-input min-h-32" value={form.data.versao_construtora} onChange={(e) => form.setData('versao_construtora', e.target.value)} required /></Field>
+                    <Field label="Constatação da gerenciadora"><textarea className="sig-input min-h-32" value={form.data.versao_gerenciadora} onChange={(e) => form.setData('versao_gerenciadora', e.target.value)} required /></Field>
+                    {Object.values(form.errors).map((error, index) => <p key={index} className="text-sm font-semibold text-red-600 md:col-span-2">{error}</p>)}
+                </div>
+                <footer className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4"><button type="button" onClick={onClose} className="sig-btn">Cancelar</button><button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><AlertTriangle size={16} /> Registrar divergência</button></footer>
+            </form>
+        </div>
+    );
+}
+
+function DivergenceActionModal({ context, form, onClose, onSubmit }) {
+    const { item, action } = context;
+    const title = action === 'respond' ? 'Resposta da construtora' : action === 'conclude' ? 'Conclusão da gerenciadora' : 'Decisão do cliente';
+
+    return (
+        <div className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+            <form onSubmit={onSubmit} className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <header className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4"><div><span className="eyebrow">{item.title}</span><h2 className="mt-1 text-xl font-black">{title}</h2></div><button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100"><X size={20} /></button></header>
+                <div className="space-y-4 p-5">
+                    {action === 'respond' && <Field label="Resposta"><textarea className="sig-input min-h-32" value={form.data.response} onChange={(e) => form.setData('response', e.target.value)} required /></Field>}
+                    {action === 'conclude' && <><Field label="Conclusão"><textarea className="sig-input min-h-32" value={form.data.conclusion} onChange={(e) => form.setData('conclusion', e.target.value)} required /></Field><Field label="Encaminhamento"><select className="sig-input" value={form.data.outcome} onChange={(e) => form.setData('outcome', e.target.value)}><option value="resolvida">Divergência resolvida</option><option value="aguarda_cliente">Encaminhar ao cliente</option></select></Field></>}
+                    {action === 'client_decide' && <><Field label="Decisão"><select className="sig-input" value={form.data.client_decision} onChange={(e) => form.setData('client_decision', e.target.value)}><option value="aceita_gerenciadora">Prevalece a constatação da gerenciadora</option><option value="aceita_construtora">Prevalece o relato da construtora</option><option value="aceita_com_ressalvas">Aceito com ressalvas</option></select></Field><Field label="Comentário do cliente"><textarea className="sig-input min-h-28" value={form.data.client_comment} onChange={(e) => form.setData('client_comment', e.target.value)} /></Field></>}
+                    {Object.values(form.errors).map((error, index) => <p key={index} className="text-sm font-semibold text-red-600">{error}</p>)}
+                </div>
+                <footer className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4"><button type="button" onClick={onClose} className="sig-btn">Cancelar</button><button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><Save size={16} /> Salvar</button></footer>
+            </form>
+        </div>
     );
 }
 
@@ -807,15 +1061,17 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
 function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory }) {
     const steps = [
         ['construtora', 'Construtora', rdo.contract?.construtora?.nome],
-        ['aprovacao', 'Aprovação conjunta', [rdo.contract?.gerenciadora?.nome, rdo.contract?.cliente?.nome].filter(Boolean).join(' + ')],
+        ['gerenciadora', 'Gerenciadora', rdo.contract?.gerenciadora?.nome],
+        ['cliente', 'Cliente', rdo.contract?.cliente?.nome],
         ['arquivo', 'Arquivo', 'RDO aprovado'],
     ];
     const activeIndex = {
         rascunho: 0,
         devolvido_construtora: 0,
         pendente_comprovacao: 0,
-        em_aprovacao: 1,
-        arquivado: 2,
+        em_analise_gerenciadora: 1,
+        em_aprovacao_cliente: 2,
+        arquivado: 3,
     }[rdo.status] ?? 0;
     const actions = Object.entries(rdo.flow_actions || {});
     const needsComment = actions.some(([, action]) => action.comment_required);
@@ -841,7 +1097,7 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                 </div>
             </header>
 
-            <div className="grid gap-2 border-b border-[var(--border)] bg-slate-50/70 p-4 md:grid-cols-3">
+            <div className="grid gap-2 border-b border-[var(--border)] bg-slate-50/70 p-4 sm:grid-cols-2 xl:grid-cols-4">
                 {steps.map(([key, label, company], index) => (
                     <div key={key} className={`rounded-lg border p-3 ${index === activeIndex ? 'border-[var(--primary)] bg-white shadow-sm' : index < activeIndex ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-slate-50'}`}>
                         <div className="flex items-center gap-2">
@@ -883,10 +1139,10 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                             {form.errors.obra_ids && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.obra_ids}</p>}
                         </div>
                     )}
-                    {showCommentField && rdo.status === 'em_aprovacao' && (
+                    {showCommentField && ['em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) && (
                         <ApprovalCommentFields rdo={rdo} form={form} selectedObraIds={selectedFlowObraIds} needsComment={needsComment} />
                     )}
-                    {showCommentField && rdo.status !== 'em_aprovacao' && (
+                    {showCommentField && !['em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) && (
                         <>
                     <Field label={needsComment ? 'Parecer / resposta' : 'Comentário'}>
                         <textarea
@@ -900,6 +1156,7 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                         </>
                     )}
                     {form.errors.action && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.action}</p>}
+                    {form.errors.reservations_by_obra && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.reservations_by_obra}</p>}
                     <div className="mt-3 flex flex-wrap justify-end gap-2">
                         {actions.map(([key, action]) => (
                             <button
@@ -966,6 +1223,15 @@ function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment =
             [obraId]: value,
         });
     };
+    const setReservation = (obraId, field, value) => {
+        form.setData('reservations_by_obra', {
+            ...(form.data.reservations_by_obra || {}),
+            [obraId]: {
+                ...(form.data.reservations_by_obra?.[obraId] || {}),
+                [field]: value,
+            },
+        });
+    };
 
     return (
         <div>
@@ -1013,6 +1279,14 @@ function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment =
                                         : `Registre uma observação para a frente ${obra.codigo}.`}
                                 />
                             </Field>
+                            <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                                <summary className="cursor-pointer text-xs font-black uppercase text-amber-800">Detalhes da ressalva, quando aplicável</summary>
+                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                    <div className="md:col-span-2"><Field label="Obrigação a atender"><textarea className="sig-input min-h-20" value={form.data.reservations_by_obra?.[obraId]?.obligation || ''} onChange={(event) => setReservation(obraId, 'obligation', event.target.value)} /></Field></div>
+                                    <Field label="Responsável"><input className="sig-input" value={form.data.reservations_by_obra?.[obraId]?.responsible || ''} onChange={(event) => setReservation(obraId, 'responsible', event.target.value)} /></Field>
+                                    <Field label="Prazo"><input type="date" className="sig-input" value={form.data.reservations_by_obra?.[obraId]?.due_date || ''} onChange={(event) => setReservation(obraId, 'due_date', event.target.value)} /></Field>
+                                </div>
+                            </details>
                         </section>
                     );
                 })}
@@ -1027,6 +1301,9 @@ function HistoryModal({ events = [], loading = false, error = '', onClose }) {
     const typeLabel = (event) => {
         if (event.type === 'signature') return 'Assinatura';
         if (event.type === 'flow') return 'Fluxo';
+        if (event.type === 'version') return 'Versão';
+        if (event.type === 'inspection') return 'Fiscalização';
+        if (event.type === 'divergence') return 'Divergência';
         return 'RDO';
     };
 
