@@ -15,6 +15,7 @@ use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\OrdemServicoPermissions;
+use App\Support\OsDnitPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -48,7 +49,7 @@ class PermissionController extends Controller
         $contractParticipants = ContractParticipant::query()
             ->where('tenant_id', $tenant->id)
             ->where('status', 'active')
-            ->get(['id', 'contract_id', 'user_id', 'activity_permissions', 'project_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'medicao_permissions', 'contract_permissions']);
+            ->get(['id', 'contract_id', 'user_id', 'activity_permissions', 'project_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'os_dnit_permissions', 'medicao_permissions', 'contract_permissions']);
 
         $rncResponsaveis = RelatorioNaoConformidadeResponsavel::query()
             ->where('tenant_id', $tenant->id)
@@ -79,6 +80,11 @@ class PermissionController extends Controller
             'documentationPermissionsByUserContract' => $this->documentationPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'diarioObraPermissionsByUserContract' => $this->diarioObraPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'ordemServicoPermissionsByUserContract' => $this->ordemServicoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
+            'osDnitPermissionsByUserContract' => $memberships->flatMap(fn ($membership) => $contracts->mapWithKeys(function ($contract) use ($membership, $contractParticipants) {
+                $participant = $contractParticipants->where('user_id', $membership->user_id)->firstWhere('contract_id', $contract->id);
+                return ["{$membership->user_id}:{$contract->id}" => !$participant ? [] : ($membership->role === 'tenant_owner' ? OsDnitPermissions::all() : OsDnitPermissions::normalize($participant->os_dnit_permissions ?? OsDnitPermissions::defaultForRole($membership->role)))];
+            }))->all(),
+            'osDnitContractIdsByUser' => $contractParticipants->groupBy('user_id')->map(fn ($items) => $items->pluck('contract_id')->unique()->values()->all())->all(),
             'medicaoPermissionsByUserContract' => $this->medicaoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'contractPermissionsByUserContract' => $this->contractPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'rncPermissionsByUserContract' => $this->rncPermissionsByUserContract($memberships, $contracts, $rncResponsaveis),
@@ -136,6 +142,7 @@ class PermissionController extends Controller
                     'label' => 'Ordem de Serviço',
                     'permissions' => OrdemServicoPermissions::labels(),
                 ],
+                'os_dnit' => ['label' => 'OS DNIT', 'permissions' => OsDnitPermissions::labels()],
                 'medicao' => [
                     'label' => 'Medição',
                     'permissions' => MedicaoPermissions::labels(),
@@ -177,6 +184,8 @@ class PermissionController extends Controller
             'diario_obra_permissions.*' => ['required', 'string', Rule::in(DiarioObraPermissions::all())],
             'ordem_servico_permissions' => ['nullable', 'array'],
             'ordem_servico_permissions.*' => ['required', 'string', Rule::in(OrdemServicoPermissions::all())],
+            'os_dnit_permissions' => ['sometimes', 'array'],
+            'os_dnit_permissions.*' => ['required', 'string', Rule::in(OsDnitPermissions::all())],
             'medicao_permissions' => ['nullable', 'array'],
             'medicao_permissions.*' => ['required', 'string', Rule::in(MedicaoPermissions::all())],
             'contract_permissions' => ['nullable', 'array'],
@@ -193,6 +202,21 @@ class PermissionController extends Controller
 
         if ($membership->role === 'tenant_owner') {
             return back()->with('success', 'Owner mantem acesso total automaticamente.');
+        }
+
+        $osDnitParticipant = null;
+        if (array_key_exists('os_dnit_permissions', $data)) {
+            $osDnitParticipant = $contract ? ContractParticipant::where('tenant_id', $tenant->id)
+                ->where('contract_id', $contract->id)->where('user_id', $membership->user_id)->where('status', 'active')->first() : null;
+            if (!$osDnitParticipant && $data['os_dnit_permissions'] !== []) {
+                throw ValidationException::withMessages(['contract_id' => 'OS DNIT exige vínculo ativo do usuário no contrato selecionado.']);
+            }
+            $otherPermissionFields = array_filter(array_keys($data), fn ($key) => str_ends_with($key, '_permissions') && $key !== 'os_dnit_permissions');
+            if ($otherPermissionFields === []) {
+                if (!$osDnitParticipant) throw ValidationException::withMessages(['contract_id' => 'Selecione um contrato com vínculo ativo do usuário.']);
+                $osDnitParticipant->update(['os_dnit_permissions' => OsDnitPermissions::normalize($data['os_dnit_permissions'])]);
+                return back()->with('success', 'Permissões OS DNIT atualizadas.');
+            }
         }
 
         $activityPermissions = ActivityPermissions::normalize($data['activity_permissions'] ?? []);
@@ -259,6 +283,10 @@ class PermissionController extends Controller
 
         if ($contract) {
             $this->syncRncPermissions($request, $tenant, $contract, $membership, $rncPermissions);
+        }
+
+        if ($osDnitParticipant) {
+            $osDnitParticipant->update(['os_dnit_permissions' => OsDnitPermissions::normalize($data['os_dnit_permissions'])]);
         }
 
         return back()->with('success', 'Permissoes atualizadas.');

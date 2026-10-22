@@ -1,4 +1,4 @@
-Deming - Ordem de Serviço
+SigWorks - Ordem de Serviço
 {{ $headline }}
 
 Olá, {{ $notifiable->name }}.

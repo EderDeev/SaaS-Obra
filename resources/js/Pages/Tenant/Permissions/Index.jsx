@@ -34,6 +34,7 @@ const groupMeta = {
     documentation: { icon: FileText, dataKey: 'documentation_permissions', contractScoped: true },
     diario_obra: { icon: CalendarDays, dataKey: 'diario_obra_permissions', contractScoped: true },
     ordem_servico: { icon: ClipboardList, dataKey: 'ordem_servico_permissions', contractScoped: true },
+    os_dnit: { icon: ClipboardList, dataKey: 'os_dnit_permissions', contractScoped: true },
     medicao: { icon: Ruler, dataKey: 'medicao_permissions', contractScoped: true },
     users: { icon: UserCog, dataKey: 'user_permissions' },
     parametrizacao: { icon: SlidersHorizontal, dataKey: 'parametrizacao_permissions' },
@@ -53,6 +54,8 @@ export default function PermissionsIndex({
     documentationPermissionsByUserContract,
     diarioObraPermissionsByUserContract,
     ordemServicoPermissionsByUserContract,
+    osDnitPermissionsByUserContract,
+    osDnitContractIdsByUser,
     medicaoPermissionsByUserContract,
     contractPermissionsByUserContract,
     permissionGroups,
@@ -83,6 +86,7 @@ export default function PermissionsIndex({
         documentation_permissions: [],
         diario_obra_permissions: [],
         ordem_servico_permissions: [],
+        os_dnit_permissions: [],
         medicao_permissions: [],
         contract_permissions: [],
     });
@@ -117,6 +121,7 @@ export default function PermissionsIndex({
             documentation_permissions: documentationPermissionsByUserContract?.[key] || [],
             diario_obra_permissions: diarioObraPermissionsByUserContract?.[key] || [],
             ordem_servico_permissions: ordemServicoPermissionsByUserContract?.[key] || [],
+            os_dnit_permissions: osDnitPermissionsByUserContract?.[key] || [],
             medicao_permissions: medicaoPermissionsByUserContract?.[key] || [],
             contract_permissions: contractPermissionsByUserContract?.[key] || [],
         });
@@ -124,9 +129,21 @@ export default function PermissionsIndex({
     }, [selectedUserId, selectedContractId]);
 
     const togglePermission = (dataKey, permission) => {
-        const contractScoped = ['activity_permissions', 'contract_permissions', 'project_permissions', 'rnc_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'medicao_permissions'].includes(dataKey);
+        const contractScoped = ['activity_permissions', 'contract_permissions', 'project_permissions', 'rnc_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'os_dnit_permissions', 'medicao_permissions'].includes(dataKey);
 
         if (lockedOwner || (contractScoped && !selectedContractId)) {
+            return;
+        }
+
+        if (dataKey === 'os_dnit_permissions') {
+            const current = form.data.os_dnit_permissions;
+            const removing = current.includes(permission);
+            let next = removing ? current.filter((item) => item !== permission) : [...current, permission];
+            if (removing && permission === 'view_orders') next = [];
+            if (removing && permission === 'view_products') next = next.filter((item) => !['create_products', 'edit_products', 'delete_products'].includes(item));
+            if (next.length && !next.includes('view_orders')) next.push('view_orders');
+            if (next.some((item) => ['create_products', 'edit_products', 'delete_products'].includes(item)) && !next.includes('view_products')) next.push('view_products');
+            form.setData(dataKey, next);
             return;
         }
 
@@ -270,7 +287,7 @@ export default function PermissionsIndex({
                             const selected = form.data[meta.dataKey] || [];
                             const permissions = Object.entries(group.permissions || {});
                             const expanded = openGroup === groupKey;
-                            const contractUnavailable = Boolean(meta.contractScoped && !selectedContractId);
+                            const contractUnavailable = Boolean(meta.contractScoped && !selectedContractId) || (groupKey === 'os_dnit' && !(osDnitContractIdsByUser?.[selectedUserId] || []).map(String).includes(String(selectedContractId)));
 
                             return (
                                 <div key={groupKey}>
@@ -294,6 +311,7 @@ export default function PermissionsIndex({
 
                                     {expanded && (
                                         <div className="grid gap-2 bg-white px-5 pb-5">
+                                            {groupKey === 'os_dnit' && contractUnavailable && <p className="text-sm text-amber-800 sm:ml-12">Este usuário precisa de vínculo ativo no contrato para receber permissões do OS DNIT.</p>}
                                             {permissions.map(([permission, label]) => {
                                                 const checked = selected.includes(permission);
 
@@ -336,6 +354,7 @@ export default function PermissionsIndex({
                             <Summary label="Documentação" value={form.data.documentation_permissions.length} />
                             <Summary label="Diário de Obra" value={form.data.diario_obra_permissions.length} />
                             <Summary label="Ordem de Serviço" value={form.data.ordem_servico_permissions.length} />
+                            <Summary label="OS DNIT" value={form.data.os_dnit_permissions.length} />
                             <Summary label="Medição" value={form.data.medicao_permissions.length} />
                         </div>
                     </section>

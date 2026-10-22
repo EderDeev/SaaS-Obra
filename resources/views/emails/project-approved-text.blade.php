@@ -1,4 +1,4 @@
-Deming
+SigWorks
 {{ $isRevision ? 'Revisao de projeto aprovada' : 'Projeto aprovado' }}
 
 Ola, {{ $notifiable->name }}.

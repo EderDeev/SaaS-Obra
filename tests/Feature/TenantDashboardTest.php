@@ -131,7 +131,7 @@ class TenantDashboardTest extends TestCase
             'sequence_number' => 1,
             'code' => 'RDO-001',
             'reference_date' => '2026-08-12',
-            'status' => 'em_aprovacao',
+            'status' => 'em_analise_gerenciadora',
         ]);
         BoletimMedicao::create([
             'tenant_id' => $tenant->id,

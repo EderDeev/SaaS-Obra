@@ -30,7 +30,7 @@ class UserTemporaryPasswordNotification extends Notification
         $loginUrl = route('tenant.dashboard', $this->tenant);
 
         return (new MailMessage)
-            ->subject('Seu acesso ao Deming')
+            ->subject('Seu acesso ao SigWorks')
             ->view('emails.user-temporary-password', [
                 'tenant' => $this->tenant,
                 'user' => $notifiable,

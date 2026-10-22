@@ -259,7 +259,7 @@ class TenantAssistantTest extends TestCase
             ['Como funciona a medicao simples e controlada?', 'Fluxo de Medição', ['Controlada', 'Simples', 'Folha de Rosto']],
             ['Como funciona uma revisao de projeto?', 'Fluxo de Projetos', ['Submeter projeto', 'Em revisão', 'Lista Mestra']],
             ['Como configurar a triagem de documentos?', 'Fluxo de Documentação', ['Anexos', 'Triagem', 'Lixeira']],
-            ['Explique o fluxo de analise de uma OS.', 'Fluxo de Ordem de Serviço', ['rascunho', 'fiscal', 'Medição Controlada']],
+            ['Explique o fluxo de analise de uma OS.', 'Fluxo de Liberação de Serviço', ['rascunho', 'fiscal', 'Medição Controlada']],
         ];
 
         foreach ($cases as [$question, $title, $expectedParts]) {
@@ -344,7 +344,7 @@ class TenantAssistantTest extends TestCase
 
         $sources = app(AssistantRetriever::class)->retrieve($user, $tenant, 'e de a');
 
-        $this->assertTrue(collect($sources)->contains(fn (array $source): bool => $source['module'] === 'Ordem de Serviço'));
+        $this->assertTrue(collect($sources)->contains(fn (array $source): bool => $source['module'] === 'Liberação de Serviço'));
         $this->assertTrue(collect($sources)->contains(fn (array $source): bool => $source['module'] === 'Medição'));
     }
 

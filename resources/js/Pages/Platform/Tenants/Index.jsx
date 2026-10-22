@@ -190,7 +190,7 @@ export default function PlatformTenantsIndex({ tenants, plans, statuses, default
                         <form className="sig-card w-full max-w-md p-5" onSubmit={submitQuota} onMouseDown={(event) => event.stopPropagation()}>
                             <div className="flex items-start justify-between gap-3">
                                 <div>
-                                    <div className="eyebrow">Assistente Deming</div>
+                                    <div className="eyebrow">Assistente SigWorks</div>
                                     <h2 className="mt-2 text-lg font-semibold">Cota de {quotaTenant.name}</h2>
                                     <p className="mt-1 text-sm text-[var(--ink-500)]">Limite compartilhado por todos os usuários do tenant a cada mês.</p>
                                 </div>

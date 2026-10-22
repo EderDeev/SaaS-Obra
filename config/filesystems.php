@@ -47,6 +47,22 @@ return [
             'report' => false,
         ],
 
+        'azure-private' => [
+            'driver' => 'azure-storage-blob',
+            'connection_string' => env('AZURE_STORAGE_CONNECTION_STRING'),
+            'container' => env('AZURE_STORAGE_CONTAINER', 'deming-private'),
+            'throw' => true,
+            'report' => true,
+        ],
+
+        'azure-temporary' => [
+            'driver' => 'azure-storage-blob',
+            'connection_string' => env('AZURE_STORAGE_CONNECTION_STRING'),
+            'container' => env('AZURE_STORAGE_TEMPORARY_CONTAINER', 'deming-temporary'),
+            'throw' => true,
+            'report' => true,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

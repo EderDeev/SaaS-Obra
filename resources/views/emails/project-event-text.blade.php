@@ -15,4 +15,4 @@ Olá, {{ $notifiable->name }}.
 {{ $actionLabel }}: {{ $url }}
 Acessar sistema: {{ $systemUrl }}
 
-Esta é uma mensagem automática do fluxo de Projetos do Deming.
+Esta é uma mensagem automática do fluxo de Projetos do SigWorks.

@@ -20,6 +20,13 @@ use App\Http\Controllers\Tenant\MedicaoRelatorioController;
 use App\Http\Controllers\Tenant\OrcamentoController;
 use App\Http\Controllers\Tenant\OrdemServicoController;
 use App\Http\Controllers\Tenant\OrdemServicoMetricsController;
+use App\Http\Controllers\Tenant\OsDnitProductController;
+use App\Http\Controllers\Tenant\OsDnitDashboardController;
+use App\Http\Controllers\Tenant\OsDnitOrderController;
+use App\Http\Controllers\Tenant\OsDnitSettingsController;
+use App\Http\Controllers\Tenant\OsDnitWorkflowController;
+use App\Http\Controllers\Tenant\OsDnitResponsibleController;
+use App\Http\Controllers\Tenant\OsDnitTourController;
 use App\Http\Controllers\Tenant\Parametrizacao\DisciplinaController as ParametrizacaoDisciplinaController;
 use App\Http\Controllers\Tenant\Parametrizacao\EmpresaController as ParametrizacaoEmpresaController;
 use App\Http\Controllers\Tenant\Parametrizacao\ObraController as ParametrizacaoObraController;
@@ -110,6 +117,34 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
     ->name('tenant.')
     ->group(function () {
         Route::get('/', TenantDashboardController::class)->name('dashboard');
+        Route::prefix('os-dnit')->name('os-dnit.')->middleware('os-dnit.permission:view_orders')->group(function () {
+            Route::get('/tour-preview', OsDnitTourController::class)->name('tour-preview');
+            Route::get('/dashboard', OsDnitDashboardController::class)->middleware('os-dnit.permission:view_dashboard')->name('dashboard');
+            Route::get('/', [OsDnitOrderController::class, 'index'])->name('orders.index');
+            Route::get('/criar', [OsDnitOrderController::class, 'create'])->middleware('os-dnit.permission:create_orders')->name('orders.create');
+            Route::get('/analise', [OsDnitOrderController::class, 'index'])->name('analysis.index');
+            Route::get('/analise/{order}', [OsDnitOrderController::class, 'show'])->name('analysis.show');
+            Route::post('/', [OsDnitOrderController::class, 'store'])->middleware('os-dnit.permission:create_orders')->name('orders.store');
+            Route::get('/ordens/{order}', [OsDnitOrderController::class, 'show'])->name('orders.show');
+            Route::delete('/ordens/{order}', [OsDnitOrderController::class, 'destroy'])->middleware('os-dnit.permission:delete_orders')->name('orders.destroy');
+            Route::get('/ordens/{order}/pdf', [OsDnitOrderController::class, 'pdf'])->name('orders.pdf');
+            Route::get('/ordens/{order}/editar', [OsDnitOrderController::class, 'edit'])->middleware('os-dnit.permission:edit_orders')->name('orders.edit');
+            Route::patch('/ordens/{order}', [OsDnitOrderController::class, 'update'])->middleware('os-dnit.permission:edit_orders')->name('orders.update');
+            Route::post('/ordens/{order}/enviar', [OsDnitWorkflowController::class, 'submit'])->name('orders.submit');
+            Route::post('/ordens/{order}/analise', [OsDnitWorkflowController::class, 'review'])->name('orders.review');
+            Route::post('/ordens/{order}/decisao', [OsDnitWorkflowController::class, 'decide'])->name('orders.decide');
+            Route::get('/ordens/{order}/anexos/{attachment}', [OsDnitOrderController::class, 'download'])->name('orders.attachments.download');
+            Route::get('/produtos', [OsDnitProductController::class, 'index'])->middleware('os-dnit.permission:view_products')->name('products.index');
+            Route::post('/produtos', [OsDnitProductController::class, 'store'])->middleware('os-dnit.permission:create_products')->name('products.store');
+            Route::patch('/produtos/{product}', [OsDnitProductController::class, 'update'])->middleware('os-dnit.permission:edit_products')->name('products.update');
+            Route::delete('/produtos/{product}', [OsDnitProductController::class, 'destroy'])->middleware('os-dnit.permission:delete_products')->name('products.destroy');
+            Route::get('/parametrizacao', [OsDnitSettingsController::class, 'index'])->name('settings.index');
+            Route::post('/parametrizacao/rodovias', [OsDnitSettingsController::class, 'store'])->middleware('os-dnit.permission:create_settings')->name('settings.highways.store');
+            Route::patch('/parametrizacao/rodovias/{highway}', [OsDnitSettingsController::class, 'update'])->middleware('os-dnit.permission:edit_settings')->name('settings.highways.update');
+            Route::delete('/parametrizacao/rodovias/{highway}', [OsDnitSettingsController::class, 'destroy'])->middleware('os-dnit.permission:delete_settings')->name('settings.highways.destroy');
+            Route::get('/responsaveis', [OsDnitResponsibleController::class, 'index'])->middleware('os-dnit.permission:manage_responsibles')->name('responsibles.index');
+            Route::post('/responsaveis', [OsDnitResponsibleController::class, 'store'])->middleware('os-dnit.permission:manage_responsibles')->name('responsibles.store');
+        });
         Route::get('/assistente', [AssistantController::class, 'show'])->name('assistant.show');
         Route::post('/assistente/mensagens', [AssistantController::class, 'store'])->middleware('throttle:20,1')->name('assistant.messages.store');
         Route::delete('/assistente/conversas/{conversation}', [AssistantController::class, 'destroy'])->name('assistant.conversations.destroy');
@@ -179,6 +214,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::post('/contracts/{contract}/participants', [ContractParticipantController::class, 'store'])->middleware('contract.permission:manage_contract_participants')->name('contracts.participants.store');
         Route::get('/atividades', [ActivityController::class, 'index'])->name('activities.index');
         Route::get('/atividades/metricas', [ActivityController::class, 'metrics'])->name('activities.metrics');
+        Route::get('/atividades/os-dnit', [ActivityController::class, 'osDnitOptions'])->name('activities.os-dnit-options');
         Route::get('/atividades/tour-preview', [ActivityController::class, 'tourPreview'])->name('activities.tour-preview');
         Route::post('/atividades', [ActivityController::class, 'store'])->name('activities.store');
         Route::patch('/atividades/{activity}', [ActivityController::class, 'update'])->name('activities.update');
@@ -219,6 +255,9 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::post('/diario-obra/rdo/{rdo}/importar-rda/{rda}', [RdoController::class, 'importRda'])->middleware('diario.permission:fill_rdo')->name('diario-obra.rdo.import-rda');
         Route::post('/diario-obra/rdo/{rdo}/reabrir', [RdoController::class, 'reopen'])->middleware('diario.permission:manage_rdo_settings')->name('diario-obra.rdo.reopen');
         Route::post('/diario-obra/rdo/{rdo}/fluxo', [RdoController::class, 'changeFlow'])->middleware('diario.permission:view_diario_obra')->name('diario-obra.rdo.flow');
+        Route::post('/diario-obra/rdo/{rdo}/fiscalizacao', [RdoController::class, 'saveInspection'])->middleware('diario.permission:review_rdo')->name('diario-obra.rdo.inspection.store');
+        Route::post('/diario-obra/rdo/{rdo}/divergencias', [RdoController::class, 'storeDivergence'])->middleware('diario.permission:review_rdo')->name('diario-obra.rdo.divergences.store');
+        Route::patch('/diario-obra/rdo/{rdo}/divergencias/{divergencia}', [RdoController::class, 'updateDivergence'])->middleware('diario.permission:view_diario_obra')->name('diario-obra.rdo.divergences.update');
         Route::post('/diario-obra/rdo/{rdo}/assinaturas', [RdoSignatureController::class, 'store'])->middleware('diario.permission:manage_rdo_signatures')->name('diario-obra.rdo.signatures.store');
         Route::post('/diario-obra/rdo/{rdo}/assinaturas/manual', [RdoSignatureController::class, 'uploadManual'])->middleware('diario.permission:manage_rdo_signatures')->name('diario-obra.rdo.signatures.manual');
         Route::post('/diario-obra/rdo/{rdo}/assinaturas/{signature}/atualizar', [RdoSignatureController::class, 'refresh'])->middleware('diario.permission:manage_rdo_signatures')->name('diario-obra.rdo.signatures.refresh');

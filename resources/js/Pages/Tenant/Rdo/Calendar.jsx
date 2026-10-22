@@ -9,7 +9,8 @@ import { useMemo, useRef, useState } from 'react';
 
 const statusTone = {
     rascunho: 'bg-amber-50 text-amber-700',
-    em_aprovacao: 'bg-blue-50 text-blue-700',
+    em_analise_gerenciadora: 'bg-blue-50 text-blue-700',
+    em_aprovacao_cliente: 'bg-violet-50 text-violet-700',
     devolvido_construtora: 'bg-red-50 text-red-700',
     pendente_comprovacao: 'bg-amber-50 text-amber-700',
     arquivado: 'bg-emerald-50 text-emerald-700',

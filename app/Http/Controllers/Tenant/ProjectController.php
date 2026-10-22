@@ -630,8 +630,9 @@ class ProjectController extends Controller
         $createdNewDocument = false;
         $createdRevision = 'R00';
         $isRevision = (bool) $existingDocument;
+        $storageDisk = (string) config('projects.document_disk', 'local');
 
-        $document = DB::transaction(function () use ($tenant, $contract, $obra, $trecho, $disciplina, $phase, $request, $data, $file, $extension, $code, $documentNumber, $existingDocument, $isRevision, $requiresCap, $capImpacts, &$createdNewDocument, &$createdRevision): ProjectDocument {
+        $document = DB::transaction(function () use ($tenant, $contract, $obra, $trecho, $disciplina, $phase, $request, $data, $file, $extension, $code, $documentNumber, $existingDocument, $isRevision, $requiresCap, $capImpacts, $storageDisk, &$createdNewDocument, &$createdRevision): ProjectDocument {
             if ($requiresCap) {
                 Tenant::query()->whereKey($tenant->id)->lockForUpdate()->firstOrFail();
             }
@@ -677,7 +678,7 @@ class ProjectController extends Controller
             }
 
             $storedName = $this->storedFileName($code, $createdRevision, $extension);
-            $path = $file->storeAs("tenant-{$tenant->id}/projects/contract-{$contract->id}/obra-{$obra->id}", $storedName, 'local');
+            $path = $file->storeAs("tenant-{$tenant->id}/projects/contract-{$contract->id}/obra-{$obra->id}", $storedName, $storageDisk);
             $capPayload = [];
 
             if ($requiresCap) {
@@ -705,7 +706,7 @@ class ProjectController extends Controller
                 'original_name' => $file->getClientOriginalName(),
                 'stored_name' => $storedName,
                 'file_path' => $path,
-                'storage_disk' => 'local',
+                'storage_disk' => $storageDisk,
                 'mime_type' => $file->getClientMimeType(),
                 'file_size' => $file->getSize(),
                 'derivative_status' => 'not_submitted',

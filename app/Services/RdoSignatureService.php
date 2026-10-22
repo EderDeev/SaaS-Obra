@@ -10,6 +10,7 @@ use App\Models\Tenant;
 use App\Models\TenantUser;
 use App\Models\User;
 use App\Notifications\RdoSignatureRequestedNotification;
+use App\Services\Storage\StoredFileMaterializer;
 use App\Services\Signatures\LocalSignatureProvider;
 use App\Services\Signatures\OpenSignSignatureProvider;
 use App\Services\Signatures\SignatureProviderInterface;
@@ -22,9 +23,10 @@ use RuntimeException;
 
 class RdoSignatureService
 {
-    public function __construct(private readonly RdoPdfRenderer $pdfRenderer)
-    {
-    }
+    public function __construct(
+        private readonly RdoPdfRenderer $pdfRenderer,
+        private readonly StoredFileMaterializer $fileMaterializer,
+    ) {}
 
     public function createAndSend(Tenant $tenant, RdoDiario $rdo, User $actor): RdoSignatureRequest
     {
@@ -94,7 +96,14 @@ class RdoSignatureService
         ]);
 
         try {
-            $providerResponse = $this->provider()->createRequest($request->fresh(['tenant', 'rdo', 'signers']), Storage::disk('public')->path($pdfPath));
+            $providerResponse = $this->fileMaterializer->withLocalPath(
+                'public',
+                $pdfPath,
+                fn (string $localPdfPath): array => $this->provider()->createRequest(
+                    $request->fresh(['tenant', 'rdo', 'signers']),
+                    $localPdfPath,
+                ),
+            );
 
             $request->update([
                 'provider_request_id' => $providerResponse['provider_request_id'] ?? null,

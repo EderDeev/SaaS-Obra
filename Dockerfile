@@ -49,6 +49,7 @@ COPY docker/php.ini /usr/local/etc/php/conf.d/deming-local.ini
 COPY docker/entrypoint.sh /usr/local/bin/deming-entrypoint
 RUN composer dump-autoload --optimize \
     && php artisan package:discover --ansi \
-    && chmod +x /usr/local/bin/deming-entrypoint
+    && chmod +x /usr/local/bin/deming-entrypoint \
+    && chmod +x /app/azure/start-app.sh
 
 ENTRYPOINT ["deming-entrypoint"]

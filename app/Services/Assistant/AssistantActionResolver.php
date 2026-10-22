@@ -6,9 +6,11 @@ use App\Models\Contract;
 use App\Models\Disciplina;
 use App\Models\Empresa;
 use App\Models\Obra;
+use App\Models\{OsDnitOrder, OsDnitProduct, OsDnitHighway};
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ActivityPermissions;
+use App\Support\{OsDnitContractAccess, OsDnitPermissions as Dnit, OsDnitWorkflowAccess};
 use App\Support\RncPermissions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -18,6 +20,7 @@ class AssistantActionResolver
     private const ACTIVITY_CATEGORIES = [
         'project', 'quality', 'budget', 'measurement', 'documentation', 'service_order',
         'construction_diary', 'contract', 'administrative', 'field', 'client',
+        'os_dnit',
     ];
 
     public function __construct(private readonly AssistantAccessScope $access) {}
@@ -52,6 +55,24 @@ class AssistantActionResolver
 
         $url = (string) $source['url'];
         $filters = is_array($proposal['filters'] ?? null) ? $proposal['filters'] : [];
+        $isDnit = str_contains(parse_url($url, PHP_URL_PATH) ?? '', '/os-dnit');
+        if ($isDnit) {
+            $permission = match (true) {
+                str_contains($url, '/produtos') => Dnit::VIEW_PRODUCTS,
+                str_contains($url, '/dashboard') => Dnit::DASHBOARD,
+                str_contains($url, '/responsaveis') => Dnit::RESPONSIBLES,
+                default => Dnit::VIEW,
+            };
+            $allowed = OsDnitContractAccess::contracts($user, $tenant, $permission)->get(['id', 'code', 'name']);
+            if ($allowed->isEmpty()) return null;
+            $contract = filled($filters['contract_code'] ?? null) ? $this->resolveContract($allowed, $filters) : null;
+            if (filled($filters['contract_code'] ?? null) && !$contract) return null;
+            $query = array_filter(['contract_id' => $contract?->id,
+                'status' => in_array($filters['status'] ?? null, array_keys(OsDnitOrder::STATUSES), true) ? $filters['status'] : null,
+                'q' => $this->text($filters['search'] ?? '', 120)], fn ($value) => filled($value));
+            return ['type' => 'navigate', 'label' => 'Abrir '.Str::limit((string) $source['title'], 70),
+                'url' => $url.($query ? (str_contains($url, '?') ? '&' : '?').http_build_query($query) : '')];
+        }
         $query = array_filter([
             'contract_id' => filled($filters['contract_code'] ?? null)
                 ? $this->resolveContract(
@@ -84,6 +105,7 @@ class AssistantActionResolver
             'activity' => $this->activityDraft($user, $tenant, $fields),
             'rnc' => $this->rncDraft($user, $tenant, $fields),
             'service_order' => $this->serviceOrderDraft($user, $tenant, $fields),
+            'os_dnit' => $this->osDnitDraft($user, $tenant, $fields),
             default => null,
         };
     }
@@ -113,6 +135,13 @@ class AssistantActionResolver
             'priority' => $this->enum($fields['priority'] ?? null, ['low', 'normal', 'high', 'urgent'], 'normal'),
             'due_date' => $this->date($fields['due_date'] ?? null) ?? '',
         ];
+        if ($payload['category'] === 'os_dnit') {
+            if (!Dnit::can($user, $tenant, Dnit::VIEW, $contract->id)) return null;
+            $order = OsDnitOrder::where('tenant_id', $tenant->id)->where('contract_id', $contract->id)
+                ->where('request_number', $this->text($fields['os_number'] ?? '', 80))->first(['id', 'request_number', 'subject']);
+            $payload['os_dnit_order_id'] = $order ? (string) $order->id : '';
+            $payload['os_dnit_order'] = $order?->toArray();
+        }
 
         return $this->draftAction(
             'activity',
@@ -121,6 +150,39 @@ class AssistantActionResolver
             $payload,
             "Atividade em {$contract->code}"
         );
+    }
+
+    private function osDnitDraft(User $user, Tenant $tenant, array $fields): ?array
+    {
+        $contracts = OsDnitWorkflowAccess::contracts($user, $tenant, 'analyst')
+            ->whereIn('id', Dnit::contractIds($user, $tenant, Dnit::CREATE))->get(['id', 'code', 'name']);
+        $contract = $this->resolveContract($contracts, $fields);
+        if (!$contract) return null;
+        $road = OsDnitHighway::where('tenant_id', $tenant->id)->where('contract_id', $contract->id)->where('active', true)->get(['id', 'name'])
+            ->first(fn ($road) => $this->normalize($road->name) === $this->normalize($fields['highway'] ?? ''));
+        $items = collect(is_array($fields['items'] ?? null) ? $fields['items'] : [])->filter(fn ($item) => is_array($item))->take(100);
+        $products = OsDnitProduct::where('tenant_id', $tenant->id)->where('contract_id', $contract->id)
+            ->whereIn('code', $items->map(fn ($item) => Str::upper($this->text($item['code'] ?? '', 40))))->get(['id', 'code'])->keyBy('code');
+        $items = $items->map(function ($item) use ($products) {
+            $product = $products->get(Str::upper($this->text($item['code'] ?? '', 40)));
+            $quantity = $this->decimal($item['quantity'] ?? null, 999999999999.999);
+            return $product && $quantity !== '' && (float) $quantity > 0 ? ['product_id' => $product->id, 'quantity' => $quantity] : null;
+        })->filter()->unique('product_id')->values()->all();
+        return $this->draftAction('os_dnit', 'Revisar OS DNIT', route('tenant.os-dnit.orders.create', $tenant), [
+            'contract_id' => (string) $contract->id, 'highway_id' => $road ? (string) $road->id : '',
+            'supervision_lot' => $this->text($fields['supervision_lot'] ?? '', 120), 'subject' => $this->text($fields['subject'] ?? '', 255),
+            'technical_need' => $this->text($fields['technical_need'] ?? '', 20000), 'justification' => $this->text($fields['justification'] ?? '', 20000),
+            'sei_reference' => $this->text($fields['sei_reference'] ?? '', 255), 'desired_deadline' => $this->date($fields['desired_deadline'] ?? null) ?? '',
+            'km_start' => $this->decimal($fields['km_start'] ?? null, 9999999.999), 'km_end' => $this->decimal($fields['km_end'] ?? null, 9999999.999),
+            'items' => $items,
+        ], "OS DNIT em {$contract->code}; revise antes de salvar o rascunho.");
+    }
+
+    private function decimal(mixed $value, float $max): string
+    {
+        if (!is_scalar($value)) return '';
+        $value = str_replace(',', '.', trim((string) $value));
+        return is_numeric($value) && is_finite((float) $value) && (float) $value >= 0 && (float) $value <= $max ? $value : '';
     }
 
     /** @return array<string, mixed>|null */

@@ -112,7 +112,7 @@ class DashboardController extends Controller
             ->with('rule.contract:id,code,name')
             ->latest('processed_at')
             ->get(['id', 'tenant_id', 'rule_id', 'subject', 'processed_at', 'created_at']);
-        $rdoAwaitingReview = $rdos->whereIn('status', ['em_aprovacao', 'devolvido_construtora']);
+        $rdoAwaitingReview = $rdos->whereIn('status', ['em_analise_gerenciadora', 'em_aprovacao_cliente', 'devolvido_construtora']);
         $openBoletins = $boletins->where('status', 'aberto_lancamento');
         $pendingOrders = $ordens->whereIn('status', ['em_analise', 'em_aprovacao']);
 

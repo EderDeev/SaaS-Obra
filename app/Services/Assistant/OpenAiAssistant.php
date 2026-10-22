@@ -39,7 +39,7 @@ class OpenAiAssistant
 
         $input = [[
             'role' => 'developer',
-            'content' => $this->compactInstructions($question),
+            'content' => $this->compactInstructions($question, $pageTitle),
         ]];
 
         $historyLimit = max(1, (int) config('services.openai.history_messages', 4));
@@ -160,10 +160,10 @@ class OpenAiAssistant
         return is_array($proposal) ? $proposal : null;
     }
 
-    private function compactInstructions(string $question): string
+    private function compactInstructions(string $question, ?string $pageTitle = null): string
     {
         $instructions = <<<'PROMPT'
-Voce e o Assistente Deming, um agente corporativo de consulta e preparacao de rascunhos.
+Voce e o Assistente SigWorks, um agente corporativo de consulta e preparacao de rascunhos.
 
 Regras:
 1. Responda em portugues do Brasil, de forma direta, profissional e em texto simples, com paragrafos curtos. Nao use Markdown.
@@ -173,6 +173,8 @@ Regras:
 5. Nao mencione fontes, contexto ou IDs como [S1]. Nao invente dados nem diga que executou alteracoes.
 6. So ofereca redirecionamento quando o usuario pedir onde acessar, abrir ou localizar algo. Nesse caso, use no fim <related_link>S1</related_link> com uma unica fonte relacionada.
 7. Quando o usuario pedir como realizar um processo, um tutorial, explicacao ou passo a passo, use a fonte Ajuda correspondente. Responda com pre-requisitos e etapas numeradas, sem preparar rascunho e sem navegar automaticamente.
+8. OS DNIT e Liberacao de Servico sao modulos distintos. service_order pertence a Liberacao; os_dnit pertence a OS DNIT. Se OS estiver ambiguo, pergunte qual modulo. Nao diga que a devolucao libera edicao de uma OS DNIT ja enviada. Papéis de analista, Concremat e fiscal sao adicionais as permissoes por contrato. Nunca aprove, reprove, encaminhe, envie e-mail ou altere registros pelo chat.
+9. Para OS DNIT, contagens completas vêm do Resumo OS DNIT autorizado; registros e catálogos recuperados são amostras, não totais. Cada número sequencial pode existir em contratos diferentes: identifique o contrato antes de atribuir uma análise/decisão. Não confirme entrega de e-mail nem execução física do serviço a partir da aprovação. Se a fonte não incluir todos os produtos ou comentários, diga que a comparação é parcial.
 PROMPT;
 
         $normalized = Str::lower(Str::ascii($question));
@@ -202,17 +204,21 @@ PROMPT;
             return $instructions.' Para RNC use: <assistant_action>{"type":"draft","draft_type":"rnc","fields":{"contract_code":"CT-001","obra_code":"001","disciplina":"ARQ","gravidade":"Grave","descricao_problema":"","observacao":"","acoes_corretivas_recomendadas":"","opened_at":"2026-08-04","prazo_resposta_acao_corretiva":"2026-08-11"}}</assistant_action>.';
         }
 
-        if (preg_match('/\b(os|ordem de servico)\b/', $normalized) === 1) {
-            return $instructions.' Para OS use: <assistant_action>{"type":"draft","draft_type":"service_order","fields":{"contract_code":"CT-001","obra_code":"001","titulo":"","descricao":"","prazo_inicio":"2026-08-10","prazo_finalizacao":"2026-08-20","custo_previsto":"","custo_observacao":""}}</assistant_action>. Nao invente itens ou valores.';
+        $activity = preg_match('/\b(atividade|tarefa|checklist)\b/', $normalized) === 1;
+        if (!$activity && str_contains($normalized.' '.Str::lower((string) $pageTitle), 'dnit')) {
+            return $instructions.' Para OS DNIT use: <assistant_action>{"type":"draft","draft_type":"os_dnit","fields":{"contract_code":"CT-001","supervision_lot":"","highway":"BR-364/AC","km_start":"","km_end":"","subject":"","technical_need":"","justification":"","sei_reference":"","desired_deadline":"","items":[{"code":"02","quantity":"1"}]}}</assistant_action>. Inclua somente valores fornecidos pelo usuário, produtos e rodovias autorizados. Não invente número de solicitação, quantidades, prazo, produto, rodovia ou unidade; dados ausentes ficam vazios e items pode ser []. O número é atribuído pelo sistema. O usuário revisa, completa e salva o rascunho na tela; não há envio automático.';
+        }
+        if (!$activity && preg_match('/\b(os|ordem de servico|liberacao de servico)\b/', $normalized) === 1) {
+            return $instructions.' Se OS estiver ambiguo entre DNIT e Liberacao de Servico, pergunte qual modulo. Para Liberacao de Servico use: <assistant_action>{"type":"draft","draft_type":"service_order","fields":{"contract_code":"CT-001","obra_code":"001","titulo":"","descricao":"","prazo_inicio":"2026-08-10","prazo_finalizacao":"2026-08-20","custo_previsto":"","custo_observacao":""}}</assistant_action>. Nao invente itens ou valores.';
         }
 
-        return $instructions.' Para atividade use: <assistant_action>{"type":"draft","draft_type":"activity","fields":{"contract_code":"CT-001","title":"","description":"","category":"project","visibility":"public","priority":"normal","due_date":"2026-08-10"}}</assistant_action>. Categorias: project, quality, budget, measurement, documentation, service_order, construction_diary, contract, administrative, field ou client. Visibilidade: public ou restricted. Prioridade: low, normal, high ou urgent.';
+        return $instructions.' Para atividade use: <assistant_action>{"type":"draft","draft_type":"activity","fields":{"contract_code":"CT-001","title":"","description":"","category":"project","visibility":"public","priority":"normal","due_date":"2026-08-10","os_number":""}}</assistant_action>. Categorias: project, quality, budget, measurement, documentation, service_order (Liberação de Serviço), os_dnit (Ordem de Serviço DNIT), construction_diary, contract, administrative, field ou client. Quando category=os_dnit, os_number é o número da OS informada no mesmo contrato; não invente e não use IDs. Se não souber, deixe vazio para seleção na tela. Visibilidade: public ou restricted. Prioridade: low, normal, high ou urgent.';
     }
 
     private function instructions(): string
     {
         return <<<'PROMPT'
-Você é o Assistente Deming, um agente corporativo de consulta, navegação e preparação de rascunhos.
+Você é o Assistente SigWorks, um agente corporativo de consulta, navegação e preparação de rascunhos.
 
 Regras obrigatórias:
 1. Responda em português do Brasil, de forma direta e profissional.

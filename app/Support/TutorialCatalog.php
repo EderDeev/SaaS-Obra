@@ -313,7 +313,7 @@ class TutorialCatalog
                 ['notificação', 'sino', 'não lida', 'perfil', 'senha']
             ),
             self::guide(
-                'assistente-deming', 'Ajuda', 'Assistente Deming e tutoriais', 'Bot',
+                'assistente-deming', 'Ajuda', 'Assistente SigWorks e tutoriais', 'Bot',
                 'Chat flutuante e Tutoriais', 'tutorials', 'tenant.tutorials.index',
                 'Use o agente para consultar dados autorizados e aprender os fluxos do sistema.',
                 'Todos os usuários',
@@ -344,7 +344,7 @@ class TutorialCatalog
             'users' => 'Usuários e Permissões',
             'activities' => 'Atividades',
             'budgets' => 'Orçamentos',
-            'service_orders' => 'Ordem de Serviço',
+            'service_orders' => 'Liberação de Serviço',
             'measurement' => 'Medição',
             'field' => 'Diário de Obra',
             'quality' => 'Qualidade / RNC',
@@ -362,8 +362,8 @@ class TutorialCatalog
                 'route' => $guide['route'],
                 'enabled' => true,
                 'summary' => $guide['summary'],
-                'workflow' => self::assistantText($guide),
-                'tutorial' => self::assistantText($guide),
+                'workflow' => $guide['capability'] === 'service_orders' ? str_replace('Ordem de Serviço', 'Liberação de Serviço', self::assistantText($guide)) : self::assistantText($guide),
+                'tutorial' => $guide['capability'] === 'service_orders' ? str_replace('Ordem de Serviço', 'Liberação de Serviço', self::assistantText($guide)) : self::assistantText($guide),
             ]])
             ->all();
     }
@@ -482,7 +482,7 @@ class TutorialCatalog
                 self::shot('notificacoes-atual', 'Notificações', 'O sino destaca eventos novos e permite acompanhar as mudanças recentes.'),
             ],
             'assistente-deming' => [
-                self::shot('assistente-atual', 'Assistente Deming', 'O chat usa somente dados autorizados e pode preparar rascunhos para revisão.'),
+                self::shot('assistente-atual', 'Assistente SigWorks', 'O chat usa somente dados autorizados e pode preparar rascunhos para revisão.'),
             ],
             default => [],
         };

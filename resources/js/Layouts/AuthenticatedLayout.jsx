@@ -71,7 +71,7 @@ function CollapsibleNav({ open, children, className = '' }) {
     );
 }
 
-export default function AuthenticatedLayout({ children }) {
+export default function AuthenticatedLayout({ children, osDnitTourScreen = null }) {
     const { props } = usePage();
     const user = props.auth.user;
     const tenant = props.currentTenant;
@@ -106,6 +106,7 @@ export default function AuthenticatedLayout({ children }) {
     const budgetCan = props.budgetPermissions?.can || {};
     const documentationCan = props.documentationPermissions?.can || {};
     const diarioObraCan = props.diarioObraPermissions?.can || {};
+    const osDnitCan = props.osDnitPermissions?.can || {};
     const ordemServicoCan = props.ordemServicoPermissions?.can || {};
     const medicaoCan = props.medicaoPermissions?.can || {};
     const contractCan = props.contractPermissions?.can || {};
@@ -117,6 +118,7 @@ export default function AuthenticatedLayout({ children }) {
     const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
     const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
     const [ordemServicoOpen, setOrdemServicoOpen] = useState(() => route().current('tenant.ordem-servico.*'));
+    const [osDnitOpen, setOsDnitOpen] = useState(() => route().current('tenant.os-dnit.*'));
     const [diarioObraOpen, setDiarioObraOpen] = useState(() => route().current('tenant.diario-obra.*'));
     const [gedOpen, setGedOpen] = useState(() => route().current('tenant.ged.*'));
     const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen && diarioObraTourScreen !== 'rda'));
@@ -498,6 +500,15 @@ export default function AuthenticatedLayout({ children }) {
         }] : []),
     ]
     : [];
+    const osDnitItems = tenant && osDnitCan.view_orders
+        ? [
+            { label: 'Ordem de Serviço', href: route('tenant.os-dnit.orders.index', tenant.slug), active: osDnitTourScreen ? ['create', 'submission', 'concremat', 'inspector'].includes(osDnitTourScreen) : route().current('tenant.os-dnit.orders.*') || route().current('tenant.os-dnit.analysis.*'), badge: String(props.osDnitNavigation?.pending_analysis_count ?? 0) },
+            ...(osDnitCan.view_products ? [{ label: 'Produtos', href: route('tenant.os-dnit.products.index', tenant.slug), active: route().current('tenant.os-dnit.products.*') || osDnitTourScreen === 'products' }] : []),
+            ...(osDnitCan.view_dashboard ? [{ label: 'Dashboard', href: route('tenant.os-dnit.dashboard', tenant.slug), active: route().current('tenant.os-dnit.dashboard') || osDnitTourScreen === 'dashboard' }] : []),
+            { label: 'Parametrização', href: route('tenant.os-dnit.settings.index', tenant.slug), active: route().current('tenant.os-dnit.settings.*') },
+            ...(osDnitCan.manage_responsibles ? [{ label: 'Responsáveis', href: route('tenant.os-dnit.responsibles.index', tenant.slug), active: route().current('tenant.os-dnit.responsibles.*') || osDnitTourScreen === 'responsibles' }] : []),
+        ]
+        : [];
     const rdoItems = tenant
         ? [
             ...(diarioObraCan.view_diario_obra ? [{
@@ -647,8 +658,9 @@ export default function AuthenticatedLayout({ children }) {
                 { label: 'Medição', icon: Ruler, active: route().current('tenant.medicao.*'), children: medicaoItems },
             ] : []),
             ...(ordemServicoItems.length > 0 ? [
-                { label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
+                { label: 'Liberação de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
             ] : []),
+            ...(osDnitItems.length > 0 ? [{ label: 'OS DNIT', icon: ClipboardList, active: route().current('tenant.os-dnit.*'), children: osDnitItems }] : []),
             ...(diarioObraItems.length > 0 ? [
                 { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
             ] : []),
@@ -692,7 +704,7 @@ export default function AuthenticatedLayout({ children }) {
         : tenant
             ? [
                 { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Ordem de Serviço' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
+                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Liberação de Serviço' : route().current('tenant.os-dnit.*') ? 'OS DNIT' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -728,7 +740,7 @@ export default function AuthenticatedLayout({ children }) {
         },
         {
             label: 'Acompanhamento',
-            items: navItems.filter((item) => ['Medição', 'Ordem de Serviço'].includes(item.label)),
+            items: navItems.filter((item) => ['Medição', 'Liberação de Serviço', 'OS DNIT'].includes(item.label)),
         },
         {
             label: 'Campo',
@@ -775,7 +787,6 @@ export default function AuthenticatedLayout({ children }) {
                 )}
 
                 <nav className="flex-1 overflow-y-auto py-2">
-                    <div className="eyebrow px-5 pb-2 pt-1 text-[var(--side-fg-dim)]">Workspace</div>
                     {navSections.map((section) => (
                         <div
                             key={section.label || 'workspace'}
@@ -801,8 +812,10 @@ export default function AuthenticatedLayout({ children }) {
                                 ? orcamentosOpen
                                 : item.label === 'Medição'
                                     ? medicaoOpen
-                                    : item.label === 'Ordem de Serviço'
+                                    : item.label === 'Liberação de Serviço'
                                         ? ordemServicoOpen
+                                        : item.label === 'OS DNIT'
+                                            ? osDnitOpen
                                         : item.label === 'Documentação'
                                             ? gedOpen
                                             : projectOpen;
@@ -814,8 +827,10 @@ export default function AuthenticatedLayout({ children }) {
                                 ? () => setOrcamentosOpen((open) => !open)
                                 : item.label === 'Medição'
                                     ? () => setMedicaoOpen((open) => !open)
-                                    : item.label === 'Ordem de Serviço'
+                                    : item.label === 'Liberação de Serviço'
                                         ? () => setOrdemServicoOpen((open) => !open)
+                                        : item.label === 'OS DNIT'
+                                            ? () => setOsDnitOpen((open) => !open)
                                         : item.label === 'Documentação'
                                             ? () => setGedOpen((open) => !open)
                                             : () => setProjectOpen((open) => !open);

@@ -127,13 +127,13 @@ const stepsBySection = {
         {
             target: '[data-tour="rdo-workflow"]',
             title: 'Etapa 7: análise e aprovação',
-            content: 'O RDO segue da construtora para a aprovação conjunta da gerenciadora e do cliente, com histórico por frente.',
+            content: 'O RDO segue em etapas: a construtora registra os fatos, a gerenciadora fiscaliza e complementa, e o cliente apresenta a manifestação final.',
             placement: 'bottom',
         },
         {
             target: '[data-tour="rdo-workflow-actions"]',
             title: 'Registrar a decisão',
-            content: 'Aprovar faz o processo avançar. Devolver ou aprovar com ressalvas exige o parecer para manter a rastreabilidade.',
+            content: 'Cada parte registra seu próprio parecer. Rejeições, ressalvas e divergências preservam responsáveis, prazos, evidências e histórico.',
             placement: 'top',
         },
     ],

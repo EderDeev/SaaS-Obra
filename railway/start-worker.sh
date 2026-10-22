@@ -5,6 +5,8 @@ mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessi
 
 php artisan storage:link || true
 
+php artisan queue:work os_dnit_mail --queue=os-dnit-mail --sleep=2 --tries=5 --timeout=60 &
+
 php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600 &
 
 APS_QUEUE="${AUTODESK_APS_QUEUE:-aps}"

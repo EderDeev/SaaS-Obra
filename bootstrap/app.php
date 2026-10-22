@@ -30,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ordem-servico.permission' => \App\Http\Middleware\EnsureOrdemServicoPermission::class,
             'medicao.permission' => \App\Http\Middleware\EnsureMedicaoPermission::class,
             'contract.permission' => \App\Http\Middleware\EnsureContractPermission::class,
+            'os-dnit.permission' => \App\Http\Middleware\EnsureOsDnitPermission::class,
             'password.changed' => \App\Http\Middleware\EnsurePasswordWasChanged::class,
             'mobile.token' => \App\Http\Middleware\EnsureMobileApiToken::class,
         ]);

@@ -162,7 +162,9 @@ class ProjectSubmissionBatchController extends Controller
             throw ValidationException::withMessages($errors);
         }
 
-        $batch = DB::transaction(function () use ($tenant, $contract, $obra, $trecho, $phase, $request, $data, $preparedItems, $capImpacts, $requiresCapDetails): ProjectSubmissionBatch {
+        $storageDisk = (string) config('projects.document_disk', 'local');
+
+        $batch = DB::transaction(function () use ($tenant, $contract, $obra, $trecho, $phase, $request, $data, $preparedItems, $capImpacts, $requiresCapDetails, $storageDisk): ProjectSubmissionBatch {
             $year = (int) now()->year;
             Tenant::query()->whereKey($tenant->id)->lockForUpdate()->firstOrFail();
             $packageSequence = ((int) ProjectSubmissionBatch::query()
@@ -245,7 +247,7 @@ class ProjectSubmissionBatchController extends Controller
                 }
 
                 $storedName = $this->storedFileName($item['code'], $item['revision'], $item['extension']);
-                $path = $item['file']->storeAs("tenant-{$tenant->id}/projects/contract-{$contract->id}/obra-{$obra->id}", $storedName, 'local');
+                $path = $item['file']->storeAs("tenant-{$tenant->id}/projects/contract-{$contract->id}/obra-{$obra->id}", $storedName, $storageDisk);
 
                 $document->versions()->create([
                     'tenant_id' => $tenant->id,
@@ -257,7 +259,7 @@ class ProjectSubmissionBatchController extends Controller
                     'original_name' => $item['file']->getClientOriginalName(),
                     'stored_name' => $storedName,
                     'file_path' => $path,
-                    'storage_disk' => 'local',
+                    'storage_disk' => $storageDisk,
                     'mime_type' => $item['file']->getClientMimeType(),
                     'file_size' => $item['file']->getSize(),
                     'derivative_status' => 'not_submitted',

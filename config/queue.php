@@ -31,6 +31,16 @@ return [
 
     'connections' => [
 
+        // Same application DB: enqueue atomically with the OS workflow transaction.
+        'os_dnit_mail' => [
+            'driver' => 'database',
+            'connection' => null,
+            'table' => 'jobs',
+            'queue' => 'os-dnit-mail',
+            'retry_after' => 180,
+            'after_commit' => false,
+        ],
+
         'sync' => [
             'driver' => 'sync',
         ],

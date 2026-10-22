@@ -62,7 +62,8 @@ class RdoFlowChangedNotification extends Notification
     {
         return match ($this->rdo->status) {
             'rascunho' => 'Rascunho',
-            'em_aprovacao' => 'Em aprovação',
+            'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
+            'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
             'devolvido_construtora' => 'Devolvido à construtora',
             'pendente_comprovacao' => 'Pendente de comprovação',
             'arquivado' => 'Aprovado e arquivado',

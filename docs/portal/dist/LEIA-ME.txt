@@ -1,0 +1,6 @@
+Manual do SigWorks
+
+Extraia a pasta inteira e abra o index.html no navegador. Não precisa de internet.
+O manual.md tem o mesmo conteúdo em texto.
+
+Revisão de 21/10/2026.

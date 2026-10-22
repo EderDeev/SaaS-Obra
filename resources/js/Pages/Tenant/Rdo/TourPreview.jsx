@@ -416,9 +416,10 @@ function ApprovalPreview() {
                     <div><span className="eyebrow">Fluxo de análise e aprovação</span><h2 className="mt-1 text-lg font-bold">Em análise</h2></div>
                     <button type="button" className="sig-btn sig-btn-secondary"><History size={16} /> Histórico</button>
                 </header>
-                <div className="grid gap-3 bg-slate-50 p-4 md:grid-cols-3">
+                <div className="grid gap-3 bg-slate-50 p-4 md:grid-cols-4">
                     <FlowStep title="Construtora" company="X Construtora" completed />
-                    <FlowStep title="Aprovação conjunta" company="X Gerenciadora + X Cliente" active />
+                    <FlowStep title="Fiscalização" company="X Gerenciadora" active />
+                    <FlowStep title="Manifestação" company="X Cliente" />
                     <FlowStep title="Arquivo" company="RDO aprovado" />
                 </div>
                 <div data-tour="rdo-workflow-actions" className="p-5">
@@ -466,9 +467,10 @@ function SignaturePreview() {
                     <div><span className="eyebrow">Fluxo de análise e aprovação</span><h2 className="mt-1 text-lg font-bold">Arquivado</h2></div>
                     <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">Aprovado</span>
                 </header>
-                <div className="grid gap-2 bg-slate-50/70 p-4 md:grid-cols-3">
+                <div className="grid gap-2 bg-slate-50/70 p-4 md:grid-cols-4">
                     <FlowStep title="Construtora" company="X Construtora" completed />
-                    <FlowStep title="Aprovação conjunta" company="X Gerenciadora + X Cliente" completed />
+                    <FlowStep title="Fiscalização" company="X Gerenciadora" completed />
+                    <FlowStep title="Manifestação" company="X Cliente" completed />
                     <FlowStep title="Arquivo" company="RDO aprovado" active />
                 </div>
             </section>

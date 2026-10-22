@@ -15,11 +15,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'etapa',
     'decisao',
     'comentario',
+    'detalhes',
     'status_anterior',
     'status_novo',
 ])]
 class RdoAnalise extends Model
 {
+    protected function casts(): array
+    {
+        return [
+            'detalhes' => 'array',
+        ];
+    }
+
     public function rdo(): BelongsTo
     {
         return $this->belongsTo(RdoDiario::class, 'rdo_diario_id');

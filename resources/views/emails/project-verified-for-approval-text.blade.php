@@ -1,4 +1,4 @@
-Deming
+SigWorks
 Projeto aguardando aprovacao
 
 Ola, {{ $notifiable->name }}.

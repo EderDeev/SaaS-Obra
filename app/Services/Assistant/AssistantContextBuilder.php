@@ -9,6 +9,7 @@ use App\Models\FolhaRosto;
 use App\Models\GedDocument;
 use App\Models\Orcamento;
 use App\Models\OrdemServico;
+use App\Models\OsDnitOrder;
 use App\Models\ProjectDocument;
 use App\Models\RdaApontamento;
 use App\Models\RdoDiario;
@@ -22,6 +23,7 @@ use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\OrdemServicoPermissions;
+use App\Support\OsDnitPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -86,6 +88,7 @@ class AssistantContextBuilder
             'Atividades' => $this->access->activityContractIds($user, $tenant),
             'Projetos' => $this->access->projectContractIds($user, $tenant),
             'Qualidade / RNC' => $this->access->rncContractIds($user, $tenant),
+            'OS DNIT' => $this->access->osDnitContractIds($user, $tenant),
         ])->map(function (Collection $ids, string $label) use ($contracts): string {
             $codes = $contracts->whereIn('id', $ids)->pluck('code')->values();
 
@@ -130,6 +133,11 @@ class AssistantContextBuilder
             $lines[] = $this->summaryLine('Atividades visíveis', $activityQuery, 'status');
         }
 
+        if ($capabilities['os_dnit']['view']) {
+            $osQuery = OsDnitOrder::where('tenant_id', $tenant->id)->whereIn('contract_id', $this->access->osDnitContractIds($user, $tenant));
+            $lines[] = $this->summaryLine('OS DNIT', $osQuery, 'status');
+        }
+
         if ($capabilities['projects']['view']) {
             $projectQuery = ProjectDocument::query()
                 ->where('tenant_id', $tenant->id)
@@ -159,7 +167,7 @@ class AssistantContextBuilder
         if ($contractIds->isNotEmpty()) {
             $lines[] = $this->summaryLine('RDOs', RdoDiario::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
             $lines[] = $this->summaryLine('RDAs', RdaApontamento::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
-            $lines[] = $this->summaryLine('Ordens de serviço', OrdemServico::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
+            $lines[] = $this->summaryLine('Liberações de Serviço', OrdemServico::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
             $lines[] = $this->summaryLine('Boletins de medição', BoletimMedicao::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
             $lines[] = $this->summaryLine('Folhas de rosto', FolhaRosto::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
         }
@@ -243,6 +251,7 @@ class AssistantContextBuilder
             ->filter(fn (array $guide): bool => ($capabilities[$guide['capability']]['view'] ?? false) && $guide['enabled'])
             ->map(fn (array $guide): string => "- {$guide['label']}: {$guide['summary']}")
             ->implode("\n");
+        if ($capabilities['os_dnit']['view']) $content = '- OS DNIT: pedidos, análise Concremat, decisão do fiscal, produtos, rodovias, responsáveis, PDFs e dashboard por contrato. Módulo distinto de Liberação de Serviço.' . "\n" . $content;
 
         return $this->source(
             'Ajuda',
@@ -310,10 +319,12 @@ class AssistantContextBuilder
                 $this->allowedLabels(MedicaoPermissions::labels(), fn (string $permission): bool => MedicaoPermissions::canAny($user, $tenant, $permission))
             ),
             'service_orders' => $this->capability(
-                'Ordem de Serviço',
+                'Liberação de Serviço',
                 OrdemServicoPermissions::canAny($user, $tenant, OrdemServicoPermissions::VIEW),
                 $this->allowedLabels(OrdemServicoPermissions::labels(), fn (string $permission): bool => OrdemServicoPermissions::canAny($user, $tenant, $permission))
             ),
+            'os_dnit' => $this->capability('OS DNIT', OsDnitPermissions::canAny($user, $tenant, OsDnitPermissions::VIEW),
+                $this->allowedLabels(OsDnitPermissions::labels(), fn ($permission) => OsDnitPermissions::canAny($user, $tenant, $permission))),
             'field' => $this->capability(
                 'Diário de Obra (RDO e RDA)',
                 DiarioObraPermissions::canAny($user, $tenant, DiarioObraPermissions::VIEW),

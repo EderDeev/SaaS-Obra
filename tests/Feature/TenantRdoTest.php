@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\RdoConfiguracao;
 use App\Models\RdoAnalise;
 use App\Models\RdoDiario;
+use App\Models\RdoDivergencia;
 use App\Models\RdoResponsavel;
 use App\Models\RdoSignatureRequest;
 use App\Models\Tenant;
@@ -414,7 +415,15 @@ class TenantRdoTest extends TestCase
                 'comment' => 'Encaminhado pela construtora.',
             ])
             ->assertSessionHasNoErrors();
-        $this->assertSame('em_aprovacao', $rdo->fresh()->status);
+        $this->assertSame('em_analise_gerenciadora', $rdo->fresh()->status);
+        $this->assertSame(1, $rdo->fresh()->current_version);
+        $this->assertDatabaseHas('rdo_versoes', [
+            'rdo_diario_id' => $rdo->id,
+            'version_number' => 1,
+            'trigger' => 'initial_submission',
+        ]);
+
+        $this->completeInspection($tenant, $rdo->fresh(), $obra->id, $user);
 
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
@@ -422,7 +431,7 @@ class TenantRdoTest extends TestCase
                 'comments_by_obra' => [$obra->id => 'Aprovado pela gerenciadora.'],
             ])
             ->assertSessionHasNoErrors();
-        $this->assertSame('em_aprovacao', $rdo->fresh()->status);
+        $this->assertSame('em_aprovacao_cliente', $rdo->fresh()->status);
 
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
@@ -440,9 +449,13 @@ class TenantRdoTest extends TestCase
             'etapa' => 'gerenciadora',
             'decisao' => 'approve',
         ]);
+
+        $this->actingAs($user)
+            ->get(route('tenant.diario-obra.rdo.show', [$tenant, $rdo]))
+            ->assertOk();
     }
 
-    public function test_joint_rdo_approval_with_any_reservation_requires_constructor_evidence(): void
+    public function test_rdo_approval_with_any_reservation_requires_constructor_evidence(): void
     {
         [$tenant, $user, $contract, $obra] = $this->scenario();
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
@@ -453,15 +466,21 @@ class TenantRdoTest extends TestCase
             false,
             $user->id,
         );
-        $rdo->update(['status' => 'em_aprovacao']);
+        $rdo->update(['status' => 'em_analise_gerenciadora', 'current_version' => 1]);
+        $this->completeInspection($tenant, $rdo->fresh(), $obra->id, $user);
 
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
                 'action' => 'approve_with_reservations',
                 'comments_by_obra' => [$obra->id => 'Gerenciadora solicitou comprovação fotográfica.'],
+                'reservations_by_obra' => [$obra->id => [
+                    'obligation' => 'Apresentar comprovação fotográfica do serviço executado.',
+                    'responsible' => 'Engenheiro residente da construtora',
+                    'due_date' => now()->addDays(3)->toDateString(),
+                ]],
             ])
             ->assertSessionHasNoErrors();
-        $this->assertSame('em_aprovacao', $rdo->fresh()->status);
+        $this->assertSame('em_aprovacao_cliente', $rdo->fresh()->status);
 
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
@@ -470,6 +489,138 @@ class TenantRdoTest extends TestCase
             ])
             ->assertSessionHasNoErrors();
         $this->assertSame('pendente_comprovacao', $rdo->fresh()->status);
+    }
+
+    public function test_manager_cannot_approve_without_completing_the_independent_inspection(): void
+    {
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $configuration->obras()->attach($obra->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
+            $configuration,
+            $this->referenceDate(),
+            false,
+            $user->id,
+        );
+        $rdo->update(['status' => 'em_analise_gerenciadora', 'current_version' => 1]);
+
+        $this->actingAs($user)
+            ->from(route('tenant.diario-obra.rdo.show', [$tenant, $rdo]))
+            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
+                'action' => 'approve',
+                'comments_by_obra' => [$obra->id => 'Parecer favorável.'],
+            ])
+            ->assertSessionHasErrors('action');
+
+        $this->assertSame('em_analise_gerenciadora', $rdo->fresh()->status);
+        $this->assertDatabaseMissing('rdo_analises', [
+            'rdo_diario_id' => $rdo->id,
+            'etapa' => 'gerenciadora',
+            'decisao' => 'approve',
+        ]);
+    }
+
+    public function test_rdo_divergence_preserves_each_party_record_until_client_decision(): void
+    {
+        [$tenant, $user, $contract, $obra] = $this->scenario();
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $configuration->obras()->attach($obra->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration(
+            $configuration,
+            $this->referenceDate(),
+            false,
+            $user->id,
+        );
+        foreach (['clima', 'mao_obra', 'equipamentos', 'atividades', 'fotos', 'comentarios'] as $section) {
+            $rdo->secoes()->create([
+                'tenant_id' => $tenant->id,
+                'obra_id' => $obra->id,
+                'updated_by_id' => $user->id,
+                'secao' => $section,
+                'dados' => $section === 'comentarios' ? ['construtora' => 'Serviço executado integralmente.'] : [],
+            ]);
+        }
+        $rdo->update(['status' => 'em_analise_gerenciadora', 'current_version' => 1]);
+
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.divergences.store', [$tenant, $rdo]), [
+                'obra_id' => $obra->id,
+                'topico' => 'Atividade executada',
+                'titulo' => 'Divergência sobre o avanço físico',
+                'versao_construtora' => 'A construtora registrou execução integral.',
+                'versao_gerenciadora' => 'A fiscalização constatou execução parcial.',
+            ])
+            ->assertSessionHasNoErrors();
+        $divergence = RdoDivergencia::query()->firstOrFail();
+
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
+                'action' => 'return',
+                'comments_by_obra' => [$obra->id => 'Responder à divergência registrada.'],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($user)
+            ->patch(route('tenant.diario-obra.rdo.divergences.update', [$tenant, $rdo, $divergence]), [
+                'action' => 'respond',
+                'response' => 'A execução integral ocorreu após a inspeção da manhã.',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
+                'action' => 'submit',
+                'comment' => 'Resposta e registros atualizados.',
+            ])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(2, $rdo->fresh()->current_version);
+
+        $this->completeInspection($tenant, $rdo->fresh(), $obra->id, $user);
+        $this->actingAs($user)
+            ->patch(route('tenant.diario-obra.rdo.divergences.update', [$tenant, $rdo, $divergence]), [
+                'action' => 'conclude',
+                'conclusion' => 'As partes mantiveram entendimentos distintos; encaminhar ao cliente.',
+                'outcome' => 'aguarda_cliente',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
+                'action' => 'approve',
+                'comments_by_obra' => [$obra->id => 'Fiscalização concluída com divergência encaminhada.'],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($user)
+            ->patch(route('tenant.diario-obra.rdo.divergences.update', [$tenant, $rdo, $divergence]), [
+                'action' => 'client_decide',
+                'client_decision' => 'aceita_gerenciadora',
+                'client_comment' => 'Prevalece a constatação da fiscalização.',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
+                'action' => 'approve',
+                'comments_by_obra' => [$obra->id => 'Manifestação final registrada.'],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $divergence->refresh();
+        $this->assertSame('arquivado', $rdo->fresh()->status);
+        $this->assertSame('decidida_cliente', $divergence->status);
+        $this->assertSame($user->id, $divergence->created_by_id);
+        $this->assertSame($user->id, $divergence->responded_by_id);
+        $this->assertSame($user->id, $divergence->concluded_by_id);
+        $this->assertSame($user->id, $divergence->client_decided_by_id);
+        $this->assertSame('A construtora registrou execução integral.', $divergence->versao_construtora);
+        $this->assertSame('A fiscalização constatou execução parcial.', $divergence->versao_gerenciadora);
+
+        $pdfResponse = $this->actingAs($user)
+            ->get(route('tenant.diario-obra.rdo.pdf', [$tenant, $rdo]))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', (string) $pdfResponse->getContent());
     }
 
     public function test_returned_rdo_requires_constructor_response_before_resubmission(): void
@@ -483,7 +634,7 @@ class TenantRdoTest extends TestCase
             false,
             $user->id,
         );
-        $rdo->update(['status' => 'em_aprovacao']);
+        $rdo->update(['status' => 'em_analise_gerenciadora', 'current_version' => 1]);
 
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
@@ -553,7 +704,7 @@ class TenantRdoTest extends TestCase
 
                 return data_get($mail->view, 'html') === 'emails.rdo-flow-changed'
                     && data_get($mail->view, 'text') === 'emails.rdo-flow-changed-text'
-                    && data_get($mail->viewData, 'statusLabel') === 'Em aprovação'
+                    && data_get($mail->viewData, 'statusLabel') === 'Em análise pela gerenciadora'
                     && str_contains((string) data_get($mail->viewData, 'rdoUrl'), '/diario-obra/rdo/');
             }
         );
@@ -689,9 +840,24 @@ class TenantRdoTest extends TestCase
         $this->actingAs($constructorOne)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'submit'])
             ->assertSessionHasNoErrors();
-        $this->assertSame('em_aprovacao', $rdo->fresh()->status);
+        $this->assertSame('em_analise_gerenciadora', $rdo->fresh()->status);
         $this->assertDatabaseHas('rdo_analises', ['rdo_diario_id' => $rdo->id, 'obra_id' => $obra->id, 'etapa' => 'construtora']);
         $this->assertDatabaseHas('rdo_analises', ['rdo_diario_id' => $rdo->id, 'obra_id' => $secondObra->id, 'etapa' => 'construtora']);
+
+        $this->actingAs($manager)
+            ->post(route('tenant.diario-obra.rdo.inspection.store', [$tenant, $rdo]), [
+                'obra_id' => $obra->id,
+                'resumo_fiscalizacao' => 'Fiscalização concluída na obra principal.',
+                'status' => 'concluido',
+            ])
+            ->assertSessionHasNoErrors();
+        $this->actingAs($manager)
+            ->post(route('tenant.diario-obra.rdo.inspection.store', [$tenant, $rdo]), [
+                'obra_id' => $secondObra->id,
+                'resumo_fiscalizacao' => 'Fiscalização concluída na frente 02.',
+                'status' => 'concluido',
+            ])
+            ->assertSessionHasNoErrors();
 
         $this->actingAs($manager)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
@@ -702,7 +868,7 @@ class TenantRdoTest extends TestCase
                 ],
             ])
             ->assertSessionHasNoErrors();
-        $this->assertSame('em_aprovacao', $rdo->fresh()->status);
+        $this->assertSame('em_aprovacao_cliente', $rdo->fresh()->status);
 
         $this->actingAs($client)
             ->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), [
@@ -1175,7 +1341,7 @@ class TenantRdoTest extends TestCase
             'etapa' => 'construtora',
             'decisao' => 'submit',
             'status_anterior' => 'rascunho',
-            'status_novo' => 'em_aprovacao',
+            'status_novo' => 'em_analise_gerenciadora',
         ]);
         $signatureRequest = RdoSignatureRequest::create([
             'tenant_id' => $tenant->id,
@@ -1246,6 +1412,25 @@ class TenantRdoTest extends TestCase
         return CarbonImmutable::now('America/Sao_Paulo')
             ->startOfDay()
             ->subDays($daysAgo);
+    }
+
+    private function completeInspection(Tenant $tenant, RdoDiario $rdo, int $obraId, User $user): void
+    {
+        $this->actingAs($user)
+            ->post(route('tenant.diario-obra.rdo.inspection.store', [$tenant, $rdo]), [
+                'obra_id' => $obraId,
+                'resumo_fiscalizacao' => 'Serviços conferidos pela fiscalização.',
+                'servicos_atestados' => 'Atividades executadas compatíveis com o registro diário.',
+                'status' => 'concluido',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('rdo_fiscalizacao_registros', [
+            'rdo_diario_id' => $rdo->id,
+            'obra_id' => $obraId,
+            'version_number' => max(1, (int) $rdo->current_version),
+            'status' => 'concluido',
+        ]);
     }
 
     private function createOpenSignSigner(RdoSignatureRequest $signatureRequest, string $email): void

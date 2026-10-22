@@ -1,4 +1,4 @@
-import ActivityTour from '@/Components/ActivityTour';
+import ActivityTour, { ActivityTourProgress } from '@/Components/ActivityTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
 import ReactECharts from 'echarts-for-react';
@@ -233,6 +233,7 @@ export default function ActivityMetrics({
             <Head title="Métricas de atividades" />
 
             <section className="sig-content fade-in">
+                {tourSection && <ActivityTourProgress section={tourSection} onExit={() => router.visit(route('tenant.activities.index', tenant.slug))} />}
                 <header data-tour="activities-metrics-header" className="flex flex-wrap items-end gap-5">
                     <div className="min-w-0 flex-1">
                         <div className="eyebrow">Workspace · Atividades</div>

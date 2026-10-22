@@ -153,7 +153,7 @@ class AssistantController extends Controller
                 'quota' => $quotaStatus,
             ]);
         } catch (Throwable $exception) {
-            Log::error('Falha ao responder no Assistente Deming.', [
+            Log::error('Falha ao responder no Assistente SigWorks.', [
                 'tenant_id' => $tenant->id,
                 'user_id' => $user->id,
                 'conversation_id' => $conversation->id,

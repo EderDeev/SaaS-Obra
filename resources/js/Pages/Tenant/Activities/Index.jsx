@@ -1,5 +1,6 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
-import ActivityTour, { startActivityTour } from '@/Components/ActivityTour';
+import ActivityOsDnitSelect from '@/Components/ActivityOsDnitSelect';
+import ActivityTour, { ActivityTourProgress, startActivityTour } from '@/Components/ActivityTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
@@ -55,7 +56,8 @@ const categoryMeta = {
     budget: { label: 'Orçamento', className: 'sig-pill-amber' },
     measurement: { label: 'Medição', className: 'sig-pill-blue' },
     documentation: { label: 'Documentação', className: 'sig-pill-green' },
-    service_order: { label: 'Ordem de Serviço', className: 'sig-pill-amber' },
+    service_order: { label: 'Liberação de Serviço', className: 'sig-pill-amber' },
+    os_dnit: { label: 'Ordem de Serviço DNIT', className: 'sig-pill-amber' },
     construction_diary: { label: 'Diário de Obra', className: 'sig-pill-green' },
     contract: { label: 'Contrato', className: 'sig-pill-blue' },
     administrative: { label: 'Administrativo', className: '' },
@@ -201,6 +203,7 @@ export default function ActivitiesIndex({
         tourMode && tourScreen === 'flow' ? 'todo' : null,
     );
     const [assigneeQuery, setAssigneeQuery] = useState('');
+    const [draftOsDnitOrder, setDraftOsDnitOrder] = useState(null);
     const defaultContractId = contracts[0]?.id ? String(contracts[0].id) : '';
     const tourAssigneeIds = tourMode
         ? (assigneesByContract[defaultContractId] || []).map((user) => user.id)
@@ -217,6 +220,7 @@ export default function ActivitiesIndex({
             ? 'Conferir os quantitativos executados, validar a memória de cálculo e registrar as pendências antes do fechamento da medição.'
             : '',
         category: tourMode ? 'measurement' : 'project',
+        os_dnit_order_id: '',
         visibility: tourMode ? 'restricted' : 'public',
         priority: tourMode ? 'high' : 'normal',
         due_date: tourMode ? activities[0]?.due_date || '' : '',
@@ -232,6 +236,8 @@ export default function ActivitiesIndex({
         if (!assistantDraft) {
             return;
         }
+
+        setDraftOsDnitOrder(assistantDraft.os_dnit_order || null);
 
         form.setData((current) => ({
             ...current,
@@ -305,22 +311,6 @@ export default function ActivitiesIndex({
         });
     }, [activitiesForBoard, categories, categoryFilter, contractFilter, query]);
 
-    useEffect(() => {
-        if (!tourMode || tourScreen !== 'flow') {
-            return undefined;
-        }
-
-        const updateFlowStatus = (event) => {
-            if (statusColumns.some((column) => column.value === event.detail)) {
-                setTourFlowStatus(event.detail);
-            }
-        };
-
-        window.addEventListener('activities:tour-flow-status', updateFlowStatus);
-
-        return () => window.removeEventListener('activities:tour-flow-status', updateFlowStatus);
-    }, [tourMode, tourScreen]);
-
     const submit = (event) => {
         event.preventDefault();
 
@@ -339,6 +329,7 @@ export default function ActivitiesIndex({
                     title: '',
                     description: '',
                     category: 'project',
+                    os_dnit_order_id: '',
                     visibility: 'public',
                     priority: 'normal',
                     due_date: '',
@@ -350,9 +341,12 @@ export default function ActivitiesIndex({
     };
 
     const updateContract = (contractId) => {
+        form.clearErrors('os_dnit_order_id');
+        setDraftOsDnitOrder(null);
         form.setData((data) => ({
             ...data,
             contract_id: contractId,
+            os_dnit_order_id: '',
             assigned_to_ids: [],
         }));
         setAssigneeQuery('');
@@ -449,6 +443,7 @@ export default function ActivitiesIndex({
             <Head title="Atividades" />
 
             <section className="sig-content fade-in">
+                {tourMode && <ActivityTourProgress section={tourScreen} onExit={() => router.visit(route('tenant.activities.index', tenant.slug))} />}
                 <div data-tour="activities-overview" className="flex flex-wrap items-end gap-6">
                     <div className="min-w-0 flex-1">
                         <div className="eyebrow">Workspace · Atividades</div>
@@ -536,6 +531,7 @@ export default function ActivitiesIndex({
                                         {form.data.activity_type === 'checklist' ? 'Criar checklist' : 'Criar atividade'}
                                     </h2>
                                     <p className="mt-1 text-[13px] text-[var(--ink-500)]">Defina o contrato, os responsáveis e quem poderá visualizar o card.</p>
+                                    {tourMode && <p className="mt-2 text-xs font-semibold text-blue-700">Tour Atividades · Demonstração com dados fictícios</p>}
                                 </div>
                                 <button className="sig-btn sig-btn-ghost !min-h-9 !px-2" type="button" onClick={() => !tourMode && setShowCreate(false)} title="Fechar">
                                     <X size={18} />
@@ -578,7 +574,7 @@ export default function ActivitiesIndex({
                             </select>
                         </Field>
                         <Field label="Categoria" error={form.errors.category}>
-                            <select value={form.data.category} onChange={(event) => form.setData('category', event.target.value)} required>
+                            <select value={form.data.category} onChange={(event) => { form.setData((data) => ({ ...data, category: event.target.value, os_dnit_order_id: '' })); form.clearErrors('os_dnit_order_id'); }} required>
                                 {Object.entries(categories || {}).map(([value, label]) => (
                                     <option key={value} value={value}>{label}</option>
                                 ))}
@@ -598,6 +594,12 @@ export default function ActivitiesIndex({
                         </Field>
                         </div>
                         <div data-tour="activities-create-visibility" className="md:col-span-2 xl:col-span-4">
+                            {form.data.category === 'os_dnit' && <div className="mb-4">
+                                <ActivityOsDnitSelect key={form.data.contract_id} tenantSlug={tenant.slug} contractId={form.data.contract_id}
+                                    initialOrder={draftOsDnitOrder}
+                                    value={form.data.os_dnit_order_id} onChange={(value) => { form.setData('os_dnit_order_id', value); form.clearErrors('os_dnit_order_id'); }}
+                                    error={form.errors.os_dnit_order_id} disabled={form.processing || tourMode} />
+                            </div>}
                             <VisibilitySelector
                                 value={form.data.visibility}
                                 onChange={(value) => form.setData('visibility', value)}
@@ -826,7 +828,7 @@ export default function ActivitiesIndex({
 
             {celebration && <ActivityCompletionCelebration key={celebration.key} />}
 
-            {tourMode && <ActivityTour section={tourScreen} tenantSlug={tenant.slug} />}
+            {tourMode && <ActivityTour key={tourScreen} section={tourScreen} tenantSlug={tenant.slug} onStatusChange={setTourFlowStatus} />}
         </AuthenticatedLayout>
     );
 }
@@ -1007,6 +1009,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
         title: activity.title || '',
         description: activity.description || '',
         category: activity.category || 'project',
+        os_dnit_order_id: activity.os_dnit_order_id ? String(activity.os_dnit_order_id) : '',
         visibility: activity.visibility || 'public',
         priority: activity.priority || 'normal',
         due_date: activity.due_date ? String(activity.due_date).slice(0, 10) : '',
@@ -1170,7 +1173,11 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                             <span className="mono text-[12px] text-[var(--ink-500)]">{activity.contract?.code}</span>
                         </div>
                         <h2 className="text-xl font-semibold text-[var(--ink-900)]">{activity.title}</h2>
+                        {tourMode && <p className="mt-2 text-xs font-semibold text-blue-700">Tour Atividades · Demonstração com dados fictícios</p>}
                         <p className="mt-1 text-[13px] text-[var(--ink-500)]">{contractName} · prazo {fullDate(activity.due_date)}</p>
+                        {activity.category === 'os_dnit' && activity.os_dnit_order && <Link href={route('tenant.os-dnit.orders.show', [tenant.slug, activity.os_dnit_order.id])} className="mt-2 block break-words text-sm font-semibold text-[var(--primary)]">
+                            OS {activity.os_dnit_order.request_number} — {activity.os_dnit_order.subject}
+                        </Link>}
                     </div>
                     <div className="flex shrink-0 flex-wrap justify-end gap-2">
                         {canEditActivities && (
@@ -1210,7 +1217,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                                 </select>
                             </Field>
                             <Field label="Categoria" error={editForm.errors.category}>
-                                <select value={editForm.data.category} onChange={(event) => editForm.setData('category', event.target.value)} required>
+                                <select value={editForm.data.category} onChange={(event) => { editForm.setData((data) => ({ ...data, category: event.target.value, os_dnit_order_id: '' })); editForm.clearErrors('os_dnit_order_id'); }} required>
                                     {Object.entries(categories || {}).map(([value, label]) => (
                                         <option key={value} value={value}>{label}</option>
                                     ))}
@@ -1220,6 +1227,10 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                                 <input value={editForm.data.due_date} onChange={(event) => editForm.setData('due_date', event.target.value)} type="date" />
                             </Field>
                         </div>
+                        {editForm.data.category === 'os_dnit' && <ActivityOsDnitSelect tenantSlug={tenant.slug} contractId={activity.contract_id}
+                            value={editForm.data.os_dnit_order_id} initialOrder={activity.os_dnit_order}
+                            onChange={(value) => { editForm.setData('os_dnit_order_id', value); editForm.clearErrors('os_dnit_order_id'); }}
+                            error={editForm.errors.os_dnit_order_id} disabled={editForm.processing || tourMode} />}
                         <VisibilitySelector
                             value={editForm.data.visibility}
                             onChange={(value) => editForm.setData('visibility', value)}
@@ -1404,7 +1415,7 @@ function ActivityModal({ activity, tenant, assigneesByContract, priorities, cate
                             </section>
                         )}
 
-                        <section>
+                        <section data-tour="activities-detail-updates">
                             <div className="mb-3 flex items-center justify-between gap-3">
                                 <h3 className="flex items-center gap-2 text-[14px] font-semibold text-[var(--ink-900)]">
                                     <MessageSquare size={15} />

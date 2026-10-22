@@ -24,6 +24,9 @@ php artisan storage:link || true
 # Mantem o agendador geral ativo; o RDO executa uma unica vez por dia, as 00:05.
 php artisan schedule:work &
 
+# OS DNIT mail has its own short jobs and retry policy.
+php artisan queue:work os_dnit_mail --queue=os-dnit-mail --sleep=2 --tries=5 --timeout=60 &
+
 php artisan queue:work database --queue=imports,default,maintenance --sleep=3 --tries=1 --timeout=3600 &
 
 # Dois workers APS permitem iniciar o processamento de dois projetos em paralelo.

@@ -31,12 +31,12 @@
     </style>
 </head>
 <body>
-    <div class="footer">Documento gerado pelo Deming em {{ $generatedAt->format('d/m/Y H:i') }}</div>
+    <div class="footer">Documento gerado pelo SigWorks em {{ $generatedAt->format('d/m/Y H:i') }}</div>
 
     <header class="header">
         <table class="header-table">
             <tr>
-                <td class="brand">{{ $ordem->gerenciadoraEmpresa?->nome ?: ($ordem->tenant?->name ?: 'Deming') }}</td>
+                <td class="brand">{{ $ordem->gerenciadoraEmpresa?->nome ?: ($ordem->tenant?->name ?: 'SigWorks') }}</td>
                 <td style="text-align:right">
                     <span class="status">CONCLUÍDA</span>
                 </td>

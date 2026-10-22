@@ -22,7 +22,9 @@
 /storage/*.key
 /storage/pail
 /tmp
+/output/
 /tools/ocr/
+/scripts/__pycache__/
 /vendor
 _ide_helper.php
 Homestead.json
