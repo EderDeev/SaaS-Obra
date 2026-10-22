@@ -10,6 +10,7 @@ use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
+use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
 use App\Support\OsDnitPermissions;
 use App\Support\OsDnitContractAccess;
@@ -89,6 +90,15 @@ class HandleInertiaRequests extends Middleware
                 'reset_password' => fn () => $request->session()->get('reset_password'),
             ],
             'currentTenant' => fn () => $tenantForNavigation(),
+            'tenantHomeUrl' => function () use ($request, $tenantForNavigation): ?string {
+                $tenant = $tenantForNavigation();
+                return $request->user() && $tenant ? \App\Support\TenantLandingPage::url($request->user(), $tenant) : null;
+            },
+            'navigationPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+                $permissions = $request->user() && $tenant ? NavigationPermissions::permissionsFor($request->user(), $tenant) : [];
+                return ['can' => array_replace(array_fill_keys(NavigationPermissions::all(), false), array_fill_keys($permissions, true))];
+            },
             'osDnitPermissions' => \Inertia\Inertia::always(function () use ($request, $tenantForNavigation): array {
                 $tenant = $tenantForNavigation();
                 $matrix = $request->user() && $tenant ? OsDnitPermissions::matrix($request->user(), $tenant) : [];

@@ -13,7 +13,9 @@ use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
+use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
+use App\Support\OsDnitPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -61,6 +63,7 @@ class TenantUserCreationPermissionsTest extends TestCase
                 'email' => $managedUser->email,
                 'empresa_id' => $empresa->id,
                 'role' => 'engineer',
+                'navigation_permissions' => [NavigationPermissions::TUTORIALS],
                 'user_permissions' => [UserPermissions::VIEW],
                 'parametrizacao_permissions' => [ParametrizacaoPermissions::MANAGE_EMPRESAS],
                 'budget_permissions' => [BudgetPermissions::EDIT],
@@ -75,6 +78,7 @@ class TenantUserCreationPermissionsTest extends TestCase
                     'documentation_permissions' => [DocumentationPermissions::OCR],
                     'diario_obra_permissions' => [DiarioObraPermissions::FILL_RDO],
                     'ordem_servico_permissions' => [OrdemServicoPermissions::MANAGE_DRAFTS],
+                    'os_dnit_permissions' => [OsDnitPermissions::CREATE_PRODUCTS],
                     'medicao_permissions' => [MedicaoPermissions::ANALYZE],
                 ]],
             ])
@@ -89,10 +93,12 @@ class TenantUserCreationPermissionsTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame([BudgetPermissions::VIEW, BudgetPermissions::EDIT], $membership->budget_permissions);
+        $this->assertSame([NavigationPermissions::TUTORIALS], $membership->navigation_permissions);
         $this->assertSame([ContractPermissions::VIEW, ContractPermissions::ADDITIVES], $participant->contract_permissions);
         $this->assertSame([DocumentationPermissions::VIEW, DocumentationPermissions::OCR], $participant->documentation_permissions);
         $this->assertSame([DiarioObraPermissions::VIEW, DiarioObraPermissions::FILL_RDO], $participant->diario_obra_permissions);
         $this->assertSame([OrdemServicoPermissions::VIEW, OrdemServicoPermissions::MANAGE_DRAFTS], $participant->ordem_servico_permissions);
+        $this->assertEqualsCanonicalizing([OsDnitPermissions::VIEW, OsDnitPermissions::VIEW_PRODUCTS, OsDnitPermissions::CREATE_PRODUCTS], $participant->os_dnit_permissions);
         $this->assertSame([MedicaoPermissions::VIEW, MedicaoPermissions::ANALYZE], $participant->medicao_permissions);
         $this->assertSame('/t/'.$tenant->slug.'/usuarios', route('tenant.users.index', $tenant, false));
     }

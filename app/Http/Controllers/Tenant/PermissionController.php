@@ -14,6 +14,7 @@ use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
+use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
 use App\Support\OsDnitPermissions;
 use App\Support\ParametrizacaoPermissions;
@@ -88,6 +89,10 @@ class PermissionController extends Controller
             'medicaoPermissionsByUserContract' => $this->medicaoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'contractPermissionsByUserContract' => $this->contractPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'rncPermissionsByUserContract' => $this->rncPermissionsByUserContract($memberships, $contracts, $rncResponsaveis),
+            'navigationPermissionsByUser' => $memberships->mapWithKeys(fn (TenantUser $membership): array => [
+                $membership->user_id => $membership->role === TenantRoles::OWNER ? NavigationPermissions::all()
+                    : NavigationPermissions::normalize($membership->navigation_permissions ?? NavigationPermissions::all()),
+            ])->all(),
             'userPermissionsByUser' => $memberships
                 ->mapWithKeys(fn (TenantUser $membership): array => [
                     $membership->user_id => $membership->role === 'tenant_owner'
@@ -110,6 +115,7 @@ class PermissionController extends Controller
                 ])
                 ->all(),
             'permissionGroups' => [
+                'navigation' => ['label' => 'Visão geral e Tutoriais', 'permissions' => NavigationPermissions::labels()],
                 'activities' => [
                     'label' => 'Atividades',
                     'permissions' => ActivityPermissions::labels(),
@@ -139,7 +145,7 @@ class PermissionController extends Controller
                     'permissions' => DiarioObraPermissions::labels(),
                 ],
                 'ordem_servico' => [
-                    'label' => 'Ordem de Serviço',
+                    'label' => 'Liberação de Serviço',
                     'permissions' => OrdemServicoPermissions::labels(),
                 ],
                 'os_dnit' => ['label' => 'OS DNIT', 'permissions' => OsDnitPermissions::labels()],
@@ -172,6 +178,8 @@ class PermissionController extends Controller
             'project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
             'rnc_permissions' => ['nullable', 'array'],
             'rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
+            'navigation_permissions' => ['sometimes', 'array'],
+            'navigation_permissions.*' => ['required', 'string', Rule::in(NavigationPermissions::all())],
             'user_permissions' => ['nullable', 'array'],
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
             'parametrizacao_permissions' => ['nullable', 'array'],
@@ -202,6 +210,12 @@ class PermissionController extends Controller
 
         if ($membership->role === 'tenant_owner') {
             return back()->with('success', 'Owner mantem acesso total automaticamente.');
+        }
+
+        if (array_key_exists('navigation_permissions', $data)
+            && count(array_filter(array_keys($data), fn ($key) => str_ends_with($key, '_permissions'))) === 1) {
+            $membership->update(['navigation_permissions' => NavigationPermissions::normalize($data['navigation_permissions'])]);
+            return back()->with('success', 'Permissões de Visão geral e Tutoriais atualizadas.');
         }
 
         $osDnitParticipant = null;
@@ -270,7 +284,7 @@ class PermissionController extends Controller
                 ]);
             } elseif ($activityPermissions !== [] || $projectPermissions !== [] || $rncPermissions !== [] || $documentationPermissions !== [] || $diarioObraPermissions !== [] || $ordemServicoPermissions !== [] || $medicaoPermissions !== [] || $contractPermissions !== []) {
                 throw ValidationException::withMessages([
-                    'contract_id' => 'Vincule o usuario a um contrato para configurar Atividades, Contratos, Projetos, RNC, Documentacao, Diario de Obra, Ordem de Servico ou Medicao.',
+                    'contract_id' => 'Vincule o usuario a um contrato para configurar Atividades, Contratos, Projetos, RNC, Documentacao, Diario de Obra, Liberação de Serviço, OS DNIT ou Medição.',
                 ]);
             }
 
@@ -287,6 +301,10 @@ class PermissionController extends Controller
 
         if ($osDnitParticipant) {
             $osDnitParticipant->update(['os_dnit_permissions' => OsDnitPermissions::normalize($data['os_dnit_permissions'])]);
+        }
+
+        if (array_key_exists('navigation_permissions', $data)) {
+            $membership->update(['navigation_permissions' => NavigationPermissions::normalize($data['navigation_permissions'])]);
         }
 
         return back()->with('success', 'Permissoes atualizadas.');

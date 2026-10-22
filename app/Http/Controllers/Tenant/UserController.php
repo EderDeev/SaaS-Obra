@@ -16,7 +16,9 @@ use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
+use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
+use App\Support\OsDnitPermissions;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\PasswordPolicy;
 use App\Support\ProjectPermissions;
@@ -37,6 +39,16 @@ class UserController extends Controller
         'manager' => ['manager', 'team_member'],
         'client' => ['client_approver', 'client_viewer'],
         'contractor' => ['contractor_lead', 'contractor_member'],
+    ];
+
+    private const TENANT_MODULE_PERMISSIONS = [
+        'activity_permissions' => ActivityPermissions::class,
+        'contract_permissions' => ContractPermissions::class,
+        'project_permissions' => ProjectPermissions::class,
+        'documentation_permissions' => DocumentationPermissions::class,
+        'diario_obra_permissions' => DiarioObraPermissions::class,
+        'ordem_servico_permissions' => OrdemServicoPermissions::class,
+        'medicao_permissions' => MedicaoPermissions::class,
     ];
 
     public function index(Tenant $tenant): Response
@@ -70,6 +82,12 @@ class UserController extends Controller
                 );
 
             $membership->setAttribute('user_permissions', $userPermissions);
+            $membership->setAttribute('tenant_module_permissions', collect(self::TENANT_MODULE_PERMISSIONS)
+                ->map(fn ($permissions, $field) => $membership->role === TenantRoles::OWNER
+                    ? $permissions::all() : $permissions::normalize($membership->$field ?? $permissions::defaultForRole($membership->role)))
+                ->all());
+            $membership->setAttribute('navigation_permissions', $membership->role === TenantRoles::OWNER
+                ? NavigationPermissions::all() : NavigationPermissions::normalize($membership->navigation_permissions ?? NavigationPermissions::all()));
             $membership->setAttribute('ai_tokens_used_current_month', (int) ($aiUsageByUser[$membership->user_id] ?? 0));
             $membership->setAttribute(
                 'parametrizacao_permissions',
@@ -95,13 +113,16 @@ class UserController extends Controller
                         'contract_id' => (int) $participant->contract_id,
                         'side' => $participant->side,
                         'role' => $participant->role,
-                        'activity_permissions' => ActivityPermissions::normalize($participant->activity_permissions ?? []),
-                        'contract_permissions' => ContractPermissions::normalize($participant->contract_permissions ?? []),
-                        'project_permissions' => ProjectPermissions::normalize($participant->project_permissions ?? []),
-                        'documentation_permissions' => DocumentationPermissions::normalize($participant->documentation_permissions ?? []),
-                        'diario_obra_permissions' => DiarioObraPermissions::normalize($participant->diario_obra_permissions ?? []),
-                        'ordem_servico_permissions' => OrdemServicoPermissions::normalize($participant->ordem_servico_permissions ?? []),
-                        'medicao_permissions' => MedicaoPermissions::normalize($participant->medicao_permissions ?? []),
+                        'activity_permissions' => ActivityPermissions::normalize($participant->activity_permissions ?? $membership->activity_permissions ?? ActivityPermissions::defaultForRole($membership->role)),
+                        'contract_permissions' => ContractPermissions::normalize($participant->contract_permissions ?? $membership->contract_permissions ?? ContractPermissions::defaultForRole($membership->role)),
+                        'project_permissions' => ProjectPermissions::normalize($participant->project_permissions ?? $membership->project_permissions ?? ProjectPermissions::defaultForRole($membership->role)),
+                        'documentation_permissions' => DocumentationPermissions::normalize($participant->documentation_permissions ?? $membership->documentation_permissions ?? DocumentationPermissions::defaultForRole($membership->role)),
+                        'diario_obra_permissions' => DiarioObraPermissions::normalize($participant->diario_obra_permissions ?? $membership->diario_obra_permissions ?? DiarioObraPermissions::defaultForRole($membership->role)),
+                        'ordem_servico_permissions' => OrdemServicoPermissions::normalize($participant->ordem_servico_permissions ?? $membership->ordem_servico_permissions ?? OrdemServicoPermissions::defaultForRole($membership->role)),
+                        'os_dnit_permissions' => $membership->role === TenantRoles::OWNER
+                            ? OsDnitPermissions::all()
+                            : OsDnitPermissions::normalize($participant->os_dnit_permissions ?? OsDnitPermissions::defaultForRole($membership->role)),
+                        'medicao_permissions' => MedicaoPermissions::normalize($participant->medicao_permissions ?? $membership->medicao_permissions ?? MedicaoPermissions::defaultForRole($membership->role)),
                         'rnc_permissions' => RncPermissions::normalize(
                             $rncPermissionsByUserContract
                                 ->get("{$membership->user_id}:{$participant->contract_id}")
@@ -135,6 +156,8 @@ class UserController extends Controller
             'roleGroups' => TenantRoles::groups(),
             'roleLabels' => TenantRoles::labels(),
             'defaultRole' => TenantRoles::defaultRole(),
+            'navigationPermissionOptions' => NavigationPermissions::labels(),
+            'tenantModulePermissionFields' => array_keys(self::TENANT_MODULE_PERMISSIONS),
             'userPermissionOptions' => UserPermissions::labels(),
             'parametrizacaoPermissionOptions' => ParametrizacaoPermissions::labels(),
             'budgetPermissionOptions' => BudgetPermissions::labels(),
@@ -164,8 +187,12 @@ class UserController extends Controller
                     'permissions' => DiarioObraPermissions::labels(),
                 ],
                 'ordem_servico_permissions' => [
-                    'label' => 'Ordem de Serviço',
+                    'label' => 'Liberação de Serviço',
                     'permissions' => OrdemServicoPermissions::labels(),
+                ],
+                'os_dnit_permissions' => [
+                    'label' => 'OS DNIT',
+                    'permissions' => OsDnitPermissions::labels(),
                 ],
                 'medicao_permissions' => [
                     'label' => 'Medição',
@@ -195,6 +222,8 @@ class UserController extends Controller
             ],
             'role' => ['required', Rule::in(TenantRoles::all())],
             'ai_monthly_token_limit' => ['nullable', 'integer', 'min:1000', 'max:'.max(1000, (int) config('services.openai.user_monthly_token_limit'))],
+            'navigation_permissions' => ['sometimes', 'array'],
+            'navigation_permissions.*' => ['required', 'string', Rule::in(NavigationPermissions::all())],
             'user_permissions' => ['nullable', 'array'],
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
             'parametrizacao_permissions' => ['nullable', 'array'],
@@ -223,6 +252,8 @@ class UserController extends Controller
             'contract_accesses.*.diario_obra_permissions.*' => ['required', 'string', Rule::in(DiarioObraPermissions::all())],
             'contract_accesses.*.ordem_servico_permissions' => ['nullable', 'array'],
             'contract_accesses.*.ordem_servico_permissions.*' => ['required', 'string', Rule::in(OrdemServicoPermissions::all())],
+            'contract_accesses.*.os_dnit_permissions' => ['sometimes', 'array'],
+            'contract_accesses.*.os_dnit_permissions.*' => ['required', 'string', Rule::in(OsDnitPermissions::all())],
             'contract_accesses.*.medicao_permissions' => ['nullable', 'array'],
             'contract_accesses.*.medicao_permissions.*' => ['required', 'string', Rule::in(MedicaoPermissions::all())],
         ], [
@@ -253,6 +284,7 @@ class UserController extends Controller
                     'role' => $data['role'],
                     'status' => 'active',
                     'ai_monthly_token_limit' => $data['ai_monthly_token_limit'] ?? null,
+                    'navigation_permissions' => NavigationPermissions::normalize($data['navigation_permissions'] ?? NavigationPermissions::all()),
                     'user_permissions' => UserPermissions::normalize(
                         $data['user_permissions'] ?? UserPermissions::defaultForRole($data['role']),
                     ),
@@ -306,6 +338,7 @@ class UserController extends Controller
         $this->ensureMembershipBelongsToTenant($tenant, $membership);
 
         $data = $request->validate([
+            ...$this->tenantModulePermissionRules(),
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($membership->user_id)],
             'empresa_id' => [
@@ -314,6 +347,8 @@ class UserController extends Controller
             ],
             'role' => ['required', Rule::in(TenantRoles::all())],
             'ai_monthly_token_limit' => ['nullable', 'integer', 'min:1000', 'max:'.max(1000, (int) config('services.openai.user_monthly_token_limit'))],
+            'navigation_permissions' => ['sometimes', 'array'],
+            'navigation_permissions.*' => ['required', 'string', Rule::in(NavigationPermissions::all())],
             'user_permissions' => ['nullable', 'array'],
             'user_permissions.*' => ['required', 'string', Rule::in(UserPermissions::all())],
             'parametrizacao_permissions' => ['nullable', 'array'],
@@ -342,6 +377,8 @@ class UserController extends Controller
             'contract_accesses.*.diario_obra_permissions.*' => ['required', 'string', Rule::in(DiarioObraPermissions::all())],
             'contract_accesses.*.ordem_servico_permissions' => ['nullable', 'array'],
             'contract_accesses.*.ordem_servico_permissions.*' => ['required', 'string', Rule::in(OrdemServicoPermissions::all())],
+            'contract_accesses.*.os_dnit_permissions' => ['sometimes', 'array'],
+            'contract_accesses.*.os_dnit_permissions.*' => ['required', 'string', Rule::in(OsDnitPermissions::all())],
             'contract_accesses.*.medicao_permissions' => ['nullable', 'array'],
             'contract_accesses.*.medicao_permissions.*' => ['required', 'string', Rule::in(MedicaoPermissions::all())],
         ], [
@@ -360,6 +397,18 @@ class UserController extends Controller
                 'role' => $data['role'],
                 'ai_monthly_token_limit' => $data['ai_monthly_token_limit'] ?? null,
             ];
+
+            if ($data['role'] === TenantRoles::ADMIN) {
+                foreach (self::TENANT_MODULE_PERMISSIONS as $field => $permissions) {
+                    if (array_key_exists($field, $data['tenant_module_permissions'] ?? [])) {
+                        $membershipData[$field] = $permissions::normalize($data['tenant_module_permissions'][$field]);
+                    }
+                }
+            }
+
+            if (array_key_exists('navigation_permissions', $data)) {
+                $membershipData['navigation_permissions'] = NavigationPermissions::normalize($data['navigation_permissions']);
+            }
 
             if (array_key_exists('user_permissions', $data)) {
                 $membershipData['user_permissions'] = UserPermissions::normalize($data['user_permissions'] ?? []);
@@ -442,6 +491,16 @@ class UserController extends Controller
     private function authorizeTenantUsers(Tenant $tenant, string $permission = UserPermissions::VIEW): void
     {
         abort_unless(UserPermissions::can(request()->user(), $tenant, $permission), 403);
+    }
+
+    private function tenantModulePermissionRules(): array
+    {
+        $rules = ['tenant_module_permissions' => ['sometimes', 'array:'.implode(',', array_keys(self::TENANT_MODULE_PERMISSIONS))]];
+        foreach (self::TENANT_MODULE_PERMISSIONS as $field => $permissions) {
+            $rules["tenant_module_permissions.{$field}"] = ['sometimes', 'array'];
+            $rules["tenant_module_permissions.{$field}.*"] = ['required', 'string', Rule::in($permissions::all())];
+        }
+        return $rules;
     }
 
     private function ensureMembershipBelongsToTenant(Tenant $tenant, TenantUser $membership): void
@@ -528,6 +587,11 @@ class UserController extends Controller
                 'invited_at' => now(),
                 'joined_at' => now(),
             ]);
+
+            // Older clients may omit this group; preserve existing grants in that case.
+            if (array_key_exists('os_dnit_permissions', $access)) {
+                $participant->os_dnit_permissions = OsDnitPermissions::normalize($access['os_dnit_permissions']);
+            }
 
             $participant->save();
 

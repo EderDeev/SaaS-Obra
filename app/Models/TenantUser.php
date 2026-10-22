@@ -6,13 +6,14 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['tenant_id', 'user_id', 'empresa_id', 'role', 'status', 'ai_monthly_token_limit', 'activity_permissions', 'user_permissions', 'parametrizacao_permissions', 'project_permissions', 'budget_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'medicao_permissions', 'contract_permissions', 'invited_at', 'joined_at'])]
+#[Fillable(['tenant_id', 'user_id', 'empresa_id', 'role', 'status', 'ai_monthly_token_limit', 'activity_permissions', 'navigation_permissions', 'user_permissions', 'parametrizacao_permissions', 'project_permissions', 'budget_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'medicao_permissions', 'contract_permissions', 'invited_at', 'joined_at'])]
 class TenantUser extends Model
 {
     protected function casts(): array
     {
         return [
             'activity_permissions' => 'array',
+            'navigation_permissions' => 'array',
             'user_permissions' => 'array',
             'parametrizacao_permissions' => 'array',
             'project_permissions' => 'array',

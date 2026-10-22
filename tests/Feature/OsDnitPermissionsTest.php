@@ -78,7 +78,7 @@ class OsDnitPermissionsTest extends TestCase
         $this->get($this->url('orders.show', $this->order))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('capabilities.edit', false)->where('capabilities.delete', false)->has('products', 0));
         foreach (['orders.create', 'products.index', 'dashboard', 'responsibles.index'] as $route) $this->get($this->url($route))->assertForbidden();
-        $this->get($this->url('settings.index'))->assertOk()->assertInertia(fn (Assert $page) => $page->where('canCreate', false)->where('highways.data.0.can_edit', false));
+        $this->get($this->url('settings.index'))->assertForbidden();
         $this->get(route('tenant.os-dnit.orders.index', [$this->tenant, 'contract_id' => $this->b->id]))->assertSessionHasErrors('contract_id');
     }
 
@@ -105,14 +105,29 @@ class OsDnitPermissionsTest extends TestCase
         Storage::disk('local')->put('private-anexo.pdf', 'original');
         $this->order->attachments()->create(['original_name' => 'anexo.pdf', 'storage_disk' => 'local', 'path' => 'private-anexo.pdf', 'size_bytes' => 8]);
         $this->grant([P::DELETE]);
+        $this->get($this->url('orders.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('orders.data.0.can_delete', true));
         $this->delete($this->url('orders.destroy', $this->order), ['version' => 9])->assertSessionHasErrors('version');
-        $this->order->update(['status' => 'awaiting_concremat', 'submitted_at' => now()]);
-        $this->delete($this->url('orders.destroy', $this->order), ['version' => 1])->assertSessionHasErrors('order');
+        // A return to the analyst (or even a draft status with a previous submission)
+        // must never re-enable deletion after the initial submission.
+        foreach (array_keys(OsDnitOrder::STATUSES) as $status) {
+            $this->order->update(['status' => $status, 'submitted_at' => now()]);
+            $this->get($this->url('orders.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('orders.data.0.can_delete', false));
+            $this->get($this->url('orders.show', $this->order))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('capabilities.delete', false));
+            $this->delete($this->url('orders.destroy', $this->order), ['version' => 1])->assertSessionHasErrors('order');
+            $this->assertFalse($this->order->fresh()->trashed());
+        }
         $this->order->update(['status' => 'draft', 'submitted_at' => null]);
         $this->delete($this->url('orders.destroy', $this->order), ['version' => 1])->assertSessionHasNoErrors();
         $this->assertSoftDeleted('os_dnit_orders', ['id' => $this->order->id]);
         $this->assertDatabaseHas('os_dnit_order_events', ['order_id' => $this->order->id, 'actor_id' => $this->user->id, 'action' => 'deleted']);
         $this->assertDatabaseCount('os_dnit_order_items', 1);
+        $this->assertDatabaseCount('os_dnit_order_attachments', 1);
+        $this->assertNotNull(OsDnitOrder::withTrashed()->findOrFail($this->order->id)->deleted_at);
+        $this->get($this->url('orders.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('orders.data', 0)->where('orders.total', 0));
         Storage::disk('local')->assertExists('private-anexo.pdf');
         $this->get($this->url('orders.show', $this->order))->assertNotFound();
         $this->assertSame('002/2026', app(OsDnitOrderNumber::class)->previews($this->user, $this->tenant)[$this->a->id]);
@@ -170,11 +185,46 @@ class OsDnitPermissionsTest extends TestCase
         $this->post($this->url('responsibles.store'), ['contract_id' => $this->b->id, 'assignments' => []])->assertSessionHasErrors('contract_id');
     }
 
-    public function test_permissions_screen_registers_thirteen_keys_and_saves_only_the_target_contract(): void
+    public function test_view_settings_is_required_for_navigation_and_direct_access_and_is_scoped_to_contract(): void
+    {
+        ContractParticipant::where('contract_id', $this->b->id)->where('user_id', $this->user->id)->update(['os_dnit_permissions' => [P::VIEW]]);
+        OsDnitHighway::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->b->id, 'name' => 'BR-OUTRO', 'active' => true]);
+        $this->grant([P::VIEW_SETTINGS]);
+        $this->get($this->url('settings.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('contracts', 1)->where('contracts.0.id', $this->a->id)
+            ->has('highways.data', 1)->where('highways.data.0.id', $this->road->id)
+            ->where('canCreate', false)->where('highways.data.0.can_edit', false)->where('highways.data.0.can_delete', false)
+            ->where('osDnitPermissions.can.view_settings', true));
+        $this->get(route('tenant.os-dnit.settings.index', [$this->tenant, 'contract_id' => $this->b->id]))->assertSessionHasErrors('contract_id');
+        $this->post($this->url('settings.highways.store'), ['contract_id' => $this->a->id, 'name' => 'BR-NOVA'])->assertForbidden();
+        $this->patch($this->url('settings.highways.update', $this->road), ['contract_id' => $this->a->id, 'name' => 'BR-EDITADA', 'active' => true])->assertForbidden();
+        $this->delete($this->url('settings.highways.destroy', $this->road))->assertForbidden();
+        $this->grant([P::VIEW]);
+        $this->get($this->url('settings.index'))->assertForbidden();
+        $this->get($this->url('orders.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('osDnitPermissions.can.view_settings', false));
+    }
+
+    public function test_default_order_access_does_not_make_settings_public_and_existing_settings_writes_include_view_access(): void
+    {
+        $this->link->update(['os_dnit_permissions' => null]);
+        $this->get($this->url('settings.index'))->assertForbidden();
+        foreach ([P::CREATE_SETTINGS, P::EDIT_SETTINGS, P::DELETE_SETTINGS] as $permission) {
+            // Pre-existing persisted permissions also gain their required view dependency.
+            $this->link->update(['os_dnit_permissions' => [$permission]]);
+            $this->get($this->url('settings.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('contracts', 1)->where('osDnitPermissions.can.view_settings', true));
+        }
+        $this->tenant->memberships()->where('user_id', $this->user->id)->update(['role' => 'tenant_admin']);
+        $this->grant([P::VIEW]);
+        $this->get($this->url('settings.index'))->assertForbidden();
+    }
+
+    public function test_permissions_screen_registers_fourteen_keys_and_saves_only_the_target_contract(): void
     {
         $this->link->update(['project_permissions' => ['view_projects']]);
         $this->actingAs($this->owner)->get(route('tenant.permissions.index', $this->tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->has('permissionGroups.os_dnit.permissions', 13)->where("osDnitPermissionsByUserContract.{$this->user->id}:{$this->a->id}", []));
+            ->has('permissionGroups.os_dnit.permissions', 14)->where("osDnitPermissionsByUserContract.{$this->user->id}:{$this->a->id}", []));
         $url = route('tenant.permissions.update', $this->tenant);
         $this->patch($url, ['user_id' => $this->user->id, 'contract_id' => $this->a->id, 'os_dnit_permissions' => [P::CREATE_PRODUCTS]])->assertSessionHasNoErrors();
         $this->assertEqualsCanonicalizing([P::VIEW, P::VIEW_PRODUCTS, P::CREATE_PRODUCTS], $this->link->fresh()->os_dnit_permissions);

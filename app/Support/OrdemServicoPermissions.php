@@ -23,15 +23,15 @@ class OrdemServicoPermissions
     public const COMPLETE = 'complete_service_orders';
 
     public const LABELS = [
-        self::METRICS => 'Visualizar métricas da OS',
-        self::VIEW => 'Visualizar ordens de serviço',
-        self::MANAGE_DRAFTS => 'Criar, editar e enviar OS',
-        self::ANALYZE => 'Analisar ordens de serviço',
-        self::APPROVE => 'Aprovar ordens de serviço',
-        self::RESPONSIBLES => 'Gerenciar responsáveis da OS',
-        self::SETTINGS => 'Parametrizar requisitos da OS',
-        self::EXECUTE => 'Registrar execução da OS',
-        self::COMPLETE => 'Concluir ou cancelar ordens de serviço',
+        self::METRICS => 'Visualizar métricas das liberações de serviço',
+        self::VIEW => 'Visualizar liberações de serviço',
+        self::MANAGE_DRAFTS => 'Criar, editar e enviar liberações de serviço',
+        self::ANALYZE => 'Analisar liberações de serviço',
+        self::APPROVE => 'Aprovar liberações de serviço',
+        self::RESPONSIBLES => 'Gerenciar responsáveis da liberação de serviço',
+        self::SETTINGS => 'Parametrizar requisitos da liberação de serviço',
+        self::EXECUTE => 'Registrar execução da liberação de serviço',
+        self::COMPLETE => 'Concluir ou cancelar liberações de serviço',
     ];
 
     public static function all(): array

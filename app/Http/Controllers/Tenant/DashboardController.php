@@ -16,6 +16,7 @@ use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
+use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -31,6 +32,7 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request, Tenant $tenant): Response
     {
+        abort_unless(NavigationPermissions::can($request->user(), $tenant, NavigationPermissions::OVERVIEW), 403);
         $user = $request->user();
         $tenantRole = $user->tenantRole($tenant);
         $contracts = $this->accessibleContracts($user, $tenant);

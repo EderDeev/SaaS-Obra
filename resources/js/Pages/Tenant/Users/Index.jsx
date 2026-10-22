@@ -1,5 +1,6 @@
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { toggleOsDnitPermission } from '@/Support/osDnitPermissions';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { Activity, Calculator, CalendarDays, Check, ChevronRight, ClipboardList, Copy, FileKey2, FileText, FileWarning, FolderOpen, KeyRound, Link2, Pencil, Plus, Ruler, ShieldCheck, SlidersHorizontal, UserCheck, UserCog, UserX, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -20,6 +21,7 @@ const sideLabels = {
 };
 
 const permissionGroupMeta = {
+    navigation_permissions: { icon: ShieldCheck },
     activity_permissions: { icon: Activity },
     contract_permissions: { icon: FileKey2 },
     rnc_permissions: { icon: FileWarning },
@@ -27,6 +29,7 @@ const permissionGroupMeta = {
     documentation_permissions: { icon: FileText },
     diario_obra_permissions: { icon: CalendarDays },
     ordem_servico_permissions: { icon: ClipboardList },
+    os_dnit_permissions: { icon: ClipboardList },
     medicao_permissions: { icon: Ruler },
     user_permissions: { icon: UserCog },
     parametrizacao_permissions: { icon: SlidersHorizontal },
@@ -69,15 +72,17 @@ function sideFromEmpresa(empresa) {
     return 'manager';
 }
 
-function emptyFormData(defaultEmpresaId, defaultRole) {
+function emptyFormData(defaultEmpresaId, defaultRole, navigationPermissionOptions) {
     return {
         name: '',
         email: '',
         empresa_id: defaultEmpresaId,
         role: defaultRole,
+        navigation_permissions: Object.keys(navigationPermissionOptions),
         user_permissions: [],
         parametrizacao_permissions: [],
         budget_permissions: [],
+        tenant_module_permissions: {},
         ai_monthly_token_limit: '',
         contract_accesses: [],
     };
@@ -91,10 +96,12 @@ export default function TenantUsersIndex({
     roleGroups = {},
     roleLabels = {},
     defaultRole = 'engenheiro_planejamento',
+    navigationPermissionOptions = {},
     userPermissionOptions = {},
     parametrizacaoPermissionOptions = {},
     budgetPermissionOptions = {},
     contractPermissionGroups = {},
+    tenantModulePermissionFields = [],
     contractRolesBySide = {},
     userPermissionCan,
     defaultAiUserTokenLimit,
@@ -109,14 +116,17 @@ export default function TenantUsersIndex({
     const [passwordCopied, setPasswordCopied] = useState(false);
     const [openGlobalPermissionGroup, setOpenGlobalPermissionGroup] = useState('activity_permissions');
     const [openContractPermissionGroups, setOpenContractPermissionGroups] = useState({});
+    const [permissionContractId, setPermissionContractId] = useState('');
     const form = useForm({
         name: '',
         email: '',
         empresa_id: defaultEmpresaId,
         role: defaultRole,
+        navigation_permissions: Object.keys(navigationPermissionOptions),
         user_permissions: [],
         parametrizacao_permissions: [],
         budget_permissions: [],
+        tenant_module_permissions: {},
         ai_monthly_token_limit: '',
         contract_accesses: [],
     });
@@ -133,19 +143,22 @@ export default function TenantUsersIndex({
         setEditingMembership(null);
         setFormMode('create');
         form.clearErrors();
-        form.setData(emptyFormData(defaultEmpresaId, defaultRole));
+        form.setData(emptyFormData(defaultEmpresaId, defaultRole, navigationPermissionOptions));
         setFormOpen(false);
     };
 
     const openCreateForm = () => {
+        setOpenGlobalPermissionGroup('activity_permissions');
         setEditingMembership(null);
         setFormMode('create');
         form.clearErrors();
-        form.setData(emptyFormData(defaultEmpresaId, defaultRole));
+        form.setData(emptyFormData(defaultEmpresaId, defaultRole, navigationPermissionOptions));
         setFormOpen(true);
     };
 
     const editMembership = (membership) => {
+        setPermissionContractId('');
+        setOpenGlobalPermissionGroup('navigation_permissions');
         setEditingMembership(membership);
         setFormMode('edit');
         setFormOpen(true);
@@ -155,15 +168,19 @@ export default function TenantUsersIndex({
             email: membership.user?.email ?? '',
             empresa_id: membership.empresa_id ?? '',
             role: membership.role ?? defaultRole,
+            navigation_permissions: membership.navigation_permissions ?? Object.keys(navigationPermissionOptions),
             user_permissions: membership.user_permissions ?? [],
             parametrizacao_permissions: membership.parametrizacao_permissions ?? [],
             budget_permissions: membership.budget_permissions ?? [],
+            tenant_module_permissions: membership.tenant_module_permissions ?? {},
             ai_monthly_token_limit: membership.ai_monthly_token_limit ?? '',
             contract_accesses: membership.contract_accesses ?? [],
         });
     };
 
     const linkMembership = (membership) => {
+        setPermissionContractId('');
+        setOpenGlobalPermissionGroup('navigation_permissions');
         setEditingMembership(membership);
         setFormMode('contracts');
         setFormOpen(true);
@@ -173,9 +190,11 @@ export default function TenantUsersIndex({
             email: membership.user?.email ?? '',
             empresa_id: membership.empresa_id ?? '',
             role: membership.role ?? defaultRole,
+            navigation_permissions: membership.navigation_permissions ?? Object.keys(navigationPermissionOptions),
             user_permissions: membership.user_permissions ?? [],
             parametrizacao_permissions: membership.parametrizacao_permissions ?? [],
             budget_permissions: membership.budget_permissions ?? [],
+            tenant_module_permissions: membership.tenant_module_permissions ?? {},
             ai_monthly_token_limit: membership.ai_monthly_token_limit ?? '',
             contract_accesses: membership.contract_accesses ?? [],
         });
@@ -210,6 +229,7 @@ export default function TenantUsersIndex({
             documentation_permissions: currentTemplate.documentation_permissions || [],
             diario_obra_permissions: currentTemplate.diario_obra_permissions || [],
             ordem_servico_permissions: currentTemplate.ordem_servico_permissions || [],
+            os_dnit_permissions: currentTemplate.os_dnit_permissions || [],
             medicao_permissions: currentTemplate.medicao_permissions || [],
         };
     };
@@ -279,7 +299,7 @@ export default function TenantUsersIndex({
 
             return {
                 ...access,
-                [field]: current.includes(permission)
+                [field]: field === 'os_dnit_permissions' ? toggleOsDnitPermission(current, permission) : current.includes(permission)
                     ? current.filter((item) => item !== permission)
                     : [...current, permission],
             };
@@ -292,7 +312,7 @@ export default function TenantUsersIndex({
 
             return {
                 ...access,
-                [field]: current.includes(permission)
+                [field]: field === 'os_dnit_permissions' ? toggleOsDnitPermission(current, permission) : current.includes(permission)
                     ? current.filter((item) => item !== permission)
                     : [...current, permission],
             };
@@ -300,7 +320,7 @@ export default function TenantUsersIndex({
     };
 
     const toggleUnifiedPermission = (field, permission) => {
-        if (field === 'user_permissions' || field === 'parametrizacao_permissions' || field === 'budget_permissions') {
+        if (field === 'navigation_permissions' || field === 'user_permissions' || field === 'parametrizacao_permissions' || field === 'budget_permissions') {
             togglePermission(field, permission);
             return;
         }
@@ -319,7 +339,7 @@ export default function TenantUsersIndex({
             return;
         }
 
-        if (field === 'user_permissions' || field === 'parametrizacao_permissions' || field === 'budget_permissions') {
+        if (field === 'navigation_permissions' || field === 'user_permissions' || field === 'parametrizacao_permissions' || field === 'budget_permissions') {
             const current = form.data[field] || [];
             const allSelected = permissionKeys.every((permission) => current.includes(permission));
 
@@ -398,6 +418,7 @@ export default function TenantUsersIndex({
     };
 
     const contractAccesses = form.data.contract_accesses || [];
+    const permissionContractAccess = contractAccesses.find((access) => String(access.contract_id) === String(permissionContractId)) || contractAccesses[0];
     const permissionsSelectedInEveryContract = (field) => {
         if (contractAccesses.length === 0) {
             return [];
@@ -408,17 +429,58 @@ export default function TenantUsersIndex({
         );
     };
     const unifiedPermissionGroups = {
+        navigation_permissions: { label: 'Visão geral e Tutoriais', permissions: navigationPermissionOptions },
         ...contractPermissionGroups,
         budget_permissions: { label: 'Orçamentos', permissions: budgetPermissionOptions },
         user_permissions: { label: 'Usuários', permissions: userPermissionOptions },
         parametrizacao_permissions: { label: 'Parametrização', permissions: parametrizacaoPermissionOptions },
     };
     const unifiedSelectedPermissions = {
+        navigation_permissions: form.data.navigation_permissions || [],
         ...Object.fromEntries(Object.keys(contractPermissionGroups).map((field) => [field, permissionsSelectedInEveryContract(field)])),
         budget_permissions: form.data.budget_permissions || [],
         user_permissions: form.data.user_permissions || [],
         parametrizacao_permissions: form.data.parametrizacao_permissions || [],
     };
+    const isTenantModulePermission = (field) => form.data.role === 'tenant_admin' && tenantModulePermissionFields.includes(field);
+    const editPermissionGroups = Object.fromEntries(Object.entries(unifiedPermissionGroups).map(([field, group]) => [field, {
+        ...group,
+        description: field in contractPermissionGroups && !isTenantModulePermission(field)
+            ? 'Acesso no contrato selecionado.' : 'Acesso geral do usuário neste tenant.',
+    }]));
+    const editSelectedPermissions = {
+        ...permissionContractAccess,
+        ...(form.data.role === 'tenant_admin' ? form.data.tenant_module_permissions : {}),
+        navigation_permissions: form.data.navigation_permissions,
+        budget_permissions: form.data.budget_permissions,
+        user_permissions: form.data.user_permissions,
+        parametrizacao_permissions: form.data.parametrizacao_permissions,
+    };
+    const disabledEditGroups = Object.keys(contractPermissionGroups).filter((field) => !permissionContractAccess && !isTenantModulePermission(field));
+    const setEditPermissionSelection = (field, selected) => {
+        if (isTenantModulePermission(field)) {
+            form.setData('tenant_module_permissions', { ...form.data.tenant_module_permissions, [field]: selected });
+        } else if (field in contractPermissionGroups) {
+            if (permissionContractAccess) updateContractAccess(permissionContractAccess.contract_id, field, selected);
+        } else {
+            form.setData(field, selected);
+        }
+    };
+    const toggleEditPermission = (field, permission) => {
+        const current = editSelectedPermissions[field] || [];
+        setEditPermissionSelection(field, field === 'os_dnit_permissions' ? toggleOsDnitPermission(current, permission)
+            : current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission]);
+    };
+    const toggleAllEditPermissions = (field, permissions) => {
+        const current = editSelectedPermissions[field] || [];
+        setEditPermissionSelection(field, permissions.every((permission) => current.includes(permission)) ? [] : permissions);
+    };
+    const editPermissionErrors = Object.fromEntries(Object.keys(editPermissionGroups).map((field) => {
+        const prefix = isTenantModulePermission(field) ? 'tenant_module_permissions'
+            : field in contractPermissionGroups ? `contract_accesses.${contractAccesses.indexOf(permissionContractAccess)}` : null;
+        const key = prefix ? `${prefix}.${field}` : field;
+        return [field, form.errors[key] || Object.entries(form.errors).find(([name]) => name.startsWith(`${key}.`))?.[1]];
+    }));
 
     return (
         <AuthenticatedLayout>
@@ -667,6 +729,41 @@ export default function TenantUsersIndex({
                             </div>
                         )}
 
+                        {formMode !== 'create' && (
+                            <div className="mt-5 space-y-3">
+                                <Field label="Contrato para configurar as permissões">
+                                    <select
+                                        value={permissionContractAccess?.contract_id ?? ''}
+                                        onChange={(event) => setPermissionContractId(event.target.value)}
+                                        disabled={!permissionContractAccess || editingMembership?.role === 'tenant_owner'}
+                                    >
+                                        {!permissionContractAccess && <option value="">Vincule o usuário a um contrato</option>}
+                                        {contractAccesses.map((access) => {
+                                            const contract = contracts.find((item) => Number(item.id) === Number(access.contract_id));
+                                            return <option key={access.contract_id} value={access.contract_id}>{contract?.code} · {contract?.name}</option>;
+                                        })}
+                                    </select>
+                                </Field>
+                                {!permissionContractAccess && <p className="text-xs text-[var(--ink-500)]">Vincule o usuário a um contrato para liberar os módulos com acesso por contrato. As permissões gerais podem ser configuradas abaixo.</p>}
+                                {editingMembership?.role === 'tenant_owner' ? (
+                                    <p className="text-sm text-[var(--ink-500)]">O proprietário mantém acesso total aos contratos vinculados.</p>
+                                ) : (
+                                    <PermissionModuleList
+                                        eyebrow="Módulos de permissões"
+                                        title="Permissões do usuário"
+                                        groups={editPermissionGroups}
+                                        selectedByGroup={editSelectedPermissions}
+                                        openGroup={openGlobalPermissionGroup}
+                                        onOpenGroup={(field) => setOpenGlobalPermissionGroup((current) => current === field ? '' : field)}
+                                        onToggle={toggleEditPermission}
+                                        onToggleAll={toggleAllEditPermissions}
+                                        disabledGroups={disabledEditGroups}
+                                        errors={editPermissionErrors}
+                                    />
+                                )}
+                            </div>
+                        )}
+
                         <div className="mt-5 flex flex-wrap gap-2">
                             <button
                                 className="sig-btn sig-btn-primary"
@@ -894,6 +991,7 @@ function PermissionModuleList({
     errors = {},
     errorPrefix = null,
     compact = false,
+    disabledGroups = [],
     className = '',
 }) {
     const entries = Object.entries(groups || {});
@@ -921,6 +1019,7 @@ function PermissionModuleList({
                     const permissionKeys = permissions.map(([permission]) => permission);
                     const allSelected = permissionKeys.length > 0 && permissionKeys.every((permission) => selected.includes(permission));
                     const expanded = openGroup === field;
+                    const disabled = disabledGroups.includes(field);
                     const error = errorPrefix ? errors[`${errorPrefix}.${field}`] : errors[field];
 
                     return (
@@ -953,6 +1052,7 @@ function PermissionModuleList({
                                             <input
                                                 type="checkbox"
                                                 checked={allSelected}
+                                                disabled={disabled}
                                                 onChange={() => onToggleAll(field, permissionKeys)}
                                             />
                                             <span>{allSelected ? 'Desmarcar todas' : 'Marcar todas'}</span>
@@ -972,6 +1072,7 @@ function PermissionModuleList({
                                                 <input
                                                     type="checkbox"
                                                     checked={checked}
+                                                    disabled={disabled}
                                                     onChange={() => onToggle(field, permission)}
                                                 />
                                                 <span>{label}</span>

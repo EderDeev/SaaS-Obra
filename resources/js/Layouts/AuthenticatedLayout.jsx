@@ -81,6 +81,8 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     const navigationContracts = props.navigationContracts || [];
     const isPlatformAdmin = Boolean(user?.is_platform_admin);
     const userCan = props.userPermissions?.can || {};
+    const navigationCan = props.navigationPermissions?.can || {};
+    const tenantHomeUrl = props.tenantHomeUrl || route('dashboard');
     const projectTourScreen = route().current('tenant.projects.tour-preview') ? props.screen : null;
     const storedProjectTourScreen = typeof window !== 'undefined'
         && window.sessionStorage.getItem('projects:tour-active') === '1'
@@ -505,7 +507,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
             { label: 'Ordem de Serviço', href: route('tenant.os-dnit.orders.index', tenant.slug), active: osDnitTourScreen ? ['create', 'submission', 'concremat', 'inspector'].includes(osDnitTourScreen) : route().current('tenant.os-dnit.orders.*') || route().current('tenant.os-dnit.analysis.*'), badge: String(props.osDnitNavigation?.pending_analysis_count ?? 0) },
             ...(osDnitCan.view_products ? [{ label: 'Produtos', href: route('tenant.os-dnit.products.index', tenant.slug), active: route().current('tenant.os-dnit.products.*') || osDnitTourScreen === 'products' }] : []),
             ...(osDnitCan.view_dashboard ? [{ label: 'Dashboard', href: route('tenant.os-dnit.dashboard', tenant.slug), active: route().current('tenant.os-dnit.dashboard') || osDnitTourScreen === 'dashboard' }] : []),
-            { label: 'Parametrização', href: route('tenant.os-dnit.settings.index', tenant.slug), active: route().current('tenant.os-dnit.settings.*') },
+            ...(osDnitCan.view_settings ? [{ label: 'Parametrização', href: route('tenant.os-dnit.settings.index', tenant.slug), active: route().current('tenant.os-dnit.settings.*') }] : []),
             ...(osDnitCan.manage_responsibles ? [{ label: 'Responsáveis', href: route('tenant.os-dnit.responsibles.index', tenant.slug), active: route().current('tenant.os-dnit.responsibles.*') || osDnitTourScreen === 'responsibles' }] : []),
         ]
         : [];
@@ -641,7 +643,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
 
     if (tenant) {
         navItems.push(
-            { label: 'Visão geral', icon: Home, href: route('tenant.dashboard', tenant.slug), active: route().current('tenant.dashboard') },
+            ...(navigationCan.view_overview ? [{ label: 'Visão geral', icon: Home, href: route('tenant.dashboard', tenant.slug), active: route().current('tenant.dashboard') }] : []),
             ...(contractCan.view_contracts ? [
                 { label: 'Contratos', icon: ClipboardList, href: route('tenant.contracts.index', tenant.slug), active: route().current('tenant.contracts.*'), badge: contract ? 'ativo' : null },
             ] : []),
@@ -673,7 +675,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
             ...(qualidadeItems.length > 0 ? [
                 { label: 'Qualidade', icon: ShieldCheck, active: route().current('tenant.qualidade.*'), children: qualidadeItems },
             ] : []),
-            { label: 'Tutoriais', icon: BookOpen, href: route('tenant.tutorials.index', tenant.slug), active: route().current('tenant.tutorials.*') },
+            ...(navigationCan.view_tutorials ? [{ label: 'Tutoriais', icon: BookOpen, href: route('tenant.tutorials.index', tenant.slug), active: route().current('tenant.tutorials.*') }] : []),
         );
 
         if (canManageTenantUsers) {
@@ -697,13 +699,13 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
 
     const crumbs = contract && tenant
         ? [
-            { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
+            { label: tenant.name, href: tenantHomeUrl },
             { label: 'Contratos', href: route('tenant.contracts.index', tenant.slug) },
             { label: contract.code },
         ]
         : tenant
             ? [
-                { label: tenant.name, href: route('tenant.dashboard', tenant.slug) },
+                { label: tenant.name, href: tenantHomeUrl },
                 { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Liberação de Serviço' : route().current('tenant.os-dnit.*') ? 'OS DNIT' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
@@ -764,7 +766,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
         <div className={`sig-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
             <aside className="sig-side">
                 <div className="flex h-[60px] items-center border-b border-[var(--side-border)] px-[18px]">
-                    <Link href={tenant ? route('tenant.dashboard', tenant.slug) : route('dashboard')}>
+                    <Link href={tenant ? tenantHomeUrl : route('dashboard')}>
                         <SigLogo size={24} />
                     </Link>
                 </div>

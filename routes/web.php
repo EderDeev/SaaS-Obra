@@ -71,7 +71,7 @@ Route::get('/dashboard', function () {
 
     abort_if(! $tenant, 403, 'Seu usuário ainda não possui vínculo ativo.');
 
-    return redirect()->route('tenant.dashboard', $tenant);
+    return redirect(\App\Support\TenantLandingPage::url($user, $tenant));
 })->middleware(['auth', 'verified', 'password.changed'])->name('dashboard');
 
 if (app()->environment('local')) {
@@ -138,7 +138,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
             Route::post('/produtos', [OsDnitProductController::class, 'store'])->middleware('os-dnit.permission:create_products')->name('products.store');
             Route::patch('/produtos/{product}', [OsDnitProductController::class, 'update'])->middleware('os-dnit.permission:edit_products')->name('products.update');
             Route::delete('/produtos/{product}', [OsDnitProductController::class, 'destroy'])->middleware('os-dnit.permission:delete_products')->name('products.destroy');
-            Route::get('/parametrizacao', [OsDnitSettingsController::class, 'index'])->name('settings.index');
+            Route::get('/parametrizacao', [OsDnitSettingsController::class, 'index'])->middleware('os-dnit.permission:view_settings')->name('settings.index');
             Route::post('/parametrizacao/rodovias', [OsDnitSettingsController::class, 'store'])->middleware('os-dnit.permission:create_settings')->name('settings.highways.store');
             Route::patch('/parametrizacao/rodovias/{highway}', [OsDnitSettingsController::class, 'update'])->middleware('os-dnit.permission:edit_settings')->name('settings.highways.update');
             Route::delete('/parametrizacao/rodovias/{highway}', [OsDnitSettingsController::class, 'destroy'])->middleware('os-dnit.permission:delete_settings')->name('settings.highways.destroy');
