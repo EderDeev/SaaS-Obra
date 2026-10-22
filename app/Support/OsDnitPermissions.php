@@ -15,6 +15,7 @@ class OsDnitPermissions
     public const EDIT_PRODUCTS = 'edit_products';
     public const DELETE_PRODUCTS = 'delete_products';
     public const DASHBOARD = 'view_dashboard';
+    public const VIEW_SETTINGS = 'view_settings';
     public const CREATE_SETTINGS = 'create_settings';
     public const EDIT_SETTINGS = 'edit_settings';
     public const DELETE_SETTINGS = 'delete_settings';
@@ -22,10 +23,11 @@ class OsDnitPermissions
 
     public const LABELS = [
         self::VIEW => 'Visualizar OS (exibir menu OS DNIT)',
-        self::CREATE => 'Criar OS', self::EDIT => 'Editar OS', self::DELETE => 'Excluir OS',
+        self::CREATE => 'Criar OS', self::EDIT => 'Editar OS', self::DELETE => 'Excluir OS (somente rascunhos não enviados)',
         self::VIEW_PRODUCTS => 'Visualizar produtos', self::CREATE_PRODUCTS => 'Criar produtos',
         self::EDIT_PRODUCTS => 'Editar produtos', self::DELETE_PRODUCTS => 'Excluir produtos',
         self::DASHBOARD => 'Visualizar dashboard',
+        self::VIEW_SETTINGS => 'Visualizar parametrização',
         self::CREATE_SETTINGS => 'Criar parametrização', self::EDIT_SETTINGS => 'Editar parametrização',
         self::DELETE_SETTINGS => 'Excluir parametrização', self::RESPONSIBLES => 'Gerenciar responsáveis',
     ];
@@ -39,6 +41,8 @@ class OsDnitPermissions
         if ($permissions !== [] && !in_array(self::VIEW, $permissions, true)) array_unshift($permissions, self::VIEW);
         if (array_intersect($permissions, [self::CREATE_PRODUCTS, self::EDIT_PRODUCTS, self::DELETE_PRODUCTS])
             && !in_array(self::VIEW_PRODUCTS, $permissions, true)) $permissions[] = self::VIEW_PRODUCTS;
+        if (array_intersect($permissions, [self::CREATE_SETTINGS, self::EDIT_SETTINGS, self::DELETE_SETTINGS])
+            && !in_array(self::VIEW_SETTINGS, $permissions, true)) $permissions[] = self::VIEW_SETTINGS;
         return $permissions;
     }
 

@@ -80,7 +80,6 @@ export default function Orders({ orders, contracts, filters, canCreate, statuses
                 <div className="flex flex-wrap gap-2"><OsDnitTourButton tenantSlug={currentTenant.slug} />{canCreate && <Link href={route('tenant.os-dnit.orders.create', currentTenant.slug)} className="sig-btn sig-btn-primary"><Plus size={16} />Criar OS</Link>}</div>
             </header>
             {flash.success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{flash.success}</div>}
-            {!canCreate && <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Para criar uma OS, você precisa ser cadastrado como Analista DNIT em Responsáveis e ter vínculo ativo com o contrato.</p>}
             <nav className="flex flex-wrap gap-2" aria-label="Filtrar OSs por etapa">{[
                 ['all', 'Todas as OSs'], ['analyst', 'Rascunho (Analista DNIT)'], ['concremat', 'Análise Concremat'], ['contract_inspector', 'Fiscal do Contrato'], ['completed', 'Finalizadas'],
             ].map(([stage, label]) => {

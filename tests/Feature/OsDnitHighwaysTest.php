@@ -7,6 +7,7 @@ use App\Models\Contract;
 use App\Models\ContractParticipant;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\OsDnitPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -53,9 +54,11 @@ class OsDnitHighwaysTest extends TestCase
         $this->assertDatabaseHas('os_dnit_highways', ['id' => $otherHighway->id, 'name' => 'BR-307/AC']);
     }
 
-    public function test_regular_members_can_only_read_their_tenant_and_listing_is_paginated(): void
+    public function test_members_with_view_settings_can_only_read_their_tenant_and_listing_is_paginated(): void
     {
         [$tenant, $user, $contract] = $this->context('engineer');
+        ContractParticipant::where('contract_id', $contract->id)->where('user_id', $user->id)
+            ->update(['os_dnit_permissions' => OsDnitPermissions::normalize([OsDnitPermissions::VIEW_SETTINGS])]);
         [$otherTenant] = $this->context();
         for ($i = 1; $i <= 16; $i++) {
             OsDnitHighway::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'name' => sprintf('BR-%03d/AC', $i)]);

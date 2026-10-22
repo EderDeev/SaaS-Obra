@@ -22,7 +22,7 @@ class OsDnitSettingsController extends Controller
 {
     public function index(Request $request, Tenant $tenant): Response
     {
-        $contracts = OsDnitContractAccess::contracts($request->user(), $tenant, Permissions::VIEW)->orderBy('code')->get(['id', 'code', 'name']);
+        $contracts = OsDnitContractAccess::contracts($request->user(), $tenant, Permissions::VIEW_SETTINGS)->orderBy('code')->get(['id', 'code', 'name']);
         $filters = $request->validate(['q' => ['nullable', 'string', 'max:120'], 'contract_id' => ['nullable', 'integer', Rule::in($contracts->pluck('id')->all())]]);
 
         return Inertia::render('Tenant/OsDnit/Settings', [

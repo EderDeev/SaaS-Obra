@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { toggleOsDnitPermission } from '@/Support/osDnitPermissions';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { Activity, Calculator, CalendarDays, ChevronRight, ClipboardList, FileKey2, FileText, FileWarning, FolderOpen, KeyRound, Ruler, Save, Search, ShieldCheck, SlidersHorizontal, UserCog, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -26,6 +27,7 @@ function contractLabel(contract) {
 }
 
 const groupMeta = {
+    navigation: { icon: ShieldCheck, dataKey: 'navigation_permissions' },
     activities: { icon: Activity, dataKey: 'activity_permissions', contractScoped: true },
     contracts: { icon: FileKey2, dataKey: 'contract_permissions', contractScoped: true },
     rnc: { icon: FileWarning, dataKey: 'rnc_permissions', contractScoped: true },
@@ -48,6 +50,7 @@ export default function PermissionsIndex({
     activityPermissionsByUserContract,
     projectPermissionsByUserContract,
     rncPermissionsByUserContract,
+    navigationPermissionsByUser,
     userPermissionsByUser,
     parametrizacaoPermissionsByUser,
     budgetPermissionsByUser,
@@ -80,6 +83,7 @@ export default function PermissionsIndex({
         activity_permissions: [],
         project_permissions: [],
         rnc_permissions: [],
+        navigation_permissions: [],
         user_permissions: [],
         parametrizacao_permissions: [],
         budget_permissions: [],
@@ -115,6 +119,7 @@ export default function PermissionsIndex({
             activity_permissions: activityPermissionsByUserContract?.[key] || [],
             project_permissions: projectPermissionsByUserContract?.[key] || [],
             rnc_permissions: rncPermissionsByUserContract?.[key] || [],
+            navigation_permissions: navigationPermissionsByUser?.[selectedUserId] || [],
             user_permissions: userPermissionsByUser?.[selectedUserId] || [],
             parametrizacao_permissions: parametrizacaoPermissionsByUser?.[selectedUserId] || [],
             budget_permissions: budgetPermissionsByUser?.[selectedUserId] || [],
@@ -136,14 +141,7 @@ export default function PermissionsIndex({
         }
 
         if (dataKey === 'os_dnit_permissions') {
-            const current = form.data.os_dnit_permissions;
-            const removing = current.includes(permission);
-            let next = removing ? current.filter((item) => item !== permission) : [...current, permission];
-            if (removing && permission === 'view_orders') next = [];
-            if (removing && permission === 'view_products') next = next.filter((item) => !['create_products', 'edit_products', 'delete_products'].includes(item));
-            if (next.length && !next.includes('view_orders')) next.push('view_orders');
-            if (next.some((item) => ['create_products', 'edit_products', 'delete_products'].includes(item)) && !next.includes('view_products')) next.push('view_products');
-            form.setData(dataKey, next);
+            form.setData(dataKey, toggleOsDnitPermission(form.data.os_dnit_permissions, permission));
             return;
         }
 
@@ -344,6 +342,7 @@ export default function PermissionsIndex({
                             <span className="eyebrow">Resumo</span>
                         </div>
                         <div className="grid gap-2 text-sm text-[var(--ink-600)] md:grid-cols-4 xl:grid-cols-7">
+                            <Summary label="Visão geral e Tutoriais" value={form.data.navigation_permissions.length} />
                             <Summary label="Atividades" value={form.data.activity_permissions.length} />
                             <Summary label="Contratos" value={form.data.contract_permissions.length} />
                             <Summary label="Projetos" value={form.data.project_permissions.length} />
@@ -353,7 +352,7 @@ export default function PermissionsIndex({
                             <Summary label="Orçamentos" value={form.data.budget_permissions.length} />
                             <Summary label="Documentação" value={form.data.documentation_permissions.length} />
                             <Summary label="Diário de Obra" value={form.data.diario_obra_permissions.length} />
-                            <Summary label="Ordem de Serviço" value={form.data.ordem_servico_permissions.length} />
+                            <Summary label="Liberação de Serviço" value={form.data.ordem_servico_permissions.length} />
                             <Summary label="OS DNIT" value={form.data.os_dnit_permissions.length} />
                             <Summary label="Medição" value={form.data.medicao_permissions.length} />
                         </div>
