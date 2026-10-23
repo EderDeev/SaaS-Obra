@@ -32,7 +32,7 @@ function OrderActions({ order, tenantSlug, onAnalyze }) {
     </div>;
 }
 
-export default function Orders({ orders, contracts, lots, highways, filters, canCreate, statuses, stageCounts, analysisOrderId = null }) {
+export default function Orders({ orders, contracts, lots, highways, filters, canCreate, statuses, stageCounts, analysisOrderId = null, emptyTenantSetup = false, canCreateContract = false }) {
     const { currentTenant, flash = {} } = usePage().props;
     const search = useForm({ q: filters.q || '', contract_id: filters.contract_id || '', supervision_lot_id: filters.supervision_lot_id || '', highway_id: filters.highway_id || '', status: filters.status || '', pending: filters.pending ? 1 : 0, stage: filters.stage || 'all' });
     const indexUrl = route('tenant.os-dnit.orders.index', currentTenant.slug);
@@ -85,6 +85,11 @@ export default function Orders({ orders, contracts, lots, highways, filters, can
                 <div className="flex flex-wrap gap-2"><OsDnitTourButton tenantSlug={currentTenant.slug} />{canCreate && <Link href={route('tenant.os-dnit.orders.create', currentTenant.slug)} className="sig-btn sig-btn-primary"><Plus size={16} />Criar OS</Link>}</div>
             </header>
             {flash.success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{flash.success}</div>}
+            {emptyTenantSetup ? <section className="sig-card flex flex-col items-start gap-4 p-6 sm:p-8">
+                <span className="rounded-xl bg-[var(--primary-50)] p-3 text-[var(--primary)]"><ClipboardList size={28} /></span>
+                <div><h2 className="text-lg font-semibold">Comece pelo contrato</h2><p className="mt-2 max-w-xl text-sm text-[var(--ink-500)]">Esta empresa ainda não tem contratos cadastrados. Cadastre o primeiro contrato para configurar os produtos e os responsáveis pelas Ordens de Serviço.</p></div>
+                {canCreateContract && <Link href={route('tenant.contracts.index', currentTenant.slug)} className="sig-btn sig-btn-primary"><Plus size={16} />Ir para Contratos</Link>}
+            </section> : <>
             <nav className="flex flex-wrap gap-2" aria-label="Filtrar OSs por etapa">{[
                 ['all', 'Todas as OSs'], ['analyst', 'Demanda (Analista DNIT)'], ['concremat', 'Análise Supervisão'], ['contract_inspector', 'Fiscal do Contrato'], ['approved', 'Aprovadas'], ['completed', 'Finalizadas'],
             ].map(([stage, label]) => {
@@ -113,6 +118,7 @@ export default function Orders({ orders, contracts, lots, highways, filters, can
                 {orders.data.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><ClipboardList size={30} className="mx-auto text-slate-400" /><h2 className="mt-4 font-semibold">{filters.pending ? 'Nenhuma análise pendente' : hasFilters ? 'Nenhuma OS encontrada' : 'Nenhuma OS cadastrada'}</h2><p className="mt-2 text-sm text-[var(--ink-500)]">{filters.pending ? 'Você não tem OSs para analisar com os filtros selecionados.' : hasFilters ? 'Ajuste os filtros para consultar outras solicitações.' : 'Clique em Criar OS para registrar a primeira solicitação.'}</p></div>}
             </div>
             {orders.last_page > 1 && <Pagination data={orders} disabled={filtering} />}
+            </>}
             {selectedOrderId && <OsDnitAnalysisModal orderId={selectedOrderId} tenantSlug={currentTenant.slug} onClose={() => setSelectedOrderId(null)} />}
         </div>
     </AuthenticatedLayout>;
