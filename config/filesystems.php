@@ -1,5 +1,10 @@
 <?php
 
+$railwayVolume = env('RAILWAY_VOLUME_MOUNT_PATH');
+$privateRoot = $railwayVolume && in_array(env('APP_ENV'), ['production', 'staging'], true)
+    ? rtrim($railwayVolume, '/').'/.sigworks-private'
+    : storage_path('app/private');
+
 return [
 
     /*
@@ -32,7 +37,7 @@ return [
 
         'local' => [
             'driver' => 'local',
-            'root' => storage_path('app/private'),
+            'root' => $privateRoot,
             'serve' => true,
             'throw' => false,
             'report' => false,
