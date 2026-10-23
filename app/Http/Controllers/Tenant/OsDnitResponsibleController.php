@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ContractParticipant;
 use App\Models\OsDnitResponsible;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Support\OsDnitContractAccess;
 use App\Support\OsDnitPermissions;
 use Illuminate\Http\Request;
@@ -18,11 +19,20 @@ class OsDnitResponsibleController extends Controller
     public function index(Request $request, Tenant $tenant)
     {
         $contracts = OsDnitContractAccess::contracts($request->user(), $tenant, OsDnitPermissions::RESPONSIBLES)->orderBy('code')->get(['id', 'code', 'name']);
+        $participants = ContractParticipant::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))
+            ->where('status', 'active')->with('user:id,name')->get(['contract_id', 'user_id'])
+            ->map(fn ($participant) => ['contract_id' => $participant->contract_id, 'user_id' => $participant->user_id, 'user' => $participant->user]);
+        foreach (User::where('is_platform_admin', true)->where('os_dnit_contract_exemption', true)->get(['id', 'name']) as $admin) {
+            foreach ($contracts as $contract) {
+                if (! $participants->contains(fn ($participant) => $participant['contract_id'] === $contract->id && $participant['user_id'] === $admin->id)) {
+                    $participants->push(['contract_id' => $contract->id, 'user_id' => $admin->id, 'user' => $admin]);
+                }
+            }
+        }
 
         return Inertia::render('Tenant/OsDnit/Responsibles', [
             'contracts' => $contracts, 'roles' => OsDnitResponsible::ROLES,
-            'participants' => ContractParticipant::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))
-                ->where('status', 'active')->with('user:id,name')->get(['contract_id', 'user_id']),
+            'participants' => $participants,
             'responsibles' => OsDnitResponsible::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))
                 ->where('active', true)->get(['contract_id', 'user_id', 'role']),
             'canManage' => $contracts->isNotEmpty(),
@@ -37,9 +47,8 @@ class OsDnitResponsibleController extends Controller
         $data = $request->validate([
             'assignments' => ['present', 'array', 'max:300'],
             'assignments.*.role' => ['required', Rule::in(array_keys(OsDnitResponsible::ROLES))],
-            'assignments.*.user_id' => ['required', 'integer', Rule::exists('contract_participants', 'user_id')
-                ->where('tenant_id', $tenant->id)->where('contract_id', $contractId)->where('status', 'active')->whereNull('deleted_at')],
-        ], ['assignments.*.user_id.exists' => 'Selecione somente usuários com vínculo ativo no contrato.']);
+            'assignments.*.user_id' => ['required', 'integer', Rule::in(OsDnitPermissions::eligibleUsers($tenant, $contractId)->pluck('id')->all())],
+        ], ['assignments.*.user_id.in' => 'Selecione um usuário com vínculo ativo no contrato ou a conta com exceção autorizada.']);
         DB::transaction(function () use ($request, $tenant, $contractId, $data) {
             OsDnitContractAccess::contracts($request->user(), $tenant, OsDnitPermissions::RESPONSIBLES)->whereKey($contractId)->lockForUpdate()->firstOrFail();
             OsDnitResponsible::where('tenant_id', $tenant->id)->where('contract_id', $contractId)->update(['active' => false]);

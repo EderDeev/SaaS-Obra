@@ -5,9 +5,25 @@ namespace App\Support;
 use App\Models\ContractParticipant;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 
 class OsDnitPermissions
 {
+    public static function hasContractExemption(User $user): bool
+    {
+        return $user->is_platform_admin && (bool) $user->os_dnit_contract_exemption;
+    }
+
+    public static function eligibleUsers(Tenant $tenant, int $contractId): Builder
+    {
+        return User::whereExists(fn ($query) => $query->selectRaw('1')->from('contracts')
+            ->where('id', $contractId)->where('tenant_id', $tenant->id))
+            ->where(fn (Builder $query) => $query
+                ->whereHas('contractParticipations', fn ($query) => $query
+                    ->where('tenant_id', $tenant->id)->where('contract_id', $contractId)->where('status', 'active'))
+                ->orWhere(fn (Builder $query) => $query->where('is_platform_admin', true)->where('os_dnit_contract_exemption', true)));
+    }
+
     public const VIEW = 'view_orders';
 
     public const CREATE = 'create_orders';
@@ -93,9 +109,11 @@ class OsDnitPermissions
             return request()->attributes->get($key);
         }
         $role = $user->tenantRole($tenant);
-        $matrix = ContractParticipant::where('tenant_id', $tenant->id)->where('user_id', $user->id)->where('status', 'active')
-            ->whereHas('contract', fn ($query) => $query->where('tenant_id', $tenant->id))
-            ->get(['contract_id', 'os_dnit_permissions'])->mapWithKeys(fn ($participant) => [
+        $matrix = self::hasContractExemption($user)
+            ? $tenant->contracts()->pluck('id')->mapWithKeys(fn ($id) => [$id => self::all()])->all()
+            : ContractParticipant::where('tenant_id', $tenant->id)->where('user_id', $user->id)->where('status', 'active')
+                ->whereHas('contract', fn ($query) => $query->where('tenant_id', $tenant->id))
+                ->get(['contract_id', 'os_dnit_permissions'])->mapWithKeys(fn ($participant) => [
                 $participant->contract_id => $role === TenantRoles::OWNER
                     ? self::all() : self::normalize($participant->os_dnit_permissions ?? self::defaultForRole($role)),
             ])->all();
@@ -118,6 +136,9 @@ class OsDnitPermissions
 
     public static function canAny(User $user, Tenant $tenant, string $permission): bool
     {
+        if (self::hasContractExemption($user)) {
+            return in_array($permission, self::all(), true);
+        }
         if (self::contractIds($user, $tenant, $permission) !== []) {
             return true;
         }

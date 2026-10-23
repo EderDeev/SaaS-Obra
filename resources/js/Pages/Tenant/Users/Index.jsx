@@ -445,9 +445,12 @@ export default function TenantUsersIndex({
         parametrizacao_permissions: form.data.parametrizacao_permissions || [],
     };
     const isTenantModulePermission = (field) => form.data.role === 'tenant_admin' && tenantModulePermissionFields.includes(field);
+    const inheritedOs = Boolean(editingMembership?.os_dnit_contract_exemption);
     const editPermissionGroups = Object.fromEntries(Object.entries(unifiedPermissionGroups).map(([field, group]) => [field, {
         ...group,
-        description: field in contractPermissionGroups && !isTenantModulePermission(field)
+        description: field === 'os_dnit_permissions' && inheritedOs
+            ? 'Permissões automáticas desta conta, sem exigir vínculo com o contrato.'
+            : field in contractPermissionGroups && !isTenantModulePermission(field)
             ? 'Acesso no contrato selecionado.' : 'Acesso geral do usuário neste tenant.',
     }]));
     const editSelectedPermissions = {
@@ -457,9 +460,11 @@ export default function TenantUsersIndex({
         budget_permissions: form.data.budget_permissions,
         user_permissions: form.data.user_permissions,
         parametrizacao_permissions: form.data.parametrizacao_permissions,
+        ...(inheritedOs ? { os_dnit_permissions: editingMembership.os_dnit_inherited_permissions || [] } : {}),
     };
-    const disabledEditGroups = Object.keys(contractPermissionGroups).filter((field) => !permissionContractAccess && !isTenantModulePermission(field));
+    const disabledEditGroups = Object.keys(contractPermissionGroups).filter((field) => (field === 'os_dnit_permissions' && inheritedOs) || (!permissionContractAccess && !isTenantModulePermission(field)));
     const setEditPermissionSelection = (field, selected) => {
+        if (field === 'os_dnit_permissions' && inheritedOs) return;
         if (isTenantModulePermission(field)) {
             form.setData('tenant_module_permissions', { ...form.data.tenant_module_permissions, [field]: selected });
         } else if (field in contractPermissionGroups) {

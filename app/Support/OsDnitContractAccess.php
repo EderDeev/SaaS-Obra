@@ -11,11 +11,12 @@ class OsDnitContractAccess
 {
     public static function contracts(User $user, Tenant $tenant, ?string $permission = null): Builder
     {
-        // OS DNIT always requires an explicit active contract participation.
-        // Tenant/platform administrator roles do not bypass this requirement.
+        // Only the individually authorized account can bypass participation.
+        // Administrator roles alone continue to require an active link.
         return Contract::query()->where('tenant_id', $tenant->id)
             ->when($permission, fn (Builder $query) => $query->whereIn('contracts.id', OsDnitPermissions::contractIds($user, $tenant, $permission)))
-            ->whereHas('participants', fn (Builder $query) => $query
-                ->where('tenant_id', $tenant->id)->where('user_id', $user->id)->where('status', 'active'));
+            ->when(! OsDnitPermissions::hasContractExemption($user), fn (Builder $query) => $query
+                ->whereHas('participants', fn (Builder $query) => $query
+                    ->where('tenant_id', $tenant->id)->where('user_id', $user->id)->where('status', 'active')));
     }
 }
