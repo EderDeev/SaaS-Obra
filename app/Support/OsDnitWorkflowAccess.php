@@ -59,8 +59,7 @@ class OsDnitWorkflowAccess
     {
         return OsDnitResponsible::where('tenant_id', $tenant->id)->where('contract_id', $contractId)
             ->where('role', $role)->where('active', true)
-            ->whereHas('user.contractParticipations', fn ($query) => $query->where('tenant_id', $tenant->id)
-                ->where('contract_id', $contractId)->where('status', 'active'))->with('user')->get()
+            ->whereIn('user_id', OsDnitPermissions::eligibleUsers($tenant, $contractId)->select('users.id'))->with('user')->get()
             ->contains(fn ($responsible) => OsDnitPermissions::can($responsible->user, $tenant, OsDnitPermissions::VIEW, $contractId));
     }
 }

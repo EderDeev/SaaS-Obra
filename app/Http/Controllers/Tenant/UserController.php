@@ -89,6 +89,8 @@ class UserController extends Controller
                 );
 
             $membership->setAttribute('user_permissions', $userPermissions);
+            $membership->setAttribute('os_dnit_contract_exemption', OsDnitPermissions::hasContractExemption($membership->user));
+            $membership->setAttribute('os_dnit_inherited_permissions', OsDnitPermissions::hasContractExemption($membership->user) ? OsDnitPermissions::all() : []);
             $membership->setAttribute('tenant_module_permissions', collect(self::TENANT_MODULE_PERMISSIONS)
                 ->map(fn ($permissions, $field) => $membership->role === TenantRoles::OWNER
                     ? $permissions::all() : $permissions::normalize($membership->$field ?? $permissions::defaultForRole($membership->role)))

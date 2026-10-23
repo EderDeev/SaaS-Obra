@@ -9,6 +9,7 @@ use App\Models\InstrucaoCampoResponsavel;
 use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\TenantUser;
+use App\Models\User;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
 use App\Support\ContractPermissions;
@@ -39,7 +40,7 @@ class PermissionController extends Controller
 
         $memberships = $tenant->memberships()
             ->where('status', 'active')
-            ->with(['user:id,name,email,avatar_url', 'empresa:id,nome'])
+            ->with(['user:id,name,email,avatar_url,is_platform_admin,os_dnit_contract_exemption', 'empresa:id,nome'])
             ->orderBy('role')
             ->latest()
             ->get();
@@ -63,18 +64,40 @@ class PermissionController extends Controller
             ->where('status', 'active')
             ->get(['contract_id', 'user_id', 'permissions']);
 
+        $users = $memberships->map(fn (TenantUser $membership): array => [
+            'id' => $membership->user_id,
+            'membership_id' => $membership->id,
+            'name' => $membership->user?->name,
+            'email' => $membership->user?->email,
+            'avatar_url' => $membership->user?->avatar_url,
+            'role' => $membership->role,
+            'role_label' => TenantRoles::label($membership->role),
+            'empresa' => $membership->empresa?->nome,
+            'os_dnit_contract_exemption' => OsDnitPermissions::hasContractExemption($membership->user),
+            'os_dnit_only' => false,
+        ])->values();
+        // Display the authorized global account without creating a tenant membership.
+        foreach (User::where('is_platform_admin', true)->where('os_dnit_contract_exemption', true)
+            ->whereNotIn('id', $memberships->pluck('user_id'))->get() as $admin) {
+            $users->push(['id' => $admin->id, 'membership_id' => null, 'name' => $admin->name,
+                'email' => $admin->email, 'avatar_url' => $admin->avatar_url, 'role' => 'platform_admin',
+                'role_label' => 'Administrador da plataforma', 'empresa' => null,
+                'os_dnit_contract_exemption' => true, 'os_dnit_only' => true]);
+        }
+        $osDnitPermissions = [];
+        foreach ($users as $permissionUser) {
+            foreach ($contracts as $contract) {
+                $participant = $contractParticipants->where('user_id', $permissionUser['id'])->firstWhere('contract_id', $contract->id);
+                $osDnitPermissions["{$permissionUser['id']}:{$contract->id}"] = $permissionUser['os_dnit_contract_exemption']
+                    ? OsDnitPermissions::all()
+                    : (! $participant ? [] : ($permissionUser['role'] === 'tenant_owner' ? OsDnitPermissions::all()
+                        : OsDnitPermissions::normalize($participant->os_dnit_permissions ?? OsDnitPermissions::defaultForRole($permissionUser['role']))));
+            }
+        }
+
         return Inertia::render('Tenant/Permissions/Index', [
             'tenant' => $tenant,
-            'users' => $memberships->map(fn (TenantUser $membership): array => [
-                'id' => $membership->user_id,
-                'membership_id' => $membership->id,
-                'name' => $membership->user?->name,
-                'email' => $membership->user?->email,
-                'avatar_url' => $membership->user?->avatar_url,
-                'role' => $membership->role,
-                'role_label' => TenantRoles::label($membership->role),
-                'empresa' => $membership->empresa?->nome,
-            ])->values(),
+            'users' => $users,
             'contracts' => $contracts->map(fn (Contract $contract): array => [
                 'id' => $contract->id,
                 'code' => $contract->code,
@@ -87,11 +110,7 @@ class PermissionController extends Controller
             'documentationPermissionsByUserContract' => $this->documentationPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'diarioObraPermissionsByUserContract' => $this->diarioObraPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'ordemServicoPermissionsByUserContract' => $this->ordemServicoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
-            'osDnitPermissionsByUserContract' => $memberships->flatMap(fn ($membership) => $contracts->mapWithKeys(function ($contract) use ($membership, $contractParticipants) {
-                $participant = $contractParticipants->where('user_id', $membership->user_id)->firstWhere('contract_id', $contract->id);
-
-                return ["{$membership->user_id}:{$contract->id}" => ! $participant ? [] : ($membership->role === 'tenant_owner' ? OsDnitPermissions::all() : OsDnitPermissions::normalize($participant->os_dnit_permissions ?? OsDnitPermissions::defaultForRole($membership->role)))];
-            }))->all(),
+            'osDnitPermissionsByUserContract' => $osDnitPermissions,
             'osDnitContractIdsByUser' => $contractParticipants->groupBy('user_id')->map(fn ($items) => $items->pluck('contract_id')->unique()->values()->all())->all(),
             'medicaoPermissionsByUserContract' => $this->medicaoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'contractPermissionsByUserContract' => $this->contractPermissionsByUserContract($memberships, $contracts, $contractParticipants),
@@ -182,7 +201,9 @@ class PermissionController extends Controller
         $this->authorizePermissions($request, $tenant);
 
         $data = $request->validate([
-            'user_id' => ['required', 'integer', Rule::exists('tenant_users', 'user_id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)->where('status', 'active'))],
+            'user_id' => ['required', 'integer', Rule::exists('users', 'id')->where(fn ($query) => $query
+                ->where(fn ($query) => $query->whereIn('id', TenantUser::where('tenant_id', $tenant->id)->where('status', 'active')->select('user_id'))
+                    ->orWhere(fn ($query) => $query->where('is_platform_admin', true)->where('os_dnit_contract_exemption', true))))],
             'contract_id' => ['nullable', 'integer', Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
             'activity_permissions' => ['nullable', 'array'],
             'activity_permissions.*' => ['required', 'string', Rule::in(ActivityPermissions::all())],
@@ -217,10 +238,26 @@ class PermissionController extends Controller
         $membership = $tenant->memberships()
             ->where('user_id', $data['user_id'])
             ->where('status', 'active')
-            ->firstOrFail();
+            ->first();
         $contract = ! empty($data['contract_id'])
             ? $tenant->contracts()->findOrFail($data['contract_id'])
             : null;
+
+        $exempt = OsDnitPermissions::hasContractExemption(User::findOrFail($data['user_id']));
+        if (! $membership) {
+            $otherGrants = array_filter($data, fn ($value, $key) => str_ends_with($key, '_permissions')
+                && $key !== 'os_dnit_permissions' && ! empty($value), ARRAY_FILTER_USE_BOTH);
+            if (! $exempt || ! $contract || ! array_key_exists('os_dnit_permissions', $data) || $otherGrants !== []) {
+                throw ValidationException::withMessages(['user_id' => 'Sem vínculo com o tenant, esta conta possui somente a exceção automática de Ordem de Serviço.']);
+            }
+
+            return back()->with('success', 'Esta conta possui as permissões de Ordem de Serviço automaticamente.');
+        }
+
+        if ($exempt && array_key_exists('os_dnit_permissions', $data)
+            && count(array_filter(array_keys($data), fn ($key) => str_ends_with($key, '_permissions'))) === 1) {
+            return back()->with('success', 'Esta conta possui as permissões de Ordem de Serviço automaticamente.');
+        }
 
         if ($membership->role === 'tenant_owner') {
             return back()->with('success', 'Owner mantem acesso total automaticamente.');
@@ -244,7 +281,7 @@ class PermissionController extends Controller
         }
 
         $osDnitParticipant = null;
-        if (array_key_exists('os_dnit_permissions', $data)) {
+        if (array_key_exists('os_dnit_permissions', $data) && ! $exempt) {
             $osDnitParticipant = $contract ? ContractParticipant::where('tenant_id', $tenant->id)
                 ->where('contract_id', $contract->id)->where('user_id', $membership->user_id)->where('status', 'active')->first() : null;
             if (! $osDnitParticipant && $data['os_dnit_permissions'] !== []) {

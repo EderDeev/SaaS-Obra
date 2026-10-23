@@ -33,8 +33,7 @@ class OsDnitFlowRecipients
             ->pluck('user_id');
 
         // One recipient per user, even when they hold several workflow roles.
-        return User::whereIn('id', $ids)->whereHas('contractParticipations', fn ($query) => $query
-            ->where('tenant_id', $order->tenant_id)->where('contract_id', $order->contract_id)->where('status', 'active'))
+        return OsDnitPermissions::eligibleUsers($tenant, $order->contract_id)->whereIn('id', $ids)
             ->get()->filter(fn (User $user) => filter_var($user->email, FILTER_VALIDATE_EMAIL) !== false
                 && OsDnitPermissions::can($user, $tenant, OsDnitPermissions::VIEW, $order->contract_id))->values();
     }

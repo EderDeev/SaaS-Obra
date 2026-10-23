@@ -72,10 +72,11 @@ export default function PermissionsIndex({
     const [selectedUserId, setSelectedUserId] = useState(users[0]?.id ?? '');
     const selectedUser = users.find((user) => String(user.id) === String(selectedUserId));
     const availableContracts = useMemo(() => {
+        if (selectedUser?.os_dnit_contract_exemption) return contracts;
         const ids = contractIdsByUser?.[selectedUserId] || [];
 
         return contracts.filter((contract) => ids.includes(contract.id));
-    }, [contracts, contractIdsByUser, selectedUserId]);
+    }, [contracts, contractIdsByUser, selectedUserId, selectedUser]);
     const [selectedContractId, setSelectedContractId] = useState(availableContracts[0]?.id ?? contracts[0]?.id ?? '');
     const selectedContract = contracts.find((contract) => String(contract.id) === String(selectedContractId));
     const lockedOwner = selectedUser?.role === 'tenant_owner';
@@ -140,7 +141,7 @@ export default function PermissionsIndex({
     const togglePermission = (dataKey, permission) => {
         const contractScoped = ['activity_permissions', 'contract_permissions', 'project_permissions', 'rnc_permissions', 'ic_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'os_dnit_permissions', 'medicao_permissions'].includes(dataKey);
 
-        if (lockedOwner || (contractScoped && !selectedContractId)) {
+        if (lockedOwner || selectedUser?.os_dnit_only || (dataKey === 'os_dnit_permissions' && selectedUser?.os_dnit_contract_exemption) || (contractScoped && !selectedContractId)) {
             return;
         }
 
@@ -259,7 +260,7 @@ export default function PermissionsIndex({
                                 )}
                             </div>
                         </div>
-                        <button className="sig-btn sig-btn-primary" disabled={form.processing || lockedOwner || !selectedUserId}>
+                        <button className="sig-btn sig-btn-primary" disabled={form.processing || lockedOwner || selectedUser?.os_dnit_only || !selectedUserId}>
                             <Save size={15} />
                             Salvar permissoes
                         </button>
@@ -289,7 +290,9 @@ export default function PermissionsIndex({
                             const selected = form.data[meta.dataKey] || [];
                             const permissions = Object.entries(group.permissions || {});
                             const expanded = openGroup === groupKey;
-                            const contractUnavailable = Boolean(meta.contractScoped && !selectedContractId) || (groupKey === 'os_dnit' && !(osDnitContractIdsByUser?.[selectedUserId] || []).map(String).includes(String(selectedContractId)));
+                            const inheritedOs = groupKey === 'os_dnit' && selectedUser?.os_dnit_contract_exemption;
+                            const contractUnavailable = Boolean(meta.contractScoped && !selectedContractId) || (groupKey === 'os_dnit' && !inheritedOs && !(osDnitContractIdsByUser?.[selectedUserId] || []).map(String).includes(String(selectedContractId)));
+                            const disabled = lockedOwner || contractUnavailable || inheritedOs || selectedUser?.os_dnit_only;
 
                             return (
                                 <div key={groupKey}>
@@ -313,19 +316,20 @@ export default function PermissionsIndex({
 
                                     {expanded && (
                                         <div className="grid gap-2 bg-white px-5 pb-5">
-                                            {groupKey === 'os_dnit' && contractUnavailable && <p className="text-sm text-amber-800 sm:ml-12">Este usuário precisa de vínculo ativo no contrato para receber permissões do Ordem de Serviço.</p>}
+                                            {groupKey === 'os_dnit' && !inheritedOs && contractUnavailable && <p className="text-sm text-amber-800 sm:ml-12">Este usuário precisa de vínculo ativo no contrato para receber permissões do Ordem de Serviço.</p>}
+                                            {inheritedOs && <p className="text-sm text-[var(--ink-600)] sm:ml-12">Esta conta possui as permissões de Ordem de Serviço automaticamente, sem exigir vínculo com o contrato.</p>}
                                             {permissions.map(([permission, label]) => {
                                                 const checked = selected.includes(permission);
 
                                                 return (
                                                     <label
                                                         key={permission}
-                                                        className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition sm:ml-12 ${checked ? 'border-[var(--primary)] bg-[var(--primary-50)] text-[var(--primary)]' : 'border-[var(--border)] bg-white hover:bg-[var(--surface-muted)]'} ${lockedOwner || contractUnavailable ? 'cursor-not-allowed opacity-75' : ''}`}
+                                                        className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition sm:ml-12 ${checked ? 'border-[var(--primary)] bg-[var(--primary-50)] text-[var(--primary)]' : 'border-[var(--border)] bg-white hover:bg-[var(--surface-muted)]'} ${disabled ? 'cursor-not-allowed opacity-75' : ''}`}
                                                     >
                                                         <input
                                                             type="checkbox"
                                                             checked={checked}
-                                                            disabled={lockedOwner || contractUnavailable}
+                                                            disabled={disabled}
                                                             onChange={() => togglePermission(meta.dataKey, permission)}
                                                         />
                                                         <span>{label}</span>
