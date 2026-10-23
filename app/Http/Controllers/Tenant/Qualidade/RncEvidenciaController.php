@@ -68,23 +68,23 @@ class RncEvidenciaController extends Controller
             'proposal_id' => ['nullable', 'integer'],
             'resolution_result' => ['required', Rule::in(array_keys(RelatorioNaoConformidadeEvidencia::RESOLUTION_RESULTS))],
             'resolution_reason' => ['nullable', 'required_if:resolution_result,partial,no', 'string', 'max:10000'],
-            'evidence_photos' => ['required', 'array', 'min:1', 'max:12'],
+            'evidence_photos' => ['nullable', 'required_without:attachment', 'array', 'max:12'],
             'evidence_photos.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'evidence_photo_comments' => ['nullable', 'array'],
             'evidence_photo_comments.*' => ['nullable', 'string', 'max:1000'],
             'evidence_photo_positions' => ['nullable', 'array'],
             'evidence_photo_positions.*' => ['nullable', 'integer', 'min:1', 'max:999'],
-            'attachment' => ['required', 'file', 'mimes:zip', 'max:30720'],
+            'attachment' => ['nullable', 'required_without:evidence_photos', 'file', 'mimes:zip', 'max:30720'],
         ], [
             'resolution_result.required' => 'Informe se o problema foi resolvido.',
             'resolution_result.in' => 'Selecione uma resposta válida sobre a resolução do problema.',
             'resolution_reason.required_if' => 'Informe o motivo da resolução parcial ou da não resolução do problema.',
             'resolution_reason.max' => 'O motivo pode ter no máximo 10000 caracteres.',
-            'evidence_photos.required' => 'Envie pelo menos uma imagem evidenciando a correcao.',
+            'evidence_photos.required_without' => 'Envie pelo menos uma imagem ou um arquivo ZIP como evidência.',
             'evidence_photos.*.image' => 'Envie apenas imagens nas evidencias.',
             'evidence_photos.*.max' => 'Cada imagem pode ter no maximo 5 MB.',
             'evidence_photo_comments.*.max' => 'O comentario de cada imagem pode ter no maximo 1000 caracteres.',
-            'attachment.required' => 'Envie o documento zipado das evidencias.',
+            'attachment.required_without' => 'Envie pelo menos uma imagem ou um arquivo ZIP como evidência.',
             'attachment.mimes' => 'O documento precisa ser um arquivo .zip.',
             'attachment.max' => 'O documento pode ter no maximo 30 MB.',
         ]);
@@ -94,21 +94,21 @@ class RncEvidenciaController extends Controller
             throw ValidationException::withMessages(['resolution_reason' => 'Informe o motivo da resolução parcial ou da não resolução do problema.']);
         }
         $data['resolution_reason'] = $needsReason ? trim($data['resolution_reason']) : null;
-        $zip = $data['attachment'];
+        $zip = $data['attachment'] ?? null;
         $comments = $data['evidence_photo_comments'] ?? [];
         $positions = $data['evidence_photo_positions'] ?? [];
 
         $evidencia = DB::transaction(function () use ($tenant, $rnc, $acaoCorretiva, $request, $zip, $comments, $positions, $data): RelatorioNaoConformidadeEvidencia {
-            $zipPath = $zip->store("tenant-{$tenant->id}/rnc/{$rnc->id}/evidencias", 'public');
+            $zipPath = $zip?->store("tenant-{$tenant->id}/rnc/{$rnc->id}/evidencias", 'public');
 
             $evidencia = $rnc->evidencias()->create([
                 'tenant_id' => $tenant->id,
                 'relatorio_nao_conformidade_acao_corretiva_id' => $acaoCorretiva->id,
                 'user_id' => $request->user()->id,
                 'attachment_path' => $zipPath,
-                'attachment_original_name' => $zip->getClientOriginalName(),
-                'attachment_mime_type' => $zip->getClientMimeType(),
-                'attachment_size' => $zip->getSize(),
+                'attachment_original_name' => $zip?->getClientOriginalName(),
+                'attachment_mime_type' => $zip?->getClientMimeType(),
+                'attachment_size' => $zip?->getSize() ?? 0,
                 'submitted_at' => now(),
                 'resolution_result' => $data['resolution_result'],
                 'resolution_reason' => $data['resolution_reason'],
@@ -160,7 +160,7 @@ class RncEvidenciaController extends Controller
         abort_unless((int) $evidencia->tenant_id === (int) $tenant->id, 404);
         abort_unless((int) $evidencia->relatorio_nao_conformidade_id === (int) $rnc->id, 404);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::VIEW, $rnc->contract), 403);
-        abort_unless(Storage::disk('public')->exists($evidencia->attachment_path), 404);
+        abort_unless($evidencia->attachment_path && Storage::disk('public')->exists($evidencia->attachment_path), 404);
 
         return Storage::disk('public')->download(
             $evidencia->attachment_path,
