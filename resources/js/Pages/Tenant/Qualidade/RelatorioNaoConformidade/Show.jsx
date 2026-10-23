@@ -2,437 +2,267 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { rncDisciplinaLabel } from '@/Support/rnc';
 import { projectEap } from '@/Utils/projectEap';
 import { Head, Link, usePage } from '@inertiajs/react';
-import { ArrowLeft, ClipboardX, Download, ImagePlus, MapPin, Pencil } from 'lucide-react';
+import { ArrowLeft, Check, Download, ImagePlus, Pencil } from 'lucide-react';
 
 const gravityClass = {
-    Leve: 'sig-pill-blue',
-    Media: 'sig-pill-amber',
-    'Média': 'sig-pill-amber',
-    'MÃ©dia': 'sig-pill-amber',
-    Grave: 'sig-pill-red',
-    Gravissima: 'sig-pill-red',
-    'Gravíssima': 'sig-pill-red',
-    'GravÃ­ssima': 'sig-pill-red',
+    Leve: 'sig-pill-blue', Media: 'sig-pill-amber', 'Média': 'sig-pill-amber', 'MÃ©dia': 'sig-pill-amber',
+    Grave: 'sig-pill-red', Gravissima: 'sig-pill-red', 'Gravíssima': 'sig-pill-red', 'GravÃ­ssima': 'sig-pill-red',
 };
 
 const shortDate = (date) => {
-    if (!date) return '-';
-
-    return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date));
+    if (!date) return '—';
+    const value = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T12:00:00` : date;
+    return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
 };
-
-const dateTime = (date) => {
-    if (!date) return '-';
-
-    return new Intl.DateTimeFormat('pt-BR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    }).format(new Date(date));
-};
-
+const dateTime = (date) => date ? new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+}).format(new Date(date)) : '—';
 const pdfUrl = (tenant, rnc) => `${route('tenant.qualidade.rnc.pdf', [tenant.slug, rnc.id])}?v=${encodeURIComponent(rnc.updated_at || rnc.notified_at || rnc.id)}`;
+const companyLabel = (company) => [company?.sigla, company?.nome].filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(' — ');
+const proposalLabels = { pending: 'Em análise', approved: 'Aprovada', rejected: 'Reprovada' };
 
 export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
-    const page = usePage();
-    const latestAction = rnc.acoes_corretivas?.[0];
-    const approvedAction = rnc.acoes_corretivas?.find((action) => action.status === 'approved');
-    const latestEvidence = rnc.evidencias?.[0];
+    const { flash = {} } = usePage().props;
+    const actions = rnc.acoes_corretivas || [];
+    const evidences = rnc.evidencias || [];
+    const latestAction = actions[0];
+    const latestEvidence = evidences[0];
+    const finalized = rnc.status === 'finalizada' || Boolean(rnc.finalized_at) || evidences.length > 0;
     const canEditRnc = rnc.user_permissions?.includes('edit_rnc');
-    const linkedProjects = rnc.project_documents?.length
-        ? rnc.project_documents
-        : rnc.project_document
-            ? [rnc.project_document]
-            : [];
-    const linkedProjectsLabel = linkedProjects.length
-        ? linkedProjects
-            .map((project) => `${projectEap(project, project.latest_version) || 'Sem codigo'} - ${project.title}`)
-            .join(' | ')
-        : 'Sem projeto vinculado';
+    const linkedProjects = rnc.project_documents?.length ? rnc.project_documents : rnc.project_document ? [rnc.project_document] : [];
+    const activeStage = finalized ? 3 : latestAction?.status === 'approved' ? 3 : latestAction?.status === 'pending' ? 2 : 1;
+    const statusLabel = finalized ? 'Finalizada' : latestAction?.status === 'pending' ? 'Em análise da proposta'
+        : latestAction?.status === 'approved' ? 'Aguardando evidências' : latestAction?.status === 'rejected' ? 'Proposta devolvida'
+            : rnc.status === 'aberta' ? 'Aberta' : rnc.status || 'Aberta';
     const proposalReview = latestAction
         ? {
               pending: {
-                  status: 'Em analise',
+                  status: 'Em análise',
                   data: '-',
-                  detalhe: 'Aguardando analise da proposta enviada',
+                  detalhe: 'Aguardando análise da proposta enviada',
               },
               approved: {
                   status: 'Aprovada',
                   data: latestAction.reviewed_at ? dateTime(latestAction.reviewed_at) : '-',
-                  detalhe: `Aprovada por ${latestAction.reviewer?.name || 'usuario responsavel'}. Pode iniciar o processo corretivo.`,
+                  detalhe: `Aprovada por ${latestAction.reviewer?.name || 'usuário responsável'}. Pode iniciar o processo corretivo.`,
               },
               rejected: {
                   status: 'Reprovada',
                   data: latestAction.reviewed_at ? dateTime(latestAction.reviewed_at) : '-',
-                  detalhe: `Reprovada por ${latestAction.reviewer?.name || 'usuario responsavel'}. Motivo: ${latestAction.review_observation || '-'}`,
+                  detalhe: `Reprovada por ${latestAction.reviewer?.name || 'usuário responsável'}. Motivo: ${latestAction.review_observation || '-'}`,
               },
           }[latestAction.status] || {
-              status: 'Em analise',
+              status: 'Em análise',
               data: '-',
-              detalhe: 'Aguardando analise da proposta enviada',
+              detalhe: 'Aguardando análise da proposta enviada',
           }
         : {
               status: 'Pendente',
               data: '-',
-              detalhe: 'Aguardando envio da proposta de acao corretiva',
+              detalhe: 'Aguardando envio da proposta de ação corretiva',
           };
     const flowRows = [
         {
             etapa: 'Abertura da RNC',
-            status: 'Concluida',
+            status: 'Concluída',
             data: shortDate(rnc.opened_at),
             responsavel: rnc.creator?.name || '-',
-            detalhe: rnc.creator?.name ? `Aberta por ${rnc.creator.name}` : 'Registro inicial da nao conformidade',
+            detalhe: rnc.creator?.name ? `Aberta por ${rnc.creator.name}` : 'Registro inicial da não conformidade',
         },
         {
-            etapa: 'Notificacao aos responsaveis',
-            status: rnc.notified_at ? 'Concluida' : 'Pendente',
+            etapa: 'Notificação aos responsáveis',
+            status: rnc.notified_at ? 'Concluída' : 'Pendente',
             data: rnc.notified_at ? dateTime(rnc.notified_at) : '-',
-            responsavel: 'Responsaveis da RNC',
-            detalhe: rnc.notified_at ? 'Responsaveis notificados por email e alerta interno' : 'Aguardando envio da notificacao',
+            responsavel: 'Responsáveis da RNC',
+            detalhe: rnc.notified_at ? 'Responsáveis notificados por e-mail e alerta interno' : 'Aguardando envio da notificação',
         },
         {
-            etapa: 'Proposta de acao corretiva',
+            etapa: 'Proposta de ação corretiva',
             status: latestAction ? 'Enviada' : 'Pendente',
             data: latestAction?.submitted_at ? dateTime(latestAction.submitted_at) : '-',
             responsavel: latestAction?.user?.name || '-',
             detalhe: latestAction?.user?.name
                 ? `Enviada por ${latestAction.user.name}. Prazo proposto: ${shortDate(latestAction.prazo_execucao_proposto)}`
-                : 'Aguardando proposta do responsavel',
+                : 'Aguardando proposta do responsável',
         },
         {
-            etapa: 'Analise da proposta',
+            etapa: 'Análise da proposta',
             status: proposalReview.status,
             data: proposalReview.data,
             responsavel: latestAction?.reviewer?.name || '-',
             detalhe: proposalReview.detalhe,
         },
         {
-            etapa: 'Evidencias da correcao',
-            status: latestEvidence || rnc.finalized_at ? 'Finalizada' : latestAction?.status === 'approved' ? 'Pendente' : 'Aguardando',
+            etapa: 'Evidências da correção',
+            status: finalized ? 'Finalizada' : latestAction?.status === 'approved' ? 'Pendente' : 'Aguardando',
             data: latestEvidence?.submitted_at ? dateTime(latestEvidence.submitted_at) : rnc.finalized_at ? dateTime(rnc.finalized_at) : '-',
             responsavel: latestEvidence?.user?.name || rnc.finalized_by?.name || '-',
             detalhe: latestEvidence?.user?.name
-                ? `Evidencias enviadas por ${latestEvidence.user.name}`
-                : latestAction?.status === 'approved'
-                  ? 'Aguardando envio das evidencias da correcao'
-                  : 'Aguardando aprovacao da proposta',
+                ? `Evidências enviadas por ${latestEvidence.user.name}`
+                : finalized
+                  ? `RNC finalizada${rnc.finalized_by?.name ? ` por ${rnc.finalized_by.name}` : ''}`
+                  : latestAction?.status === 'approved'
+                    ? 'Aguardando envio das evidências da correção'
+                    : 'Aguardando aprovação da proposta',
         },
     ];
 
     return (
         <AuthenticatedLayout>
             <Head title={`RNC ${rnc.formatted_number}`} />
-
-            <section className="sig-content quality-mobile-page">
-                <div className="quality-page-header mb-6 flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                            <ClipboardX size={14} />
-                            <span className="eyebrow">Previa do documento</span>
+            <div className="sig-content quality-mobile-page rnc-detail-page space-y-6">
+                <header>
+                    <Link href={route('tenant.qualidade.rnc.index', tenant.slug)} className="inline-flex items-center gap-2 text-sm text-[var(--ink-500)]">
+                        <ArrowLeft size={16} />Voltar às RNCs
+                    </Link>
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <h1 className="text-2xl font-semibold">RNC {rnc.formatted_number}</h1>
+                        <span className={`sig-pill ${finalized ? 'sig-pill-green' : latestAction?.status === 'rejected' ? 'sig-pill-amber' : 'sig-pill-blue'}`}>{statusLabel}</span>
+                        <div className="flex flex-wrap gap-2 sm:ml-auto">
+                            {canEditRnc && <Link href={route('tenant.qualidade.rnc.edit', [tenant.slug, rnc.id])} className="sig-btn sig-btn-secondary"><Pencil size={15} />Editar</Link>}
+                            <a href={pdfUrl(tenant, rnc)} className="sig-btn sig-btn-secondary" target="_blank" rel="noreferrer"><Download size={15} />Visualizar PDF</a>
                         </div>
-                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">
-                            RNC {rnc.formatted_number}
-                        </h1>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">
-                            {rnc.obra?.codigo} - {rnc.obra?.nome}
-                        </p>
                     </div>
-                    <div className="quality-page-actions flex flex-wrap gap-2">
-                        <Link href={route('tenant.qualidade.rnc.index', tenant.slug)} className="sig-btn sig-btn-secondary">
-                            <ArrowLeft size={15} />
-                            Voltar
-                        </Link>
-                        {canEditRnc && (
-                            <Link href={route('tenant.qualidade.rnc.edit', [tenant.slug, rnc.id])} className="sig-btn sig-btn-secondary">
-                                <Pencil size={15} />
-                                Editar
-                            </Link>
-                        )}
-                        <a
-                            href={pdfUrl(tenant, rnc)}
-                            className="sig-btn sig-btn-primary"
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            <Download size={15} />
-                            Visualizar PDF
-                        </a>
+                    <p className="mt-2 break-words text-sm text-[var(--ink-500)]">{[rnc.obra?.codigo, rnc.obra?.nome].filter(Boolean).join(' — ') || 'Relatório de Não Conformidade'}</p>
+                </header>
+
+                {flash.success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{flash.success}</div>}
+
+                <section className="sig-card p-5" aria-label="Etapas da RNC">
+                    <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {['Abertura da RNC', 'Proposta de ação corretiva', 'Análise da proposta', 'Evidências e finalização'].map((label, index) => {
+                            const current = index === activeStage;
+                            const complete = index < activeStage || finalized;
+                            return <li key={label} aria-current={current && !finalized ? 'step' : undefined}
+                                className={`flex min-w-0 items-center gap-3 rounded-lg border px-4 py-3 text-sm ${current && !finalized ? 'border-blue-200 bg-blue-50 font-semibold text-blue-800' : complete ? 'border-emerald-100 bg-emerald-50/50 text-emerald-800' : 'border-slate-100 text-slate-500'}`}>
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold">{complete ? <Check size={14} aria-label="Concluída" /> : index + 1}</span>
+                                <span>{label}</span>
+                            </li>;
+                        })}
+                    </ol>
+                </section>
+
+                <DetailSection title="Identificação da RNC">
+                    <dl className="grid gap-5 p-5 sm:grid-cols-2 lg:grid-cols-3">
+                        <Detail label="Número do relatório">{rnc.formatted_number}</Detail>
+                        <Detail label="Contrato">{[rnc.contract?.code, rnc.contract?.name].filter(Boolean).join(' — ')}</Detail>
+                        <Detail label="Obra">{[rnc.obra?.codigo, rnc.obra?.nome].filter(Boolean).join(' — ')}</Detail>
+                        <Detail label="Disciplina">{rncDisciplinaLabel(rnc)}</Detail>
+                        <Detail label="Gravidade"><span className={`sig-pill ${gravityClass[rnc.gravidade] || ''}`}>{rnc.gravidade || '—'}</span></Detail>
+                        <Detail label="Data de abertura">{shortDate(rnc.opened_at)}</Detail>
+                        <Detail label="Prazo de resposta da ação corretiva">{shortDate(rnc.prazo_resposta_acao_corretiva)}</Detail>
+                        <Detail label="Criado por">{rnc.creator?.name}</Detail>
+                        <Detail label="Local">{[rnc.contract?.city, rnc.contract?.state].filter(Boolean).join(' / ')}</Detail>
+                        <Detail label="Contratante"><CompanyIdentity company={rnc.contratante} /></Detail>
+                        <Detail label="Contratada"><CompanyIdentity company={rnc.contratada} /></Detail>
+                        <Detail label="Coordenadas">{rnc.latitude != null && rnc.longitude != null ? `${rnc.latitude}, ${rnc.longitude}` : 'Sem coordenadas'}</Detail>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                            <Detail label="Projetos vinculados">{linkedProjects.length ? <ul className="space-y-2">{linkedProjects.map((project) => <li key={project.id}><span className="font-mono text-[var(--primary)]">{projectEap(project, project.latest_version) || 'Sem código'}</span>{project.title && <span> — {project.title}</span>}</li>)}</ul> : 'Sem projeto vinculado'}</Detail>
+                        </div>
+                    </dl>
+                </DetailSection>
+
+                <DetailSection title="Descrição da não conformidade">
+                    <dl className="space-y-5 p-5">
+                        <Detail label="Descrição do problema">{rnc.descricao_problema}</Detail>
+                        <Detail label="Observações">{rnc.observacao || 'Sem observações adicionais.'}</Detail>
+                        <Detail label="Ações corretivas recomendadas">{rnc.acoes_corretivas_recomendadas}</Detail>
+                    </dl>
+                </DetailSection>
+
+                <DetailSection title="Registro fotográfico" icon={ImagePlus} count={rnc.photos?.length || 0}>
+                    <div className="p-5"><PhotoGallery photos={rnc.photos} empty="Nenhuma imagem cadastrada nesta RNC." /></div>
+                </DetailSection>
+
+                <DetailSection title="Propostas de ação corretiva">
+                    <div className="divide-y divide-slate-100 px-5">
+                        {actions.length ? actions.map((action, index) => <article key={action.id} className="space-y-5 py-5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h3 className="text-sm font-semibold">{actions.length > 1 ? `Proposta ${actions.length - index}` : 'Proposta de ação corretiva'}{index === 0 && actions.length > 1 && <span className="ml-2 text-xs font-normal text-[var(--ink-500)]">Mais recente</span>}</h3>
+                                <span className={`sig-pill ${statusPillClass(proposalLabels[action.status])}`}>{proposalLabels[action.status] || action.status}</span>
+                            </div>
+                            <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                <Detail label="Responsável pela proposta">{action.user?.name}</Detail>
+                                <Detail label="Enviada em">{dateTime(action.submitted_at)}</Detail>
+                                <Detail label="Prazo de execução proposto">{shortDate(action.prazo_execucao_proposto)}</Detail>
+                                <div className="sm:col-span-2 lg:col-span-3"><Detail label="Descrição da proposta">{action.descricao_proposta}</Detail></div>
+                            </dl>
+                            {action.status !== 'pending' && <div className={`rounded-lg border p-4 ${action.status === 'rejected' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+                                <h4 className="mb-4 text-sm font-semibold">Análise da proposta</h4>
+                                <dl className="grid gap-4 sm:grid-cols-2">
+                                    <Detail label="Analisada por">{action.reviewer?.name}</Detail>
+                                    <Detail label="Data da análise">{dateTime(action.reviewed_at)}</Detail>
+                                    <div className="sm:col-span-2"><Detail label={action.status === 'rejected' ? 'Motivo da reprovação' : 'Observação da análise'}>{action.review_observation}</Detail></div>
+                                </dl>
+                            </div>}
+                        </article>) : <EmptyState>Nenhuma proposta de ação corretiva enviada até o momento.</EmptyState>}
                     </div>
-                </div>
+                </DetailSection>
 
-                {page.props.flash.success && (
-                    <div className="mb-4 rounded-lg bg-[var(--green-50)] px-3 py-2 text-sm text-[var(--green)]">
-                        {page.props.flash.success}
+                <DetailSection title="Evidências da correção">
+                    <div className="divide-y divide-slate-100 px-5">
+                        {evidences.length ? evidences.map((evidence) => <article key={evidence.id} className="space-y-5 py-5">
+                            <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                <Detail label="Enviado por">{evidence.user?.name}</Detail>
+                                <Detail label="Enviado em">{dateTime(evidence.submitted_at)}</Detail>
+                                <Detail label="Situação"><span className="sig-pill sig-pill-green">RNC finalizada</span></Detail>
+                            </dl>
+                            {evidence.attachment_original_name && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-4">
+                                <p className="min-w-0 flex-1 break-all text-sm font-medium">{evidence.attachment_original_name}</p>
+                                <a href={route('tenant.qualidade.rnc.evidencias.download', [tenant.slug, rnc.id, evidence.id])} download className="sig-btn sig-btn-secondary"><Download size={15} />Baixar anexo</a>
+                            </div>}
+                            {evidence.photos?.length > 0 && <PhotoGallery photos={evidence.photos} prefix="Evidência" />}
+                        </article>) : <EmptyState>Nenhuma evidência de correção enviada ainda.</EmptyState>}
                     </div>
-                )}
+                </DetailSection>
 
-                <article className="sig-card overflow-hidden">
-                    <section className="border-b border-[var(--border)] p-5">
-                        <div className="mb-5 grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_minmax(0,220px)] md:items-center">
-                            <CompanyLogoCard label="Contratante" company={rnc.contratante} align="left" />
-                            <div className="hidden text-center md:block">
-                                <div className="eyebrow text-[var(--ink-500)]">Relatorio de Nao Conformidade</div>
-                                <div className="mt-1 text-lg font-semibold text-[var(--ink-900)]">RNC {rnc.formatted_number}</div>
+                <DetailSection title="Fluxo da RNC">
+                    <ol className="divide-y divide-slate-100 px-5">
+                        {flowRows.map((row) => <li key={row.etapa} className="space-y-2 py-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <strong className="text-sm">{row.etapa}</strong>
+                                <span className={`sig-pill ${statusPillClass(row.status)}`}>{row.status}</span>
                             </div>
-                            <CompanyLogoCard label="Contratada" company={rnc.contratada} align="right" />
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className={`sig-pill ${gravityClass[rnc.gravidade] || ''}`}>{rnc.gravidade}</span>
-                            <span className="sig-pill sig-pill-blue">{rncDisciplinaLabel(rnc)}</span>
-                            <span className="sig-pill">{rnc.status}</span>
-                        </div>
-                        <h2 className="mt-4 text-xl font-semibold text-[var(--ink-900)]">Relatorio de Nao Conformidade</h2>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">{tenant.name}</p>
-
-                        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                            <Meta label="Contrato" value={`${rnc.contract?.code || ''} - ${rnc.contract?.name || ''}`} />
-                            <Meta label="Obra" value={`${rnc.obra?.codigo || ''} - ${rnc.obra?.nome || ''}`} />
-                            <Meta
-                                label="Projetos vinculados"
-                                value={linkedProjectsLabel}
-                            />
-                            <Meta label="Data abertura" value={shortDate(rnc.opened_at)} />
-                            <Meta label="Prazo resposta acao corretiva" value={shortDate(rnc.prazo_resposta_acao_corretiva)} />
-                            <Meta label="Contratante" value={rnc.contratante?.sigla || rnc.contratante?.nome} />
-                            <Meta label="Contratada" value={rnc.contratada?.sigla || rnc.contratada?.nome} />
-                            <Meta label="Local" value={`${rnc.contract?.city || '-'}${rnc.contract?.state ? ` / ${rnc.contract.state}` : ''}`} />
-                            <Meta label="Criado por" value={rnc.creator?.name} />
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap gap-3 text-[12.5px] text-[var(--ink-500)]">
-                            <span className="inline-flex items-center gap-1">
-                                <MapPin size={14} />
-                                {rnc.latitude && rnc.longitude ? `${rnc.latitude}, ${rnc.longitude}` : 'Sem coordenada'}
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                                <ImagePlus size={14} />
-                                {rnc.photos?.length || 0} foto(s)
-                            </span>
-                        </div>
-                    </section>
-
-                    <section className="border-b border-[var(--border)] p-5">
-                        <div className="eyebrow">Observacoes e comentarios</div>
-                        <TextBlock title="Descricao do problema" value={rnc.descricao_problema} />
-                        <TextBlock title="Observacao" value={rnc.observacao || 'Sem observacoes adicionais.'} />
-                        <TextBlock title="Acoes corretivas recomendadas" value={rnc.acoes_corretivas_recomendadas} />
-                    </section>
-
-                    <section className="p-5">
-                        <div className="eyebrow">Imagens</div>
-                        {rnc.photos?.length > 0 ? (
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                {rnc.photos.map((photo) => (
-                                    <PhotoFigure
-                                        key={photo.id}
-                                        photo={photo}
-                                        title={`Imagem ${photo.position}`}
-                                        detail={photo.comment}
-                                    />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="mt-4 rounded-lg border border-dashed border-[var(--border-strong)] p-8 text-center text-sm text-[var(--ink-500)]">
-                                Nenhuma imagem cadastrada nesta RNC.
-                            </div>
-                        )}
-                    </section>
-
-                    <section className="border-t border-[var(--border)] p-5">
-                        <div className="eyebrow">Proposta de acao corretiva aprovada</div>
-                        {approvedAction ? (
-                            <div className="mt-4 grid gap-4">
-                                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                                    <Meta label="Responsavel pela proposta" value={approvedAction.user?.name} />
-                                    <Meta label="Enviada em" value={dateTime(approvedAction.submitted_at)} />
-                                    <Meta label="Prazo execucao proposto" value={shortDate(approvedAction.prazo_execucao_proposto)} />
-                                    <Meta label="Aprovada por" value={approvedAction.reviewer?.name} />
-                                </div>
-                                <TextBlock title="Proposta aprovada" value={approvedAction.descricao_proposta} />
-                                {approvedAction.review_observation && (
-                                    <TextBlock title="Observacao da analise" value={approvedAction.review_observation} />
-                                )}
-                            </div>
-                        ) : (
-                            <div className="mt-4 rounded-lg border border-dashed border-[var(--border-strong)] p-8 text-center text-sm text-[var(--ink-500)]">
-                                Nenhuma proposta de acao corretiva aprovada ate o momento.
-                            </div>
-                        )}
-                    </section>
-
-                    <section className="border-t border-[var(--border)] p-5">
-                        <div className="eyebrow">Evidencias da correcao</div>
-                        {latestEvidence ? (
-                            <div className="mt-4 grid gap-4">
-                                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-                                    <div className="grid gap-3 md:grid-cols-3">
-                                        <Meta label="Enviado por" value={latestEvidence.user?.name} />
-                                        <Meta label="Enviado em" value={dateTime(latestEvidence.submitted_at)} />
-                                        <Meta label="Status" value="RNC finalizada" />
-                                    </div>
-                                    <a
-                                        href={route('tenant.qualidade.rnc.evidencias.download', [tenant.slug, rnc.id, latestEvidence.id])}
-                                        download
-                                        className="sig-btn sig-btn-secondary mt-4"
-                                    >
-                                        <Download size={15} />
-                                        {latestEvidence.attachment_original_name}
-                                    </a>
-                                </div>
-
-                                {latestEvidence.photos?.length > 0 && (
-                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                        {latestEvidence.photos.map((photo) => (
-                                            <PhotoFigure
-                                                key={photo.id}
-                                                photo={photo}
-                                                title={`Evidencia ${photo.position}`}
-                                                detail={photo.comment || photo.original_name}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="mt-4 rounded-lg border border-dashed border-[var(--border-strong)] p-8 text-center text-sm text-[var(--ink-500)]">
-                                Nenhuma evidencia de correcao enviada ainda.
-                            </div>
-                        )}
-                    </section>
-
-                    <section className="border-t border-[var(--border)] p-5">
-                        <div className="eyebrow">Fluxo da RNC</div>
-                        <div className="mt-4 grid gap-3 md:hidden">
-                            {flowRows.map((row) => (
-                                <article key={row.etapa} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <strong className="min-w-0 break-words text-[13px] text-[var(--ink-900)]">{row.etapa}</strong>
-                                        <span className={`sig-pill shrink-0 ${statusPillClass(row.status)}`}>{row.status}</span>
-                                    </div>
-                                    <div className="mt-3 grid grid-cols-2 gap-3">
-                                        <Meta label="Data" value={row.data} />
-                                        <Meta label="Responsavel" value={row.responsavel} />
-                                    </div>
-                                    <p className="mt-3 break-words text-[12.5px] leading-5 text-[var(--ink-500)]">{row.detalhe}</p>
-                                </article>
-                            ))}
-                        </div>
-                        <div className="mt-4 hidden overflow-hidden rounded-lg border border-[var(--border)] md:block">
-                            <table className="sig-table">
-                                <thead>
-                                    <tr>
-                                        <th>Etapa</th>
-                                        <th>Status</th>
-                                        <th>Data</th>
-                                        <th>Responsavel</th>
-                                        <th>Detalhe</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {flowRows.map((row) => (
-                                        <tr key={row.etapa}>
-                                            <td className="font-semibold text-[var(--ink-900)]">{row.etapa}</td>
-                                            <td>
-                                                <span className={`sig-pill ${statusPillClass(row.status)}`}>
-                                                    {row.status}
-                                                </span>
-                                            </td>
-                                            <td>{row.data}</td>
-                                            <td>{row.responsavel}</td>
-                                            <td className="text-[var(--ink-500)]">{row.detalhe}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </section>
-                </article>
-            </section>
+                            <p className="text-xs text-[var(--ink-500)]">{row.responsavel} · {row.data}</p>
+                            <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm">{row.detalhe}</p>
+                        </li>)}
+                    </ol>
+                </DetailSection>
+            </div>
         </AuthenticatedLayout>
     );
 }
 
-function CompanyLogoCard({ label, company, align = 'left' }) {
-    const textAlignClass = align === 'right' ? 'text-right' : 'text-left';
-
-    return (
-        <div className={`rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 ${textAlignClass}`}>
-            <div className={`flex items-center gap-3 ${align === 'right' ? 'justify-end' : ''}`}>
-                {align === 'right' && (
-                    <div className="min-w-0">
-                        <div className="truncate text-[13px] font-semibold text-[var(--ink-900)]">{company?.sigla || company?.nome || '-'}</div>
-                        <div className="truncate text-[11.5px] text-[var(--ink-500)]">{company?.nome || 'Sem empresa'}</div>
-                    </div>
-                )}
-                <div className="flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md border border-[var(--border)] bg-white px-2">
-                    {company?.logo_url ? (
-                        <img src={company.logo_url} alt={`Logo ${label}`} className="max-h-full max-w-full object-contain" />
-                    ) : (
-                        <span className="line-clamp-3 text-center text-[10.5px] font-bold leading-tight text-[var(--ink-600)]">
-                            {company?.nome || 'Empresa sem logo'}
-                        </span>
-                    )}
-                </div>
-                {align !== 'right' && (
-                    <div className="min-w-0">
-                        <div className="truncate text-[13px] font-semibold text-[var(--ink-900)]">{company?.sigla || company?.nome || '-'}</div>
-                        <div className="truncate text-[11.5px] text-[var(--ink-500)]">{company?.nome || 'Sem empresa'}</div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+function DetailSection({ title, icon: Icon, count, children }) {
+    return <section className="sig-card min-w-0" aria-label={title}>
+        <h2 className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-5 py-4 text-lg font-semibold">{Icon && <Icon size={18} />}{title}{count != null && <span className="sig-pill">{count}</span>}</h2>
+        {children}
+    </section>;
 }
 
-function PhotoFigure({ photo, title, detail }) {
-    return (
-        <figure className="flex h-full flex-col rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-2">
-            <div className="aspect-[4/3] w-full overflow-hidden rounded-md bg-white">
-                <img
-                    src={photo.url}
-                    alt={photo.original_name || title}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                />
-            </div>
-            <figcaption className="min-h-10 pt-2 text-[12.5px] leading-5 text-[var(--ink-500)]">
-                <span className="font-semibold text-[var(--ink-800)]">{title}</span>
-                {detail ? ` - ${detail}` : ''}
-            </figcaption>
-        </figure>
-    );
+function Detail({ label, children }) {
+    return <div className="min-w-0"><dt className="text-xs font-semibold text-[var(--ink-500)]">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm text-[var(--ink-900)]">{children || '—'}</dd></div>;
+}
+
+function CompanyIdentity({ company }) {
+    return <span className="flex items-center gap-3">{company?.logo_url && <img src={company.logo_url} alt="" className="h-9 w-16 shrink-0 object-contain" />}<span className="min-w-0">{companyLabel(company) || '—'}</span></span>;
+}
+
+function PhotoGallery({ photos = [], prefix = 'Imagem', empty }) {
+    if (!photos?.length) return <EmptyState>{empty}</EmptyState>;
+    return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{photos.map((photo, index) => <figure key={photo.id} className="min-w-0 overflow-hidden rounded-lg border border-slate-200">
+        <a href={photo.url} target="_blank" rel="noreferrer" className="block aspect-[4/3] bg-slate-50" aria-label={`Abrir ${prefix.toLowerCase()} ${photo.position || index + 1}`}>
+            <img src={photo.url} alt={photo.original_name || `${prefix} ${photo.position || index + 1}`} className="h-full w-full object-contain" loading="lazy" />
+        </a>
+        <figcaption className="break-words p-3 text-xs leading-5 text-[var(--ink-500)]"><span className="block font-semibold text-[var(--ink-900)]">{prefix} {photo.position || index + 1}</span>{photo.comment || photo.original_name}</figcaption>
+    </figure>)}</div>;
+}
+
+function EmptyState({ children }) {
+    return <p className="py-5 text-sm text-[var(--ink-500)]">{children}</p>;
 }
 
 function statusPillClass(status) {
-    if (['Concluida', 'Enviada', 'Aprovada', 'Finalizada'].includes(status)) {
-        return ['Aprovada', 'Finalizada'].includes(status) ? 'sig-pill-green' : 'sig-pill-blue';
-    }
-
-    if (status === 'Reprovada') {
-        return 'sig-pill-red';
-    }
-
-    return 'sig-pill-amber';
-}
-
-function Meta({ label, value }) {
-    return (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-            <div className="eyebrow">{label}</div>
-            <div className="mt-1 min-w-0 break-words text-[13px] font-semibold text-[var(--ink-800)]">{value || '-'}</div>
-        </div>
-    );
-}
-
-function TextBlock({ title, value }) {
-    return (
-        <div className="mt-4 rounded-lg border border-[var(--border)] bg-white p-4">
-            <h3 className="text-[13px] font-semibold text-[var(--ink-900)]">{title}</h3>
-            <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-[var(--ink-500)]">{value}</p>
-        </div>
-    );
+    if (['Concluída', 'Enviada', 'Aprovada', 'Finalizada'].includes(status)) return ['Aprovada', 'Finalizada'].includes(status) ? 'sig-pill-green' : 'sig-pill-blue';
+    return status === 'Reprovada' ? 'sig-pill-red' : 'sig-pill-amber';
 }

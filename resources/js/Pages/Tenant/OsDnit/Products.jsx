@@ -113,11 +113,11 @@ export default function Products({ products, filters, categories, frequencies, c
 
     return (
         <AuthenticatedLayout>
-            <Head title="OS DNIT · Produtos" />
+            <Head title="Ordem de Serviço · Produtos" />
             <div className="sig-content os-dnit-page space-y-6">
                 <header className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                        <div className="eyebrow">OS DNIT</div>
+                        <div className="eyebrow">Ordem de Serviço</div>
                         <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Produtos</h1>
                         <p className="mt-2 text-sm text-[var(--ink-500)]">Catálogo de produtos para as ordens de serviço do DNIT.</p>
                     </div>

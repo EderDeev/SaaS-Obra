@@ -1,12 +1,14 @@
+import { Pagination } from '@/Components/OsDnitOrderUi';
 import OsDnitDeleteButton from '@/Components/OsDnitDeleteButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { MapPinned, Pencil, Plus, Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-export default function Settings({ highways, filters, canCreate, contracts }) {
+export default function Settings({ highways, lots, filters, canCreate, contracts }) {
     const { currentTenant, flash = {} } = usePage().props;
     const createContracts = contracts.filter((contract) => contract.can_create);
+    const [catalog, setCatalog] = useState('highways');
     const [editing, setEditing] = useState(null);
     const nameInput = useRef(null);
     const form = useForm({ contract_id: createContracts.length === 1 ? String(createContracts[0].id) : '', name: '', active: true });
@@ -43,10 +45,10 @@ export default function Settings({ highways, filters, canCreate, contracts }) {
 
     return (
         <AuthenticatedLayout>
-            <Head title="OS DNIT · Parametrização" />
+            <Head title="Ordem de Serviço · Parametrização" />
             <div className="sig-content os-dnit-page space-y-6">
                 <header>
-                    <span className="eyebrow">OS DNIT</span>
+                    <span className="eyebrow">Ordem de Serviço</span>
                     <h1 className="mt-2 text-3xl font-bold">Parametrização</h1>
                     <p className="mt-1 text-sm text-[var(--ink-500)]">Cadastros reutilizáveis para o preenchimento das ordens de serviço do DNIT.</p>
                 </header>
@@ -54,10 +56,11 @@ export default function Settings({ highways, filters, canCreate, contracts }) {
                 {contracts.length === 0 && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Você não possui vínculo ativo com um contrato desta empresa.</p>}
                 {flash.success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{flash.success}</div>}
 
-                <div className="flex rounded-xl border border-[var(--border)] bg-white p-2 shadow-sm">
-                    <h2 className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 font-bold text-white"><MapPinned size={17} /> Rodovias</h2>
-                </div>
-
+                <nav aria-label="Cadastros da parametrização" className="flex flex-wrap gap-2 rounded-xl border border-[var(--border)] bg-white p-2 shadow-sm">
+                    {[['highways', 'Rodovias'], ['lots', 'Lotes de Supervisão']].map(([value, label]) => <button type="button" key={value} aria-pressed={catalog === value} onClick={() => setCatalog(value)} className={`sig-btn ${catalog === value ? 'sig-btn-primary' : 'sig-btn-secondary'}`}>{label}</button>)}
+                </nav>
+                {catalog === 'lots' && <Lots tenant={currentTenant} contracts={contracts} lots={lots} filters={filters} canCreate={canCreate} />}
+                {catalog === 'highways' && <>
                 {(canCreate || editing) && (
                     <form onSubmit={submit} className="rounded-xl border border-[var(--border)] bg-white shadow-sm">
                         <header className="border-b border-[var(--border)] px-5 py-4">
@@ -111,7 +114,37 @@ export default function Settings({ highways, filters, canCreate, contracts }) {
                         })}
                     </nav>}
                 </section>
+                </>}
             </div>
         </AuthenticatedLayout>
     );
+}
+
+function Lots({ tenant, contracts, lots, filters, canCreate }) {
+    const [editing, setEditing] = useState(null);
+    const createContracts = contracts.filter((contract) => contract.can_create);
+    const form = useForm({ contract_id: createContracts.length === 1 ? String(createContracts[0].id) : '', name: '', sei_reference: '', active: true });
+    const reset = () => { setEditing(null); form.reset(); form.clearErrors(); };
+    const submit = (event) => {
+        event.preventDefault();
+        const options = { preserveScroll: true, onSuccess: reset };
+        if (editing) form.patch(route('tenant.os-dnit.settings.lots.update', [tenant.slug, editing.id]), options);
+        else form.post(route('tenant.os-dnit.settings.lots.store', tenant.slug), options);
+    };
+    return <div className="space-y-5">
+        {(canCreate || editing) && <form onSubmit={submit} className="sig-card space-y-4 p-5">
+            <h2 className="text-lg font-semibold">{editing ? 'Editar lote de supervisão' : 'Cadastrar lote de supervisão'}</h2>
+            <div className="grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-semibold">Contrato<select className="sig-input min-w-0" required disabled={Boolean(editing)} value={form.data.contract_id} onChange={(event) => form.setData('contract_id', event.target.value)}><option value="">Selecione o contrato</option>{(editing ? contracts : createContracts).map((contract) => <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>)}</select></label>
+            <label className="grid gap-2 text-sm font-semibold">Lote de Supervisão<input className="sig-input" required maxLength={120} placeholder="Ex.: Lote 01" value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} /></label>
+            <label className="grid gap-2 text-sm font-semibold">Referência SEI (opcional)<input className="sig-input" maxLength={255} value={form.data.sei_reference} onChange={(event) => form.setData('sei_reference', event.target.value)} /></label></div>
+            <p className="text-xs text-slate-500">A referência vinculada será preenchida automaticamente ao selecionar este lote na criação de uma OS.</p>
+            {editing && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.data.active} onChange={(event) => form.setData('active', event.target.checked)} />Lote ativo</label>}
+            {Object.entries(form.errors).map(([key, error]) => <p role="alert" className="text-sm text-red-700" key={key}>{error}</p>)}
+            <div className="flex flex-wrap justify-end gap-2">{editing && <button type="button" className="sig-btn sig-btn-secondary" onClick={reset}>Cancelar</button>}<button className="sig-btn sig-btn-primary" disabled={form.processing}>Salvar lote</button></div>
+        </form>}
+        <section className="sig-card overflow-hidden"><header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] p-5"><h2 className="font-semibold">Lotes de Supervisão</h2><select aria-label="Filtrar lotes por contrato" className="max-w-full rounded-lg border-slate-300 text-sm" value={filters.contract_id || ''} onChange={(event) => router.get(route('tenant.os-dnit.settings.index', tenant.slug), event.target.value ? { contract_id: event.target.value } : {}, { preserveState: true, preserveScroll: true })}><option value="">Todos os contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code}</option>)}</select></header>
+            <div className="divide-y divide-slate-100">{lots.data.map((lot) => <article key={lot.id} className="flex flex-wrap items-center justify-between gap-4 p-5"><div className="min-w-0"><h3 className="break-words text-sm font-semibold">{lot.name}</h3><p className="mt-1 break-words text-xs text-slate-500">{lot.contract.code} · Referência SEI: {lot.sei_reference || 'Não vinculada'}</p></div><div className="flex flex-wrap items-center gap-2"><span className="sig-pill">{lot.active ? 'Ativo' : 'Inativo'}</span>{lot.can_edit && <button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => { setEditing(lot); form.clearErrors(); form.setData({ contract_id: String(lot.contract_id), name: lot.name, sei_reference: lot.sei_reference || '', active: lot.active }); }}><Pencil size={14} />Editar</button>}{lot.can_delete && <OsDnitDeleteButton url={route('tenant.os-dnit.settings.lots.destroy', [tenant.slug, lot.id])} title="Excluir lote?" label={`Excluir lote ${lot.name}`} message="Lotes vinculados a documentos serão preservados. Para ocultá-los de novas demandas, use a opção de inativar." />}</div></article>)}{!lots.data.length && <p className="p-6 text-center text-sm text-slate-500">Nenhum lote cadastrado.</p>}</div>
+        </section>
+        {lots.last_page > 1 && <Pagination data={lots} label="lotes de supervisão" pageName="lots_page" preserveState />}
+    </div>;
 }

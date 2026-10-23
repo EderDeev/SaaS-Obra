@@ -59,7 +59,7 @@ export default function ActivityOsDnitSelect({ tenantSlug, contractId, value, on
     const label = selected && String(selected.id) === String(value) ? `${selected.request_number} — ${selected.subject}` : '';
 
     return <div ref={root} className="min-w-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
-        <label htmlFor={id} className="eyebrow mb-1 block">Ordem de Serviço DNIT</label>
+        <label htmlFor={id} className="eyebrow mb-1 block">Ordem de Serviço</label>
         <div className="sig-input flex min-w-0 items-center gap-2">
             <Search size={15} className="shrink-0 text-[var(--ink-500)]" />
             <input id={id} role="combobox" aria-required="true" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list"

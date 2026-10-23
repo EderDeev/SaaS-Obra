@@ -18,6 +18,7 @@ class OsDnitResponsibleController extends Controller
     public function index(Request $request, Tenant $tenant)
     {
         $contracts = OsDnitContractAccess::contracts($request->user(), $tenant, OsDnitPermissions::RESPONSIBLES)->orderBy('code')->get(['id', 'code', 'name']);
+
         return Inertia::render('Tenant/OsDnit/Responsibles', [
             'contracts' => $contracts, 'roles' => OsDnitResponsible::ROLES,
             'participants' => ContractParticipant::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))
@@ -47,6 +48,7 @@ class OsDnitResponsibleController extends Controller
                     'user_id' => $assignment['user_id'], 'role' => $assignment['role']], ['active' => true]);
             }
         });
+
         return back()->with('success', 'Responsáveis do contrato atualizados.');
     }
 }

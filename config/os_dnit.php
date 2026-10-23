@@ -1,6 +1,6 @@
 <?php
 
 return [
-    // Use a private disk with persistent storage before deploying to Railway.
+    // The local disk uses the protected persistent area when running on Railway.
     'attachment_disk' => env('OS_DNIT_ATTACHMENT_DISK', 'local'),
 ];

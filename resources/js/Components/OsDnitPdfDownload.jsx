@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 
 const options = [
     ['analyst', 'Somente solicitação do analista', 'Abertura do pedido e produtos solicitados'],
-    ['concremat', 'Solicitação + Análise Concremat', 'Pedido original e análise técnica'],
+    ['concremat', 'Solicitação + Análise Supervisão', 'Pedido original e análise técnica'],
     ['inspector', 'Solicitação + análises Concremat e fiscal', 'Inclui a decisão do fiscal do contrato'],
     ['complete', 'Documento completo com o fluxo', 'Todas as etapas e o histórico de movimentações'],
 ];

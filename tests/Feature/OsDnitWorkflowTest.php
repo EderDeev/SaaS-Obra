@@ -2,17 +2,30 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Contract, ContractParticipant, OsDnitHighway, OsDnitOrder, OsDnitOrderEvent, OsDnitProduct, OsDnitResponsible, Tenant, User};
+use App\Models\Contract;
+use App\Models\ContractParticipant;
+use App\Models\OsDnitHighway;
+use App\Models\OsDnitOrder;
+use App\Models\OsDnitOrderEvent;
+use App\Models\OsDnitProduct;
+use App\Models\OsDnitResponsible;
+use App\Models\OsDnitSupervisionLot;
+use App\Models\Tenant;
+use App\Models\User;
 use App\Notifications\OsDnitFlowChangedNotification;
 use App\Services\OsDnitFlowRecipients;
+use App\Services\OsDnitPdfRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
 use Inertia\Testing\AssertableInertia as Assert;
+use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\Transport\TransportInterface;
 use Tests\TestCase;
 
 class OsDnitWorkflowTest extends TestCase
@@ -20,13 +33,21 @@ class OsDnitWorkflowTest extends TestCase
     use RefreshDatabase;
 
     private Tenant $tenant;
+
     private Contract $contract;
+
     private User $analyst;
+
     private User $concremat;
+
     private User $inspector;
+
     private User $viewer;
+
     private OsDnitProduct $product;
+
     private OsDnitProduct $extra;
+
     private array $demand;
 
     protected function setUp(): void
@@ -41,10 +62,9 @@ class OsDnitWorkflowTest extends TestCase
         $road = OsDnitHighway::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id, 'name' => 'BR-364/AC', 'active' => true]);
         $this->product = $this->product('02', 'Controle de Obras');
         $this->extra = $this->product('18D', 'Levantamentos Topográficos');
-        $this->demand = ['contract_id' => $this->contract->id, 'supervision_lot' => '1', 'highway_id' => $road->id,
+        $this->demand = ['contract_id' => $this->contract->id, 'supervision_lot_id' => OsDnitSupervisionLot::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id, 'name' => '1', 'active' => true])->id, 'highway_id' => $road->id,
             'km_start' => 1, 'km_end' => 2, 'subject' => 'Pedido inicial', 'desired_deadline' => '2026-12-01',
-            'technical_need' => 'Necessidade técnica', 'justification' => 'Resultado esperado', 'sei_reference' => 'SEI-123',
-            'items' => [['product_id' => $this->product->id, 'quantity' => '12.500']]];
+            'technical_need' => 'Necessidade técnica', 'justification' => 'Resultado esperado', 'sei_reference' => 'SEI-123'];
     }
 
     public function test_full_approval_preserves_the_analyst_request_and_tracks_product_and_deadline_changes(): void
@@ -63,11 +83,11 @@ class OsDnitWorkflowTest extends TestCase
         $analysis = $this->analysis('save');
         $this->act('review', $order, $this->concremat, $analysis)->assertSessionHasNoErrors();
         $this->assertSame('awaiting_concremat', $order->fresh()->status);
-        $this->assertSame('12.500', $order->items()->sole()->quantity);
+        $this->assertSame(0, $order->items()->count());
         $this->assertSame('2.000', $order->fresh()->review_items[0]['quantity']);
         $this->act('review', $order, $this->concremat, [...$analysis, 'mode' => 'forward'])->assertSessionHasNoErrors();
         $this->actingAs($this->inspector)->get($this->url('show', $order))->assertOk()->assertInertia(fn (Assert $p) => $p
-            ->where('order.status', 'awaiting_contract')->where('order.items.0.quantity', '12.500')
+            ->where('order.status', 'awaiting_contract')->has('order.items', 0)
             ->where('order.review_items.0.product_id', $this->extra->id)->where('order.review_items.0.quantity', '2.000')
             ->where('order.review_comment', 'Produto substituído após análise técnica.')
             ->where('capabilities.decide', true)->where('capabilities.review', false));
@@ -75,7 +95,7 @@ class OsDnitWorkflowTest extends TestCase
         $this->assertSame('approved', $order->fresh()->status);
         $events = $order->events()->get();
         $this->assertSame(['created', 'submitted', 'analysis_saved', 'forwarded', 'approved'], $events->pluck('action')->all());
-        $this->assertSame('12.500', $events->last()->snapshot['items'][0]['quantity']);
+        $this->assertSame([], $events->last()->snapshot['items']);
         $this->assertSame($this->extra->id, $events->last()->snapshot['review_items'][0]['product_id']);
         $this->assertSame($this->inspector->id, $events->last()->actor_id);
         $this->assertSame('2026-12-10', $events->last()->snapshot['estimated_deadline']);
@@ -114,7 +134,7 @@ class OsDnitWorkflowTest extends TestCase
         $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Serviço autorizado.'])->assertSessionHasNoErrors();
         $this->assertSame('approved', $order->fresh()->status);
         $this->assertSame('9.500', $order->fresh()->review_items[0]['quantity']);
-        $this->assertSame('12.500', $order->items()->sole()->quantity);
+        $this->assertSame(0, $order->items()->count());
     }
 
     public function test_return_to_analyst_keeps_request_locked_and_allows_resending_for_another_analysis(): void
@@ -127,11 +147,11 @@ class OsDnitWorkflowTest extends TestCase
             'subject' => 'Pedido corrigido', 'items' => [['product_id' => $this->product->id, 'quantity' => 8]]])->assertForbidden();
         $this->assertSame('Pedido inicial', $order->fresh()->subject);
         $this->assertNotNull($order->fresh()->review_items);
-        $this->assertSame('12.500', $order->items()->sole()->quantity);
+        $this->assertSame(0, $order->items()->count());
         $this->get($this->url('show', $order))->assertOk()->assertInertia(fn (Assert $p) => $p->where('capabilities.edit', false)->where('capabilities.submit', true));
         $this->assertSame('Pedido inicial', $order->events()->first()->snapshot['subject']);
         $return = $order->events()->where('action', 'returned')->sole();
-        $this->assertSame('12.500', $return->snapshot['items'][0]['quantity']);
+        $this->assertSame([], $return->snapshot['items']);
         $this->assertNotNull($return->snapshot['review_items']);
         $this->act('review', $order, $this->concremat, $this->analysis())->assertSessionHasErrors('status');
         $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
@@ -203,7 +223,9 @@ class OsDnitWorkflowTest extends TestCase
         $outsider = User::factory()->create();
         $this->tenant->memberships()->create(['user_id' => $outsider->id, 'role' => 'tenant_admin', 'status' => 'active']);
         OsDnitResponsible::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id, 'user_id' => $outsider->id, 'role' => 'concremat', 'active' => true]);
-        foreach (['submit', 'review', 'decide'] as $action) $this->act($action, $order, $outsider, $this->analysis())->assertNotFound();
+        foreach (['submit', 'review', 'decide'] as $action) {
+            $this->act($action, $order, $outsider, $this->analysis())->assertNotFound();
+        }
         $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
         OsDnitResponsible::where('user_id', $this->concremat->id)->update(['active' => false]);
         $this->act('review', $order, $this->concremat, $this->analysis())->assertForbidden();
@@ -259,8 +281,8 @@ class OsDnitWorkflowTest extends TestCase
                 ->assertInertia(fn (Assert $p) => $p->where('capabilities.edit', false));
         }
         $this->assertSame('Pedido inicial', $order->fresh()->subject);
-        $this->assertSame($this->product->id, $order->items()->sole()->product_id);
-        $this->assertSame('12.500', $order->items()->sole()->quantity);
+        $this->assertSame(0, $order->items()->count());
+        $this->assertSame(0, $order->items()->count());
         $this->assertSame(2, $order->events()->count());
     }
 
@@ -319,9 +341,11 @@ class OsDnitWorkflowTest extends TestCase
         DB::beginTransaction();
         $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
         $this->assertDatabaseCount('jobs', 2);
+        $this->assertDatabaseCount('notifications', 2);
         $this->assertSame('awaiting_concremat', $order->fresh()->status);
         DB::rollBack();
         $this->assertDatabaseCount('jobs', 0);
+        $this->assertDatabaseCount('notifications', 0);
         $this->assertSame('draft', $order->fresh()->status);
         $this->assertSame(1, $order->events()->count());
         $this->assertCount(0, Mail::mailer()->getSymfonyTransport()->messages());
@@ -336,11 +360,11 @@ class OsDnitWorkflowTest extends TestCase
         $messages = Mail::mailer()->getSymfonyTransport()->messages();
         $this->assertCount(8, $messages);
         $first = $messages->first()->getOriginalMessage();
-        $this->assertStringContainsString('OS enviada para análise Concremat', $first->getSubject());
-        $this->assertStringContainsString('Em análise Concremat', $first->getTextBody());
-        $this->assertStringNotContainsString('Serviço aprovado', $first->getTextBody());
+        $this->assertStringContainsString('OS enviada para análise Supervisão', $first->getSubject());
+        $this->assertStringContainsString('Em análise Supervisão', $first->getTextBody());
+        $this->assertStringNotContainsString('Demanda aprovada', $first->getTextBody());
         $last = $messages->last()->getOriginalMessage();
-        $this->assertStringContainsString('Serviço aprovado', $last->getSubject());
+        $this->assertStringContainsString('Demanda aprovada', $last->getSubject());
         $this->assertStringContainsString($this->url('show', $order), $last->getHtmlBody());
         $this->assertStringContainsString($this->url('show', $order), $last->getTextBody());
         $this->assertStringContainsString('Autorizado.', $last->getTextBody());
@@ -369,9 +393,12 @@ class OsDnitWorkflowTest extends TestCase
         $event = $order->events()->where('action', 'submitted')->sole();
         $notification = new OsDnitFlowChangedNotification($event->id);
         $this->assertTrue($notification->shouldSend($this->concremat, 'mail'));
+        $this->assertTrue($notification->shouldSend($this->concremat, 'database'));
         $this->assertFalse($notification->shouldSend($this->viewer, 'mail'));
+        $this->assertFalse($notification->shouldSend($this->viewer, 'database'));
         OsDnitResponsible::where('user_id', $this->concremat->id)->update(['active' => false]);
         $this->assertFalse($notification->shouldSend($this->concremat, 'mail'));
+        $this->assertFalse($notification->shouldSend($this->concremat, 'database'));
         OsDnitResponsible::where('user_id', $this->concremat->id)->update(['active' => true]);
         ContractParticipant::where('user_id', $this->concremat->id)->delete();
         $this->deliverPendingEmails();
@@ -398,10 +425,12 @@ class OsDnitWorkflowTest extends TestCase
     {
         $order = $this->draft();
         $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
+        $notificationIds = DB::table('notifications')->pluck('id')->sort()->values()->all();
+        $this->assertCount(2, $notificationIds);
         $mailer = Mail::mailer();
         $originalTransport = $mailer->getSymfonyTransport();
-        $transport = \Mockery::mock(\Symfony\Component\Mailer\Transport\TransportInterface::class);
-        $transport->shouldReceive('send')->once()->andThrow(new \Symfony\Component\Mailer\Exception\TransportException('Temporary provider failure'));
+        $transport = \Mockery::mock(TransportInterface::class);
+        $transport->shouldReceive('send')->once()->andThrow(new TransportException('Temporary provider failure'));
         $mailer->setSymfonyTransport($transport);
         $job = Queue::connection('os_dnit_mail')->pop('os-dnit-mail');
         $this->assertSame(5, $job->payload()['maxTries']);
@@ -409,7 +438,7 @@ class OsDnitWorkflowTest extends TestCase
         try {
             $job->fire();
             $this->fail('Provider failure must reach the worker for retry.');
-        } catch (\Symfony\Component\Mailer\Exception\TransportException $exception) {
+        } catch (TransportException $exception) {
             $job->release(0);
         } finally {
             $mailer->setSymfonyTransport($originalTransport);
@@ -420,12 +449,81 @@ class OsDnitWorkflowTest extends TestCase
         $this->assertCount(2, $originalTransport->messages());
         $this->assertDatabaseCount('jobs', 0);
         $this->assertSame(2, $order->events()->count());
+        $this->assertSame($notificationIds, DB::table('notifications')->pluck('id')->sort()->values()->all());
+    }
+
+    public function test_bell_notifications_are_immediate_and_cover_the_full_workflow_for_eligible_responsibles(): void
+    {
+        $anotherAnalyst = $this->actor('analyst');
+        OsDnitResponsible::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id,
+            'user_id' => $this->concremat->id, 'role' => 'contract_inspector', 'active' => true]);
+        $order = $this->draft();
+        $this->assertDatabaseCount('notifications', 0);
+        $assertRecipients = function (string $action, int $total, bool $inspector = true) use ($order) {
+            $event = $order->events()->where('action', $action)->reorder('id', 'desc')->firstOrFail();
+            $recipients = DB::table('notifications')->where('type', OsDnitFlowChangedNotification::class)
+                ->where('data->os_dnit_event_id', $event->id)->pluck('notifiable_id')->all();
+            $expected = [$this->analyst->id, $this->concremat->id];
+            if ($inspector) {
+                $expected[] = $this->inspector->id;
+            }
+            $this->assertEqualsCanonicalizing($expected, $recipients);
+            $this->assertDatabaseCount('notifications', $total);
+        };
+        $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
+        $assertRecipients('submitted', 2, false);
+        $notice = $this->concremat->unreadNotifications()->sole();
+        $this->assertSame($this->tenant->id, $notice->data['tenant_id']);
+        $this->assertSame($this->contract->id, $notice->data['contract_id']);
+        $this->assertSame($order->id, $notice->data['os_dnit_order_id']);
+        $this->assertSame('CT-1', $notice->data['contract']);
+        $this->assertStringContainsString($order->request_number, $notice->data['title']);
+        $this->assertStringContainsString('OS enviada para análise Supervisão', $notice->data['title']);
+        $this->assertStringContainsString($this->analyst->name, $notice->data['body']);
+        $this->assertSame(route('tenant.os-dnit.orders.show', [$this->tenant, $order], false), $notice->data['url']);
+        $this->actingAs($this->concremat)->get(route('tenant.os-dnit.orders.index', $this->tenant))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('notifications.unread_count', 1)
+                ->where('notifications.items.0.id', $notice->id)->where('notifications.items.0.title', $notice->data['title']));
+        $this->act('submit', $order, $this->analyst, ['version' => 1])->assertSessionHasErrors('version');
+        $this->act('review', $order, $this->concremat, $this->analysis('save'))->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('notifications', 2);
+        $this->act('review', $order, $this->concremat, $this->analysis())->assertSessionHasNoErrors();
+        $assertRecipients('forwarded', 5);
+        $this->act('decide', $order, $this->inspector, ['decision' => 'return', 'return_to' => 'concremat', 'comment' => 'Rever quantidade.'])->assertSessionHasNoErrors();
+        $assertRecipients('returned', 8);
+        $this->assertStringContainsString('devolvida à Supervisão', $this->analyst->notifications()->where('data->os_dnit_event_id', $order->events()->reorder('id', 'desc')->value('id'))->sole()->data['title']);
+        $this->act('review', $order, $this->concremat, $this->analysis())->assertSessionHasNoErrors();
+        $assertRecipients('forwarded', 11);
+        $this->act('decide', $order, $this->inspector, ['decision' => 'return', 'return_to' => 'analyst', 'comment' => 'Rever pedido.'])->assertSessionHasNoErrors();
+        $assertRecipients('returned', 14);
+        $this->assertStringContainsString('devolvida ao analista DNIT', $this->analyst->notifications()->where('data->os_dnit_event_id', $order->events()->reorder('id', 'desc')->value('id'))->sole()->data['title']);
+        $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
+        $assertRecipients('submitted', 16, false);
+        $this->assertStringContainsString('reenviada', $this->analyst->notifications()->where('data->os_dnit_event_id', $order->events()->reorder('id', 'desc')->value('id'))->sole()->data['title']);
+        $this->act('review', $order, $this->concremat, $this->analysis())->assertSessionHasNoErrors();
+        $assertRecipients('forwarded', 19);
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $assertRecipients('approved', 22);
+        $this->act('finalize', $order, $this->inspector)->assertSessionHasNoErrors();
+        $assertRecipients('completed', 25);
+        $this->assertStringContainsString('OS finalizada', $this->analyst->notifications()->where('data->os_dnit_event_id', $order->events()->reorder('id', 'desc')->value('id'))->sole()->data['title']);
+        $this->assertSame(0, $anotherAnalyst->notifications()->count());
+        $this->assertSame(0, $this->viewer->notifications()->count());
+        $this->assertSame('awaiting_concremat', $notice->fresh()->data['status']);
+        $this->assertDatabaseCount('jobs', 25);
+        $this->assertCount(0, Mail::mailer()->getSymfonyTransport()->messages());
+        $this->deliverPendingEmails();
+        $this->assertDatabaseCount('notifications', 25);
+        $this->assertDatabaseCount('jobs', 0);
+        $this->assertCount(25, Mail::mailer()->getSymfonyTransport()->messages());
     }
 
     private function deliverPendingEmails(): void
     {
         $queue = Queue::connection('os_dnit_mail');
-        while ($job = $queue->pop('os-dnit-mail')) $job->fire();
+        while ($job = $queue->pop('os-dnit-mail')) {
+            $job->fire();
+        }
     }
 
     public function test_analysis_menu_count_and_list_follow_each_users_role_and_workflow_stage(): void
@@ -468,7 +566,7 @@ class OsDnitWorkflowTest extends TestCase
             ->assertInertia(fn (Assert $p) => $p->component('Tenant/OsDnit/Orders')->where('analysisOrderId', $order->id));
         $this->getJson($detail)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
             ->assertJsonPath('capabilities.review', true)->assertJsonPath('order.id', $order->id)
-            ->assertJsonPath('order.items.0.product_name', $this->product->name);
+            ->assertJsonCount(0, 'order.items');
         $this->viewer->update(['is_platform_admin' => true]);
         foreach ([$this->analyst, $this->viewer] as $user) {
             $this->actingAs($user)->get($detail)->assertForbidden();
@@ -506,7 +604,7 @@ class OsDnitWorkflowTest extends TestCase
         $this->get($index.'&status=awaiting_contract')->assertOk()->assertInertia(fn (Assert $p) => $p
             ->has('orders.data', 1)->where('osDnitNavigation.pending_analysis_count', 12));
         $this->get($index.'&q=001')->assertOk()->assertInertia(fn (Assert $p) => $p->has('orders.data', 1));
-        $this->get($index, ['X-Inertia' => 'true', 'X-Inertia-Version' => \Inertia\Inertia::getVersion(), 'X-Inertia-Partial-Component' => 'Tenant/OsDnit/Orders', 'X-Inertia-Partial-Data' => 'orders'])
+        $this->get($index, ['X-Inertia' => 'true', 'X-Inertia-Version' => Inertia::getVersion(), 'X-Inertia-Partial-Component' => 'Tenant/OsDnit/Orders', 'X-Inertia-Partial-Data' => 'orders'])
             ->assertOk()->assertJsonPath('props.osDnitNavigation.pending_analysis_count', 12);
         $other = Contract::create(['tenant_id' => $this->tenant->id, 'code' => 'UNLINKED', 'name' => 'Sem vínculo', 'status' => 'active']);
         $copy = $order->replicate();
@@ -529,14 +627,14 @@ class OsDnitWorkflowTest extends TestCase
             ->assertSessionHasNoErrors()->assertRedirect($index);
         $this->getJson($detail)->assertOk()->assertJsonPath('order.workflow_version', 3)
             ->assertJsonPath('order.review_items.0.product_id', $this->extra->id)
-            ->assertJsonPath('order.items.0.product_id', $this->product->id)
+            ->assertJsonCount(0, 'order.items')
             ->assertJsonPath('capabilities.review', true);
         $this->post($this->url('review', $order), [...$this->analysis(), 'version' => 3])->assertSessionHasNoErrors()->assertRedirect($index);
         $this->get($index)->assertOk()->assertInertia(fn (Assert $page) => $page
             ->has('orders.data', 0)->where('osDnitNavigation.pending_analysis_count', 0));
         $this->actingAs($this->inspector)->getJson($detail)->assertOk()
             ->assertJsonPath('capabilities.decide', true)->assertJsonPath('capabilities.review', false)
-            ->assertJsonPath('order.review_items.0.quantity', '2.000')->assertJsonPath('order.items.0.quantity', '12.500');
+            ->assertJsonPath('order.review_items.0.quantity', '2.000')->assertJsonCount(0, 'order.items');
         $this->from($index)->post($this->url('decide', $order), ['version' => 4, 'decision' => 'return', 'return_to' => 'concremat', 'comment' => ''])
             ->assertSessionHasErrors('comment');
         $this->post($this->url('decide', $order), ['version' => 4, 'decision' => 'approve', 'comment' => 'Serviço autorizado.'])
@@ -596,12 +694,12 @@ class OsDnitWorkflowTest extends TestCase
         // Stage lists are visible to contract members, even without an analysis role.
         $this->actingAs($this->viewer)->get($index)->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('filters.stage', 'all')->where('orders.total', 6)
-            ->where('stageCounts', ['all' => 6, 'analyst' => 2, 'concremat' => 2, 'contract_inspector' => 1, 'completed' => 1]));
+            ->where('stageCounts', ['all' => 6, 'analyst' => 2, 'concremat' => 2, 'contract_inspector' => 1, 'approved' => 1, 'completed' => 0]));
         foreach ([
             'analyst' => ['returned_analyst', 'draft'],
             'concremat' => ['returned_concremat', 'awaiting_concremat'],
             'contract_inspector' => ['awaiting_contract'],
-            'completed' => ['approved'],
+            'approved' => ['approved'], 'completed' => [],
         ] as $stage => $statuses) {
             $this->get($index.'?stage='.$stage)->assertOk()->assertInertia(fn (Assert $page) => $page
                 ->where('filters.stage', $stage)->where('orders.total', count($statuses))
@@ -609,14 +707,82 @@ class OsDnitWorkflowTest extends TestCase
                 ->where('stageCounts.all', 6));
         }
         $this->get($index.'?stage=concremat&q=003')->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('orders.total', 1)->where('stageCounts', ['all' => 1, 'analyst' => 0, 'concremat' => 1, 'contract_inspector' => 0, 'completed' => 0]));
+            ->where('orders.total', 1)->where('stageCounts', ['all' => 1, 'analyst' => 0, 'concremat' => 1, 'contract_inspector' => 0, 'approved' => 0, 'completed' => 0]));
         $this->get($index.'?contract_id='.$other->id)->assertSessionHasErrors('contract_id');
         ContractParticipant::create(['tenant_id' => $this->tenant->id, 'contract_id' => $other->id,
             'user_id' => $this->viewer->id, 'side' => 'client', 'role' => 'manager', 'status' => 'active']);
         $this->get($index.'?contract_id='.$other->id)->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('orders.total', 1)->where('orders.data.0.id', $copy->id)
-            ->where('stageCounts', ['all' => 1, 'analyst' => 1, 'concremat' => 0, 'contract_inspector' => 0, 'completed' => 0]));
+            ->where('stageCounts', ['all' => 1, 'analyst' => 1, 'concremat' => 0, 'contract_inspector' => 0, 'approved' => 0, 'completed' => 0]));
         $this->get($index.'?stage=invalid')->assertSessionHasErrors('stage');
+    }
+
+    public function test_supervision_lots_are_scoped_and_fill_sei_without_changing_existing_documents(): void
+    {
+        $this->actingAs($this->analyst);
+        $this->post(route('tenant.os-dnit.settings.lots.store', $this->tenant), ['contract_id' => $this->contract->id, 'name' => 'Lote novo', 'sei_reference' => 'SEI-LOTE'])->assertSessionHasNoErrors();
+        $lot = OsDnitSupervisionLot::where('name', 'Lote novo')->sole();
+        $this->get(route('tenant.os-dnit.orders.create', $this->tenant))->assertInertia(fn (Assert $p) => $p
+            ->has('lots', 2)->missing('products'));
+        $this->post(route('tenant.os-dnit.orders.store', $this->tenant), [...$this->demand, 'supervision_lot_id' => $lot->id, 'sei_reference' => 'Tentativa de sobrescrever'])->assertSessionHasNoErrors();
+        $order = OsDnitOrder::sole();
+        $this->assertSame('SEI-LOTE', $order->sei_reference);
+        $this->assertSame('Lote novo', $order->supervision_lot);
+        $this->assertSame(0, $order->items()->count());
+        $this->patch(route('tenant.os-dnit.settings.lots.update', [$this->tenant, $lot]), ['contract_id' => $this->contract->id, 'name' => 'Lote renomeado', 'sei_reference' => 'SEI-NOVA', 'active' => true])->assertSessionHasNoErrors();
+        $this->assertSame('Lote novo', $order->fresh()->supervision_lot);
+        $this->assertSame('SEI-LOTE', $order->fresh()->sei_reference);
+        $this->delete(route('tenant.os-dnit.settings.lots.destroy', [$this->tenant, $lot]))->assertSessionHasErrors('resource');
+        $this->post(route('tenant.os-dnit.orders.store', $this->tenant), [...$this->demand, 'items' => [['product_id' => $this->product->id, 'quantity' => 1]]])->assertSessionHasErrors('items');
+        $lot->update(['active' => false]);
+        $this->post(route('tenant.os-dnit.orders.store', $this->tenant), [...$this->demand, 'supervision_lot_id' => $lot->id])->assertSessionHasErrors('supervision_lot_id');
+        $foreignContract = Contract::create(['tenant_id' => $this->tenant->id, 'code' => 'CT-LOT-OUTRO', 'name' => 'Outro', 'status' => 'active']);
+        $foreign = OsDnitSupervisionLot::create(['tenant_id' => $this->tenant->id, 'contract_id' => $foreignContract->id, 'name' => 'Privado', 'active' => true]);
+        $this->post(route('tenant.os-dnit.orders.store', $this->tenant), [...$this->demand, 'supervision_lot_id' => $foreign->id])->assertSessionHasErrors('supervision_lot_id');
+        $this->get(route('tenant.os-dnit.settings.index', $this->tenant))->assertInertia(fn (Assert $p) => $p->has('lots.data', 2));
+        $this->delete(route('tenant.os-dnit.settings.lots.destroy', [$this->tenant, $foreign]))->assertNotFound();
+        $this->actingAs($this->viewer)->post(route('tenant.os-dnit.settings.lots.store', $this->tenant), ['contract_id' => $this->contract->id, 'name' => 'Negado'])->assertForbidden();
+    }
+
+    public function test_only_the_contract_inspector_can_finalize_an_approved_order_with_history_and_notifications(): void
+    {
+        Notification::fake();
+        $order = $this->awaitingDecision();
+        $this->act('finalize', $order, $this->inspector)->assertSessionHasErrors('status');
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $this->assertSame('approved', $order->fresh()->status);
+        $this->assertNull($order->fresh()->finalized_at);
+        $this->get($this->url('show', $order))->assertInertia(fn (Assert $p) => $p->where('capabilities.finalize', true));
+        foreach ([$this->analyst, $this->concremat, $this->viewer] as $u) {
+            $this->act('finalize', $order, $u)->assertForbidden();
+        }
+        $this->act('finalize', $order, $this->inspector, ['version' => 1])->assertSessionHasErrors('version');
+        $this->act('finalize', $order, $this->inspector)->assertSessionHasNoErrors();
+        $this->assertSame('completed', $order->fresh()->status);
+        $this->assertNotNull($order->fresh()->finalized_at);
+        $this->assertSame($this->inspector->id, $order->fresh()->finalized_by_id);
+        $event = $order->events()->where('action', 'completed')->sole();
+        $this->assertSame('approved', $event->from_status);
+        $this->assertSame('completed', $event->to_status);
+        foreach ([$this->analyst, $this->concremat, $this->inspector] as $u) {
+            Notification::assertSentTo($u, OsDnitFlowChangedNotification::class, fn ($notification) => $notification->eventId === $event->id);
+        }
+        $this->act('finalize', $order, $this->inspector)->assertSessionHasErrors('status');
+        $this->assertSame(1, $order->events()->where('action', 'completed')->count());
+        $this->get(route('tenant.os-dnit.orders.index', [$this->tenant, 'stage' => 'completed']))->assertInertia(fn (Assert $p) => $p
+            ->where('orders.total', 1)->where('stageCounts.completed', 1)->where('stageCounts.approved', 0)->where('orders.data.0.can_finalize', false));
+        $renderer = app(OsDnitPdfRenderer::class);
+        $html = view('pdf.os-dnit', $renderer->data($this->tenant, $order->fresh()))->render();
+        $this->assertStringContainsString('OS FINALIZADA', $html);
+        $this->assertStringContainsString('Análise Supervisão', $html);
+        $this->assertStringNotContainsString('solicitação do analista ×', $html);
+        if (getenv('OS_PDF_QA') === '1') {
+            $path = base_path('tmp/pdfs');
+            if (! is_dir($path)) {
+                mkdir($path, 0777, true);
+            }
+            file_put_contents($path.'/ordem-servico-concluida.pdf', $renderer->render($renderer->data($this->tenant, $order->fresh()))->output());
+        }
     }
 
     private function actor(?string $role): User
@@ -624,7 +790,10 @@ class OsDnitWorkflowTest extends TestCase
         $user = User::factory()->create();
         $this->tenant->memberships()->create(['user_id' => $user->id, 'role' => $role === 'analyst' ? 'tenant_owner' : 'viewer', 'status' => 'active']);
         ContractParticipant::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id, 'user_id' => $user->id, 'side' => 'client', 'role' => 'manager', 'status' => 'active']);
-        if ($role) OsDnitResponsible::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id, 'user_id' => $user->id, 'role' => $role, 'active' => true]);
+        if ($role) {
+            OsDnitResponsible::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id, 'user_id' => $user->id, 'role' => $role, 'active' => true]);
+        }
+
         return $user;
     }
 
@@ -637,6 +806,7 @@ class OsDnitWorkflowTest extends TestCase
     private function draft(): OsDnitOrder
     {
         $this->actingAs($this->analyst)->post(route('tenant.os-dnit.orders.store', $this->tenant), $this->demand)->assertSessionHasNoErrors();
+
         return OsDnitOrder::sole();
     }
 
@@ -645,6 +815,7 @@ class OsDnitWorkflowTest extends TestCase
         $order = $this->draft();
         $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
         $this->act('review', $order, $this->concremat, $this->analysis())->assertSessionHasNoErrors();
+
         return $order->fresh();
     }
 

@@ -11,6 +11,32 @@ class NotificationReadTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_notification_feed_requires_authentication_and_only_returns_the_current_users_alerts(): void
+    {
+        $this->getJson(route('notifications.index'))->assertUnauthorized();
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        $user->notify(new TestDatabaseNotification);
+        $other->notify(new TestDatabaseNotification);
+        $own = $user->notifications()->sole();
+        $this->actingAs($user)->getJson(route('notifications.index', ['user_id' => $other->id]))->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonCount(1, 'items')->assertJsonPath('unread_count', 1)
+            ->assertJsonPath('items.0.id', $own->id)->assertJsonPath('items.0.unread', true);
+        $this->patch(route('notifications.read', $own->id))->assertNoContent();
+        $this->getJson(route('notifications.index'))->assertOk()->assertJsonPath('unread_count', 0)->assertJsonPath('items.0.unread', false);
+    }
+
+    public function test_notification_feed_caps_the_items_and_preserves_the_total_unread_count(): void
+    {
+        $user = User::factory()->create();
+        foreach (range(1, 55) as $index) {
+            $user->notify(new TestDatabaseNotification);
+        }
+        $this->actingAs($user)->getJson(route('notifications.index'))->assertOk()
+            ->assertJsonCount(50, 'items')->assertJsonPath('unread_count', 55);
+    }
+
     public function test_user_can_mark_own_notification_as_read(): void
     {
         $user = User::factory()->create();

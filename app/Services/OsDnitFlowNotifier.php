@@ -11,7 +11,9 @@ class OsDnitFlowNotifier
     public function enqueue(OsDnitOrderEvent $event): void
     {
         $recipients = app(OsDnitFlowRecipients::class)->forEvent($event);
-        if ($recipients->isEmpty()) return;
+        if ($recipients->isEmpty()) {
+            return;
+        }
 
         // The dedicated database queue is part of the same transaction as this event.
         // Workers can only see committed jobs; failed transitions roll the jobs back too.

@@ -12,16 +12,16 @@ class OsDnitPdfRenderer
 {
     public const SCOPES = [
         'analyst' => 'solicitacao-analista',
-        'concremat' => 'solicitacao-analise-concremat',
+        'concremat' => 'solicitacao-analise-supervisao',
         'inspector' => 'solicitacao-analises',
         'complete' => 'completo',
     ];
 
     public const ACTIONS = [
-        'created' => 'Rascunho criado', 'legacy_draft' => 'Rascunho anterior preservado',
-        'draft_updated' => 'Rascunho atualizado', 'submitted' => 'Enviada à Concremat',
+        'created' => 'Demanda criada', 'legacy_draft' => 'Demanda anterior preservada',
+        'draft_updated' => 'Demanda atualizada', 'submitted' => 'Enviada à Supervisão',
         'analysis_saved' => 'Análise salva', 'forwarded' => 'Encaminhada ao fiscal do contrato',
-        'returned' => 'Reprovada e devolvida', 'approved' => 'Serviço aprovado',
+        'returned' => 'Reprovada e devolvida', 'approved' => 'Demanda aprovada', 'completed' => 'OS finalizada - serviço concluído',
     ];
 
     /** Build the document while the controller holds a shared order lock. */
@@ -29,13 +29,13 @@ class OsDnitPdfRenderer
     {
         $order->load(['contract', 'creator', 'items', 'attachments', 'analystReview', 'events.actor']);
         $events = $order->events;
-        $approval = $order->status === 'approved' ? $events->last(fn ($event) => $event->action === 'approved') : null;
+        $approval = in_array($order->status, ['approved', 'completed'], true) ? $events->last(fn ($event) => $event->action === 'approved') : null;
         $decision = $events->last(fn ($event) => in_array($event->action, ['returned', 'approved'], true));
         $requested = $order->items->map->only(['product_id', 'product_code', 'product_name', 'unit', 'quantity'])->values()->all();
         $reviewed = $approval ? ($approval->snapshot['review_items'] ?? []) : ($order->review_items ?? []);
         $reviewedDeadline = $approval ? ($approval->snapshot['estimated_deadline'] ?? null) : $order->estimated_deadline?->format('Y-m-d');
         $reviewComment = $approval ? ($approval->snapshot['review_comment'] ?? null) : $order->review_comment;
-        $hasReview = $order->status === 'approved' || $order->review_items !== null;
+        $hasReview = in_array($order->status, ['approved', 'completed'], true) || $order->review_items !== null;
         $records = [];
         $lastAnalysis = null;
         $currentAnalysis = $hasReview ? ['items' => $reviewed, 'deadline' => $reviewedDeadline, 'comment' => $reviewComment] : null;
@@ -48,20 +48,22 @@ class OsDnitPdfRenderer
             ] : null;
             $analysisChanged = $analysis !== null && $analysis !== $lastAnalysis;
             $previousAnalysis = $analysisChanged && $analysis !== $currentAnalysis;
-            $newComment = $event->comment !== null && $event->comment !== '' && !in_array($event->comment, $printedComments, true);
+            $newComment = $event->comment !== null && $event->comment !== '' && ! in_array($event->comment, $printedComments, true);
             if ($newComment || $previousAnalysis || in_array($event->action, ['draft_updated', 'returned'], true)) {
                 $records[] = ['event' => $event, 'analysisChanged' => $previousAnalysis,
                     'comparison' => $previousAnalysis ? $this->compare($snapshot['items'] ?? [], $analysis['items']) : [],
                     'deadline' => $analysis['deadline'] ?? null];
-                if ($event->comment !== null && $event->comment !== '') $printedComments[] = $event->comment;
+                if ($event->comment !== null && $event->comment !== '') {
+                    $printedComments[] = $event->comment;
+                }
             }
             $lastAnalysis = $analysis;
         }
 
-        $logoPath = public_path('brand/concremat-logo.png');
+        $logoPath = public_path('brand/dnit-logo.png');
 
         return [
-            'tenant' => $tenant, 'order' => $order, 'approved' => $order->status === 'approved',
+            'tenant' => $tenant, 'order' => $order, 'approved' => in_array($order->status, ['approved', 'completed'], true),
             'scope' => $scope, 'includeConcremat' => $scope !== 'analyst',
             'includeInspector' => in_array($scope, ['inspector', 'complete'], true), 'includeFlow' => $scope === 'complete',
             'decision' => $decision, 'decisionItems' => $decision?->snapshot['review_items'] ?? [],
@@ -89,10 +91,10 @@ class OsDnitPdfRenderer
         return $original->keys()->merge($analysis->keys())->unique()->map(function ($id) use ($original, $analysis) {
             $a = $original->get($id);
             $b = $analysis->get($id);
-            $changed = !$a || !$b || (float) $a['quantity'] !== (float) $b['quantity'] || $a['unit'] !== $b['unit'];
+            $changed = ! $a || ! $b || (float) $a['quantity'] !== (float) $b['quantity'] || $a['unit'] !== $b['unit'];
 
             return ['product' => $a ?? $b, 'requested' => $a, 'reviewed' => $b, 'changed' => $changed,
-                'label' => !$a ? 'Incluído' : (!$b ? 'Retirado' : ($a['unit'] !== $b['unit'] ? 'Unidade alterada' : ($changed ? 'Quantidade alterada' : 'Sem alteração')))];
+                'label' => ! $a ? 'Incluído' : (! $b ? 'Retirado' : ($a['unit'] !== $b['unit'] ? 'Unidade alterada' : ($changed ? 'Quantidade alterada' : 'Sem alteração')))];
         })->values()->all();
     }
 

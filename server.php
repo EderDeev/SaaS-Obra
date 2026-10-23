@@ -2,10 +2,19 @@
 
 $publicPath = realpath(__DIR__.'/public');
 $publicStoragePath = realpath(__DIR__.'/storage/app/public');
+$privateStoragePath = realpath(rtrim(getenv('RAILWAY_VOLUME_MOUNT_PATH') ?: __DIR__.'/storage/app/public', '/').'/.sigworks-private');
 
 $uri = urldecode(
     parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? ''
 );
+
+// The Railway volume contains a private area alongside the existing public files.
+// Block direct paths and, below, resolved symlink aliases before serving assets.
+if (in_array('.sigworks-private', explode('/', str_replace('\\', '/', $uri)), true)) {
+    http_response_code(404);
+
+    return true;
+}
 
 function static_file_content_type(string $file): string
 {
@@ -34,6 +43,12 @@ function static_file_content_type(string $file): string
 
 if ($uri !== '/') {
     $file = realpath($publicPath.$uri);
+
+    if ($file && $privateStoragePath && ($file === $privateStoragePath || str_starts_with($file, $privateStoragePath.DIRECTORY_SEPARATOR))) {
+        http_response_code(404);
+
+        return true;
+    }
 
     $isPublicFile = $file
         && str_starts_with($file, $publicPath.DIRECTORY_SEPARATOR)

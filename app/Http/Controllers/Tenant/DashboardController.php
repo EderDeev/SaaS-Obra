@@ -18,6 +18,7 @@ use App\Support\DocumentationPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
+use App\Support\OsDnitManagementSummary;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
 use App\Support\TenantRoles;
@@ -186,7 +187,8 @@ class DashboardController extends Controller
                     'budget' => 'Orçamento',
                     'measurement' => 'Medição',
                     'documentation' => 'Documentação',
-                    'service_order' => 'Ordem de Serviço',
+                    'service_order' => 'Liberação de Serviço',
+                    'os_dnit' => 'Ordem de Serviço',
                     'construction_diary' => 'Diário de Obra',
                     'contract' => 'Contrato',
                     'administrative' => 'Administrativo',
@@ -206,6 +208,7 @@ class DashboardController extends Controller
                 ]),
             ],
             'myActivities' => $myActivities,
+            'osSummary' => OsDnitManagementSummary::forUser($user, $tenant),
             'attentionItems' => $this->attentionItems($tenant, $openActivities, $pendingProjects, $openRncs, $pendingTriage, $documentsInProgress, $rdoAwaitingReview, $openBoletins, $pendingOrders),
             'recentEvents' => $this->recentEvents($tenant, $activities, $projects, $rncs, $documents, $rdos, $boletins, $ordens, $additives),
             'capabilities' => [
@@ -360,7 +363,7 @@ class DashboardController extends Controller
                 'url' => route('tenant.medicao.boletim-medicao.index', $tenant, false),
             ]))
             ->merge($ordens->take(3)->map(fn ($ordem): array => [
-                'type' => 'Ordem de serviço',
+                'type' => 'Liberação de Serviço',
                 'title' => $ordem->codigo.' - '.$ordem->titulo,
                 'subtitle' => $ordem->contract?->code.' - aguardando '.str_replace('_', ' ', $ordem->status),
                 'badge' => 'Aguardando decisao',
@@ -426,9 +429,9 @@ class DashboardController extends Controller
                 'url' => route('tenant.medicao.boletim-medicao.index', $tenant, false),
             ]))
             ->merge($ordens->take(5)->map(fn ($ordem): array => [
-                'type' => 'Ordem de serviço',
+                'type' => 'Liberação de Serviço',
                 'title' => $ordem->codigo.' - '.$ordem->titulo,
-                'subtitle' => 'OS registrada em '.$ordem->contract?->code,
+                'subtitle' => 'Liberação registrada em '.$ordem->contract?->code,
                 'created_at' => $ordem->created_at,
                 'url' => route('tenant.ordem-servico.os.index', $tenant, false),
             ]))

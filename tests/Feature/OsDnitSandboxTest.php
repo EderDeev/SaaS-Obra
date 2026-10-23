@@ -2,9 +2,14 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Activity, OsDnitOrder, OsDnitProduct, Tenant, User};
+use App\Models\Activity;
+use App\Models\OsDnitOrder;
+use App\Models\OsDnitProduct;
+use App\Models\Tenant;
+use App\Models\User;
 use App\Services\OsDnitSandbox;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class OsDnitSandboxTest extends TestCase
@@ -28,7 +33,7 @@ class OsDnitSandboxTest extends TestCase
         $this->assertSame('Preservar', $existing->fresh()->name);
         $this->assertSame($oldPassword, $viewer->fresh()->password);
         $this->assertSame(32, Activity::where('tenant_id', $result['tenant']->id)->whereNotNull('os_dnit_order_id')->count());
-        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('jobs')->count());
+        $this->assertSame(0, DB::table('jobs')->count());
         $this->assertSame(48, OsDnitOrder::where('status', 'approved')->count());
         $again = app(OsDnitSandbox::class)->create('teste-os-dnit', $viewer, 'DoNotReset!73');
         $this->assertFalse($again['created']);

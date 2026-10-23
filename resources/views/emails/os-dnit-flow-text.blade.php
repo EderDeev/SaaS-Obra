@@ -1,4 +1,4 @@
-SigWorks · OS DNIT
+SigWorks · Ordem de Serviço
 {{ $headline }}
 
 Olá, {{ $notifiable->name }}.
@@ -12,7 +12,7 @@ Etapa desta atualização: {{ $statusLabel }}
 Ação realizada por: {{ $event->actor->name }}
 Data: {{ $occurredAt }}
 @if ($snapshot['estimated_deadline'])
-Prazo estimado Concremat: {{ \Carbon\Carbon::parse($snapshot['estimated_deadline'])->format('d/m/Y') }}
+Prazo estimado Supervisão: {{ \Carbon\Carbon::parse($snapshot['estimated_deadline'])->format('d/m/Y') }}
 @endif
 @if ($event->comment)
 

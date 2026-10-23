@@ -8,10 +8,11 @@ import { ArrowRight, CheckCircle2, ClipboardList, Clock3, Eye, FilePenLine, Load
 import { useEffect, useRef, useState } from 'react';
 
 const stages = [
-    { key: 'draft', label: 'Rascunhos', icon: FilePenLine, color: '#64748b', tone: 'bg-slate-100 text-slate-600' },
-    { key: 'concremat', label: 'Em análise Concremat', icon: Clock3, color: '#0b5fff', tone: 'bg-blue-50 text-blue-700' },
+    { key: 'draft', label: 'Demandas', icon: FilePenLine, color: '#64748b', tone: 'bg-slate-100 text-slate-600' },
+    { key: 'concremat', label: 'Em análise Supervisão', icon: Clock3, color: '#0b5fff', tone: 'bg-blue-50 text-blue-700' },
     { key: 'inspector', label: 'Com o fiscal do contrato', icon: ShieldCheck, color: '#7c3aed', tone: 'bg-violet-50 text-violet-700' },
     { key: 'approved', label: 'Aprovadas', icon: CheckCircle2, color: '#059669', tone: 'bg-emerald-50 text-emerald-700' },
+    { key: 'completed', label: 'Finalizadas', icon: CheckCircle2, color: '#047857', tone: 'bg-emerald-50 text-emerald-700' },
     { key: 'returned', label: 'Devolvidas para correção', icon: RotateCcw, color: '#d97706', tone: 'bg-amber-50 text-amber-700' },
 ];
 const count = (value) => Number(value).toLocaleString('pt-BR');
@@ -40,18 +41,18 @@ function monthlyOption(monthly) {
     };
 }
 
-export default function Dashboard({ contracts, highways, filters, stats, monthly, pending, statuses }) {
+export default function Dashboard({ contracts, highways, lots, filters, stats, monthly, pending, statuses }) {
     const { currentTenant } = usePage().props;
     const indexUrl = route('tenant.os-dnit.dashboard', currentTenant.slug);
-    const search = useForm({ contract_id: filters.contract_id || '', highway_id: filters.highway_id || '', date_from: filters.date_from, date_to: filters.date_to });
+    const search = useForm({ contract_id: filters.contract_id || '', highway_id: filters.highway_id || '', supervision_lot_id: filters.supervision_lot_id || '', date_from: filters.date_from, date_to: filters.date_to });
     const [filtering, setFiltering] = useState(false);
     const timer = useRef(null);
     const request = useRef(null);
     const revision = useRef(0);
     useEffect(() => () => { clearTimeout(timer.current); revision.current++; request.current?.cancel(); }, []);
     useEffect(() => {
-        search.setData({ contract_id: filters.contract_id || '', highway_id: filters.highway_id || '', date_from: filters.date_from, date_to: filters.date_to });
-    }, [filters.contract_id, filters.highway_id, filters.date_from, filters.date_to]);
+        search.setData({ contract_id: filters.contract_id || '', highway_id: filters.highway_id || '', supervision_lot_id: filters.supervision_lot_id || '', date_from: filters.date_from, date_to: filters.date_to });
+    }, [filters.contract_id, filters.highway_id, filters.supervision_lot_id, filters.date_from, filters.date_to]);
 
     function filterDashboard(data, delay = 0) {
         clearTimeout(timer.current);
@@ -78,28 +79,30 @@ export default function Dashboard({ contracts, highways, filters, stats, monthly
 
     const hasMovements = monthly.some((month) => month.submitted || month.approved);
     const availableHighways = highways.filter((highway) => !search.data.contract_id || String(highway.contract_id) === String(search.data.contract_id));
+    const availableLots = lots.filter((lot) => !search.data.contract_id || String(lot.contract_id) === String(search.data.contract_id));
     return <AuthenticatedLayout>
-        <Head title="OS DNIT · Dashboard" />
+        <Head title="Ordem de Serviço · Dashboard" />
         <div className="sig-content os-dnit-page space-y-6">
             <header className="flex flex-wrap items-start justify-between gap-4">
-                <div><div className="eyebrow">OS DNIT</div><h1 className="mt-2 text-2xl font-semibold">Dashboard</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Acompanhe as solicitações, as etapas de análise e as aprovações dos contratos.</p></div>
+                <div><div className="eyebrow">Ordem de Serviço</div><h1 className="mt-2 text-2xl font-semibold">Dashboard</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Acompanhe as solicitações, as etapas de análise e as aprovações dos contratos.</p></div>
                 <div className="flex flex-wrap gap-2"><OsDnitTourButton tenantSlug={currentTenant.slug} /><Link href={route('tenant.os-dnit.orders.index', currentTenant.slug)} className="sig-btn sig-btn-secondary">Ver ordens de serviço<ArrowRight size={16} /></Link></div>
             </header>
 
             {contracts.length === 0 && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Você não possui vínculo ativo com um contrato desta empresa.</p>}
-            <form onSubmit={(event) => { event.preventDefault(); filterDashboard(search.data); }} className="sig-card grid min-w-0 gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
-                <label className="min-w-0 text-xs font-semibold text-slate-600" htmlFor="dashboard-contract">Contrato<select id="dashboard-contract" value={search.data.contract_id} onChange={(event) => filterDashboard({ ...search.data, contract_id: event.target.value, highway_id: '' })} className="mt-2 w-full rounded-lg border-slate-300 text-sm"><option value="">Todos os meus contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>)}</select></label>
+            <form onSubmit={(event) => { event.preventDefault(); filterDashboard(search.data); }} className="sig-card grid min-w-0 gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+                <label className="min-w-0 text-xs font-semibold text-slate-600" htmlFor="dashboard-contract">Contrato<select id="dashboard-contract" value={search.data.contract_id} onChange={(event) => filterDashboard({ ...search.data, contract_id: event.target.value, highway_id: '', supervision_lot_id: '' })} className="mt-2 w-full rounded-lg border-slate-300 text-sm"><option value="">Todos os meus contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>)}</select></label>
+                <label className="min-w-0 text-xs font-semibold text-slate-600" htmlFor="dashboard-lot">Lote de supervisão<select id="dashboard-lot" value={search.data.supervision_lot_id} onChange={(event) => filterDashboard({ ...search.data, supervision_lot_id: event.target.value })} className="mt-2 w-full rounded-lg border-slate-300 text-sm"><option value="">Todos os lotes</option>{availableLots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}{!search.data.contract_id && contracts.length > 1 ? ` · ${lot.contract.code}` : ''}</option>)}</select></label>
                 <label className="min-w-0 text-xs font-semibold text-slate-600" htmlFor="dashboard-highway">Rodovia<select id="dashboard-highway" value={search.data.highway_id} onChange={(event) => filterDashboard({ ...search.data, highway_id: event.target.value })} className="mt-2 w-full rounded-lg border-slate-300 text-sm"><option value="">Todas as rodovias</option>{availableHighways.map((highway) => <option key={highway.id} value={highway.id}>{highway.name}{!search.data.contract_id && contracts.length > 1 ? ` · ${highway.contract.code}` : ''}</option>)}</select></label>
                 <label className="min-w-0 text-xs font-semibold text-slate-600" htmlFor="dashboard-from">Período inicial<input id="dashboard-from" required type="date" value={search.data.date_from} onChange={(event) => filterDashboard({ ...search.data, date_from: event.target.value }, 350)} className="mt-2 w-full rounded-lg border-slate-300 text-sm" /></label>
                 <label className="min-w-0 text-xs font-semibold text-slate-600" htmlFor="dashboard-to">Período final<input id="dashboard-to" required type="date" min={search.data.date_from} value={search.data.date_to} onChange={(event) => filterDashboard({ ...search.data, date_to: event.target.value }, 350)} className="mt-2 w-full rounded-lg border-slate-300 text-sm" /></label>
-                {Object.keys(search.errors).length > 0 && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800 sm:col-span-2 xl:col-span-4">{[...new Set(Object.values(search.errors))].map((error) => <p key={error}>{error}</p>)}</div>}
+                {Object.keys(search.errors).length > 0 && <div role="alert" className="col-span-full rounded-lg bg-red-50 p-3 text-sm text-red-800">{[...new Set(Object.values(search.errors))].map((error) => <p key={error}>{error}</p>)}</div>}
             </form>
 
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><p>Indicadores e pendências: OSs abertas de {dateLabel(filters.date_from)} a {dateLabel(filters.date_to)}.</p><span role="status" className="inline-flex items-center gap-2">{filtering && <><Loader2 size={14} className="animate-spin" />Atualizando painel…</>}</span></div>
             <div aria-busy={filtering} className="space-y-6">
                 <section aria-label="Indicadores de OS" className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-6">
                     <Metric label="Total de OSs" value={stats.total} hint="Solicitações abertas no período" icon={ClipboardList} tone="bg-blue-50 text-blue-700" />
-                    {stages.map((stage) => <Metric key={stage.key} {...stage} value={stats[stage.key]} hint={stage.key === 'draft' ? 'Ainda não enviadas para análise' : stage.key === 'concremat' ? 'Aguardando avaliação da Concremat' : stage.key === 'inspector' ? 'Aguardando decisão do fiscal' : stage.key === 'approved' ? 'Fluxo de aprovação concluído' : `${count(stats.returned_analyst)} ao analista · ${count(stats.returned_concremat)} à Concremat`} />)}
+                    {stages.map((stage) => <Metric key={stage.key} {...stage} value={stats[stage.key]} hint={stage.key === 'draft' ? 'Ainda não enviadas para análise' : stage.key === 'concremat' ? 'Aguardando avaliação da Supervisão' : stage.key === 'inspector' ? 'Aguardando decisão do fiscal' : stage.key === 'approved' ? 'Aguardando conclusão do serviço' : stage.key === 'completed' ? 'Serviço concluído'  : `${count(stats.returned_analyst)} ao analista · ${count(stats.returned_concremat)} à Supervisão`} />)}
                 </section>
 
                 <div className="grid min-w-0 gap-5 xl:grid-cols-2">

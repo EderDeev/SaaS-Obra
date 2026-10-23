@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Models\OsDnitProduct;
 use App\Models\Contract;
 use App\Models\ContractParticipant;
+use App\Models\OsDnitProduct;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,12 +52,12 @@ class OsDnitProductsTest extends TestCase
 
         $this->actingAs($user)->get(route('tenant.os-dnit.products.index', [$tenant, 'q' => 'plano', 'category' => 'gestao_controle']))
             ->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->component('Tenant/OsDnit/Products')
-                ->has('products.data', 1)
-                ->where('products.data.0.tenant_id', $tenant->id)
-                ->where('products.data.0.code', '02.PATO')
-                ->has('categories', 8)
-                ->where('canCreate', true));
+            ->component('Tenant/OsDnit/Products')
+            ->has('products.data', 1)
+            ->where('products.data.0.tenant_id', $tenant->id)
+            ->where('products.data.0.code', '02.PATO')
+            ->has('categories', 8)
+            ->where('canCreate', true));
         $this->get(route('tenant.os-dnit.products.index', $otherTenant))->assertForbidden();
     }
 
@@ -78,6 +78,7 @@ class OsDnitProductsTest extends TestCase
 
         $contract = Contract::create(['tenant_id' => $tenant->id, 'code' => 'CT-01', 'name' => 'Contrato', 'status' => 'active']);
         ContractParticipant::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'user_id' => $user->id, 'side' => 'client', 'role' => 'manager', 'status' => 'active']);
+
         return [$tenant, $user];
     }
 

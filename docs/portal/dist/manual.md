@@ -34,7 +34,7 @@ Revisão de 21/10/2026.
 
 15. [Assistente SigWorks](#assistente)
 
-16. [Serviços externos](#integracoes)
+16. [APIs externas](#integracoes)
 
 17. [Arquitetura](#arquitetura)
 
@@ -93,7 +93,7 @@ Esta revisão é de 21/10/2026. Se algo na tela estiver diferente do que está e
  | --- | --- | --- |
  | Usuário | Empresas e contratos, depois o capítulo do seu módulo | Notificações; Assistente |
  | Administrador da empresa | Usuários e permissões; Cadastros básicos | Credenciais; Backup e suporte |
- | Desenvolvimento e manutenção | Arquitetura; Instalação local | GitHub e CI/CD; Ambientes; Serviços externos |
+ | Desenvolvimento e manutenção | Arquitetura; Instalação local | GitHub e CI/CD; Ambientes; APIs externas |
 
 Um exemplo para fixar a ideia: a empresa tem os contratos CT-001 e CT-002. Quem está vinculado só ao CT-001 não vê nada do CT-002, nem trocando um filtro nem digitando o endereço na mão.
 
@@ -631,66 +631,121 @@ Código: `app/Services/Assistant/OsDnitAssistantContext.php`, `app/Services/Assi
 
 <a id="integracoes"></a>
 
-## 16. Serviços externos
+## 16. APIs externas
 
-Integrações com outros serviços e as variáveis de cada uma.
+Quais APIs de outras empresas o SigWorks usa, o que cada uma faz e onde ela é configurada.
 
 ### 16.1 Visão geral
 
-![Serviços externos usados pelo backend. O Mapbox e o visualizador da Autodesk também rodam no navegador.](assets/integracoes.svg)
-Serviços externos usados pelo backend. O Mapbox e o visualizador da Autodesk também rodam no navegador.
+O SigWorks depende de algumas APIs de terceiros. A maioria é chamada pelo servidor; o Mapbox e o visualizador da Autodesk rodam também no navegador. Cada uma só funciona no ambiente em que as variáveis estiverem preenchidas.
 
- | Serviço | Uso | Variáveis |
+![APIs externas ligadas ao SigWorks.](assets/integracoes.svg)
+APIs externas ligadas ao SigWorks.
+
+ | Empresa | API usada | Para que serve no SigWorks |
  | --- | --- | --- |
- | Autodesk APS | Armazenamento, conversão e visualização de modelos | AUTODESK_APS_* |
- | OpenAI | Respostas do assistente | OPENAI_API_KEY, OPENAI_CHAT_MODEL |
- | Brevo | Envio de e-mails | MAIL_MAILER, BREVO_API_KEY |
- | Mapbox | Mapas, como a localização da RNC | VITE_MAPBOX_ACCESS_TOKEN |
- | OpenSign | Assinatura de PDFs, com retorno por webhook | SIGNATURE_DRIVER, OPENSIGN_* |
- | IMAP | Leitura de caixas de e-mail no GED | Cadastrado na tela do GED |
- | Azure Blob | Arquivos privados e temporários, quando esse disco é escolhido | AZURE_STORAGE_* |
+ | Autodesk | Autodesk Platform Services (APS): Authentication, OSS, Model Derivative e Viewer | Guardar os arquivos de projeto, converter os modelos e abrir o visualizador 3D/2D. |
+ | OpenAI | OpenAI API: Responses API | Gerar as respostas do Assistente SigWorks. |
+ | Brevo | Brevo API v3 (e-mail transacional) | Enviar os e-mails do sistema, como os avisos do OS DNIT e a redefinição de senha. |
+ | Mapbox | Mapbox GL JS e Mapbox Styles | Mostrar o mapa e marcar a localização na RNC. |
+ | OpenSign | OpenSign API e webhook | Colher as assinaturas digitais do RDO. |
+ | Microsoft | Azure Blob Storage | Guardar arquivos privados e temporários, quando esse disco está ligado. |
 
-Postmark, Resend, SES e Slack aparecem nos arquivos de configuração padrão do Laravel, mas não são usados. Cada integração só funciona no ambiente em que as variáveis estiverem preenchidas.
+O GED também lê caixas de e-mail por IMAP. IMAP é um protocolo padrão, não uma API de uma empresa específica: funciona com o servidor de e-mail que for cadastrado na tela.
+
+Postmark, Resend, Amazon SES e Slack aparecem nos arquivos de configuração padrão do Laravel, mas o SigWorks não usa nenhum deles.
 
 Código: `config/services.php`, `config/mail.php`, `config/filesystems.php`, `config/signatures.php`, `app/Services/AutodeskApsService.php`
 
-### 16.2 Autodesk APS
+### 16.2 Autodesk Platform Services (APS)
 
-O servidor se autentica por OAuth com client ID e client secret, guarda os arquivos em buckets, pede a conversão ao Model Derivative e consulta o manifesto. Para o visualizador, gera um token só de leitura, que expira. O client secret nunca vai para o navegador.
+O APS (antigo Autodesk Forge) é usado no módulo Projetos. Quando alguém envia um modelo, o servidor manda o arquivo para a Autodesk, pede a conversão e depois abre o resultado no visualizador. Todas as chamadas vão para `https://developer.api.autodesk.com`.
 
-Os arquivos enviados ficam armazenados na Autodesk. Se for ligar o processamento em outro ambiente, use bucket e região próprios.
+ | API | Chamada | Para quê |
+ | --- | --- | --- |
+ | Authentication API v2 | `POST /authentication/v2/token` | Pega um token de acesso usando client ID e client secret (fluxo client credentials). |
+ | OSS (Object Storage Service) v2 | `GET/POST /oss/v2/buckets` | Confere se o bucket existe e cria, se precisar, na região configurada (política `persistent`). |
+ | OSS v2 | `…/objects/{arquivo}/signeds3upload` | Envia o arquivo do projeto para o bucket por URL assinada. |
+ | Model Derivative API v2 | `POST /modelderivative/v2/designdata/job` | Pede a conversão para o formato SVF2, com vistas 2D e 3D. |
+ | Model Derivative API v2 | `GET /modelderivative/v2/designdata/{urn}/manifest` | Consulta se a conversão está na fila, processando, pronta ou com falha. |
+ | OSS e Model Derivative | `DELETE` do manifesto e do objeto | Apaga o arquivo e a conversão quando uma versão do projeto é removida. |
+ | Viewer SDK v7 | Script carregado no navegador | Mostra o modelo convertido nas telas de visualização e de comparação. |
 
-Documentação: [OAuth do APS](https://aps.autodesk.com/en/docs/oauth/v2).
+Na administração da plataforma, o SigWorks também lê o tamanho do bucket e a lista de objetos para mostrar o consumo do APS.
 
-Código: `app/Services/AutodeskApsService.php`, `config/services.php`
+**Variáveis:** `AUTODESK_APS_CLIENT_ID`, `AUTODESK_APS_CLIENT_SECRET`, `AUTODESK_APS_BUCKET_KEY`, `AUTODESK_APS_REGION` e `AUTODESK_APS_SCOPES`. O navegador recebe só um token de leitura; o client secret fica no servidor. Use bucket e região diferentes em cada ambiente.
 
-### 16.3 Brevo e Mapbox
+Documentação: [Authentication](https://aps.autodesk.com/en/docs/oauth/v2), [OSS](https://aps.autodesk.com/en/docs/data/v2), [Model Derivative](https://aps.autodesk.com/en/docs/model-derivative/v2), [Viewer](https://aps.autodesk.com/en/docs/viewer/v7).
 
-O Brevo é chamado por HTTPS com uma chave de API (não é senha SMTP). Se a conta exigir lista de IPs autorizados, cadastre o IP de saída do servidor, não o do seu computador. Lembre que o e-mail passa por etapas diferentes: entra na fila, é aceito pelo Brevo, é entregue e, por fim, lido.
+Código: `app/Services/AutodeskApsService.php`, `app/Http/Controllers/Tenant/ProjectViewerController.php`, `app/Http/Controllers/Platform/ApsUsageController.php`, `config/services.php`
 
-O token do Mapbox fica no frontend e é público, então deve ter só os escopos necessários. Nunca coloque segredos em variáveis `VITE_*`. Mudou uma variável `VITE_*`? É preciso refazer o build do frontend.
+### 16.3 OpenAI API
 
-Documentação: [Brevo](https://developers.brevo.com/docs/api-key-authentication), [Mapbox](https://docs.mapbox.com/help/getting-started/access-tokens/).
+A OpenAI gera as respostas do Assistente SigWorks. O servidor chama a **Responses API** (`POST /v1/responses`, em `https://api.openai.com`) com a chave no cabeçalho Authorization.
 
-Código: `config/mail.php`, `package.json`, `resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Index.jsx`, `config/services.php`
+ | O que vai na chamada | Detalhe |
+ | --- | --- |
+ | model | O modelo definido em `OPENAI_CHAT_MODEL`. |
+ | input | As instruções do assistente, as últimas mensagens da conversa e a pergunta, junto com o contexto que o usuário tem permissão de ver. |
+ | max_output_tokens | Tamanho máximo da resposta; padrão 700. |
 
-### 16.4 Assinaturas (OpenSign)
+Da resposta, o SigWorks usa o texto gerado, o nome do modelo e o consumo de tokens, que entra no controle de cotas por usuário e por empresa.
 
-Com `SIGNATURE_DRIVER=opensign`, o servidor envia o PDF e os signatários para o OpenSign, guarda os identificadores e links de assinatura e recebe as atualizações por webhook. O driver `local` só simula o fluxo, para desenvolvimento; ele não gera assinatura de verdade.
+**Variáveis:** `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL` e `OPENAI_BASE_URL` (padrão `https://api.openai.com/v1`). A chave fica só no servidor. Preço, limites e retenção de dados são da OpenAI; as cotas do SigWorks são internas.
 
-**Atenção:** o webhook `POST /api/webhooks/opensign` só confere o segredo se `OPENSIGN_WEBHOOK_SECRET` estiver preenchida. Com a variável vazia, qualquer chamada é aceita. Em produção, configure o segredo antes de ligar o fluxo.
+Documentação: [OpenAI API](https://developers.openai.com/api/reference/overview).
 
-A validade jurídica da assinatura é uma questão da empresa; aqui só tratamos da parte técnica. Documentação: [OpenSign](https://docs.opensignlabs.com/).
+Código: `app/Services/Assistant/OpenAiAssistant.php`, `app/Services/Assistant/AssistantQuotaService.php`, `config/services.php`
+
+### 16.4 Brevo
+
+O Brevo (antigo Sendinblue) envia os e-mails do sistema quando `MAIL_MAILER=brevo`. O envio usa a **API v3 do Brevo** por HTTPS, através do pacote `symfony/brevo-mailer`, e não SMTP. Passam por ele, por exemplo, os avisos de mudança de etapa do OS DNIT e os e-mails de redefinição de senha.
+
+**Variáveis:** `MAIL_MAILER`, `BREVO_API_KEY` (chave de API v3, não é senha SMTP) e `MAIL_FROM_ADDRESS`. Se a conta do Brevo exigir lista de IPs autorizados, cadastre o IP de saída do servidor, não o do seu computador.
+
+O e-mail passa por etapas diferentes: entra na fila do SigWorks, é aceito pelo Brevo, é entregue e, por fim, lido. O sistema só sabe das duas primeiras.
+
+Documentação: [Brevo API](https://developers.brevo.com/docs/api-key-authentication).
+
+Código: `config/mail.php`, `app/Providers/AppServiceProvider.php`, `app/Services/OsDnitFlowNotifier.php`, `composer.json`
+
+### 16.5 Mapbox
+
+O Mapbox mostra o mapa na criação de RNC, onde o usuário marca a localização do problema. Ele roda no navegador, com a biblioteca **Mapbox GL JS** (versão 3) e o estilo `streets-v12`. A tela adiciona o marcador, os controles de zoom e a atribuição do mapa.
+
+**Variável:** `VITE_MAPBOX_ACCESS_TOKEN`. Esse token vai junto com o JavaScript da tela, então é público: use no Mapbox um token só com escopos de leitura de mapa. Se mudar o token, refaça o build do frontend.
+
+Documentação: [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/), [tokens](https://docs.mapbox.com/help/getting-started/access-tokens/).
+
+Código: `package.json`, `resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Create.jsx`, `config/services.php`
+
+### 16.6 OpenSign
+
+O OpenSign colhe as assinaturas do RDO. Com `SIGNATURE_DRIVER=opensign`, o SigWorks usa estas chamadas:
+
+ | Chamada | Para quê |
+ | --- | --- |
+ | `POST {OPENSIGN_BASE_URL}/createdocument` | Envia o PDF do RDO (em base64), a lista de signatários e o prazo para assinar (padrão 15 dias). O próprio OpenSign manda o e-mail com o link de assinatura. |
+ | `POST /api/app/functions/getDocument` | Consulta a situação do documento e das assinaturas. |
+ | Webhook `POST /api/webhooks/opensign` | Recebe do OpenSign os avisos de assinatura e atualiza o RDO. |
+
+**Atenção:** o webhook só confere o segredo se `OPENSIGN_WEBHOOK_SECRET` estiver preenchida. Com a variável vazia, qualquer chamada é aceita. Em produção, configure o segredo antes de ligar o fluxo.
+
+**Variáveis:** `SIGNATURE_DRIVER`, `OPENSIGN_BASE_URL`, `OPENSIGN_API_KEY` e `OPENSIGN_WEBHOOK_SECRET`. Com `SIGNATURE_DRIVER=local` o fluxo é só simulado, para desenvolvimento, e nenhuma assinatura de verdade é gerada.
+
+Documentação: [OpenSign](https://docs.opensignlabs.com/).
 
 Código: `app/Services/Signatures/OpenSignSignatureProvider.php`, `app/Services/Signatures/LocalSignatureProvider.php`, `app/Http/Controllers/Api/OpenSignWebhookController.php`, `config/signatures.php`
 
-### 16.5 OpenAI
+### 16.7 Azure Blob Storage
 
-O backend chama `/responses` por HTTPS, com a chave no cabeçalho Authorization e o modelo e os limites vindos da configuração. A `OPENAI_API_KEY` fica só no servidor. O modelo recebe só o contexto de cada pergunta; o SigWorks não treina nenhum modelo com os dados do sistema.
+O Azure Blob Storage pode guardar os arquivos do sistema no lugar do disco do servidor. Existem dois discos prontos: `azure-private`, para documentos, e `azure-temporary`, para arquivos temporários. Eles só são usados quando escolhidos nas variáveis de disco de cada módulo (ver capítulo Arquivos, filas e agendamentos). A ligação é feita pelo pacote `azure-oss/storage-blob-laravel`.
 
-Preço, limites e retenção de dados são definidos pela OpenAI; as cotas do SigWorks são só internas. Documentação: [OpenAI API](https://developers.openai.com/api/reference/overview).
+**Variáveis:** `AZURE_STORAGE_CONNECTION_STRING` (secreta), `AZURE_STORAGE_CONTAINER` e `AZURE_STORAGE_TEMPORARY_CONTAINER`.
 
-Código: `app/Services/Assistant/OpenAiAssistant.php`, `app/Services/Assistant/AssistantQuotaService.php`, `config/services.php`
+Documentação: [Azure Blob Storage](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-introduction).
+
+Código: `config/filesystems.php`, `composer.json`
 
 <a id="arquitetura"></a>
 

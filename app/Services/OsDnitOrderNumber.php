@@ -25,7 +25,9 @@ class OsDnitOrderNumber
 
     private function numbers(Tenant $tenant, array $contractIds): array
     {
-        if ($contractIds === []) return [];
+        if ($contractIds === []) {
+            return [];
+        }
 
         $year = now()->year;
         $last = array_fill_keys($contractIds, 0);

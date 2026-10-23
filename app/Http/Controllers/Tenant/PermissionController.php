@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\Contract;
 use App\Models\ContractParticipant;
+use App\Models\InstrucaoCampoResponsavel;
 use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\TenantUser;
@@ -13,6 +14,7 @@ use App\Support\BudgetPermissions;
 use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
+use App\Support\IcPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
@@ -56,6 +58,10 @@ class PermissionController extends Controller
             ->where('tenant_id', $tenant->id)
             ->where('status', 'active')
             ->get(['contract_id', 'user_id', 'permissions']);
+        $icResponsaveis = InstrucaoCampoResponsavel::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('status', 'active')
+            ->get(['contract_id', 'user_id', 'permissions']);
 
         return Inertia::render('Tenant/Permissions/Index', [
             'tenant' => $tenant,
@@ -83,12 +89,14 @@ class PermissionController extends Controller
             'ordemServicoPermissionsByUserContract' => $this->ordemServicoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'osDnitPermissionsByUserContract' => $memberships->flatMap(fn ($membership) => $contracts->mapWithKeys(function ($contract) use ($membership, $contractParticipants) {
                 $participant = $contractParticipants->where('user_id', $membership->user_id)->firstWhere('contract_id', $contract->id);
-                return ["{$membership->user_id}:{$contract->id}" => !$participant ? [] : ($membership->role === 'tenant_owner' ? OsDnitPermissions::all() : OsDnitPermissions::normalize($participant->os_dnit_permissions ?? OsDnitPermissions::defaultForRole($membership->role)))];
+
+                return ["{$membership->user_id}:{$contract->id}" => ! $participant ? [] : ($membership->role === 'tenant_owner' ? OsDnitPermissions::all() : OsDnitPermissions::normalize($participant->os_dnit_permissions ?? OsDnitPermissions::defaultForRole($membership->role)))];
             }))->all(),
             'osDnitContractIdsByUser' => $contractParticipants->groupBy('user_id')->map(fn ($items) => $items->pluck('contract_id')->unique()->values()->all())->all(),
             'medicaoPermissionsByUserContract' => $this->medicaoPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'contractPermissionsByUserContract' => $this->contractPermissionsByUserContract($memberships, $contracts, $contractParticipants),
             'rncPermissionsByUserContract' => $this->rncPermissionsByUserContract($memberships, $contracts, $rncResponsaveis),
+            'icPermissionsByUserContract' => $this->icPermissionsByUserContract($memberships, $contracts, $icResponsaveis),
             'navigationPermissionsByUser' => $memberships->mapWithKeys(fn (TenantUser $membership): array => [
                 $membership->user_id => $membership->role === TenantRoles::OWNER ? NavigationPermissions::all()
                     : NavigationPermissions::normalize($membership->navigation_permissions ?? NavigationPermissions::all()),
@@ -128,6 +136,10 @@ class PermissionController extends Controller
                     'label' => 'RNC',
                     'permissions' => RncPermissions::labels(),
                 ],
+                'ic' => [
+                    'label' => 'IC - Instrução de Campo',
+                    'permissions' => IcPermissions::labels(),
+                ],
                 'projects' => [
                     'label' => 'Projetos',
                     'permissions' => ProjectPermissions::labels(),
@@ -148,7 +160,7 @@ class PermissionController extends Controller
                     'label' => 'Liberação de Serviço',
                     'permissions' => OrdemServicoPermissions::labels(),
                 ],
-                'os_dnit' => ['label' => 'OS DNIT', 'permissions' => OsDnitPermissions::labels()],
+                'os_dnit' => ['label' => 'Ordem de Serviço', 'permissions' => OsDnitPermissions::labels()],
                 'medicao' => [
                     'label' => 'Medição',
                     'permissions' => MedicaoPermissions::labels(),
@@ -177,7 +189,9 @@ class PermissionController extends Controller
             'project_permissions' => ['nullable', 'array'],
             'project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
             'rnc_permissions' => ['nullable', 'array'],
+            'ic_permissions' => ['nullable', 'array'],
             'rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
+            'ic_permissions.*' => ['required', 'string', Rule::in(IcPermissions::all())],
             'navigation_permissions' => ['sometimes', 'array'],
             'navigation_permissions.*' => ['required', 'string', Rule::in(NavigationPermissions::all())],
             'user_permissions' => ['nullable', 'array'],
@@ -215,27 +229,42 @@ class PermissionController extends Controller
         if (array_key_exists('navigation_permissions', $data)
             && count(array_filter(array_keys($data), fn ($key) => str_ends_with($key, '_permissions'))) === 1) {
             $membership->update(['navigation_permissions' => NavigationPermissions::normalize($data['navigation_permissions'])]);
+
             return back()->with('success', 'Permissões de Visão geral e Tutoriais atualizadas.');
+        }
+
+        if (array_key_exists('ic_permissions', $data)
+            && count(array_filter(array_keys($data), fn ($key) => str_ends_with($key, '_permissions'))) === 1) {
+            if (! $contract || ! $contract->participants()->where('tenant_id', $tenant->id)->where('user_id', $membership->user_id)->where('status', 'active')->exists()) {
+                throw ValidationException::withMessages(['contract_id' => 'Selecione um contrato com vínculo ativo do usuário para configurar a IC.']);
+            }
+            $this->syncIcPermissions($request, $tenant, $contract, $membership, IcPermissions::normalize($data['ic_permissions']));
+
+            return back()->with('success', 'Permissões da IC atualizadas.');
         }
 
         $osDnitParticipant = null;
         if (array_key_exists('os_dnit_permissions', $data)) {
             $osDnitParticipant = $contract ? ContractParticipant::where('tenant_id', $tenant->id)
                 ->where('contract_id', $contract->id)->where('user_id', $membership->user_id)->where('status', 'active')->first() : null;
-            if (!$osDnitParticipant && $data['os_dnit_permissions'] !== []) {
-                throw ValidationException::withMessages(['contract_id' => 'OS DNIT exige vínculo ativo do usuário no contrato selecionado.']);
+            if (! $osDnitParticipant && $data['os_dnit_permissions'] !== []) {
+                throw ValidationException::withMessages(['contract_id' => 'Ordem de Serviço exige vínculo ativo do usuário no contrato selecionado.']);
             }
             $otherPermissionFields = array_filter(array_keys($data), fn ($key) => str_ends_with($key, '_permissions') && $key !== 'os_dnit_permissions');
             if ($otherPermissionFields === []) {
-                if (!$osDnitParticipant) throw ValidationException::withMessages(['contract_id' => 'Selecione um contrato com vínculo ativo do usuário.']);
+                if (! $osDnitParticipant) {
+                    throw ValidationException::withMessages(['contract_id' => 'Selecione um contrato com vínculo ativo do usuário.']);
+                }
                 $osDnitParticipant->update(['os_dnit_permissions' => OsDnitPermissions::normalize($data['os_dnit_permissions'])]);
-                return back()->with('success', 'Permissões OS DNIT atualizadas.');
+
+                return back()->with('success', 'Permissões Ordem de Serviço atualizadas.');
             }
         }
 
         $activityPermissions = ActivityPermissions::normalize($data['activity_permissions'] ?? []);
         $projectPermissions = ProjectPermissions::normalize($data['project_permissions'] ?? []);
         $rncPermissions = RncPermissions::normalize($data['rnc_permissions'] ?? []);
+        $icPermissions = IcPermissions::normalize($data['ic_permissions'] ?? []);
         $userPermissions = UserPermissions::normalize($data['user_permissions'] ?? []);
         $parametrizacaoPermissions = ParametrizacaoPermissions::normalize($data['parametrizacao_permissions'] ?? []);
         $budgetPermissions = BudgetPermissions::normalize($data['budget_permissions'] ?? []);
@@ -282,9 +311,9 @@ class PermissionController extends Controller
                     'medicao_permissions' => $medicaoPermissions,
                     'contract_permissions' => $contractPermissions,
                 ]);
-            } elseif ($activityPermissions !== [] || $projectPermissions !== [] || $rncPermissions !== [] || $documentationPermissions !== [] || $diarioObraPermissions !== [] || $ordemServicoPermissions !== [] || $medicaoPermissions !== [] || $contractPermissions !== []) {
+            } elseif ($activityPermissions !== [] || $projectPermissions !== [] || $rncPermissions !== [] || $icPermissions !== [] || $documentationPermissions !== [] || $diarioObraPermissions !== [] || $ordemServicoPermissions !== [] || $medicaoPermissions !== [] || $contractPermissions !== []) {
                 throw ValidationException::withMessages([
-                    'contract_id' => 'Vincule o usuario a um contrato para configurar Atividades, Contratos, Projetos, RNC, Documentacao, Diario de Obra, Liberação de Serviço, OS DNIT ou Medição.',
+                    'contract_id' => 'Vincule o usuario a um contrato para configurar Atividades, Contratos, Projetos, RNC, Documentacao, Diario de Obra, Liberação de Serviço, Ordem de Serviço ou Medição.',
                 ]);
             }
 
@@ -297,6 +326,9 @@ class PermissionController extends Controller
 
         if ($contract) {
             $this->syncRncPermissions($request, $tenant, $contract, $membership, $rncPermissions);
+            if (array_key_exists('ic_permissions', $data)) {
+                $this->syncIcPermissions($request, $tenant, $contract, $membership, $icPermissions);
+            }
         }
 
         if ($osDnitParticipant) {
@@ -361,6 +393,52 @@ class PermissionController extends Controller
         }
     }
 
+    private function syncIcPermissions(Request $request, Tenant $tenant, Contract $contract, TenantUser $membership, array $permissions): void
+    {
+        if ($membership->role === 'tenant_owner') {
+            return;
+        }
+
+        $link = InstrucaoCampoResponsavel::withTrashed()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contract->id)
+            ->where('user_id', $membership->user_id)
+            ->first();
+
+        if ($permissions === []) {
+            if ($link) {
+                $link->update([
+                    'status' => 'inactive',
+                    'permissions' => [],
+                ]);
+
+                if (! $link->trashed()) {
+                    $link->delete();
+                }
+            }
+
+            return;
+        }
+
+        $link ??= new InstrucaoCampoResponsavel([
+            'contract_id' => $contract->id,
+            'user_id' => $membership->user_id,
+        ]);
+
+        $link->fill([
+            'tenant_id' => $tenant->id,
+            'created_by_id' => $link->created_by_id ?? $request->user()->id,
+            'status' => 'active',
+            'responsibility_type' => IcPermissions::responsibilityTypeForPermissions($permissions),
+            'permissions' => $permissions,
+        ]);
+        $link->save();
+
+        if ($link->trashed()) {
+            $link->restore();
+        }
+    }
+
     private function contractIdsByUser($memberships, $contracts, $participants): array
     {
         return $memberships
@@ -389,11 +467,13 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = ActivityPermissions::all();
+
                     continue;
                 }
 
                 if ($membership->role === 'tenant_admin') {
                     $matrix[$key] = ActivityPermissions::normalize($membership->activity_permissions ?? ActivityPermissions::defaultForRole($membership->role));
+
                     continue;
                 }
 
@@ -421,11 +501,13 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = ProjectPermissions::all();
+
                     continue;
                 }
 
                 if ($membership->role === 'tenant_admin') {
                     $matrix[$key] = ProjectPermissions::normalize($membership->project_permissions ?? ProjectPermissions::defaultForRole($membership->role));
+
                     continue;
                 }
 
@@ -453,6 +535,7 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = DocumentationPermissions::all();
+
                     continue;
                 }
 
@@ -460,6 +543,7 @@ class PermissionController extends Controller
                     $matrix[$key] = DocumentationPermissions::normalize(
                         $membership->documentation_permissions ?? DocumentationPermissions::defaultForRole($membership->role)
                     );
+
                     continue;
                 }
 
@@ -491,6 +575,7 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = DiarioObraPermissions::all();
+
                     continue;
                 }
 
@@ -498,6 +583,7 @@ class PermissionController extends Controller
                     $matrix[$key] = DiarioObraPermissions::normalize(
                         $membership->diario_obra_permissions ?? DiarioObraPermissions::defaultForRole($membership->role)
                     );
+
                     continue;
                 }
 
@@ -529,6 +615,7 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = OrdemServicoPermissions::all();
+
                     continue;
                 }
 
@@ -536,6 +623,7 @@ class PermissionController extends Controller
                     $matrix[$key] = OrdemServicoPermissions::normalize(
                         $membership->ordem_servico_permissions ?? OrdemServicoPermissions::defaultForRole($membership->role)
                     );
+
                     continue;
                 }
 
@@ -567,6 +655,7 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = MedicaoPermissions::all();
+
                     continue;
                 }
 
@@ -574,6 +663,7 @@ class PermissionController extends Controller
                     $matrix[$key] = MedicaoPermissions::normalize(
                         $membership->medicao_permissions ?? MedicaoPermissions::defaultForRole($membership->role)
                     );
+
                     continue;
                 }
 
@@ -605,6 +695,7 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = ContractPermissions::all();
+
                     continue;
                 }
 
@@ -612,6 +703,7 @@ class PermissionController extends Controller
                     $matrix[$key] = ContractPermissions::normalize(
                         $membership->contract_permissions ?? ContractPermissions::defaultForRole($membership->role)
                     );
+
                     continue;
                 }
 
@@ -643,6 +735,7 @@ class PermissionController extends Controller
 
                 if ($membership->role === 'tenant_owner') {
                     $matrix[$key] = RncPermissions::all();
+
                     continue;
                 }
 
@@ -653,6 +746,34 @@ class PermissionController extends Controller
 
                 $matrix[$key] = $responsavel
                     ? RncPermissions::normalize($responsavel->permissions ?? [])
+                    : [];
+            }
+        }
+
+        return $matrix;
+    }
+
+    private function icPermissionsByUserContract($memberships, $contracts, $responsaveis): array
+    {
+        $matrix = [];
+
+        foreach ($memberships as $membership) {
+            foreach ($contracts as $contract) {
+                $key = "{$membership->user_id}:{$contract->id}";
+
+                if ($membership->role === 'tenant_owner') {
+                    $matrix[$key] = IcPermissions::all();
+
+                    continue;
+                }
+
+                $responsavel = $responsaveis
+                    ->where('user_id', $membership->user_id)
+                    ->where('contract_id', $contract->id)
+                    ->first();
+
+                $matrix[$key] = $responsavel
+                    ? IcPermissions::normalize($responsavel->permissions ?? [])
                     : [];
             }
         }

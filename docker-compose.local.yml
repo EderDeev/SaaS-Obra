@@ -61,5 +61,6 @@ services:
 
       RAILWAY_VOLUME_MOUNT_PATH: /app/storage/app/public
     volumes:
+      - ./storage/app/private:/app/storage/app/private
       - ./storage/app/public:/app/storage/app/public
       - ./storage/logs:/app/storage/logs

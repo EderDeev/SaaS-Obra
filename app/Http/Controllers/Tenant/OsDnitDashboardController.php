@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\OsDnitHighway;
 use App\Models\OsDnitOrder;
 use App\Models\OsDnitOrderEvent;
+use App\Models\OsDnitSupervisionLot;
 use App\Models\Tenant;
 use App\Support\OsDnitContractAccess;
 use App\Support\OsDnitPermissions;
@@ -44,8 +45,15 @@ class OsDnitDashboardController extends Controller
         $filters += $request->validate(['highway_id' => ['nullable', 'integer', Rule::in($highways->pluck('id')->all())]],
             [], ['highway_id' => 'rodovia']);
 
+        $lots = OsDnitSupervisionLot::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))
+            ->when($filters['contract_id'] ?? null, fn ($query, $id) => $query->where('contract_id', $id))
+            ->with('contract:id,code')->orderBy('name')->get(['id', 'contract_id', 'name']);
+        $filters += $request->validate(['supervision_lot_id' => ['nullable', 'integer', Rule::in($lots->pluck('id')->all())]],
+            [], ['supervision_lot_id' => 'lote de supervisão']);
+
         $accessible = OsDnitOrder::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))
             ->when($filters['contract_id'] ?? null, fn ($query, $id) => $query->where('contract_id', $id))
+            ->when($filters['supervision_lot_id'] ?? null, fn ($query, $id) => $query->where('supervision_lot_id', $id))
             ->when($filters['highway_id'] ?? null, fn ($query, $id) => $query->where('highway_id', $id));
         $cohort = (clone $accessible)->whereBetween('created_at', [$from, $to]);
         $counts = (clone $cohort)->selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status');
@@ -55,6 +63,7 @@ class OsDnitDashboardController extends Controller
             'concremat' => (int) ($counts['awaiting_concremat'] ?? 0),
             'inspector' => (int) ($counts['awaiting_contract'] ?? 0),
             'approved' => (int) ($counts['approved'] ?? 0),
+            'completed' => (int) ($counts['completed'] ?? 0),
             'returned' => (int) $counts->only(['returned_concremat', 'returned_analyst'])->sum(),
             'returned_analyst' => (int) ($counts['returned_analyst'] ?? 0),
             'returned_concremat' => (int) ($counts['returned_concremat'] ?? 0),
@@ -74,7 +83,7 @@ class OsDnitDashboardController extends Controller
         foreach ($movements as $event) {
             $month = $event->created_at->timezone(config('app.timezone'))->format('Y-m');
             $key = $month.':'.$event->action.':'.$event->order_id;
-            if (isset($months[$month]) && !isset($seen[$key])) {
+            if (isset($months[$month]) && ! isset($seen[$key])) {
                 $months[$month][$event->action]++;
                 $seen[$key] = true;
             }
@@ -84,8 +93,8 @@ class OsDnitDashboardController extends Controller
         $stageStart = OsDnitOrderEvent::query()
             ->selectRaw('COALESCE(MAX(created_at), os_dnit_orders.created_at)')
             ->whereColumn('order_id', 'os_dnit_orders.id')
-            ->whereIn('action', ['created', 'legacy_draft', 'submitted', 'forwarded', 'returned']);
-        $pending = (clone $cohort)->where('status', '!=', 'approved')->select([
+            ->whereIn('action', ['created', 'legacy_draft', 'submitted', 'forwarded', 'returned', 'approved']);
+        $pending = (clone $cohort)->where('status', '!=', 'completed')->select([
             'id', 'contract_id', 'request_number', 'subject', 'status', 'highway_name', 'desired_deadline',
         ])
             ->selectSub($stageStart, 'stage_started_at')->with('contract:id,code,name')
@@ -94,6 +103,7 @@ class OsDnitDashboardController extends Controller
             ->whereIn('id', $pending->pluck('id'))->pluck('id');
         $pending->through(function ($order) use ($analysisIds) {
             $since = Carbon::parse($order->stage_started_at);
+
             return [
                 'id' => $order->id, 'request_number' => $order->request_number, 'subject' => $order->subject,
                 'status' => $order->status, 'contract' => $order->contract->only(['id', 'code', 'name']),
@@ -105,7 +115,7 @@ class OsDnitDashboardController extends Controller
         });
 
         return Inertia::render('Tenant/OsDnit/Dashboard', [
-            'contracts' => $contracts, 'highways' => $highways, 'filters' => $filters,
+            'contracts' => $contracts, 'highways' => $highways, 'lots' => $lots, 'filters' => $filters,
             'stats' => $stats, 'monthly' => array_values($months), 'pending' => $pending,
             'statuses' => OsDnitOrder::STATUSES,
         ]);

@@ -6,7 +6,7 @@ const step = (section, target, title, content, status = null) => ({ section, tar
 
 export const activityTourSteps = [
     step('create', 'create-type', 'Comece por Nova atividade', 'Escolha Atividade para uma entrega simples ou Checklist para um trabalho com várias etapas. Neste exemplo, vamos acompanhar um checklist de medição.'),
-    step('create', 'create-fields', 'Identifique e planeje o trabalho', 'Preencha título, contrato, categoria, prioridade, prazo e descrição. Na categoria Ordem de Serviço DNIT, pesquise e selecione a OS do mesmo contrato.'),
+    step('create', 'create-fields', 'Identifique e planeje o trabalho', 'Preencha título, contrato, categoria, prioridade, prazo e descrição. Na categoria Ordem de Serviço, pesquise e selecione a OS do mesmo contrato.'),
     step('create', 'create-checklist', 'Organize as etapas do checklist', 'Adicione as etapas na ordem de execução. Elas poderão ser marcadas individualmente para registrar o progresso. Use a descrição para explicar o resultado esperado.'),
     step('create', 'create-assignees', 'Escolha a equipe e crie o card', 'Defina a visibilidade: Pública para usuários autorizados do contrato ou Restrita ao criador e responsáveis. Selecione a equipe e clique em Criar checklist. O card começa em A fazer e os responsáveis são notificados.'),
     step('board', 'board', 'Encontre a atividade no quadro', 'Pesquise por título ou responsável e filtre contrato e categoria. O card resume prioridade, visibilidade, prazo e progresso. Clique nele para abrir os detalhes.'),

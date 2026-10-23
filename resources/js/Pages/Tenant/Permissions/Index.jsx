@@ -30,6 +30,7 @@ const groupMeta = {
     navigation: { icon: ShieldCheck, dataKey: 'navigation_permissions' },
     activities: { icon: Activity, dataKey: 'activity_permissions', contractScoped: true },
     contracts: { icon: FileKey2, dataKey: 'contract_permissions', contractScoped: true },
+    ic: { icon: FileWarning, dataKey: 'ic_permissions', contractScoped: true },
     rnc: { icon: FileWarning, dataKey: 'rnc_permissions', contractScoped: true },
     projects: { icon: FolderOpen, dataKey: 'project_permissions', contractScoped: true },
     budgets: { icon: Calculator, dataKey: 'budget_permissions' },
@@ -50,6 +51,7 @@ export default function PermissionsIndex({
     activityPermissionsByUserContract,
     projectPermissionsByUserContract,
     rncPermissionsByUserContract,
+    icPermissionsByUserContract,
     navigationPermissionsByUser,
     userPermissionsByUser,
     parametrizacaoPermissionsByUser,
@@ -83,6 +85,7 @@ export default function PermissionsIndex({
         activity_permissions: [],
         project_permissions: [],
         rnc_permissions: [],
+        ic_permissions: [],
         navigation_permissions: [],
         user_permissions: [],
         parametrizacao_permissions: [],
@@ -119,6 +122,7 @@ export default function PermissionsIndex({
             activity_permissions: activityPermissionsByUserContract?.[key] || [],
             project_permissions: projectPermissionsByUserContract?.[key] || [],
             rnc_permissions: rncPermissionsByUserContract?.[key] || [],
+            ic_permissions: icPermissionsByUserContract?.[key] || [],
             navigation_permissions: navigationPermissionsByUser?.[selectedUserId] || [],
             user_permissions: userPermissionsByUser?.[selectedUserId] || [],
             parametrizacao_permissions: parametrizacaoPermissionsByUser?.[selectedUserId] || [],
@@ -134,7 +138,7 @@ export default function PermissionsIndex({
     }, [selectedUserId, selectedContractId]);
 
     const togglePermission = (dataKey, permission) => {
-        const contractScoped = ['activity_permissions', 'contract_permissions', 'project_permissions', 'rnc_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'os_dnit_permissions', 'medicao_permissions'].includes(dataKey);
+        const contractScoped = ['activity_permissions', 'contract_permissions', 'project_permissions', 'rnc_permissions', 'ic_permissions', 'documentation_permissions', 'diario_obra_permissions', 'ordem_servico_permissions', 'os_dnit_permissions', 'medicao_permissions'].includes(dataKey);
 
         if (lockedOwner || (contractScoped && !selectedContractId)) {
             return;
@@ -309,7 +313,7 @@ export default function PermissionsIndex({
 
                                     {expanded && (
                                         <div className="grid gap-2 bg-white px-5 pb-5">
-                                            {groupKey === 'os_dnit' && contractUnavailable && <p className="text-sm text-amber-800 sm:ml-12">Este usuário precisa de vínculo ativo no contrato para receber permissões do OS DNIT.</p>}
+                                            {groupKey === 'os_dnit' && contractUnavailable && <p className="text-sm text-amber-800 sm:ml-12">Este usuário precisa de vínculo ativo no contrato para receber permissões do Ordem de Serviço.</p>}
                                             {permissions.map(([permission, label]) => {
                                                 const checked = selected.includes(permission);
 
@@ -347,13 +351,14 @@ export default function PermissionsIndex({
                             <Summary label="Contratos" value={form.data.contract_permissions.length} />
                             <Summary label="Projetos" value={form.data.project_permissions.length} />
                             <Summary label="RNC" value={form.data.rnc_permissions.length} />
+                            <Summary label="IC" value={form.data.ic_permissions.length} />
                             <Summary label="Usuarios" value={form.data.user_permissions.length} />
                             <Summary label="Parametrizacao" value={form.data.parametrizacao_permissions.length} />
                             <Summary label="Orçamentos" value={form.data.budget_permissions.length} />
                             <Summary label="Documentação" value={form.data.documentation_permissions.length} />
                             <Summary label="Diário de Obra" value={form.data.diario_obra_permissions.length} />
                             <Summary label="Liberação de Serviço" value={form.data.ordem_servico_permissions.length} />
-                            <Summary label="OS DNIT" value={form.data.os_dnit_permissions.length} />
+                            <Summary label="Ordem de Serviço" value={form.data.os_dnit_permissions.length} />
                             <Summary label="Medição" value={form.data.medicao_permissions.length} />
                         </div>
                     </section>

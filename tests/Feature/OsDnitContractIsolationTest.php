@@ -6,8 +6,9 @@ use App\Models\Contract;
 use App\Models\ContractParticipant;
 use App\Models\OsDnitHighway;
 use App\Models\OsDnitOrder;
-use App\Models\OsDnitResponsible;
 use App\Models\OsDnitProduct;
+use App\Models\OsDnitResponsible;
+use App\Models\OsDnitSupervisionLot;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,7 +29,7 @@ class OsDnitContractIsolationTest extends TestCase
         $this->get(route('tenant.os-dnit.settings.index', $tenant))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('highways.data', 1)->where('highways.data.0.id', $roadA->id));
         $this->get(route('tenant.os-dnit.orders.create', $tenant))->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->has('products', 1)->where('products.0.id', $productA->id)->has('highways', 1)->where('highways.0.id', $roadA->id)->has('contracts', 1)->has('numberPreviews', 1)->missing("numberPreviews.{$b->id}"));
+            ->assertInertia(fn (Assert $page) => $page->missing('products')->has('highways', 1)->where('highways.0.id', $roadA->id)->has('contracts', 1)->has('numberPreviews', 1)->missing("numberPreviews.{$b->id}"));
         $this->get(route('tenant.os-dnit.products.index', [$tenant, 'contract_id' => $b->id]))->assertSessionHasErrors('contract_id');
         $this->get(route('tenant.os-dnit.settings.index', [$tenant, 'contract_id' => $b->id]))->assertSessionHasErrors('contract_id');
     }
@@ -49,7 +50,7 @@ class OsDnitContractIsolationTest extends TestCase
         $this->link($tenant, $user, $b);
         $this->actingAs($user)->post(route('tenant.os-dnit.orders.store', $tenant), [
             ...$this->orderData($a, $roadA, $productA), 'highway_id' => $roadB->id, 'items' => [['product_id' => $productB->id, 'quantity' => 1]],
-        ])->assertSessionHasErrors(['highway_id', 'items.0.product_id']);
+        ])->assertSessionHasErrors(['highway_id', 'items']);
         $this->assertDatabaseCount('os_dnit_orders', 0);
     }
 
@@ -120,6 +121,7 @@ class OsDnitContractIsolationTest extends TestCase
         $roadB = OsDnitHighway::create(['tenant_id' => $tenant->id, 'contract_id' => $b->id, 'name' => 'Rodovia B', 'active' => true]);
         $productA = OsDnitProduct::create(['tenant_id' => $tenant->id, ...$this->productData($a)]);
         $productB = OsDnitProduct::create(['tenant_id' => $tenant->id, ...$this->productData($b)]);
+
         return [$tenant, $user, $a, $b, $roadA, $roadB, $productA, $productB];
     }
 
@@ -136,7 +138,7 @@ class OsDnitContractIsolationTest extends TestCase
 
     private function orderData(Contract $contract, OsDnitHighway $road, OsDnitProduct $product): array
     {
-        return ['contract_id' => $contract->id, 'request_number' => '001', 'supervision_lot' => '1', 'highway_id' => $road->id, 'km_start' => 1, 'km_end' => 2,
-            'subject' => 'Demanda', 'desired_deadline' => '2026-12-01', 'technical_need' => 'Necessidade', 'justification' => 'Resultado', 'items' => [['product_id' => $product->id, 'quantity' => 1]]];
+        return ['contract_id' => $contract->id, 'request_number' => '001', 'supervision_lot_id' => OsDnitSupervisionLot::firstOrCreate(['tenant_id' => $contract->tenant_id, 'contract_id' => $contract->id, 'name' => '1'], ['active' => true])->id, 'highway_id' => $road->id, 'km_start' => 1, 'km_end' => 2,
+            'subject' => 'Demanda', 'desired_deadline' => '2026-12-01', 'technical_need' => 'Necessidade', 'justification' => 'Resultado'];
     }
 }

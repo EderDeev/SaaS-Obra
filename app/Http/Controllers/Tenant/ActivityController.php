@@ -49,7 +49,7 @@ class ActivityController extends Controller
         'measurement' => 'Medição',
         'documentation' => 'Documentação',
         'service_order' => 'Liberação de Serviço',
-        'os_dnit' => 'Ordem de Serviço DNIT',
+        'os_dnit' => 'Ordem de Serviço',
         'construction_diary' => 'Diário de Obra',
         'contract' => 'Contrato',
         'administrative' => 'Administrativo',

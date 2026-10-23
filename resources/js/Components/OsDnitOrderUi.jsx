@@ -9,7 +9,7 @@ export function Field({ name, label, error, children }) {
     </div>;
 }
 
-export function Pagination({ data, label = 'ordens de serviço', disabled = false }) {
+export function Pagination({ data, label = 'ordens de serviço', disabled = false, pageName = 'page', preserveState = false }) {
     const pageId = useId();
     const previous = data.links[0]?.url;
     const next = data.links.at(-1)?.url;
@@ -24,8 +24,8 @@ export function Pagination({ data, label = 'ordens de serviço', disabled = fals
                 <label htmlFor={pageId}>Página</label>
                 <select id={pageId} value={data.current_page} disabled={disabled || data.last_page <= 1} onChange={(event) => {
                     const url = new URL(data.first_page_url);
-                    url.searchParams.set('page', event.target.value);
-                    router.get(url.toString(), {}, { preserveScroll: true });
+                    url.searchParams.set(pageName, event.target.value);
+                    router.get(url.toString(), {}, { preserveScroll: true, preserveState });
                 }} className="min-w-14 rounded-lg border-slate-300 py-1.5 pl-2 pr-7 text-sm disabled:bg-slate-50 disabled:text-slate-500">
                     {Array.from({ length: data.last_page }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
                 </select>
@@ -34,13 +34,13 @@ export function Pagination({ data, label = 'ordens de serviço', disabled = fals
         </div>
         <div className="grid grid-cols-2 gap-2 sm:hidden">
             {[[previous, 'Anterior'], [next, 'Próxima']].map(([url, text]) => url && !disabled
-                ? <Link key={text} href={url} preserveScroll className="sig-btn sig-btn-secondary">{text}</Link>
+                ? <Link key={text} href={url} preserveScroll preserveState={preserveState} className="sig-btn sig-btn-secondary">{text}</Link>
                 : <button key={text} type="button" disabled className="sig-btn sig-btn-secondary disabled:opacity-50">{text}</button>)}
         </div>
         <div className="hidden flex-wrap gap-1 sm:flex">{data.links.map((link, index) => {
             const text = index === 0 ? 'Anterior' : index === data.links.length - 1 ? 'Próxima' : link.label;
             const className = `rounded-lg border px-3 py-2 text-sm ${link.active ? 'border-blue-600 bg-blue-50 font-semibold text-blue-700' : 'border-slate-200 bg-white'}`;
-            return link.url && !disabled && !link.active ? <Link key={index} href={link.url} preserveScroll className={className}>{text}</Link>
+            return link.url && !disabled && !link.active ? <Link key={index} href={link.url} preserveScroll preserveState={preserveState} className={className}>{text}</Link>
                 : <span key={index} className={link.active ? className : 'rounded-lg border border-slate-100 px-3 py-2 text-sm text-slate-400'} aria-current={link.active ? 'page' : undefined} aria-disabled={!link.active || disabled ? 'true' : undefined}>{text}</span>;
         })}</div>
     </nav>;

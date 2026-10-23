@@ -57,7 +57,7 @@ const categoryMeta = {
     measurement: { label: 'Medição', className: 'sig-pill-blue' },
     documentation: { label: 'Documentação', className: 'sig-pill-green' },
     service_order: { label: 'Liberação de Serviço', className: 'sig-pill-amber' },
-    os_dnit: { label: 'Ordem de Serviço DNIT', className: 'sig-pill-amber' },
+    os_dnit: { label: 'Ordem de Serviço', className: 'sig-pill-amber' },
     construction_diary: { label: 'Diário de Obra', className: 'sig-pill-green' },
     contract: { label: 'Contrato', className: 'sig-pill-blue' },
     administrative: { label: 'Administrativo', className: '' },

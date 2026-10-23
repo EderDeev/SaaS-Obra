@@ -14,15 +14,32 @@ class OsDnitContractMigrationTest extends TestCase
     {
         parent::setUp();
         Schema::create('tenants', fn (Blueprint $table) => $table->id());
-        Schema::create('contracts', function (Blueprint $table) { $table->id(); $table->unsignedBigInteger('tenant_id'); });
+        Schema::create('contracts', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('tenant_id');
+        });
         Schema::create('os_dnit_products', function (Blueprint $table) {
-            $table->id(); $table->unsignedBigInteger('tenant_id'); $table->string('code'); $table->unique(['tenant_id', 'code']);
+            $table->id();
+            $table->unsignedBigInteger('tenant_id');
+            $table->string('code');
+            $table->unique(['tenant_id', 'code']);
         });
         Schema::create('os_dnit_highways', function (Blueprint $table) {
-            $table->id(); $table->unsignedBigInteger('tenant_id'); $table->string('name'); $table->unique(['tenant_id', 'name']);
+            $table->id();
+            $table->unsignedBigInteger('tenant_id');
+            $table->string('name');
+            $table->unique(['tenant_id', 'name']);
         });
-        Schema::create('os_dnit_orders', function (Blueprint $table) { $table->id(); $table->unsignedBigInteger('contract_id'); $table->unsignedBigInteger('highway_id'); });
-        Schema::create('os_dnit_order_items', function (Blueprint $table) { $table->id(); $table->unsignedBigInteger('order_id'); $table->unsignedBigInteger('product_id'); });
+        Schema::create('os_dnit_orders', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('contract_id');
+            $table->unsignedBigInteger('highway_id');
+        });
+        Schema::create('os_dnit_order_items', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('order_id');
+            $table->unsignedBigInteger('product_id');
+        });
         DB::table('tenants')->insert(['id' => 1]);
         DB::table('contracts')->insert(['id' => 10, 'tenant_id' => 1]);
         DB::table('os_dnit_products')->insert(['id' => 20, 'tenant_id' => 1, 'code' => '02']);

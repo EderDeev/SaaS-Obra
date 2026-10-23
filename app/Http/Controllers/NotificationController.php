@@ -2,12 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\NotificationFeed;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class NotificationController extends Controller
 {
+    public function index(Request $request): JsonResponse
+    {
+        return response()->json(NotificationFeed::forUser($request->user()))
+            ->header('Cache-Control', 'no-store, private');
+    }
+
     public function read(Request $request, string $notification): Response
     {
         $userNotification = $request->user()

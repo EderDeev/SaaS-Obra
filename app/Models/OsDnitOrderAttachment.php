@@ -8,6 +8,4 @@ use Illuminate\Database\Eloquent\Model;
 
 #[Fillable(['order_id', 'original_name', 'storage_disk', 'path', 'mime_type', 'size_bytes'])]
 #[Hidden(['storage_disk', 'path'])]
-class OsDnitOrderAttachment extends Model
-{
-}
+class OsDnitOrderAttachment extends Model {}
