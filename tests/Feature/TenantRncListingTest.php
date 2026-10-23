@@ -138,6 +138,84 @@ class TenantRncListingTest extends TestCase
         $this->get(route('tenant.qualidade.rnc.index', $otherTenant))->assertForbidden();
     }
 
+    public function test_dashboard_counts_latest_evidence_results_separately_from_signature_completion(): void
+    {
+        $expected = [];
+        foreach (array_keys(RncListing::STATUSES) as $status) $expected[$status] = $this->rnc($status);
+        $expected['awaiting_signature']->evidencias()->first()->update(['resolution_result' => 'yes']);
+        $partial = $this->rnc('awaiting_signature');
+        $partial->evidencias()->first()->update(['resolution_result' => 'yes']);
+        $partial->evidencias()->create(['tenant_id' => $this->tenant->id, 'user_id' => $this->user->id,
+            'relatorio_nao_conformidade_acao_corretiva_id' => $partial->acoesCorretivas()->first()->id,
+            'resolution_result' => 'partial', 'submitted_at' => now()]);
+        $this->rnc('awaiting_signature')->evidencias()->first()->update(['resolution_result' => 'no']);
+        $this->rnc('awaiting_signature')->delete();
+        $this->get(route('tenant.qualidade.rnc.dashboard', $this->tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.total', 9)->where('metrics.finalizadas', 1)->where('metrics.emAnalise', 1)
+            ->where('metrics.aguardandoEvidencia', 1)->where('metrics.aguardandoAssinaturas', 3)
+            ->where('metrics.resolvidas', 1)->where('metrics.parcialmenteResolvidas', 1)->where('metrics.naoResolvidas', 1)
+            ->where('resolutionCounts', ['yes' => 1, 'partial' => 1, 'no' => 1])
+            ->where('statusCounts.Aguardando assinaturas', 3)->where('statusCounts.Finalizada', 1)
+            ->missing('recentRncs')->has('contracts', 2));
+        $this->get(route('tenant.qualidade.rnc.dashboard', [$this->tenant, 'resolution_result' => 'partial']))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('metrics.total', 1)
+                ->where('metrics.parcialmenteResolvidas', 1)->where('metrics.resolvidas', 0));
+    }
+
+    public function test_dashboard_filters_combine_and_reject_mismatched_options_and_dates(): void
+    {
+        $discipline = $this->tenant->disciplinas()->create(['contract_id' => $this->a->id, 'nome' => 'Estruturas', 'sigla' => 'EST', 'cor' => '#123456']);
+        $otherDiscipline = $this->tenant->disciplinas()->create(['contract_id' => $this->a->id, 'nome' => 'Drenagem', 'sigla' => 'DRE', 'cor' => '#123456']);
+        $otherObra = Obra::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->a->id, 'codigo' => 'OB-C', 'nome' => 'Obra C', 'tipo' => 'pai']);
+        $target = $this->rnc('awaiting_signature');
+        $target->update(['disciplina_id' => $discipline->id]);
+        $target->evidencias()->first()->update(['resolution_result' => 'yes']);
+        foreach ([['opened_at' => '2026-09-01'], ['opened_at' => '2026-11-01'], ['gravidade' => 'Leve'],
+            ['disciplina_id' => $otherDiscipline->id], ['obra_id' => $otherObra->id],
+            ['contract_id' => $this->b->id, 'obra_id' => $this->obraB->id], ['status' => 'finalizada'], []] as $index => $change) {
+            $rnc = $this->rnc('awaiting_signature');
+            $rnc->update(['disciplina_id' => $discipline->id, ...$change]);
+            $rnc->evidencias()->first()->update(['resolution_result' => $index === 7 ? 'no' : 'yes']);
+        }
+        $filters = ['contract_id' => $this->a->id, 'obra_id' => $this->obraA->id, 'disciplina_id' => $discipline->id,
+            'gravidade' => 'Grave', 'status' => 'awaiting_signature', 'resolution_result' => 'yes',
+            'date_from' => '2026-10-22', 'date_to' => '2026-10-22'];
+        $url = fn ($params = []) => route('tenant.qualidade.rnc.dashboard', [$this->tenant, ...$params]);
+        $this->get($url($filters))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.total', 1)->where('metrics.aguardandoAssinaturas', 1)->where('resolutionCounts.yes', 1)
+            ->where('gravidadeCounts.Grave', 1)->where('disciplinaCounts.EST - Estruturas', 1)
+            ->where('monthlyCounts', fn ($values) => collect($values)->sum() === 1)
+            ->where('monthlyRange', '05/2026 a 10/2026')->where('filters.date_from', '2026-10-22'));
+        $this->get($url(['contract_id' => $this->b->id, 'obra_id' => $this->obraA->id]))->assertSessionHasErrors('obra_id');
+        $this->get($url(['contract_id' => $this->b->id, 'disciplina_id' => $discipline->id]))->assertSessionHasErrors('disciplina_id');
+        $this->get($url(['date_from' => '2026-10-23', 'date_to' => '2026-10-22']))->assertSessionHasErrors('date_to');
+        $this->get($url(['resolution_result' => 'invalid']))->assertSessionHasErrors('resolution_result');
+        $this->get($url(['status' => 'invalid']))->assertSessionHasErrors('status');
+        $this->get($url(['date_from' => 'invalid']))->assertSessionHasErrors('date_from');
+        $this->get($url(['date_from' => '2027-01-01', 'date_to' => '2027-01-31']))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('metrics.total', 0)->where('resolutionCounts', ['yes' => 0, 'partial' => 0, 'no' => 0]));
+    }
+
+    public function test_dashboard_filters_and_metrics_are_scoped_to_permitted_contracts(): void
+    {
+        $this->rnc('awaiting_signature')->evidencias()->first()->update(['resolution_result' => 'yes']);
+        $this->rnc('awaiting_signature', true)->evidencias()->first()->update(['resolution_result' => 'no']);
+        $member = User::factory()->create();
+        $this->tenant->memberships()->create(['user_id' => $member->id, 'role' => 'engineer', 'status' => 'active']);
+        ContractParticipant::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->a->id, 'user_id' => $member->id,
+            'side' => 'manager', 'role' => 'team_member', 'status' => 'active']);
+        RelatorioNaoConformidadeResponsavel::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->a->id,
+            'user_id' => $member->id, 'created_by_id' => $this->user->id, 'status' => 'active', 'permissions' => [RncPermissions::DASHBOARD]]);
+        $url = fn ($params = []) => route('tenant.qualidade.rnc.dashboard', [$this->tenant, ...$params]);
+        $this->actingAs($member)->get($url())->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.total', 1)->where('resolutionCounts', ['yes' => 1, 'partial' => 0, 'no' => 0])
+            ->has('contracts', 1)->has('obras', 1)->where('contracts.0.id', $this->a->id));
+        $this->get($url(['contract_id' => $this->b->id]))->assertSessionHasErrors('contract_id');
+        $this->get($url(['obra_id' => $this->obraB->id]))->assertSessionHasErrors('obra_id');
+        $otherTenant = Tenant::create(['name' => 'Outro tenant', 'slug' => 'outro-dashboard', 'plan' => 'starter', 'status' => 'active']);
+        $this->get(route('tenant.qualidade.rnc.dashboard', $otherTenant))->assertForbidden();
+    }
+
     private function rnc(string $status, bool $secondContract = false): RelatorioNaoConformidade
     {
         $rnc = RelatorioNaoConformidade::create(['tenant_id' => $this->tenant->id, 'contract_id' => $secondContract ? $this->b->id : $this->a->id,

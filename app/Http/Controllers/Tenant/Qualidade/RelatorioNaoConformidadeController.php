@@ -10,6 +10,7 @@ use App\Models\InstrucaoCampo;
 use App\Models\Obra;
 use App\Models\ProjectDocument;
 use App\Models\RelatorioNaoConformidade;
+use App\Models\RelatorioNaoConformidadeEvidencia;
 use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\User;
@@ -161,8 +162,41 @@ class RelatorioNaoConformidadeController extends Controller
         abort_unless(RncPermissions::canAny($request->user(), $tenant, RncPermissions::DASHBOARD), 403);
 
         $contractIds = $this->contractIdsForPermission($request, $tenant, RncPermissions::DASHBOARD);
+        $contracts = $tenant->contracts()->whereIn('id', $contractIds)->orderBy('code')->get(['id', 'code', 'name']);
+        $obras = $tenant->obras()->withTrashed()->whereIn('contract_id', $contractIds)->orderBy('nome')->get(['id', 'contract_id', 'codigo', 'nome']);
+        $disciplinas = $tenant->disciplinas()->withTrashed()->whereIn('contract_id', $contractIds)->orderBy('nome')->get(['id', 'contract_id', 'nome']);
+        $filters = $request->validate([
+            'contract_id' => ['nullable', 'integer', Rule::in($contractIds->all())],
+            'obra_id' => ['nullable', 'integer', Rule::in($obras->pluck('id')->all())],
+            'disciplina_id' => ['nullable', 'integer', Rule::in($disciplinas->pluck('id')->all())],
+            'gravidade' => ['nullable', Rule::in(self::GRAVIDADES)],
+            'status' => ['nullable', Rule::in(array_keys(RncListing::STATUSES))],
+            'resolution_result' => ['nullable', Rule::in(array_keys(RelatorioNaoConformidadeEvidencia::RESOLUTION_RESULTS))],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('date_from') ? ['after_or_equal:date_from'] : [])],
+        ], ['date_to.after_or_equal' => 'A data final deve ser igual ou posterior à data inicial.']);
+        foreach (['obra_id' => $obras, 'disciplina_id' => $disciplinas] as $field => $options) {
+            if (! empty($filters['contract_id']) && ! empty($filters[$field])
+                && (int) $options->firstWhere('id', $filters[$field])->contract_id !== (int) $filters['contract_id']) {
+                throw ValidationException::withMessages([$field => 'Selecione uma opção do contrato informado.']);
+            }
+        }
+        $latestResolution = RelatorioNaoConformidadeEvidencia::query()->select('resolution_result')
+            ->whereColumn('relatorio_nao_conformidade_id', 'relatorio_nao_conformidades.id')
+            ->whereColumn('tenant_id', 'relatorio_nao_conformidades.tenant_id')->orderByDesc('id')->limit(1);
+        $statusSql = RncListing::statusSql();
         $rncs = $tenant->relatorioNaoConformidades()
             ->whereIn('contract_id', $contractIds)
+            ->select('relatorio_nao_conformidades.*')->selectRaw("({$statusSql}) AS workflow_status")
+            ->addSelect(['resolution_result' => $latestResolution])
+            ->when($filters['contract_id'] ?? null, fn ($q, $id) => $q->where('contract_id', $id))
+            ->when($filters['obra_id'] ?? null, fn ($q, $id) => $q->where('obra_id', $id))
+            ->when($filters['disciplina_id'] ?? null, fn ($q, $id) => $q->where('disciplina_id', $id))
+            ->when($filters['gravidade'] ?? null, fn ($q, $value) => $q->where('gravidade', $value))
+            ->when($filters['status'] ?? null, fn ($q, $value) => $q->whereRaw("({$statusSql}) = ?", [$value]))
+            ->when($filters['resolution_result'] ?? null, fn ($q, $value) => $q->whereRaw('('.$latestResolution->toSql().') = ?', [$value]))
+            ->when($filters['date_from'] ?? null, fn ($q, $date) => $q->whereDate('opened_at', '>=', $date))
+            ->when($filters['date_to'] ?? null, fn ($q, $date) => $q->whereDate('opened_at', '<=', $date))
             ->with([
                 'contract:id,code,name',
                 'obra:id,nome,codigo',
@@ -180,12 +214,14 @@ class RelatorioNaoConformidadeController extends Controller
         $finalizadas = $rncs->filter(fn (RelatorioNaoConformidade $rnc): bool => $this->isFinalizedRnc($rnc));
         $atrasadasResposta = $rncs->filter(fn (RelatorioNaoConformidade $rnc): bool => $this->isResponseOverdueRnc($rnc, $today));
         $atrasadasExecucao = $rncs->filter(fn (RelatorioNaoConformidade $rnc): bool => $this->isExecutionOverdueRnc($rnc, $today));
-        $emAnalise = $rncs->filter(fn (RelatorioNaoConformidade $rnc): bool => $rnc->acoesCorretivas->first()?->status === 'pending');
-        $aguardandoEvidencia = $rncs->filter(fn (RelatorioNaoConformidade $rnc): bool => ! $this->isFinalizedRnc($rnc)
-            && $rnc->acoesCorretivas->first()?->status === 'approved');
+        $emAnalise = $rncs->where('workflow_status', 'awaiting_review');
+        $aguardandoEvidencia = $rncs->where('workflow_status', 'awaiting_evidence');
+        $resolutionCounts = collect(RelatorioNaoConformidadeEvidencia::RESOLUTION_RESULTS)
+            ->mapWithKeys(fn ($label, $value) => [$value => $rncs->where('resolution_result', $value)->count()])->all();
+        $monthEnd = ! empty($filters['date_to']) ? Carbon::parse($filters['date_to'])->startOfMonth() : now()->startOfMonth();
         $monthlyCounts = collect(range(5, 0))
-            ->mapWithKeys(function (int $monthsAgo) use ($rncs): array {
-                $date = now()->copy()->subMonths($monthsAgo);
+            ->mapWithKeys(function (int $monthsAgo) use ($rncs, $monthEnd): array {
+                $date = $monthEnd->copy()->subMonths($monthsAgo);
                 $monthKey = $date->format('Y-m');
 
                 return [
@@ -198,21 +234,27 @@ class RelatorioNaoConformidadeController extends Controller
 
         return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/Dashboard', [
             'tenant' => $tenant,
+            'contracts' => $contracts, 'obras' => $obras, 'disciplinas' => $disciplinas, 'filters' => $filters,
+            'statuses' => RncListing::STATUSES,
+            'resolutionCounts' => $resolutionCounts,
+            'monthlyRange' => $monthEnd->copy()->subMonths(5)->format('m/Y').' a '.$monthEnd->format('m/Y'),
             'metrics' => [
                 'total' => $rncs->count(),
                 'abertas' => $rncs->where('status', 'aberta')->count(),
                 'atrasoResposta' => $atrasadasResposta->count(),
                 'atrasoExecucao' => $atrasadasExecucao->count(),
                 'emAnalise' => $emAnalise->count(),
-                'aguardandoEvidencia' => $aguardandoEvidencia->filter(fn ($rnc) => $rnc->evidencias->isEmpty())->count(),
-                'aguardandoAssinaturas' => $rncs->filter(fn ($rnc) => !$this->isFinalizedRnc($rnc) && $rnc->evidencias->isNotEmpty())->count(),
+                'aguardandoEvidencia' => $aguardandoEvidencia->count(),
+                'aguardandoAssinaturas' => $rncs->where('workflow_status', 'awaiting_signature')->count(),
                 'finalizadas' => $finalizadas->count(),
+                'resolvidas' => $resolutionCounts['yes'],
+                'parcialmenteResolvidas' => $resolutionCounts['partial'],
+                'naoResolvidas' => $resolutionCounts['no'],
             ],
-            'statusCounts' => $this->countBy($rncs, 'status'),
+            'statusCounts' => collect(RncListing::STATUSES)->mapWithKeys(fn ($label, $status) => [$label => $rncs->where('workflow_status', $status)->count()])->all(),
             'gravidadeCounts' => $this->countBy($rncs, 'gravidade'),
             'disciplinaCounts' => $this->countRncDisciplines($rncs),
             'monthlyCounts' => $monthlyCounts,
-            'recentRncs' => $rncs->take(8)->values(),
             'responseOverdueRncs' => $atrasadasResposta->take(6)->values(),
             'executionOverdueRncs' => $atrasadasExecucao->take(6)->values(),
         ]);
