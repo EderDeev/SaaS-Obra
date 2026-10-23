@@ -1,162 +1,98 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { rncDisciplinaLabel } from '@/Support/rnc';
-import { Head, Link } from '@inertiajs/react';
-import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardX, Clock3, Gauge, SearchCheck } from 'lucide-react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import ReactECharts from 'echarts-for-react';
+import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardX, Clock3, Gauge, SearchCheck, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Errors } from '../InstrucaoCampo/Ui';
 
-const shortDate = (date) => {
-    if (!date) return '-';
+const shortDate = (date) => date ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(/^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T12:00:00` : date)) : '—';
+const chartColors = ['#0b5fff', '#11805a', '#b58105', '#c8364a', '#64748b', '#7c3aed', '#0891b2'];
+const metricCards = [
+    ['total', 'Total de RNCs', ClipboardX, 'blue'],
+    ['resolvidas', 'Resolvidas', CheckCircle2, 'green'],
+    ['parcialmenteResolvidas', 'Parcialmente resolvidas', SearchCheck, 'amber'],
+    ['naoResolvidas', 'Não resolvidas', AlertTriangle, 'red'],
+    ['finalizadas', 'Finalizadas', CheckCircle2, 'green'],
+    ['emAnalise', 'Em análise da proposta', SearchCheck, 'amber'],
+    ['aguardandoEvidencia', 'Aguardando evidências', Clock3, 'amber'],
+    ['aguardandoAssinaturas', 'Aguardando assinaturas', Clock3, 'amber'],
+    ['atrasoResposta', 'Atraso de resposta', AlertTriangle, 'red'],
+    ['atrasoExecucao', 'Atraso de execução', AlertTriangle, 'red'],
+];
 
-    return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date));
-};
+export default function RelatorioNaoConformidadeDashboard({ tenant, contracts = [], obras = [], disciplinas = [], filters = {}, statuses = {}, metrics, resolutionCounts = {}, statusCounts, gravidadeCounts, disciplinaCounts, monthlyCounts, monthlyRange, responseOverdueRncs = [], executionOverdueRncs = [] }) {
+    const [values, setValues] = useState(filters);
+    const current = useRef(filters);
+    const cancel = useRef(null);
+    const { errors } = usePage().props;
+    useEffect(() => { current.current = filters; setValues(filters); }, [filters]);
+    useEffect(() => () => cancel.current?.cancel(), []);
+    const apply = (changes, reset = false) => {
+        cancel.current?.cancel();
+        const next = reset ? {} : { ...current.current, ...changes };
+        current.current = next;
+        setValues(next);
+        router.get(route('tenant.qualidade.rnc.dashboard', tenant.slug), Object.fromEntries(Object.entries(next).filter(([, value]) => value !== '' && value != null)), {
+            preserveScroll: true, preserveState: true, replace: true,
+            onCancelToken: (token) => { cancel.current = token; },
+        });
+    };
+    const options = (items) => items.filter((item) => !values.contract_id || String(item.contract_id) === String(values.contract_id));
+    return <AuthenticatedLayout><Head title="Dashboard RNC" /><main className="sig-content quality-mobile-page grid gap-6">
+        <header className="quality-page-header flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0"><div className="eyebrow flex items-center gap-2"><Gauge size={14} />Relatório de Não Conformidade</div><h1 className="mt-2 text-2xl font-semibold">Dashboard RNC</h1><p className="mt-1 text-sm text-[var(--ink-500)]">Acompanhe as correções, os resultados e as assinaturas das RNCs em {tenant.name}.</p></div>
+            <Link href={route('tenant.qualidade.rnc.index', tenant.slug)} className="sig-btn sig-btn-secondary">Ver RNCs<ArrowRight size={15} /></Link>
+        </header>
+        <section aria-label="Filtros do dashboard RNC" className="sig-card grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Contrato<select className="sig-input w-full min-w-0" value={values.contract_id || ''} onChange={(event) => apply({ contract_id: event.target.value, obra_id: '', disciplina_id: '' })}><option value="">Todos os contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} · {contract.name}</option>)}</select></label>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Obra<select className="sig-input w-full min-w-0" value={values.obra_id || ''} onChange={(event) => apply({ obra_id: event.target.value })}><option value="">Todas as obras</option>{options(obras).map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} · {obra.nome}</option>)}</select></label>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Disciplina<select className="sig-input w-full min-w-0" value={values.disciplina_id || ''} onChange={(event) => apply({ disciplina_id: event.target.value })}><option value="">Todas as disciplinas</option>{options(disciplinas).map((disciplina) => <option key={disciplina.id} value={disciplina.id}>{disciplina.nome}</option>)}</select></label>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Gravidade<select className="sig-input w-full min-w-0" value={values.gravidade || ''} onChange={(event) => apply({ gravidade: event.target.value })}><option value="">Todas as gravidades</option>{['Leve', 'Média', 'Grave', 'Gravíssima'].map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Situação<select className="sig-input w-full min-w-0" value={values.status || ''} onChange={(event) => apply({ status: event.target.value })}><option value="">Todas as situações</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Resultado<select className="sig-input w-full min-w-0" value={values.resolution_result || ''} onChange={(event) => apply({ resolution_result: event.target.value })}><option value="">Todos os resultados</option><option value="yes">Resolvidas</option><option value="partial">Parcialmente resolvidas</option><option value="no">Não resolvidas</option></select></label>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Abertura: de<input type="date" className="sig-input w-full min-w-0" value={values.date_from || ''} max={values.date_to || undefined} onChange={(event) => apply({ date_from: event.target.value })} /></label>
+            <label className="grid min-w-0 gap-2 text-sm font-medium">Abertura: até<input type="date" className="sig-input w-full min-w-0" value={values.date_to || ''} min={values.date_from || undefined} onChange={(event) => apply({ date_to: event.target.value })} /></label>
+            {Object.values(values).some((value) => value !== '' && value != null) && <div className="sm:col-span-2 xl:col-span-4"><button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" onClick={() => apply({}, true)}><X size={14} />Limpar filtros</button></div>}
+        </section>
+        <Errors errors={errors} />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-5">{metricCards.map(([key, label, Icon, tone]) => <MetricCard key={key} icon={Icon} label={label} value={metrics[key] || 0} tone={tone} />)}</div>
+        <div className="grid items-start gap-5 xl:grid-cols-2">
+            <section className="sig-card min-w-0 p-5"><h2 className="text-base font-semibold">Resultado das correções</h2><div className="mt-4"><ResolutionPie counts={resolutionCounts} /></div></section>
+            <BarPanel title="Situação das RNCs" counts={statusCounts} />
+            <section className="grid min-w-0 gap-2"><ColumnPanel title="Aberturas por mês" counts={monthlyCounts} /><p className="px-1 text-xs text-[var(--ink-500)]">Últimos 6 meses até a data final do período: {monthlyRange}. Os filtros também se aplicam a este gráfico.</p></section>
+            <BarPanel title="Gravidade" counts={gravidadeCounts} />
+            <BarPanel title="Disciplina" counts={disciplinaCounts} />
+        </div>
+        <div className="grid items-start gap-5 xl:grid-cols-2">
+            <DelayPanel tenant={tenant} title="Resposta de ação corretiva vencida" eyebrow="Atraso de resposta" items={responseOverdueRncs} type="response" />
+            <DelayPanel tenant={tenant} title="Execução da ação fora do prazo" eyebrow="Atraso de execução" items={executionOverdueRncs} type="execution" />
+        </div>
+    </main></AuthenticatedLayout>;
+}
 
-const statusClass = {
-    aberta: 'sig-pill-blue',
-    finalizada: 'sig-pill-green',
-    excluida: 'sig-pill-red',
-};
-
-export default function RelatorioNaoConformidadeDashboard({
-    tenant,
-    metrics,
-    statusCounts,
-    gravidadeCounts,
-    disciplinaCounts,
-    monthlyCounts,
-    recentRncs = [],
-    responseOverdueRncs = [],
-    executionOverdueRncs = [],
-}) {
-    return (
-        <AuthenticatedLayout>
-            <Head title="Dashboard RNC" />
-
-            <section className="sig-content quality-mobile-page">
-                <div className="quality-page-header mb-6 flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                            <Gauge size={14} />
-                            <span className="eyebrow">Relatório de Não Conformidade</span>
-                        </div>
-                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">Dashboard RNC</h1>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">
-                            Visao consolidada das RNCs em {tenant.name}
-                        </p>
-                    </div>
-                    <Link href={route('tenant.qualidade.rnc.index', tenant.slug)} className="sig-btn sig-btn-secondary">
-                        Ver RNCs
-                        <ArrowRight size={15} />
-                    </Link>
-                </div>
-
-                <div className="quality-metrics-grid grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-6 xl:gap-4">
-                    <MetricCard icon={ClipboardX} label="Total de RNCs" value={metrics.total} tone="blue" />
-                    <MetricCard icon={AlertTriangle} label="Atraso resposta" value={metrics.atrasoResposta} tone="red" />
-                    <MetricCard icon={Clock3} label="Atraso execucao" value={metrics.atrasoExecucao} tone="red" />
-                    <MetricCard icon={SearchCheck} label="Em analise" value={metrics.emAnalise} tone="amber" />
-                    <MetricCard icon={Clock3} label="Aguardando assinaturas" value={metrics.aguardandoAssinaturas || 0} tone="amber" />
-                    <MetricCard icon={CheckCircle2} label="Finalizadas" value={metrics.finalizadas} tone="green" />
-                </div>
-
-                <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-                    <DonutPanel title="Status das RNCs" counts={statusCounts} />
-                    <ColumnPanel title="Aberturas nos ultimos 6 meses" counts={monthlyCounts} />
-                </div>
-
-                <div className="mt-6 grid gap-6 xl:grid-cols-2">
-                    <BarPanel title="Gravidade" counts={gravidadeCounts} />
-                    <BarPanel title="Disciplina" counts={disciplinaCounts} />
-                </div>
-
-                <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)]">
-                    <section className="sig-card overflow-hidden">
-                        <header className="border-b border-[var(--border)] px-5 py-4">
-                            <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                                <Clock3 size={14} />
-                                <span className="eyebrow">Recentes</span>
-                            </div>
-                            <h2 className="mt-1 text-[15px] font-semibold">Ultimas RNCs registradas</h2>
-                        </header>
-                        {recentRncs.length > 0 ? (
-                            <>
-                            <div className="grid gap-3 p-3 md:hidden">
-                                {recentRncs.map((rnc) => (
-                                    <Link
-                                        key={rnc.id}
-                                        href={route('tenant.qualidade.rnc.show', [tenant.slug, rnc.id])}
-                                        className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3"
-                                    >
-                                        <div className="flex items-start justify-between gap-3">
-                                            <span className="mono font-bold text-[var(--primary)]">{rnc.formatted_number}</span>
-                                            <span className={`sig-pill shrink-0 ${statusClass[rnc.status] || ''}`}>{rnc.status}</span>
-                                        </div>
-                                        <div className="mt-2 break-words text-[13px] font-semibold text-[var(--ink-900)]">
-                                            {rnc.assunto || rnc.descricao_problema}
-                                </div><div className="mt-1 text-xs text-[var(--ink-500)]">{rnc.obra?.codigo || '-'} - {rnc.obra?.nome || '-'}
-                                        </div>
-                                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--ink-500)]">
-                                            <span>{rncDisciplinaLabel(rnc)}</span>
-                                            <span>{shortDate(rnc.opened_at)}</span>
-                                        </div>
-                                    </Link>
-                                ))}
-                            </div>
-                            <table className="sig-table hidden md:table">
-                                <thead>
-                                    <tr>
-                                        <th>RNC</th>
-                                        <th>Obra</th>
-                                        <th>Disciplina</th>
-                                        <th>Status</th>
-                                        <th>Abertura</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {recentRncs.map((rnc) => (
-                                        <tr key={rnc.id}>
-                                            <td>
-                                                <Link href={route('tenant.qualidade.rnc.show', [tenant.slug, rnc.id])} className="mono font-semibold text-[var(--primary)]">
-                                                    {rnc.formatted_number}
-                                                </Link>
-                                            </td>
-                                            <td>
-                                                <div className="font-semibold text-[var(--ink-900)]">{rnc.obra?.codigo || '-'}</div>
-                                                <div className="text-xs text-[var(--ink-500)]">{rnc.obra?.nome || '-'}</div>
-                                            </td>
-                                            <td>{rncDisciplinaLabel(rnc)}</td>
-                                            <td>
-                                                <span className={`sig-pill ${statusClass[rnc.status] || ''}`}>{rnc.status}</span>
-                                            </td>
-                                            <td>{shortDate(rnc.opened_at)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                            </>
-                        ) : (
-                            <EmptyState text="Nenhuma RNC cadastrada ainda." />
-                        )}
-                    </section>
-
-                    <div className="grid gap-6">
-                        <DelayPanel
-                            tenant={tenant}
-                            title="Resposta de acao corretiva vencida"
-                            eyebrow="Atraso de resposta"
-                            items={responseOverdueRncs}
-                            type="response"
-                        />
-                        <DelayPanel
-                            tenant={tenant}
-                            title="Execucao da acao fora do prazo"
-                            eyebrow="Atraso de execucao"
-                            items={executionOverdueRncs}
-                            type="execution"
-                        />
-                    </div>
-                </div>
-            </section>
-        </AuthenticatedLayout>
-    );
+function ResolutionPie({ counts }) {
+    const rows = [
+        { name: 'Resolvidas', value: counts.yes || 0, color: '#15803d' },
+        { name: 'Parcialmente resolvidas', value: counts.partial || 0, color: '#b45309' },
+        { name: 'Não resolvidas', value: counts.no || 0, color: '#b91c1c' },
+    ];
+    const total = rows.reduce((sum, row) => sum + row.value, 0);
+    return <div className="grid gap-4">
+        {total ? <ReactECharts option={{
+            color: rows.map((row) => row.color),
+            aria: { enabled: true },
+            tooltip: { trigger: 'item', renderMode: 'richText', formatter: '{b}: {c} ({d}%)' },
+            series: [{ type: 'pie', radius: '82%', center: ['50%', '50%'],
+                data: rows.filter((row) => row.value > 0).map((row) => ({ name: row.name, value: row.value, itemStyle: { color: row.color } })),
+                label: { position: 'inside', formatter: '{d}%', color: '#fff', fontWeight: 600 },
+                minShowLabelAngle: 12, itemStyle: { borderColor: '#fff', borderWidth: 2 },
+                emphasis: { scaleSize: 6 },
+            }],
+        }} style={{ height: 260, width: '100%' }} notMerge />
+            : <p className="flex min-h-48 items-center justify-center text-center text-sm text-[var(--ink-500)]">Nenhuma RNC com resultado informado para estes filtros.</p>}
+        <ul className="grid gap-3">{rows.map((row) => <li key={row.name} className="flex items-center justify-between gap-3 text-sm"><span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} /><span>{row.name}</span></span><span className="shrink-0 tabular-nums"><strong>{row.value}</strong><span className="ml-2 text-[var(--ink-500)]">{(total ? row.value / total * 100 : 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</span></span></li>)}</ul>
+        <p className="text-xs text-[var(--ink-500)]">{total} RNC(s) com resultado informado nas evidências.</p>
+    </div>;
 }
 
 function DelayPanel({ tenant, title, eyebrow, items, type }) {
@@ -241,8 +177,8 @@ function MetricCard({ icon: Icon, label, value, tone }) {
     return (
         <section className="sig-card min-w-0 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-3">
-                <div>
-                    <div className="eyebrow">{label}</div>
+                <div className="min-w-0">
+                    <div className="eyebrow break-words">{label}</div>
                     <div className="mt-2 text-2xl font-semibold text-[var(--ink-900)] sm:text-3xl">{value}</div>
                 </div>
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-11 sm:w-11 ${tones[tone] || tones.blue}`}>
@@ -273,7 +209,7 @@ function BarPanel({ title, counts }) {
                         <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--surface-muted)]">
                             <div
                                 className="h-full rounded-full bg-[var(--primary)]"
-                                style={{ width: `${Math.max(8, (value / max) * 100)}%` }}
+                                style={{ width: `${(value / max) * 100}%` }}
                             />
                         </div>
                     </div>
@@ -284,79 +220,6 @@ function BarPanel({ title, counts }) {
                 )}
             </div>
         </section>
-    );
-}
-
-const chartColors = ['#0b5fff', '#11805a', '#b58105', '#c8364a', '#64748b', '#7c3aed', '#0891b2'];
-
-function DonutPanel({ title, counts }) {
-    const entries = Object.entries(counts || {});
-    const total = entries.reduce((sum, [, value]) => sum + value, 0);
-
-    return (
-        <section className="sig-card p-5">
-            <div className="flex items-center gap-2 text-[var(--ink-500)]">
-                <BarChart3 size={14} />
-                <span className="eyebrow">{title}</span>
-            </div>
-            {total > 0 ? (
-                <div className="mt-4 grid gap-5 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
-                    <DonutChart entries={entries} total={total} />
-                    <div className="grid gap-2">
-                        {entries.map(([label, value], index) => (
-                            <div key={label} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--surface-muted)] px-3 py-2 text-[12.5px]">
-                                <span className="flex min-w-0 items-center gap-2">
-                                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: chartColors[index % chartColors.length] }} />
-                                    <span className="truncate font-semibold text-[var(--ink-800)]">{label}</span>
-                                </span>
-                                <span className="mono text-[var(--ink-500)]">{value}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            ) : (
-                <EmptyState text="Sem dados para montar o grafico." />
-            )}
-        </section>
-    );
-}
-
-function DonutChart({ entries, total }) {
-    const radius = 70;
-    const circumference = 2 * Math.PI * radius;
-    let offset = 0;
-
-    return (
-        <div className="relative mx-auto h-[180px] w-[180px]">
-            <svg viewBox="0 0 180 180" className="h-full w-full -rotate-90">
-                <circle cx="90" cy="90" r={radius} fill="none" stroke="var(--surface-muted)" strokeWidth="22" />
-                {entries.map(([label, value], index) => {
-                    const length = (value / total) * circumference;
-                    const segment = (
-                        <circle
-                            key={label}
-                            cx="90"
-                            cy="90"
-                            r={radius}
-                            fill="none"
-                            stroke={chartColors[index % chartColors.length]}
-                            strokeDasharray={`${length} ${circumference - length}`}
-                            strokeDashoffset={-offset}
-                            strokeLinecap="round"
-                            strokeWidth="22"
-                        />
-                    );
-
-                    offset += length;
-
-                    return segment;
-                })}
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-semibold text-[var(--ink-900)]">{total}</span>
-                <span className="eyebrow mt-1 text-[var(--ink-500)]">RNCs</span>
-            </div>
-        </div>
     );
 }
 
