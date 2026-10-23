@@ -17,10 +17,21 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'attachment_mime_type',
     'attachment_size',
     'submitted_at',
+    'resolution_result',
+    'resolution_reason',
 ])]
 class RelatorioNaoConformidadeEvidencia extends Model
 {
     protected $table = 'relatorio_nao_conformidade_evidencias';
+
+    protected $appends = ['resolution_label'];
+
+    public const RESOLUTION_RESULTS = ['yes' => 'Resolvido', 'partial' => 'Parcialmente resolvido', 'no' => 'Não resolvido'];
+
+    public function getResolutionLabelAttribute(): string
+    {
+        return self::RESOLUTION_RESULTS[$this->resolution_result] ?? 'Não informado';
+    }
 
     protected function casts(): array
     {

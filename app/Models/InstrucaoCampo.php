@@ -15,7 +15,9 @@ class InstrucaoCampo extends Model
 
     protected $appends = ['formatted_number'];
 
-    public const STATUSES = ['draft' => 'Rascunho', 'notified' => 'Aguardando correção', 'correction_submitted' => 'Aguardando verificação', 'closed' => 'Resolvida', 'rnc_required' => 'Requer RNC'];
+    public const STATUSES = ['draft' => 'Rascunho', 'notified' => 'Aguardando evidências', 'closed' => 'Finalizada'];
+
+    public const RESOLUTION_RESULTS = ['yes' => 'Sim', 'partial' => 'Parcialmente', 'no' => 'Não'];
 
     protected function casts(): array
     {
@@ -75,5 +77,10 @@ class InstrucaoCampo extends Model
     public function events()
     {
         return $this->hasMany(InstrucaoCampoEvent::class)->orderBy('id');
+    }
+
+    public function attachments()
+    {
+        return $this->hasMany(InstrucaoCampoAttachment::class)->orderBy('id');
     }
 }

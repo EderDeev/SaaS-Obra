@@ -1,19 +1,20 @@
+import PdfDownload from './PdfDownload';
+import WorkflowButton from './WorkflowButton';
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import { Pagination, dateLabel } from '@/Components/OsDnitOrderUi';
 import { startRncTour } from '@/Components/RncTour';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { rncDisciplinaLabel } from '@/Support/rnc';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { Bell, ClipboardCheck, ClipboardX, Download, Eye, ImagePlus, MapPin, Pencil, Plane, Plus, SearchCheck, Trash2 } from 'lucide-react';
+import { Bell, ClipboardX, Eye, MapPin, Pencil, Plane, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 const gravityClass = { Leve: 'sig-pill-blue', Media: 'sig-pill-amber', 'Média': 'sig-pill-amber', 'MÃ©dia': 'sig-pill-amber',
     Grave: 'sig-pill-red', Gravissima: 'sig-pill-red', 'Gravíssima': 'sig-pill-red', 'GravÃ­ssima': 'sig-pill-red' };
 const stages = [ ['all', 'Todas as RNCs'], ['draft', 'Rascunhos'], ['corrective_action', 'Ação corretiva'],
-    ['analysis', 'Em análise'], ['evidence', 'Aguardando evidências'], ['completed', 'Finalizadas'] ];
+    ['analysis', 'Em análise'], ['evidence', 'Aguardando evidências'], ['signatures', 'Assinaturas'], ['completed', 'Finalizadas'] ];
 const statusClass = { draft: '', awaiting_action: 'sig-pill-blue', returned: 'sig-pill-amber',
-    awaiting_review: 'sig-pill-blue', awaiting_evidence: 'sig-pill-blue', completed: 'sig-pill-green' };
-const pdfUrl = (tenant, rnc) => `${route('tenant.qualidade.rnc.pdf', [tenant.slug, rnc.id])}?v=${encodeURIComponent(rnc.updated_at || rnc.notified_at || rnc.id)}`;
+    awaiting_review: 'sig-pill-blue', awaiting_evidence: 'sig-pill-blue', awaiting_signature: 'sig-pill-amber', completed: 'sig-pill-green' };
 const can = (rnc, permission) => rnc.user_permissions?.includes(permission);
 
 function RncActions({ rnc, tenant }) {
@@ -21,16 +22,18 @@ function RncActions({ rnc, tenant }) {
     if (rnc.listing_status === 'draft' && can(rnc, 'notify_rnc')) {
         workflowAction = <Link href={route('tenant.qualidade.rnc.notify', [tenant.slug, rnc.id])} method="post" as="button" preserveScroll className="sig-btn sig-btn-primary"><Bell size={16} />Notificar responsáveis</Link>;
     } else if (['awaiting_action', 'returned'].includes(rnc.listing_status) && can(rnc, 'corrective_action_rnc')) {
-        workflowAction = <Link href={route('tenant.qualidade.rnc.acao-corretiva.create', [tenant.slug, rnc.id])} className="sig-btn sig-btn-primary"><ClipboardCheck size={16} />{rnc.listing_status === 'returned' ? 'Revisar proposta' : 'Ação corretiva'}</Link>;
+        workflowAction = <WorkflowButton tenant={tenant} rncId={rnc.id} stage="proposal">{rnc.listing_status === 'returned' ? 'Revisar proposta' : 'Ação corretiva'}</WorkflowButton>;
     } else if (rnc.listing_status === 'awaiting_review' && can(rnc, 'review_rnc')) {
-        workflowAction = <Link href={route('tenant.qualidade.rnc.analisar-proposta.create', [tenant.slug, rnc.id])} className="sig-btn sig-btn-primary"><SearchCheck size={16} />Analisar proposta</Link>;
+        workflowAction = <WorkflowButton tenant={tenant} rncId={rnc.id} stage="review">Analisar proposta</WorkflowButton>;
     } else if (rnc.listing_status === 'awaiting_evidence' && can(rnc, 'evidence_rnc')) {
-        workflowAction = <Link href={route('tenant.qualidade.rnc.evidencias.create', [tenant.slug, rnc.id])} className="sig-btn sig-btn-primary"><ImagePlus size={16} />Evidenciar correção</Link>;
+        workflowAction = <WorkflowButton tenant={tenant} rncId={rnc.id} stage="evidence">Evidenciar correção</WorkflowButton>;
+    } else if (rnc.listing_status === 'awaiting_signature') {
+        workflowAction = <Link href={`${route('tenant.qualidade.rnc.show', [tenant.slug, rnc.id])}#assinaturas`} className="sig-btn sig-btn-primary">Assinaturas</Link>;
     }
     return <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
         <Link href={route('tenant.qualidade.rnc.show', [tenant.slug, rnc.id])} className="sig-btn sig-btn-secondary" aria-label={`Acessar RNC ${rnc.formatted_number}`}><Eye size={16} />Acessar</Link>
         {can(rnc, 'edit_rnc') && <Link href={route('tenant.qualidade.rnc.edit', [tenant.slug, rnc.id])} className="sig-btn sig-btn-secondary"><Pencil size={16} />Editar</Link>}
-        <a href={pdfUrl(tenant, rnc)} className="sig-btn sig-btn-secondary" target="_blank" rel="noreferrer"><Download size={16} />PDF</a>
+        <PdfDownload tenant={tenant} rnc={rnc} />
         {can(rnc, 'delete_rnc') && <ConfirmActionButton title="Excluir RNC" message={`Deseja excluir a RNC ${rnc.formatted_number}? Ela sairá da listagem, mas o histórico será mantido.`}
             confirmLabel="Excluir RNC" className="sig-btn sig-btn-secondary text-[var(--red)]" onConfirm={() => router.delete(route('tenant.qualidade.rnc.destroy', [tenant.slug, rnc.id]), { preserveScroll: true })}><Trash2 size={16} />Excluir</ConfirmActionButton>}
         {workflowAction}
@@ -84,7 +87,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
                 return <button type="button" key={stage} onClick={() => filterRncs({ ...search.data, stage, status: '' })} className={`sig-btn ${active ? 'sig-btn-primary' : 'sig-btn-secondary'}`} aria-pressed={active}>{label}<span className={`rounded-full px-2 py-0.5 tabular-nums ${active ? 'bg-white/20' : 'bg-slate-100 text-slate-700'}`}>{stageCounts[stage] || 0}</span></button>;
             })}</nav>
             <form onSubmit={(event) => { event.preventDefault(); filterRncs(search.data); }} className="sig-card grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
-                <FilterField id="rnc-search" label="Buscar RNC"><input id="rnc-search" value={search.data.q} onChange={(event) => filterRncs({ ...search.data, q: event.target.value }, 350)} placeholder="Número ou descrição da RNC" maxLength={120} className="w-full rounded-lg border-slate-300 text-sm" /></FilterField>
+                <FilterField id="rnc-search" label="Buscar RNC"><input id="rnc-search" value={search.data.q} onChange={(event) => filterRncs({ ...search.data, q: event.target.value }, 350)} placeholder="Número, assunto ou descrição" maxLength={120} className="w-full rounded-lg border-slate-300 text-sm" /></FilterField>
                 <FilterField id="rnc-contract" label="Contrato"><select id="rnc-contract" value={search.data.contract_id} onChange={(event) => filterRncs({ ...search.data, contract_id: event.target.value, obra_id: '' })} className="w-full min-w-0 rounded-lg border-slate-300 text-sm"><option value="">Todos os contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>)}</select></FilterField>
                 <FilterField id="rnc-status" label="Situação"><select id="rnc-status" value={search.data.status} onChange={(event) => filterRncs({ ...search.data, status: event.target.value, stage: 'all' })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todas as situações</option>{Object.entries(statuses).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></FilterField>
                 <FilterField id="rnc-obra" label="Obra"><select id="rnc-obra" value={search.data.obra_id} onChange={(event) => filterRncs({ ...search.data, obra_id: event.target.value })} className="w-full min-w-0 rounded-lg border-slate-300 text-sm"><option value="">Todas as obras</option>{availableObras.map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} — {obra.nome}</option>)}</select></FilterField>
@@ -96,7 +99,7 @@ export default function RelatorioNaoConformidadeIndex({ tenant, rncs, canCreateR
             <div className="space-y-3" aria-busy={filtering}>
                 {rncs.data.map((rnc) => <article key={rnc.id} className="sig-card min-w-0 p-5">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1 basis-64"><span className="font-mono text-xs font-bold text-[var(--primary)]">RNC {rnc.formatted_number}</span><h2 className="mt-1 line-clamp-2 break-words font-semibold">{rnc.descricao_problema}</h2></div>
+                        <div className="min-w-0 flex-1 basis-64"><span className="font-mono text-xs font-bold text-[var(--primary)]">RNC {rnc.formatted_number}</span><h2 className="mt-1 line-clamp-2 break-words font-semibold">{rnc.assunto || rnc.descricao_problema}</h2></div>
                         <span className={`sig-pill ${statusClass[rnc.listing_status] || ''}`}>{statuses[rnc.listing_status] || rnc.status}</span>
                     </div>
                     <p className="mt-3 break-words text-sm text-[var(--ink-500)]">{rnc.contract?.code}{rnc.contract?.name && ` — ${rnc.contract.name}`} · {[rnc.obra?.codigo, rnc.obra?.nome].filter(Boolean).join(' — ')}</p>

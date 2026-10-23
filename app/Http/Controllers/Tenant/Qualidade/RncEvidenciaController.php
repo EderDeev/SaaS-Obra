@@ -13,19 +13,22 @@ use App\Models\User;
 use App\Notifications\RncEvidenceSubmittedNotification;
 use App\Support\RncPermissions;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RncEvidenciaController extends Controller
 {
-    public function create(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): Response
+    public function create(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): Response|JsonResponse
     {
         $rnc = $this->loadAccessibleRnc($request, $tenant, $rnc);
         $acaoCorretiva = $this->approvedCorrectiveAction($rnc);
@@ -34,11 +37,17 @@ class RncEvidenciaController extends Controller
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::EVIDENCE, $rnc->contract), 403);
         abort_unless($rnc->finalized_at === null && $rnc->evidencias->isEmpty(), 403);
 
-        return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/Evidenciar', [
+        $data = [
             'tenant' => $tenant,
             'rnc' => $rnc,
             'acaoCorretiva' => $this->formatCorrectiveAction($acaoCorretiva),
-        ]);
+            'resolutionOptions' => RelatorioNaoConformidadeEvidencia::RESOLUTION_RESULTS,
+        ];
+        if ($request->expectsJson()) {
+            return response()->json($data)->header('Cache-Control', 'private, no-store');
+        }
+
+        return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/Evidenciar', $data);
     }
 
     public function store(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): RedirectResponse
@@ -46,11 +55,19 @@ class RncEvidenciaController extends Controller
         $rnc = $this->loadAccessibleRnc($request, $tenant, $rnc);
         $acaoCorretiva = $this->approvedCorrectiveAction($rnc);
 
-        abort_unless($acaoCorretiva, 403);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::EVIDENCE, $rnc->contract), 403);
+        if ($request->boolean('from_modal') && (! $acaoCorretiva || $rnc->finalized_at !== null || $rnc->evidencias->isNotEmpty()
+            || (int) $request->input('proposal_id') !== (int) $acaoCorretiva->id)) {
+            throw ValidationException::withMessages(['rnc' => 'Esta RNC não está mais aguardando estas evidências. Feche o modal e atualize a página.']);
+        }
+        abort_unless($acaoCorretiva, 403);
         abort_unless($rnc->finalized_at === null && $rnc->evidencias->isEmpty(), 403);
 
         $data = $request->validate([
+            'from_modal' => ['sometimes', 'boolean'],
+            'proposal_id' => ['nullable', 'integer'],
+            'resolution_result' => ['required', Rule::in(array_keys(RelatorioNaoConformidadeEvidencia::RESOLUTION_RESULTS))],
+            'resolution_reason' => ['nullable', 'required_if:resolution_result,partial,no', 'string', 'max:10000'],
             'evidence_photos' => ['required', 'array', 'min:1', 'max:12'],
             'evidence_photos.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'evidence_photo_comments' => ['nullable', 'array'],
@@ -59,6 +76,10 @@ class RncEvidenciaController extends Controller
             'evidence_photo_positions.*' => ['nullable', 'integer', 'min:1', 'max:999'],
             'attachment' => ['required', 'file', 'mimes:zip', 'max:30720'],
         ], [
+            'resolution_result.required' => 'Informe se o problema foi resolvido.',
+            'resolution_result.in' => 'Selecione uma resposta válida sobre a resolução do problema.',
+            'resolution_reason.required_if' => 'Informe o motivo da resolução parcial ou da não resolução do problema.',
+            'resolution_reason.max' => 'O motivo pode ter no máximo 10000 caracteres.',
             'evidence_photos.required' => 'Envie pelo menos uma imagem evidenciando a correcao.',
             'evidence_photos.*.image' => 'Envie apenas imagens nas evidencias.',
             'evidence_photos.*.max' => 'Cada imagem pode ter no maximo 5 MB.',
@@ -68,11 +89,16 @@ class RncEvidenciaController extends Controller
             'attachment.max' => 'O documento pode ter no maximo 30 MB.',
         ]);
 
+        $needsReason = in_array($data['resolution_result'], ['partial', 'no'], true);
+        if ($needsReason && ! preg_match('/\S/u', $data['resolution_reason'] ?? '')) {
+            throw ValidationException::withMessages(['resolution_reason' => 'Informe o motivo da resolução parcial ou da não resolução do problema.']);
+        }
+        $data['resolution_reason'] = $needsReason ? trim($data['resolution_reason']) : null;
         $zip = $data['attachment'];
         $comments = $data['evidence_photo_comments'] ?? [];
         $positions = $data['evidence_photo_positions'] ?? [];
 
-        $evidencia = DB::transaction(function () use ($tenant, $rnc, $acaoCorretiva, $request, $zip, $comments, $positions): RelatorioNaoConformidadeEvidencia {
+        $evidencia = DB::transaction(function () use ($tenant, $rnc, $acaoCorretiva, $request, $zip, $comments, $positions, $data): RelatorioNaoConformidadeEvidencia {
             $zipPath = $zip->store("tenant-{$tenant->id}/rnc/{$rnc->id}/evidencias", 'public');
 
             $evidencia = $rnc->evidencias()->create([
@@ -84,6 +110,8 @@ class RncEvidenciaController extends Controller
                 'attachment_mime_type' => $zip->getClientMimeType(),
                 'attachment_size' => $zip->getSize(),
                 'submitted_at' => now(),
+                'resolution_result' => $data['resolution_result'],
+                'resolution_reason' => $data['resolution_reason'],
             ]);
 
             foreach ($request->file('evidence_photos', []) as $index => $photo) {
@@ -102,9 +130,7 @@ class RncEvidenciaController extends Controller
             }
 
             $rnc->forceFill([
-                'status' => 'finalizada',
-                'finalized_at' => now(),
-                'finalized_by_id' => $request->user()->id,
+                'status' => 'em_assinatura',
             ])->save();
 
             return $evidencia->loadMissing([
@@ -123,9 +149,8 @@ class RncEvidenciaController extends Controller
         $this->linkedUsersForContract($tenant, $rnc->contract)
             ->each(fn (User $user) => $user->notify($notification));
 
-        return redirect()
-            ->route('tenant.qualidade.rnc.index', $tenant)
-            ->with('success', 'Evidencias enviadas. RNC finalizada e usuarios vinculados notificados.');
+        return (($data['from_modal'] ?? false) ? back() : redirect()->route('tenant.qualidade.rnc.index', $tenant))
+            ->with('success', 'Evidências registradas. A RNC está pronta para envio às partes para assinatura.');
     }
 
     public function download(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc, RelatorioNaoConformidadeEvidencia $evidencia): StreamedResponse

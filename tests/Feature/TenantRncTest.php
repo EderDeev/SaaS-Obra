@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Contract;
 use App\Models\Disciplina;
 use App\Models\Empresa;
+use App\Models\InstrucaoCampo;
 use App\Models\Obra;
 use App\Models\ProjectDocument;
 use App\Models\RelatorioNaoConformidade;
@@ -14,8 +15,8 @@ use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\TipoEmpresa;
 use App\Models\User;
-use App\Notifications\RncCorrectiveActionSubmittedNotification;
 use App\Notifications\RncCorrectiveActionReviewedNotification;
+use App\Notifications\RncCorrectiveActionSubmittedNotification;
 use App\Notifications\RncEvidenceSubmittedNotification;
 use App\Notifications\RncResponsibleNotification;
 use App\Support\RncPermissions;
@@ -139,6 +140,7 @@ class TenantRncTest extends TestCase
                 'longitude' => '-46.6340000',
                 'disciplina_id' => $ambiental->id,
                 'gravidade' => 'Grave',
+                'assunto' => 'Não conformidade no concreto',
                 'descricao_problema' => 'Descricao atualizada da RNC.',
                 'observacao' => 'Observacao ajustada.',
                 'acoes_corretivas_recomendadas' => 'Acao recomendada atualizada.',
@@ -156,7 +158,217 @@ class TenantRncTest extends TestCase
         $this->assertSame('Ambiental', $rnc->natureza);
         $this->assertSame('Grave', $rnc->gravidade);
         $this->assertSame('Descricao atualizada da RNC.', $rnc->descricao_problema);
+        $this->assertSame('Não conformidade no concreto', $rnc->assunto);
         $this->assertSame('2026-05-30', $rnc->prazo_resposta_acao_corretiva->toDateString());
+    }
+
+    public function test_rnc_subject_is_required_and_searchable(): void
+    {
+        [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        $this->postRnc($tenant, $user, $obra, $contratante, $contratada, '2026-05-16');
+        $rnc = RelatorioNaoConformidade::query()->sole();
+        $this->assertSame('Não conformidade no concreto', $rnc->assunto);
+        $payload = $rnc->only(['obra_id', 'contratante_empresa_id', 'contratada_empresa_id', 'disciplina_id', 'gravidade',
+            'descricao_problema', 'acoes_corretivas_recomendadas']);
+        $payload += ['opened_at' => '2026-05-16', 'prazo_resposta_acao_corretiva' => '2026-05-25'];
+        foreach (['', ' ', str_repeat('x', 256)] as $subject) {
+            $this->patch(route('tenant.qualidade.rnc.update', [$tenant, $rnc]), $payload + ['assunto' => $subject])->assertSessionHasErrors('assunto');
+        }
+        $this->patch(route('tenant.qualidade.rnc.update', [$tenant, $rnc]), $payload + ['assunto' => 'Junta de dilatação'])->assertSessionHasNoErrors();
+        $this->get(route('tenant.qualidade.rnc.index', [$tenant, 'q' => 'dilatação']))->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page->where('rncs.total', 1)->where('rncs.data.0.assunto', 'Junta de dilatação'));
+    }
+
+    public function test_rnc_can_reference_a_communicated_ic_and_keep_or_clear_that_reference_on_edit(): void
+    {
+        [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        $base = $this->createRnc($tenant, $user, $contract, $obra, $contratante, $contratada);
+        $ic = $this->referenceIc($base);
+        $this->referenceIc($base, ['status' => 'draft', 'notified_at' => null]);
+        $deleted = $this->referenceIc($base);
+        $deleted->delete();
+        $this->actingAs($user)->get(route('tenant.qualidade.rnc.create', $tenant))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->has('instrucoesCampo', 1)->where('instrucoesCampo.0.id', $ic->id)->where('instrucoesCampo.0.assunto', $ic->assunto));
+        $payload = $this->referenceRncPayload($base);
+        $this->post(route('tenant.qualidade.rnc.store', $tenant), $payload + ['instrucao_campo_id' => $ic->id])->assertSessionHasNoErrors()->assertRedirect();
+        $rnc = RelatorioNaoConformidade::latest('id')->firstOrFail();
+        $this->assertSame($ic->id, $rnc->instrucao_campo_id);
+        $this->assertSame('notified', $ic->fresh()->status);
+        $this->get(route('tenant.qualidade.rnc.show', [$tenant, $rnc]))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('rnc.instrucao_campo.id', $ic->id)->where('rnc.instrucao_campo.can_view', true)
+            ->where('rnc.instrucao_campo.assunto', $ic->assunto)->has('rnc.instrucao_campo.notified_at')->missing('rnc.instrucao_campo.instrucao'));
+        $this->get(route('tenant.qualidade.rnc.edit', [$tenant, $rnc]))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('rnc.instrucao_campo_id', $ic->id)->where('rnc.instrucao_campo.id', $ic->id));
+        $this->patch(route('tenant.qualidade.rnc.update', [$tenant, $rnc]), $payload)->assertSessionHasNoErrors();
+        $this->assertSame($ic->id, $rnc->fresh()->instrucao_campo_id);
+        $this->patch(route('tenant.qualidade.rnc.update', [$tenant, $rnc]), $payload + ['instrucao_campo_id' => null])->assertSessionHasNoErrors();
+        $this->assertNull($rnc->fresh()->instrucao_campo_id);
+    }
+
+    public function test_rnc_rejects_ic_references_from_another_work_tenant_or_uncommunicated_records(): void
+    {
+        [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        $rnc = $this->createRnc($tenant, $user, $contract, $obra, $contratante, $contratada);
+        $draft = $this->referenceIc($rnc, ['status' => 'draft', 'notified_at' => null]);
+        $uncommunicated = $this->referenceIc($rnc, ['notified_at' => null]);
+        $otherWork = $tenant->obras()->create(['contract_id' => $contract->id, 'codigo' => 'OTHER', 'nome' => 'Outra obra', 'tipo' => 'pai']);
+        $differentWork = $this->referenceIc($rnc, ['obra_id' => $otherWork->id]);
+        $deleted = $this->referenceIc($rnc);
+        $deleted->delete();
+        $otherTenant = Tenant::create(['name' => 'Outra empresa', 'slug' => 'other-ic-reference', 'status' => 'active', 'plan' => 'starter']);
+        $otherContract = $otherTenant->contracts()->create(['code' => 'OTHER-CT', 'name' => 'Outro contrato', 'status' => 'active']);
+        $otherObra = $otherTenant->obras()->create(['contract_id' => $otherContract->id, 'codigo' => 'OTHER-OB', 'nome' => 'Outra obra', 'tipo' => 'pai']);
+        $otherDisciplina = $this->disciplina($otherTenant, $otherContract, 'Qualidade', 'QUA');
+        $otherCompany = $this->empresa($otherTenant, $otherContract, 'Outra empresa', '33.333.333/0001-33');
+        $foreign = $this->referenceIc($rnc, ['tenant_id' => $otherTenant->id, 'contract_id' => $otherContract->id,
+            'obra_id' => $otherObra->id, 'disciplina_id' => $otherDisciplina->id,
+            'contratante_empresa_id' => $otherCompany->id, 'contratada_empresa_id' => $otherCompany->id]);
+        $payload = $this->referenceRncPayload($rnc);
+        foreach ([$draft->id, $uncommunicated->id, $differentWork->id, $deleted->id, $foreign->id, 999999] as $id) {
+            $this->actingAs($user)->post(route('tenant.qualidade.rnc.store', $tenant), $payload + ['instrucao_campo_id' => $id])->assertSessionHasErrors('instrucao_campo_id');
+            $this->patch(route('tenant.qualidade.rnc.update', [$tenant, $rnc]), $payload + ['instrucao_campo_id' => $id])->assertSessionHasErrors('instrucao_campo_id');
+        }
+        $this->assertDatabaseCount('relatorio_nao_conformidades', 1);
+        $this->assertNull($rnc->fresh()->instrucao_campo_id);
+    }
+
+    public function test_rnc_ic_selector_respects_ic_permissions_and_keeps_existing_reference_without_granting_access(): void
+    {
+        [$tenant, $owner, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        $rnc = $this->createRnc($tenant, $owner, $contract, $obra, $contratante, $contratada);
+        $ic = $this->referenceIc($rnc);
+        $user = User::factory()->create();
+        $tenant->memberships()->create(['user_id' => $user->id, 'role' => 'team_member', 'status' => 'active']);
+        $this->makeRncResponsible($tenant, $contract, $user, $owner);
+        RelatorioNaoConformidadeResponsavel::where('user_id', $user->id)->update(['permissions' => [RncPermissions::CREATE, RncPermissions::EDIT, RncPermissions::VIEW]]);
+        $payload = $this->referenceRncPayload($rnc);
+        $this->actingAs($user)->get(route('tenant.qualidade.rnc.create', $tenant))->assertOk()->assertInertia(fn (Assert $p) => $p->has('instrucoesCampo', 0));
+        $this->post(route('tenant.qualidade.rnc.store', $tenant), $payload + ['instrucao_campo_id' => $ic->id])->assertSessionHasErrors('instrucao_campo_id');
+        $rnc->update(['instrucao_campo_id' => $ic->id]);
+        $this->get(route('tenant.qualidade.rnc.show', [$tenant, $rnc]))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('rnc.instrucao_campo.id', $ic->id)->where('rnc.instrucao_campo.can_view', false));
+        $this->patch(route('tenant.qualidade.rnc.update', [$tenant, $rnc]), $payload + ['instrucao_campo_id' => $ic->id])->assertSessionHasNoErrors();
+        $this->assertSame($ic->id, $rnc->fresh()->instrucao_campo_id);
+        $this->get(route('tenant.qualidade.ic.show', [$tenant, $ic]))->assertForbidden();
+    }
+
+    public function test_rnc_workflow_modals_load_authorized_data_keep_list_filters_and_reject_stale_submissions(): void
+    {
+        Notification::fake();
+        Storage::fake('public');
+        [$tenant, $owner, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        $rnc = $this->createRnc($tenant, $owner, $contract, $obra, $contratante, $contratada);
+        $rnc->update(['notified_at' => now()]);
+        $outsider = User::factory()->create();
+        $tenant->memberships()->create(['user_id' => $outsider->id, 'role' => 'team_member', 'status' => 'active']);
+        $contract->participants()->create(['tenant_id' => $tenant->id, 'user_id' => $outsider->id, 'role' => 'team_member', 'side' => 'contractor', 'status' => 'active']);
+        $list = route('tenant.qualidade.rnc.index', [$tenant, 'contract_id' => $contract->id, 'q' => 'concreto']);
+        $proposalGet = route('tenant.qualidade.rnc.acao-corretiva.create', [$tenant, $rnc]);
+        $proposalPost = route('tenant.qualidade.rnc.acao-corretiva.store', [$tenant, $rnc]);
+        $reviewGet = route('tenant.qualidade.rnc.analisar-proposta.create', [$tenant, $rnc]);
+        $reviewPost = route('tenant.qualidade.rnc.analisar-proposta.store', [$tenant, $rnc]);
+        $evidenceGet = route('tenant.qualidade.rnc.evidencias.create', [$tenant, $rnc]);
+        $evidencePost = route('tenant.qualidade.rnc.evidencias.store', [$tenant, $rnc]);
+        $zip = fn () => UploadedFile::fake()->create('documentos.zip', 8, 'application/zip');
+
+        $this->actingAs($outsider)->getJson($proposalGet)->assertForbidden();
+        $this->actingAs($owner)->getJson($proposalGet)->assertOk()->assertJsonPath('rnc.id', $rnc->id)->assertJsonCount(0, 'acoesCorretivas')
+            ->assertHeader('Cache-Control', 'no-store, private');
+        $proposal = ['from_modal' => true, 'descricao_proposta' => 'Refazer o acabamento.', 'prazo_execucao_proposto' => '2026-06-10'];
+        $this->from($list)->post($proposalPost, $proposal + ['attachment' => $zip()])->assertSessionHasNoErrors()->assertRedirect($list);
+        $action = $rnc->acoesCorretivas()->sole();
+        $this->from($list)->post($proposalPost, $proposal + ['attachment' => $zip()])->assertSessionHasErrors('rnc');
+        $this->assertSame(1, $rnc->acoesCorretivas()->count());
+
+        $this->actingAs($outsider)->getJson($reviewGet)->assertForbidden();
+        $this->actingAs($owner)->getJson($reviewGet)->assertOk()->assertJsonPath('acaoCorretiva.id', $action->id)
+            ->assertJsonPath('acaoCorretiva.status', 'pending')->assertHeader('Cache-Control', 'no-store, private');
+        $review = ['from_modal' => true, 'decision' => 'approved', 'review_observation' => 'Proposta aprovada para execução.'];
+        $this->from($list)->post($reviewPost, $review + ['proposal_id' => $action->id + 100])->assertSessionHasErrors('rnc');
+        $this->assertSame('pending', $action->fresh()->status);
+        $this->from($list)->post($reviewPost, $review + ['proposal_id' => $action->id])->assertSessionHasNoErrors()->assertRedirect($list);
+        $this->from($list)->post($reviewPost, $review + ['proposal_id' => $action->id])->assertSessionHasErrors('rnc');
+        $this->assertSame('approved', $action->fresh()->status);
+
+        $this->actingAs($outsider)->getJson($evidenceGet)->assertForbidden();
+        $this->actingAs($owner)->getJson($evidenceGet)->assertOk()->assertJsonPath('acaoCorretiva.id', $action->id)
+            ->assertJsonPath('rnc.id', $rnc->id)->assertHeader('Cache-Control', 'no-store, private');
+        $this->from($list)->post($evidencePost, ['from_modal' => true, 'proposal_id' => $action->id + 100])->assertSessionHasErrors('rnc');
+        $this->assertNull($rnc->fresh()->finalized_at);
+        $evidence = ['from_modal' => true, 'proposal_id' => $action->id, 'resolution_result' => 'yes', 'evidence_photos' => [$this->fakePhotoUpload()],
+            'evidence_photo_comments' => ['Acabamento corrigido.'], 'evidence_photo_positions' => [1], 'attachment' => $zip()];
+        $this->from($list)->post($evidencePost, $evidence)->assertSessionHasNoErrors()->assertRedirect($list);
+        $this->assertSame('em_assinatura', $rnc->fresh()->status);
+        $this->assertNull($rnc->fresh()->finalized_at);
+        $this->assertSame('Acabamento corrigido.', $rnc->evidencias()->sole()->photos()->sole()->comment);
+        $this->from($list)->post($evidencePost, ['from_modal' => true, 'proposal_id' => $action->id])->assertSessionHasErrors('rnc');
+        $this->assertSame(1, $rnc->evidencias()->count());
+        Notification::assertSentTo($owner, RncEvidenceSubmittedNotification::class);
+    }
+
+    public function test_rnc_evidence_requires_an_answer_and_reasons_for_partial_or_unresolved_results(): void
+    {
+        Notification::fake();
+        Storage::fake('public');
+        [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+        $base = $this->createRnc($tenant, $user, $contract, $obra, $contratante, $contratada);
+        foreach (RelatorioNaoConformidadeEvidencia::RESOLUTION_RESULTS as $answer => $label) {
+            $rnc = $base->replicate();
+            $rnc->forceFill(['sequence_number' => RelatorioNaoConformidade::max('sequence_number') + 1, 'notified_at' => now()])->save();
+            $action = $this->createCorrectiveAction($tenant, $rnc, $user);
+            $action->update(['status' => 'approved', 'reviewed_at' => now(), 'reviewed_by_id' => $user->id]);
+            $endpoint = route('tenant.qualidade.rnc.evidencias.store', [$tenant, $rnc]);
+            $list = route('tenant.qualidade.rnc.index', $tenant);
+            $payload = ['from_modal' => true, 'proposal_id' => $action->id, 'evidence_photos' => [$this->fakePhotoUpload()],
+                'attachment' => UploadedFile::fake()->create('evidencias.zip', 8, 'application/zip')];
+            $this->actingAs($user)->getJson(route('tenant.qualidade.rnc.evidencias.create', [$tenant, $rnc]))->assertOk()
+                ->assertJsonPath('resolutionOptions', RelatorioNaoConformidadeEvidencia::RESOLUTION_RESULTS);
+            $this->from($list)->post($endpoint, $payload)->assertSessionHasErrors('resolution_result');
+            $this->from($list)->post($endpoint, $payload + ['resolution_result' => 'invalid'])->assertSessionHasErrors('resolution_result');
+            if ($answer !== 'yes') {
+                foreach ([null, '', '   ', str_repeat('x', 10001)] as $reason) {
+                    $this->from($list)->post($endpoint, $payload + ['resolution_result' => $answer, 'resolution_reason' => $reason])->assertSessionHasErrors('resolution_reason');
+                }
+            }
+            $this->assertNull($rnc->fresh()->finalized_at);
+            $this->assertSame(0, $rnc->evidencias()->count());
+            $this->assertSame([], Storage::disk('public')->allFiles("tenant-{$tenant->id}/rnc/{$rnc->id}/evidencias"));
+            $reason = $answer === 'yes' ? 'Texto anterior que deve ser descartado.' : '  O acabamento ainda apresenta falhas no trecho norte.  ';
+            $this->from($list)->post($endpoint, $payload + ['resolution_result' => $answer, 'resolution_reason' => $reason])->assertSessionHasNoErrors()->assertRedirect($list);
+            $evidence = $rnc->evidencias()->sole();
+            $this->assertSame($answer, $evidence->resolution_result);
+            $this->assertSame($label, $evidence->resolution_label);
+            $this->assertSame($answer === 'yes' ? null : trim($reason), $evidence->resolution_reason);
+            $this->get(route('tenant.qualidade.rnc.show', [$tenant, $rnc]))->assertOk()->assertInertia(fn (Assert $p) => $p
+                ->where('rnc.evidencias.0.resolution_result', $answer)->where('rnc.evidencias.0.resolution_label', $label)
+                ->where('rnc.evidencias.0.resolution_reason', $evidence->resolution_reason));
+            $notification = new RncEvidenceSubmittedNotification($evidence, $user);
+            $this->assertStringContainsString($label, $notification->toArray($user)['body']);
+            $mail = view('emails.rnc-evidence-submitted-text', ['rnc' => $rnc, 'evidencia' => $evidence, 'actor' => $user,
+                'notifiable' => $user, 'url' => '/', 'systemUrl' => '/'])->render();
+            $this->assertStringContainsString($label, $mail);
+            if ($evidence->resolution_reason) $this->assertStringContainsString(trim($reason), $mail);
+        }
+        $this->assertSame('Não informado', (new RelatorioNaoConformidadeEvidencia)->resolution_label);
+    }
+
+    private function referenceIc(RelatorioNaoConformidade $rnc, array $overrides = []): InstrucaoCampo
+    {
+        return InstrucaoCampo::create(array_replace([
+            'tenant_id' => $rnc->tenant_id, 'contract_id' => $rnc->contract_id, 'obra_id' => $rnc->obra_id,
+            'disciplina_id' => $rnc->disciplina_id, 'contratante_empresa_id' => $rnc->contratante_empresa_id,
+            'contratada_empresa_id' => $rnc->contratada_empresa_id, 'created_by_id' => $rnc->created_by_id,
+            'sequence_number' => (InstrucaoCampo::withTrashed()->max('sequence_number') ?? 0) + 1, 'sequence_year' => 2026,
+            'opened_at' => '2026-05-14', 'notified_at' => '2026-05-15 12:00:00', 'gravidade' => 'Leve',
+            'assunto' => 'Aviso sobre acabamento do concreto', 'instrucao' => 'Corrigir o acabamento.', 'status' => 'notified',
+        ], $overrides));
+    }
+
+    private function referenceRncPayload(RelatorioNaoConformidade $rnc): array
+    {
+        return $rnc->only(['obra_id', 'disciplina_id', 'contratante_empresa_id', 'contratada_empresa_id', 'gravidade', 'assunto',
+            'descricao_problema', 'observacao', 'acoes_corretivas_recomendadas'])
+            + ['opened_at' => '2026-05-16', 'prazo_resposta_acao_corretiva' => '2026-05-25'];
     }
 
     public function test_tenant_user_can_create_rnc_with_photos(): void
@@ -175,6 +387,7 @@ class TenantRncTest extends TestCase
                 'longitude' => '-46.6333080',
                 'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Grave',
+                'assunto' => 'Não conformidade no concreto',
                 'descricao_problema' => 'Concreto com acabamento fora do padrão.',
                 'observacao' => 'Registro aberto durante inspeção de campo.',
                 'acoes_corretivas_recomendadas' => 'Executar correção superficial e enviar evidência.',
@@ -250,6 +463,7 @@ class TenantRncTest extends TestCase
                 'opened_at' => '2026-05-16',
                 'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Leve',
+                'assunto' => 'Não conformidade no concreto',
                 'descricao_problema' => 'Problema identificado no projeto.',
                 'acoes_corretivas_recomendadas' => 'Corrigir e apresentar evidencia.',
                 'prazo_resposta_acao_corretiva' => '2026-05-20',
@@ -310,6 +524,7 @@ class TenantRncTest extends TestCase
                 'opened_at' => '2026-05-16',
                 'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Leve',
+                'assunto' => 'Não conformidade no concreto',
                 'descricao_problema' => 'Problema comum aos dois projetos.',
                 'acoes_corretivas_recomendadas' => 'Compatibilizar os projetos.',
                 'prazo_resposta_acao_corretiva' => '2026-05-20',
@@ -365,6 +580,7 @@ class TenantRncTest extends TestCase
         [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
         $rnc = $this->createRnc($tenant, $user, $contract, $obra, $contratante, $contratada);
         $rnc->update([
+            'assunto' => 'Não conformidade no concreto',
             'descricao_problema' => "Primeiro paragrafo.\n\nSegundo paragrafo.",
             'observacao' => "Item 1\nItem 2\n\nItem 3",
             'acoes_corretivas_recomendadas' => "Acao inicial.\n\nAcao complementar.",
@@ -390,7 +606,7 @@ class TenantRncTest extends TestCase
             ->assertHeader('content-type', 'application/pdf');
 
         $this->assertStringStartsWith('inline;', (string) $response->headers->get('content-disposition'));
-        $this->assertStringContainsString('RNC-001-2026.pdf', (string) $response->headers->get('content-disposition'));
+        $this->assertStringContainsString('RNC-001-2026-evidence.pdf', (string) $response->headers->get('content-disposition'));
     }
 
     public function test_tenant_user_can_open_rnc_preview(): void
@@ -757,6 +973,7 @@ class TenantRncTest extends TestCase
 
         $this->actingAs($responsible)
             ->post(route('tenant.qualidade.rnc.evidencias.store', [$tenant, $rnc]), [
+                'resolution_result' => 'yes',
                 'evidence_photos' => [$this->fakePhotoUpload()],
                 'evidence_photo_comments' => ['Foto da correcao executada.'],
                 'evidence_photo_positions' => [1],
@@ -784,9 +1001,9 @@ class TenantRncTest extends TestCase
 
         $rnc->refresh();
 
-        $this->assertSame('finalizada', $rnc->status);
-        $this->assertSame($responsible->id, $rnc->finalized_by_id);
-        $this->assertNotNull($rnc->finalized_at);
+        $this->assertSame('em_assinatura', $rnc->status);
+        $this->assertNull($rnc->finalized_by_id);
+        $this->assertNull($rnc->finalized_at);
 
         Notification::assertSentTo($responsible, RncEvidenceSubmittedNotification::class, function ($notification, array $channels): bool {
             return in_array('database', $channels, true) && in_array('mail', $channels, true);
@@ -975,6 +1192,7 @@ class TenantRncTest extends TestCase
                 'opened_at' => '2026-05-16',
                 'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Leve',
+                'assunto' => 'Não conformidade no concreto',
                 'descricao_problema' => 'Problema',
                 'acoes_corretivas_recomendadas' => 'Ação',
                 'prazo_resposta_acao_corretiva' => '2026-05-20',
@@ -1015,6 +1233,7 @@ class TenantRncTest extends TestCase
                 'opened_at' => '2026-05-16',
                 'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Leve',
+                'assunto' => 'Não conformidade no concreto',
                 'descricao_problema' => 'Problema',
                 'acoes_corretivas_recomendadas' => 'Acao',
                 'prazo_resposta_acao_corretiva' => '2026-05-20',
@@ -1107,6 +1326,7 @@ class TenantRncTest extends TestCase
             'longitude' => '-46.6333080',
             'natureza' => $disciplina->nome,
             'gravidade' => 'Grave',
+            'assunto' => 'Não conformidade no concreto',
             'descricao_problema' => 'Concreto com acabamento fora do padrao.',
             'observacao' => 'Registro aberto durante inspecao de campo.',
             'acoes_corretivas_recomendadas' => 'Executar correcao superficial e enviar evidencia.',
@@ -1129,6 +1349,7 @@ class TenantRncTest extends TestCase
                 'opened_at' => $openedAt,
                 'disciplina_id' => $disciplina->id,
                 'gravidade' => 'Leve',
+                'assunto' => 'Não conformidade no concreto',
                 'descricao_problema' => 'Problema',
                 'acoes_corretivas_recomendadas' => 'Acao',
                 'prazo_resposta_acao_corretiva' => $openedAt,

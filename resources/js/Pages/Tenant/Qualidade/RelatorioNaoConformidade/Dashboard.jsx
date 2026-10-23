@@ -48,11 +48,12 @@ export default function RelatorioNaoConformidadeDashboard({
                     </Link>
                 </div>
 
-                <div className="quality-metrics-grid grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5 xl:gap-4">
+                <div className="quality-metrics-grid grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-6 xl:gap-4">
                     <MetricCard icon={ClipboardX} label="Total de RNCs" value={metrics.total} tone="blue" />
                     <MetricCard icon={AlertTriangle} label="Atraso resposta" value={metrics.atrasoResposta} tone="red" />
                     <MetricCard icon={Clock3} label="Atraso execucao" value={metrics.atrasoExecucao} tone="red" />
                     <MetricCard icon={SearchCheck} label="Em analise" value={metrics.emAnalise} tone="amber" />
+                    <MetricCard icon={Clock3} label="Aguardando assinaturas" value={metrics.aguardandoAssinaturas || 0} tone="amber" />
                     <MetricCard icon={CheckCircle2} label="Finalizadas" value={metrics.finalizadas} tone="green" />
                 </div>
 
@@ -89,7 +90,8 @@ export default function RelatorioNaoConformidadeDashboard({
                                             <span className={`sig-pill shrink-0 ${statusClass[rnc.status] || ''}`}>{rnc.status}</span>
                                         </div>
                                         <div className="mt-2 break-words text-[13px] font-semibold text-[var(--ink-900)]">
-                                            {rnc.obra?.codigo || '-'} - {rnc.obra?.nome || '-'}
+                                            {rnc.assunto || rnc.descricao_problema}
+                                </div><div className="mt-1 text-xs text-[var(--ink-500)]">{rnc.obra?.codigo || '-'} - {rnc.obra?.nome || '-'}
                                         </div>
                                         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--ink-500)]">
                                             <span>{rncDisciplinaLabel(rnc)}</span>
@@ -193,7 +195,8 @@ function DelayPanel({ tenant, title, eyebrow, items, type }) {
                                     <span className="sig-pill sig-pill-red">{badge}</span>
                                 </div>
                                 <div className="mt-2 text-[13px] font-semibold text-[var(--ink-900)]">
-                                    {rnc.obra?.codigo || '-'} - {rnc.obra?.nome || '-'}
+                                    {rnc.assunto || rnc.descricao_problema}
+                                </div><div className="mt-1 text-xs text-[var(--ink-500)]">{rnc.obra?.codigo || '-'} - {rnc.obra?.nome || '-'}
                                 </div>
                                 <div className="mt-1 text-[12px] text-[var(--ink-500)]">
                                     {isExecution ? 'Prazo execucao' : 'Prazo resposta'}: {shortDate(deadline)}

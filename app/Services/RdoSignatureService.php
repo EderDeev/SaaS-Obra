@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\RdoDiario;
+use App\Models\RelatorioNaoConformidade;
 use App\Models\RdoResponsavel;
 use App\Models\RdoSignatureRequest;
 use App\Models\RdoSignatureSigner;
@@ -159,6 +160,16 @@ class RdoSignatureService
             return null;
         }
 
+        if ($request->relatorio_nao_conformidade_id) {
+            // A webhook is a signal to consult the authenticated provider API,
+            // never evidence that the selected parties have signed the PDF.
+            if ($request->provider !== 'opensign') return null;
+            $request->update(['webhook_payload' => $payload]);
+            return $this->refreshFromProvider($request);
+        }
+
+        if ($request->relatorio_nao_conformidade_id && $request->status === 'completed' && $request->rnc?->finalized_at) return $request;
+
         $providerStatus = $this->statusFromProviderPayload($payload, 'sent');
         $status = $providerStatus === 'completed' ? 'pending' : $providerStatus;
         $request->update([
@@ -190,11 +201,12 @@ class RdoSignatureService
             ]);
         }
 
-        return $request->fresh(['rdo', 'signers']);
+        return $this->finalizeRncIfReady($request)->fresh(['rdo', 'signers']);
     }
 
     public function refreshFromProvider(RdoSignatureRequest $request): RdoSignatureRequest
     {
+        if ($request->relatorio_nao_conformidade_id && $request->status === 'completed' && $request->rnc?->finalized_at) return $request->loadMissing('signers');
         $request->loadMissing(['tenant', 'rdo', 'signers']);
 
         if ($request->provider !== 'opensign') {
@@ -202,12 +214,12 @@ class RdoSignatureService
                 $this->markAllSignersCompleted($request, $request->provider_payload ?? []);
             }
 
-            return $request->fresh(['rdo', 'signers']);
+            return $this->finalizeRncIfReady($request)->fresh(['rdo', 'signers']);
         }
 
         $documentId = $request->provider_document_id ?: $request->provider_request_id;
         if (! $documentId) {
-            return $request->fresh(['rdo', 'signers']);
+            return $this->finalizeRncIfReady($request)->fresh(['rdo', 'signers']);
         }
 
         $document = app(OpenSignSignatureProvider::class)->getDocument((string) $documentId);
@@ -216,7 +228,7 @@ class RdoSignatureService
                 'error_message' => "OpenSign marcou a assinatura como {$request->status}, mas a consulta do documento {$documentId} não retornou dados.",
             ]);
 
-            return $request->fresh(['rdo', 'signers']);
+            return $this->finalizeRncIfReady($request)->fresh(['rdo', 'signers']);
         }
 
         $providerStatus = $this->statusFromProviderPayload($document, $request->status ?: 'sent');
@@ -252,7 +264,7 @@ class RdoSignatureService
             ]);
         }
 
-        return $request->fresh(['rdo', 'signers']);
+        return $this->finalizeRncIfReady($request)->fresh(['rdo', 'signers']);
     }
 
     private function storeCompletedArtifacts(RdoSignatureRequest $request, array $payload): void
@@ -265,7 +277,7 @@ class RdoSignatureService
             }
         }
 
-        $signedUrl = $this->findProviderUrl($providerPayload, [
+        $signedKeys = [
             'file',
             'signedurl',
             'signed_url',
@@ -279,7 +291,9 @@ class RdoSignatureService
             'completedfile',
             'finalpdfurl',
             'documenturl',
-        ]);
+        ];
+        if ($request->relatorio_nao_conformidade_id) $signedKeys = array_values(array_diff($signedKeys, ['file', 'documenturl']));
+        $signedUrl = $this->findProviderUrl($providerPayload, $signedKeys);
         $certificateUrl = $this->findProviderUrl($providerPayload, [
             'certificateurl',
             'certificate',
@@ -400,16 +414,35 @@ class RdoSignatureService
             return null;
         }
 
-        $fileName = sprintf(
-            'rdo-%s-%s-%d.pdf',
-            Str::slug($request->rdo?->code ?: (string) $request->rdo_diario_id),
-            $suffix,
-            $request->id,
-        );
-        $path = "tenant-{$request->tenant_id}/rdo/{$request->rdo_diario_id}/assinaturas/{$fileName}";
-        Storage::disk('public')->put($path, $response->body());
+        if ($request->relatorio_nao_conformidade_id) {
+            if (!str_starts_with(ltrim($response->body()), '%PDF-')) return null;
+            $fileName = "rnc-{$request->relatorio_nao_conformidade_id}-{$suffix}-{$request->id}.pdf";
+            $path = "tenants/{$request->tenant_id}/rnc/{$request->relatorio_nao_conformidade_id}/assinaturas/{$fileName}";
+        } else {
+            $fileName = sprintf('rdo-%s-%s-%d.pdf', Str::slug($request->rdo?->code ?: (string) $request->rdo_diario_id), $suffix, $request->id);
+            $path = "tenant-{$request->tenant_id}/rdo/{$request->rdo_diario_id}/assinaturas/{$fileName}";
+        }
+        Storage::disk($request->artifactDisk())->put($path, $response->body());
 
         return $path;
+    }
+
+    private function finalizeRncIfReady(RdoSignatureRequest $request): RdoSignatureRequest
+    {
+        if (!$request->relatorio_nao_conformidade_id || $request->status !== 'completed') return $request;
+        $request->loadMissing('signers');
+        if (!$this->allSignersConfirmedCompleted($request) || !$request->signed_pdf_path
+            || !Storage::disk($request->artifactDisk())->exists($request->signed_pdf_path)) {
+            $request->update(['status' => 'pending', 'completed_at' => null]);
+            return $request;
+        }
+        DB::transaction(function () use ($request) {
+            $rnc = RelatorioNaoConformidade::where('tenant_id', $request->tenant_id)->whereKey($request->relatorio_nao_conformidade_id)->lockForUpdate()->first();
+            if ($rnc && !$rnc->finalized_at && $rnc->evidencias()->whereKey(data_get($request->request_payload, 'evidence_id'))->exists()) {
+                $rnc->update(['status' => 'finalizada', 'finalized_at' => $request->completed_at ?: now(), 'finalized_by_id' => $request->requested_by_id]);
+            }
+        });
+        return $request;
     }
 
     private function storeUnsignedPdf(Tenant $tenant, RdoDiario $rdo, RdoSignatureRequest $request): string
@@ -535,7 +568,7 @@ class RdoSignatureService
             ));
     }
 
-    private function syncProviderSigners(RdoSignatureRequest $request, array $providerSigners): void
+    public function syncProviderSigners(RdoSignatureRequest $request, array $providerSigners): void
     {
         collect($providerSigners)->each(function (array $providerSigner) use ($request): void {
             $email = Str::lower((string) ($providerSigner['email'] ?? ''));

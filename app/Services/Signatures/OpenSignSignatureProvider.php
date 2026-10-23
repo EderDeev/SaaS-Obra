@@ -13,6 +13,9 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
 {
     public function createRequest(RdoSignatureRequest $request, string $absolutePdfPath): array
     {
+        if ($request->relatorio_nao_conformidade_id) {
+            $request->loadMissing(['rnc', 'signers']);
+        } else {
         $request->loadMissing([
             'rdo.contract',
             'rdo.obra:id,nome,codigo',
@@ -20,6 +23,7 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
             'rdo.secoes',
             'signers',
         ]);
+        }
         $baseUrl = rtrim((string) config('signatures.opensign.base_url'), '/');
         $apiKey = (string) config('signatures.opensign.api_key');
         $path = '/'.ltrim((string) config('signatures.opensign.create_request_path'), '/');
@@ -41,12 +45,12 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
         $payload = [
             'file' => base64_encode($pdf),
             'title' => $request->title,
-            'note' => 'Assinatura digital do RDO '.$request->rdo?->code,
+            'note' => $request->relatorio_nao_conformidade_id ? 'Assinatura digital da RNC '.$request->rnc?->formatted_number : 'Assinatura digital do RDO '.$request->rdo?->code,
             'description' => 'Documento gerado pelo SigWorks para assinatura dos responsáveis.',
             'timeToCompleteDays' => (int) config('signatures.opensign.time_to_complete_days', 15),
             'send_email' => true,
             'email_subject' => 'Assinatura solicitada: {{document_title}}',
-            'email_body' => $this->signatureEmailBody(),
+            'email_body' => $request->relatorio_nao_conformidade_id ? str_replace('RDO', 'RNC', $this->signatureEmailBody()) : $this->signatureEmailBody(),
             'sendInOrder' => false,
             'hide_signer_signing_links' => false,
             'enableOTP' => false,
@@ -327,6 +331,7 @@ HTML;
 
     private function rdoMainPageNumbers(RdoSignatureRequest $request): array
     {
+        if ($request->relatorio_nao_conformidade_id) return [(int) data_get($request->request_payload, 'signature_page', 1)];
         $rdo = $request->rdo;
 
         if (! $rdo) {

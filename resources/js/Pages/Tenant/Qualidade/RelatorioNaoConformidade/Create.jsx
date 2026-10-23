@@ -1,21 +1,19 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { projectEap } from '@/Utils/projectEap';
+import ReferencePicker from './ReferencePicker';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
     ArrowDown,
     ArrowLeft,
     ArrowUp,
-    Check,
-    ChevronDown,
     ClipboardX,
     ImagePlus,
     LocateFixed,
     MapPin,
     Plus,
     Trash2,
-    X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -98,6 +96,7 @@ export default function RelatorioNaoConformidadeCreate({
     empresas,
     projects = [],
     disciplinas = [],
+    instrucoesCampo = [],
     gravidades,
     mode = 'create',
     rnc = null,
@@ -122,6 +121,7 @@ export default function RelatorioNaoConformidadeCreate({
     const form = useForm({
         contract_id: defaultContractId,
         obra_id: defaultObraId,
+        instrucao_campo_id: rnc?.instrucao_campo_id ?? '',
         project_document_ids: (
             rnc?.project_documents?.length
                 ? rnc.project_documents.map((project) => project.id)
@@ -136,6 +136,7 @@ export default function RelatorioNaoConformidadeCreate({
         longitude: rnc?.longitude ?? '',
         disciplina_id: rnc?.disciplina_id ?? '',
         gravidade: rnc?.gravidade ?? gravidades[0] ?? '',
+        assunto: rnc?.assunto ?? '',
         descricao_problema: rnc?.descricao_problema ?? '',
         observacao: rnc?.observacao ?? '',
         acoes_corretivas_recomendadas: rnc?.acoes_corretivas_recomendadas ?? '',
@@ -171,6 +172,11 @@ export default function RelatorioNaoConformidadeCreate({
         () => obras.find((obra) => String(obra.id) === String(form.data.obra_id)),
         [obras, form.data.obra_id],
     );
+    const availableIcs = useMemo(() => {
+        const items = [...instrucoesCampo];
+        if (rnc?.instrucao_campo && !items.some((ic) => ic.id === rnc.instrucao_campo.id)) items.push(rnc.instrucao_campo);
+        return items.filter((ic) => String(ic.contract_id) === String(form.data.contract_id) && String(ic.obra_id) === String(form.data.obra_id));
+    }, [instrucoesCampo, rnc?.instrucao_campo, form.data.contract_id, form.data.obra_id]);
     const errorMessages = Object.values(form.errors || {}).filter(Boolean);
     const empresasForSelectedContract = useMemo(
         () => empresas.filter((empresa) => String(empresa.contract_id) === String(form.data.contract_id)),
@@ -228,6 +234,7 @@ export default function RelatorioNaoConformidadeCreate({
             ...form.data,
             contract_id: contractId,
             obra_id: currentObraId,
+            instrucao_campo_id: '',
             project_document_ids: form.data.project_document_ids
                 .map(Number)
                 .filter((projectId) => validProjectIds.includes(projectId)),
@@ -252,6 +259,7 @@ export default function RelatorioNaoConformidadeCreate({
         form.setData({
             ...form.data,
             obra_id: obraId,
+            instrucao_campo_id: '',
             project_document_ids: form.data.project_document_ids
                 .map(Number)
                 .filter((projectId) => validProjectIds.includes(projectId)),
@@ -259,18 +267,6 @@ export default function RelatorioNaoConformidadeCreate({
             contratante_empresa_id: validCompanyIds.includes(Number(form.data.contratante_empresa_id)) ? form.data.contratante_empresa_id : '',
             contratada_empresa_id: validCompanyIds.includes(Number(form.data.contratada_empresa_id)) ? form.data.contratada_empresa_id : '',
         });
-    };
-
-    const toggleProject = (projectId) => {
-        const normalizedId = Number(projectId);
-        const current = form.data.project_document_ids.map(Number);
-
-        form.setData(
-            'project_document_ids',
-            current.includes(normalizedId)
-                ? current.filter((id) => id !== normalizedId)
-                : [...current, normalizedId],
-        );
     };
 
     const addPhotos = async (event) => {
@@ -410,6 +406,7 @@ export default function RelatorioNaoConformidadeCreate({
                     )}
 
                     <div className="mt-5 grid gap-3">
+                        <div className="grid min-w-0 gap-3 md:grid-cols-2">
                         <Field label="Contrato">
                             <select
                                 value={form.data.contract_id}
@@ -443,23 +440,43 @@ export default function RelatorioNaoConformidadeCreate({
                             </select>
                         </Field>
 
-                        <label className="block">
-                            <span className="eyebrow mb-1 block">Projetos vinculados</span>
-                            <ProjectMultiSelect
+                        </div>
+
+                        <div className="grid min-w-0 items-start gap-3 md:grid-cols-2">
+                            <ReferencePicker
+                                key={`projects-${form.data.contract_id}-${form.data.obra_id}`}
+                                title="Projetos vinculados"
+                                searchLabel="Pesquisar projetos"
+                                placeholder="Código, nome ou revisão"
+                                hint="Marque os projetos para vinculá-los à RNC."
                                 options={projectsForSelectedObra.map((project) => ({
-                                    value: String(project.id),
-                                    label: `${projectEap(project, project.latest_version) || 'Sem codigo'} - ${project.title}`,
+                                    value: String(project.id), code: projectEap(project, project.latest_version) || 'Sem código',
+                                    label: project.title, details: `Revisão: ${project.latest_version?.revision || 'Não informada'}`,
                                 }))}
                                 selected={form.data.project_document_ids.map(String)}
-                                onToggle={toggleProject}
-                                onClear={() => form.setData('project_document_ids', [])}
+                                onChange={(values) => form.setData('project_document_ids', values.map(Number))}
+                                disabled={!form.data.obra_id || form.processing}
+                                emptyMessage="Nenhum projeto disponível para esta obra."
+                                error={form.errors.project_document_ids || form.errors.project_document_id}
                             />
-                            {form.errors.project_document_ids && (
-                                <span className="mt-1 block text-xs text-[var(--red)]">
-                                    {form.errors.project_document_ids}
-                                </span>
-                            )}
-                        </label>
+                            <ReferencePicker
+                                key={`ic-${form.data.contract_id}-${form.data.obra_id}`}
+                                title="IC de referência (opcional)"
+                                searchLabel="Pesquisar IC"
+                                placeholder="Número ou assunto da IC"
+                                hint="Selecione uma IC já comunicada sobre este problema."
+                                options={availableIcs.map((ic) => ({
+                                    value: String(ic.id), code: `IC ${ic.formatted_number}`, label: ic.assunto || 'Sem assunto',
+                                    details: ic.notified_at ? `Comunicada em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(ic.notified_at))}` : '',
+                                }))}
+                                selected={form.data.instrucao_campo_id ? [String(form.data.instrucao_campo_id)] : []}
+                                onChange={(values) => form.setData('instrucao_campo_id', values[0] || '')}
+                                multiple={false}
+                                disabled={!form.data.obra_id || form.processing}
+                                emptyMessage="Nenhuma IC comunicada disponível para esta obra."
+                                error={form.errors.instrucao_campo_id}
+                            />
+                        </div>
 
                         <div className="grid gap-3 md:grid-cols-2">
                             <Field label="Contratante" error={form.errors.contratante_empresa_id}>
@@ -500,7 +517,7 @@ export default function RelatorioNaoConformidadeCreate({
                             </div>
                         )}
 
-                        <div className="grid gap-3 md:grid-cols-2">
+                        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             <Field label="Data abertura" error={form.errors.opened_at}>
                                 <input
                                     type="date"
@@ -531,11 +548,6 @@ export default function RelatorioNaoConformidadeCreate({
                                     required
                                 />
                             </Field>
-                        </div>
-
-                        <MapPicker form={form} />
-
-                        <div className="grid gap-3 md:grid-cols-2">
                             <Field label="Disciplina" error={form.errors.disciplina_id}>
                                 <select value={form.data.disciplina_id} onChange={(event) => form.setData('disciplina_id', event.target.value)} required>
                                     <option value="">Selecione a disciplina</option>
@@ -555,6 +567,12 @@ export default function RelatorioNaoConformidadeCreate({
                                 </select>
                             </Field>
                         </div>
+
+                        <MapPicker form={form} />
+
+                        <Field label="Assunto" error={form.errors.assunto}>
+                            <input value={form.data.assunto} onChange={(event) => form.setData('assunto', event.target.value)} required maxLength={255} placeholder="Resuma o motivo desta RNC" />
+                        </Field>
 
                         <Field label="Descricao do problema" error={form.errors.descricao_problema}>
                             <textarea
@@ -649,122 +667,6 @@ export default function RelatorioNaoConformidadeCreate({
                 </form>
             </section>
         </AuthenticatedLayout>
-    );
-}
-
-function ProjectMultiSelect({ options, selected, onToggle, onClear }) {
-    const [open, setOpen] = useState(false);
-    const containerRef = useRef(null);
-    const selectedOptions = options.filter((option) => selected.includes(option.value));
-    const summary = selectedOptions.length === 0
-        ? 'Sem projeto vinculado'
-        : selectedOptions.length === 1
-            ? selectedOptions[0].label
-            : `${selectedOptions.length} selecionados`;
-
-    useEffect(() => {
-        if (!open) return undefined;
-
-        const closeOnOutsideClick = (event) => {
-            if (!containerRef.current?.contains(event.target)) setOpen(false);
-        };
-        const closeOnEscape = (event) => {
-            if (event.key === 'Escape') setOpen(false);
-        };
-
-        document.addEventListener('pointerdown', closeOnOutsideClick);
-        document.addEventListener('keydown', closeOnEscape);
-
-        return () => {
-            document.removeEventListener('pointerdown', closeOnOutsideClick);
-            document.removeEventListener('keydown', closeOnEscape);
-        };
-    }, [open]);
-
-    return (
-        <div ref={containerRef} className="relative min-w-0">
-            <button
-                type="button"
-                className="sig-input flex min-h-11 !w-full items-center justify-between gap-2 bg-white text-left"
-                aria-expanded={open}
-                onClick={() => setOpen((current) => !current)}
-            >
-                <span className="truncate">{summary}</span>
-                <ChevronDown
-                    size={15}
-                    className={`shrink-0 text-[var(--ink-500)] transition-transform ${open ? 'rotate-180' : ''}`}
-                />
-            </button>
-
-            {open && (
-                <div className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-white shadow-xl">
-                    <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-                        <span className="text-xs font-semibold text-[var(--ink-700)]">
-                            {selected.length > 0 ? `${selected.length} selecionado(s)` : 'Selecione os projetos'}
-                        </span>
-                        {selected.length > 0 && (
-                            <button
-                                type="button"
-                                className="text-xs font-semibold text-[var(--primary)]"
-                                onClick={onClear}
-                            >
-                                Limpar
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="max-h-60 overflow-y-auto p-1">
-                        {options.length > 0 ? options.map((option) => {
-                            const checked = selected.includes(option.value);
-
-                            return (
-                                <label
-                                    key={option.value}
-                                    className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm hover:bg-[var(--surface-muted)]"
-                                >
-                                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${checked ? 'border-[var(--primary)] bg-[var(--primary)] text-white' : 'border-[var(--border-strong)] text-transparent'}`}>
-                                        <Check size={13} />
-                                    </span>
-                                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                                    <input
-                                        type="checkbox"
-                                        className="sr-only"
-                                        checked={checked}
-                                        onChange={() => onToggle(option.value)}
-                                    />
-                                </label>
-                            );
-                        }) : (
-                            <div className="px-3 py-5 text-center text-xs text-[var(--ink-500)]">
-                                Nenhum projeto encontrado para esta obra.
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {selectedOptions.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                    {selectedOptions.map((option) => (
-                        <span
-                            key={option.value}
-                            className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-700)]"
-                        >
-                            <span className="truncate">{option.label}</span>
-                            <button
-                                type="button"
-                                className="grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--ink-500)] hover:bg-white hover:text-[var(--red)]"
-                                title={`Remover ${option.label}`}
-                                aria-label={`Remover ${option.label}`}
-                                onClick={() => onToggle(option.value)}
-                            >
-                                <X size={11} />
-                            </button>
-                        </span>
-                    ))}
-                </div>
-            )}
-        </div>
     );
 }
 
@@ -1032,9 +934,9 @@ function CompanyLogoPreview({ label, empresa }) {
 
 function Field({ label, error, children }) {
     return (
-        <label>
+        <label className="block min-w-0">
             <span className="eyebrow mb-1 block">{label}</span>
-            <span className="sig-input">{children}</span>
+            <span className="sig-input min-h-11 !px-3 !py-1.5 sm:min-h-0 [&>input]:min-w-0 [&>input]:!px-0 [&>input]:!py-1 [&>select]:min-w-0 [&>select]:!pl-0 [&>select]:!py-1 [&>textarea]:!px-0 [&>textarea]:!py-1 text-base sm:text-sm">{children}</span>
             {error && <span className="mt-1 block text-xs text-[var(--red)]">{error}</span>}
         </label>
     );

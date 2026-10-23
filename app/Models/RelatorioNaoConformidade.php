@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'sequence_year',
     'contract_id',
     'obra_id',
+    'instrucao_campo_id',
     'project_document_id',
     'disciplina_id',
     'contratante_empresa_id',
@@ -30,6 +31,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'longitude',
     'natureza',
     'gravidade',
+    'assunto',
     'descricao_problema',
     'observacao',
     'acoes_corretivas_recomendadas',
@@ -86,6 +88,11 @@ class RelatorioNaoConformidade extends Model
         return $this->belongsTo(ProjectDocument::class)->withTrashed();
     }
 
+    public function instrucaoCampo(): BelongsTo
+    {
+        return $this->belongsTo(InstrucaoCampo::class)->withTrashed();
+    }
+
     public function projectDocuments(): BelongsToMany
     {
         return $this->belongsToMany(
@@ -139,5 +146,10 @@ class RelatorioNaoConformidade extends Model
     public function evidencias(): HasMany
     {
         return $this->hasMany(RelatorioNaoConformidadeEvidencia::class)->latest('submitted_at');
+    }
+
+    public function signatureRequests(): HasMany
+    {
+        return $this->hasMany(RdoSignatureRequest::class, 'relatorio_nao_conformidade_id')->latest('id');
     }
 }

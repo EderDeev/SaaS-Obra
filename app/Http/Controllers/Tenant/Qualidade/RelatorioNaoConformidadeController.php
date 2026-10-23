@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Contract;
 use App\Models\Disciplina;
 use App\Models\Empresa;
+use App\Models\InstrucaoCampo;
 use App\Models\Obra;
 use App\Models\ProjectDocument;
 use App\Models\RelatorioNaoConformidade;
@@ -13,8 +14,9 @@ use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\RncResponsibleNotification;
-use App\Support\RncPermissions;
 use App\Support\RncListing;
+use App\Support\IcPermissions;
+use App\Support\RncPermissions;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -58,7 +60,7 @@ class RelatorioNaoConformidadeController extends Controller
             'stage' => ['nullable', Rule::in(['all', ...array_keys(RncListing::STAGES)])],
         ]);
         $filters['stage'] = $filters['stage'] ?? 'all';
-        if (!empty($filters['contract_id']) && !empty($filters['obra_id'])
+        if (! empty($filters['contract_id']) && ! empty($filters['obra_id'])
             && (int) $obras->firstWhere('id', $filters['obra_id'])->contract_id !== (int) $filters['contract_id']) {
             throw ValidationException::withMessages(['obra_id' => 'Selecione uma obra do contrato informado.']);
         }
@@ -70,7 +72,7 @@ class RelatorioNaoConformidadeController extends Controller
             ->when(trim($filters['q'] ?? ''), function ($query, $term) {
                 $like = '%'.mb_strtolower($term).'%';
                 $query->where(function ($query) use ($term, $like) {
-                    $query->whereRaw('LOWER(descricao_problema) LIKE ?', [$like])
+                    $query->whereRaw('LOWER(assunto) LIKE ?', [$like])->orWhereRaw('LOWER(descricao_problema) LIKE ?', [$like])
                         ->orWhereRaw('LOWER(observacao) LIKE ?', [$like])
                         ->orWhereHas('contract', fn ($contract) => $contract->whereRaw('LOWER(code) LIKE ?', [$like])->orWhereRaw('LOWER(name) LIKE ?', [$like]))
                         ->orWhereHas('obra', fn ($obra) => $obra->whereRaw('LOWER(codigo) LIKE ?', [$like])->orWhereRaw('LOWER(nome) LIKE ?', [$like]));
@@ -81,8 +83,10 @@ class RelatorioNaoConformidadeController extends Controller
                                     ->where(fn ($missing) => $missing->whereNull('sequence_number')->orWhere('sequence_number', 0))
                                     ->where('id', (int) $number[1]));
                             });
-                            if (isset($number[2])) $numberQuery->where(fn ($year) => $year->where('sequence_year', (int) $number[2])
-                                ->orWhere(fn ($legacy) => $legacy->whereNull('sequence_year')->whereYear('opened_at', $number[2])));
+                            if (isset($number[2])) {
+                                $numberQuery->where(fn ($year) => $year->where('sequence_year', (int) $number[2])
+                                    ->orWhere(fn ($legacy) => $legacy->whereNull('sequence_year')->whereYear('opened_at', $number[2])));
+                            }
                         });
                     }
                 });
@@ -200,7 +204,8 @@ class RelatorioNaoConformidadeController extends Controller
                 'atrasoResposta' => $atrasadasResposta->count(),
                 'atrasoExecucao' => $atrasadasExecucao->count(),
                 'emAnalise' => $emAnalise->count(),
-                'aguardandoEvidencia' => $aguardandoEvidencia->count(),
+                'aguardandoEvidencia' => $aguardandoEvidencia->filter(fn ($rnc) => $rnc->evidencias->isEmpty())->count(),
+                'aguardandoAssinaturas' => $rncs->filter(fn ($rnc) => !$this->isFinalizedRnc($rnc) && $rnc->evidencias->isNotEmpty())->count(),
                 'finalizadas' => $finalizadas->count(),
             ],
             'statusCounts' => $this->countBy($rncs, 'status'),
@@ -231,6 +236,7 @@ class RelatorioNaoConformidadeController extends Controller
         return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/Show', [
             'tenant' => $tenant,
             'rnc' => $rnc,
+            'signatureData' => app(\App\Services\RncSignatureService::class)->statusData($tenant, $rnc),
         ]);
     }
 
@@ -238,6 +244,7 @@ class RelatorioNaoConformidadeController extends Controller
     {
         $rnc = $this->loadAccessibleRnc($request, $tenant, $rnc);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::EDIT, $rnc->contract), 403);
+        abort_if($rnc->signatureRequests()->whereIn('status', ['draft', 'sent', 'pending', 'completed'])->exists(), 422, 'O documento enviado para assinatura não pode ser alterado.');
 
         return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/Create', [
             'tenant' => $tenant,
@@ -250,6 +257,7 @@ class RelatorioNaoConformidadeController extends Controller
     public function store(Request $request, Tenant $tenant): RedirectResponse
     {
         $data = $request->validate([
+            'instrucao_campo_id' => ['nullable', 'integer'],
             'obra_id' => [
                 'required',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
@@ -280,6 +288,7 @@ class RelatorioNaoConformidadeController extends Controller
                 Rule::exists('disciplinas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'gravidade' => ['required', Rule::in(self::GRAVIDADES)],
+            'assunto' => ['required', 'string', 'max:255'],
             'descricao_problema' => ['required', 'string', 'max:10000'],
             'observacao' => ['nullable', 'string', 'max:10000'],
             'acoes_corretivas_recomendadas' => ['required', 'string', 'max:10000'],
@@ -307,6 +316,7 @@ class RelatorioNaoConformidadeController extends Controller
 
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::CREATE, $contract), 403);
+        $data['instrucao_campo_id'] = $this->icReferenceForRnc($request, $tenant, $data['instrucao_campo_id'] ?? null, $contract, $obra);
 
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
@@ -352,6 +362,7 @@ class RelatorioNaoConformidadeController extends Controller
                 'sequence_year' => $sequenceYear,
                 'contract_id' => $contract->id,
                 'obra_id' => $obra->id,
+                'instrucao_campo_id' => $data['instrucao_campo_id'],
                 'project_document_id' => $projectDocument?->id,
                 'disciplina_id' => $disciplina->id,
                 'contratante_empresa_id' => $contratante->id,
@@ -362,6 +373,7 @@ class RelatorioNaoConformidadeController extends Controller
                 'longitude' => $data['longitude'] ?? null,
                 'natureza' => $disciplina->nome,
                 'gravidade' => $data['gravidade'],
+                'assunto' => $data['assunto'],
                 'descricao_problema' => $data['descricao_problema'],
                 'observacao' => $data['observacao'] ?? null,
                 'acoes_corretivas_recomendadas' => $data['acoes_corretivas_recomendadas'],
@@ -407,6 +419,9 @@ class RelatorioNaoConformidadeController extends Controller
 
         abort_unless($this->canAccessContract($request->user(), $tenant, $contract), 403);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::EDIT, $contract), 403);
+        $data['instrucao_campo_id'] = $this->icReferenceForRnc($request, $tenant,
+            array_key_exists('instrucao_campo_id', $data) ? $data['instrucao_campo_id'] : $rnc->instrucao_campo_id,
+            $contract, $obra, $rnc);
 
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
@@ -432,10 +447,13 @@ class RelatorioNaoConformidadeController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($rnc, $contract, $obra, $projectDocument, $projectDocuments, $disciplina, $contratante, $contratada, $data): void {
+        DB::transaction(function () use ($request, $tenant, $rnc, $contract, $obra, $projectDocument, $projectDocuments, $disciplina, $contratante, $contratada, $data): void {
+            $rnc = RelatorioNaoConformidade::whereKey($rnc->id)->lockForUpdate()->firstOrFail();
+            abort_if($rnc->signatureRequests()->whereIn('status', ['draft', 'sent', 'pending', 'completed'])->exists(), 422, 'O documento enviado para assinatura não pode ser alterado.');
             $rnc->update([
                 'contract_id' => $contract->id,
                 'obra_id' => $obra->id,
+                'instrucao_campo_id' => $data['instrucao_campo_id'],
                 'project_document_id' => $projectDocument?->id,
                 'disciplina_id' => $disciplina->id,
                 'contratante_empresa_id' => $contratante->id,
@@ -445,6 +463,7 @@ class RelatorioNaoConformidadeController extends Controller
                 'longitude' => $data['longitude'] ?? null,
                 'natureza' => $disciplina->nome,
                 'gravidade' => $data['gravidade'],
+                'assunto' => $data['assunto'],
                 'descricao_problema' => $data['descricao_problema'],
                 'observacao' => $data['observacao'] ?? null,
                 'acoes_corretivas_recomendadas' => $data['acoes_corretivas_recomendadas'],
@@ -452,149 +471,27 @@ class RelatorioNaoConformidadeController extends Controller
             ]);
 
             $rnc->projectDocuments()->sync($projectDocuments->pluck('id')->all());
+            $this->syncRncPhotos($request, $tenant, $rnc);
         });
-
-        $this->syncRncPhotos($request, $tenant, $rnc);
 
         return redirect()
             ->route('tenant.qualidade.rnc.show', [$tenant, $rnc])
             ->with('success', 'RNC atualizada com sucesso.');
     }
 
-    public function pdf(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc)
+    public function pdf(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc, \App\Services\RncPdfRenderer $renderer)
     {
         $rnc = $this->loadAccessibleRnc($request, $tenant, $rnc);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::VIEW, $rnc->contract), 403);
-        $canRasterizePdfImages = $this->canRasterizePdfImages();
-        $approvedAction = $rnc->acoesCorretivas->firstWhere('status', 'approved');
-        $latestAction = $rnc->acoesCorretivas->first();
-        $latestEvidence = $rnc->evidencias->first();
-        $photos = $this->formatPdfPhotos($rnc->photos, $canRasterizePdfImages);
-        $evidencePhotos = $latestEvidence
-            ? $this->formatPdfPhotos($latestEvidence->photos, $canRasterizePdfImages)
-            : collect();
-        $contratanteLogo = $this->companyLogoDataUri($rnc->contratante);
-        $contratadaLogo = $this->companyLogoDataUri($rnc->contratada);
-
-        $pdf = Pdf::loadView('pdf.rnc', [
-            'tenant' => $tenant,
-            'rnc' => $rnc,
-            'contratanteLogo' => $contratanteLogo,
-            'contratadaLogo' => $contratadaLogo,
-            'photos' => $photos,
-            'approvedAction' => $approvedAction,
-            'latestAction' => $latestAction,
-            'latestEvidence' => $latestEvidence,
-            'evidencePhotos' => $evidencePhotos,
-            'flowRows' => $this->rncFlowRows($rnc, $latestAction, $latestEvidence),
-            'canRasterizePdfImages' => $canRasterizePdfImages,
-        ])->setPaper('a4');
-
-        $fileName = "RNC-{$rnc->formatted_number}.pdf";
-
-        $response = $pdf->stream($fileName);
+        $scope = $request->validate(['scope' => ['nullable', \Illuminate\Validation\Rule::in(array_keys(\App\Services\RncPdfRenderer::SCOPES))]])['scope'] ?? 'evidence';
+        if ($scope === 'signed') {
+            $signature = $rnc->signatureRequests()->where('status', 'completed')->whereNotNull('signed_pdf_path')->first();
+            abort_unless($signature && $rnc->finalized_at && Storage::disk($signature->artifactDisk())->exists($signature->signed_pdf_path), 404, 'O PDF completo assinado ainda não está disponível.');
+            return response()->download(Storage::disk($signature->artifactDisk())->path($signature->signed_pdf_path), "RNC-{$rnc->formatted_number}-assinado.pdf", ['Content-Type' => 'application/pdf', 'Cache-Control' => 'private, no-store']);
+        }
+        $response = $renderer->render($tenant, $rnc, $scope)->stream("RNC-{$rnc->formatted_number}-{$scope}.pdf");
         $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-        $response->headers->set('Pragma', 'no-cache');
-        $response->headers->set('Expires', '0');
-
         return $response;
-    }
-
-    private function formatPdfPhotos(Collection $photos, bool $canRasterizePdfImages): Collection
-    {
-        return $photos->map(function ($photo) use ($canRasterizePdfImages): array {
-            $dataUri = null;
-            $canEmbedImage = false;
-            $mime = $photo->mime_type ?: (Storage::disk('public')->exists($photo->path) ? Storage::disk('public')->mimeType($photo->path) : null);
-
-            if ($mime) {
-                $canEmbedImage = in_array(strtolower($mime), ['image/jpeg', 'image/jpg'], true) || $canRasterizePdfImages;
-            }
-
-            if ($canEmbedImage && Storage::disk('public')->exists($photo->path)) {
-                $absolutePath = Storage::disk('public')->path($photo->path);
-                $dataUri = $this->standardizedPdfPhotoDataUri($absolutePath)
-                    ?: 'data:'.$mime.';base64,'.base64_encode(Storage::disk('public')->get($photo->path));
-            }
-
-            return [
-                'position' => $photo->position,
-                'comment' => $photo->comment ?? null,
-                'original_name' => $photo->original_name,
-                'data_uri' => $dataUri,
-                'mime_type' => $mime,
-                'needs_raster_extension' => ! $dataUri && ! in_array(strtolower((string) $mime), ['image/jpeg', 'image/jpg'], true),
-            ];
-        })->values();
-    }
-
-    private function rncFlowRows(RelatorioNaoConformidade $rnc, $latestAction, $latestEvidence): array
-    {
-        $proposalReview = $latestAction
-            ? match ($latestAction->status) {
-                'approved' => [
-                    'status' => 'Aprovada',
-                    'data' => $latestAction->reviewed_at?->format('d/m/Y H:i') ?: '-',
-                    'detalhe' => 'Aprovada por '.($latestAction->reviewer?->name ?: 'usuario responsavel').'. Pode iniciar o processo corretivo.',
-                ],
-                'rejected' => [
-                    'status' => 'Reprovada',
-                    'data' => $latestAction->reviewed_at?->format('d/m/Y H:i') ?: '-',
-                    'detalhe' => 'Reprovada por '.($latestAction->reviewer?->name ?: 'usuario responsavel').'. Motivo: '.($latestAction->review_observation ?: '-'),
-                ],
-                default => [
-                    'status' => 'Em analise',
-                    'data' => '-',
-                    'detalhe' => 'Aguardando analise da proposta enviada.',
-                ],
-            }
-            : [
-                'status' => 'Pendente',
-                'data' => '-',
-                'detalhe' => 'Aguardando envio da proposta de acao corretiva.',
-            ];
-
-        return [
-            [
-                'etapa' => 'Abertura da RNC',
-                'status' => 'Concluida',
-                'data' => $rnc->opened_at?->format('d/m/Y') ?: '-',
-                'responsavel' => $rnc->creator?->name ?: '-',
-                'detalhe' => 'Registro inicial da nao conformidade.',
-            ],
-            [
-                'etapa' => 'Notificacao aos responsaveis',
-                'status' => $rnc->notified_at ? 'Concluida' : 'Pendente',
-                'data' => $rnc->notified_at?->format('d/m/Y H:i') ?: '-',
-                'responsavel' => 'Responsaveis da RNC',
-                'detalhe' => $rnc->notified_at ? 'Responsaveis notificados por email e alerta interno.' : 'Aguardando envio da notificacao.',
-            ],
-            [
-                'etapa' => 'Proposta de acao corretiva',
-                'status' => $latestAction ? 'Enviada' : 'Pendente',
-                'data' => $latestAction?->submitted_at?->format('d/m/Y H:i') ?: '-',
-                'responsavel' => $latestAction?->user?->name ?: '-',
-                'detalhe' => $latestAction
-                    ? 'Prazo proposto: '.($latestAction->prazo_execucao_proposto?->format('d/m/Y') ?: '-')
-                    : 'Aguardando proposta do responsavel.',
-            ],
-            [
-                'etapa' => 'Analise da proposta',
-                'status' => $proposalReview['status'],
-                'data' => $proposalReview['data'],
-                'responsavel' => $latestAction?->reviewer?->name ?: '-',
-                'detalhe' => $proposalReview['detalhe'],
-            ],
-            [
-                'etapa' => 'Evidencias da correcao',
-                'status' => $latestEvidence || $rnc->finalized_at ? 'Finalizada' : ($latestAction?->status === 'approved' ? 'Pendente' : 'Aguardando'),
-                'data' => $latestEvidence?->submitted_at?->format('d/m/Y H:i') ?: ($rnc->finalized_at?->format('d/m/Y H:i') ?: '-'),
-                'responsavel' => $latestEvidence?->user?->name ?: ($rnc->finalizedBy?->name ?: '-'),
-                'detalhe' => $latestEvidence
-                    ? 'Evidencias enviadas e RNC finalizada.'
-                    : ($latestAction?->status === 'approved' ? 'Aguardando envio das evidencias da correcao.' : 'Aguardando aprovacao da proposta.'),
-            ],
-        ];
     }
 
     private function rncFormOptions(Request $request, Tenant $tenant, ?string $permission = null): array
@@ -609,7 +506,15 @@ class RelatorioNaoConformidadeController extends Controller
             ->orderBy('code')
             ->get();
 
+        $icContractIds = IcPermissions::contractIdsFor($request->user(), $tenant, IcPermissions::VIEW);
+        $instrucoesCampo = $tenant->instrucoesCampo()->whereIn('contract_id', $contractIds)
+            ->when($icContractIds !== null, fn ($query) => $query->whereIn('contract_id', $icContractIds))
+            ->whereNotNull('notified_at')->where('status', '!=', 'draft')
+            ->orderByDesc('sequence_year')->orderByDesc('sequence_number')
+            ->get(['id', 'contract_id', 'obra_id', 'sequence_number', 'sequence_year', 'assunto', 'notified_at']);
+
         return [
+            'instrucoesCampo' => $instrucoesCampo,
             'contracts' => $contracts->map(fn (Contract $contract): array => [
                 'id' => $contract->id,
                 'code' => $contract->code,
@@ -648,6 +553,7 @@ class RelatorioNaoConformidadeController extends Controller
     private function validateRncData(Request $request, Tenant $tenant, ?RelatorioNaoConformidade $rnc = null): array
     {
         $rules = [
+            'instrucao_campo_id' => ['nullable', 'integer'],
             'obra_id' => [
                 'required',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
@@ -678,6 +584,7 @@ class RelatorioNaoConformidadeController extends Controller
                 Rule::exists('disciplinas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
             'gravidade' => ['required', Rule::in(self::GRAVIDADES)],
+            'assunto' => ['required', 'string', 'max:255'],
             'descricao_problema' => ['required', 'string', 'max:10000'],
             'observacao' => ['nullable', 'string', 'max:10000'],
             'acoes_corretivas_recomendadas' => ['required', 'string', 'max:10000'],
@@ -843,138 +750,6 @@ class RelatorioNaoConformidadeController extends Controller
         ];
     }
 
-    private function canRasterizePdfImages(): bool
-    {
-        return extension_loaded('imagick')
-            || (function_exists('imagepng') && function_exists('imagecreatefrompng'));
-    }
-
-    private function standardizedPdfPhotoDataUri(string $sourcePath): ?string
-    {
-        if (! function_exists('imagecreatefromstring') || ! function_exists('imagejpeg') || ! function_exists('imagecopyresampled')) {
-            return null;
-        }
-
-        $source = @imagecreatefromstring((string) file_get_contents($sourcePath));
-
-        if (! $source) {
-            return null;
-        }
-
-        $sourceWidth = imagesx($source);
-        $sourceHeight = imagesy($source);
-        $canvas = imagecreatetruecolor(self::PDF_PHOTO_WIDTH, self::PDF_PHOTO_HEIGHT);
-        $white = imagecolorallocate($canvas, 255, 255, 255);
-
-        imagefill($canvas, 0, 0, $white);
-
-        $targetRatio = self::PDF_PHOTO_WIDTH / self::PDF_PHOTO_HEIGHT;
-        $sourceRatio = $sourceWidth / $sourceHeight;
-
-        if ($sourceRatio > $targetRatio) {
-            $cropHeight = $sourceHeight;
-            $cropWidth = (int) round($sourceHeight * $targetRatio);
-            $cropX = (int) floor(($sourceWidth - $cropWidth) / 2);
-            $cropY = 0;
-        } else {
-            $cropWidth = $sourceWidth;
-            $cropHeight = (int) round($sourceWidth / $targetRatio);
-            $cropX = 0;
-            $cropY = (int) floor(($sourceHeight - $cropHeight) / 2);
-        }
-
-        imagecopyresampled(
-            $canvas,
-            $source,
-            0,
-            0,
-            $cropX,
-            $cropY,
-            self::PDF_PHOTO_WIDTH,
-            self::PDF_PHOTO_HEIGHT,
-            $cropWidth,
-            $cropHeight,
-        );
-
-        ob_start();
-        imagejpeg($canvas, null, 88);
-        $jpeg = ob_get_clean();
-
-        imagedestroy($source);
-        imagedestroy($canvas);
-
-        if (! $jpeg) {
-            return null;
-        }
-
-        return 'data:image/jpeg;base64,'.base64_encode($jpeg);
-    }
-
-    private function companyLogoDataUri(?Empresa $empresa): ?string
-    {
-        if (! $empresa?->logo_path || ! Storage::disk('public')->exists($empresa->logo_path)) {
-            return null;
-        }
-
-        return $this->containedPdfImageDataUri(
-            Storage::disk('public')->path($empresa->logo_path),
-            self::PDF_LOGO_WIDTH,
-            self::PDF_LOGO_HEIGHT,
-        );
-    }
-
-    private function containedPdfImageDataUri(string $sourcePath, int $targetCanvasWidth, int $targetCanvasHeight): ?string
-    {
-        if (! function_exists('imagecreatefromstring') || ! function_exists('imagejpeg') || ! function_exists('imagecopyresampled')) {
-            return null;
-        }
-
-        $source = @imagecreatefromstring((string) file_get_contents($sourcePath));
-
-        if (! $source) {
-            return null;
-        }
-
-        $sourceWidth = imagesx($source);
-        $sourceHeight = imagesy($source);
-        $canvas = imagecreatetruecolor($targetCanvasWidth, $targetCanvasHeight);
-        $white = imagecolorallocate($canvas, 255, 255, 255);
-
-        imagefill($canvas, 0, 0, $white);
-
-        $scale = min($targetCanvasWidth / $sourceWidth, $targetCanvasHeight / $sourceHeight);
-        $targetWidth = (int) round($sourceWidth * $scale);
-        $targetHeight = (int) round($sourceHeight * $scale);
-        $targetX = (int) floor(($targetCanvasWidth - $targetWidth) / 2);
-        $targetY = (int) floor(($targetCanvasHeight - $targetHeight) / 2);
-
-        imagecopyresampled(
-            $canvas,
-            $source,
-            $targetX,
-            $targetY,
-            0,
-            0,
-            $targetWidth,
-            $targetHeight,
-            $sourceWidth,
-            $sourceHeight,
-        );
-
-        ob_start();
-        imagejpeg($canvas, null, 90);
-        $jpeg = ob_get_clean();
-
-        imagedestroy($source);
-        imagedestroy($canvas);
-
-        if (! $jpeg) {
-            return null;
-        }
-
-        return 'data:image/jpeg;base64,'.base64_encode($jpeg);
-    }
-
     public function notifyResponsibleUsers(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): RedirectResponse
     {
         $rnc = $this->loadAccessibleRnc($request, $tenant, $rnc);
@@ -999,12 +774,12 @@ class RelatorioNaoConformidadeController extends Controller
 
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::DELETE, $rnc->contract), 403);
 
-        $rnc->forceFill([
-            'deleted_by_id' => $request->user()->id,
-            'status' => 'excluida',
-        ])->save();
-
-        $rnc->delete();
+        DB::transaction(function () use ($request, $rnc) {
+            $locked = RelatorioNaoConformidade::whereKey($rnc->id)->lockForUpdate()->firstOrFail();
+            abort_if($locked->signatureRequests()->whereIn('status', ['draft', 'sent', 'pending', 'completed'])->exists(), 422, 'Uma RNC enviada para assinatura não pode ser excluída.');
+            $locked->forceFill(['deleted_by_id' => $request->user()->id, 'status' => 'excluida'])->save();
+            $locked->delete();
+        });
 
         return redirect()
             ->route('tenant.qualidade.rnc.index', $tenant)
@@ -1038,10 +813,37 @@ class RelatorioNaoConformidadeController extends Controller
 
     private function attachUserPermissions(RelatorioNaoConformidade $rnc, User $user, Tenant $tenant): RelatorioNaoConformidade
     {
-        $rnc->setAttribute('user_permissions', RncPermissions::permissionsFor($user, $tenant, $rnc->contract));
+        $permissions = RncPermissions::permissionsFor($user, $tenant, $rnc->contract);
+        $active = $rnc->signatureRequests()->whereIn('status', ['draft', 'sent', 'pending', 'completed'])->first();
+        if ($active) $permissions = array_values(array_diff($permissions, [RncPermissions::EDIT, RncPermissions::DELETE]));
+        $rnc->setAttribute('has_signed_pdf', (bool)($rnc->finalized_at && $active?->status === 'completed' && $active->signed_pdf_path));
+        $rnc->syncOriginalAttribute('has_signed_pdf');
+        $rnc->setAttribute('user_permissions', $permissions);
         $rnc->syncOriginalAttribute('user_permissions');
+        if ($rnc->relationLoaded('instrucaoCampo') && $rnc->instrucaoCampo) {
+            $rnc->instrucaoCampo->setAttribute('can_view', ! $rnc->instrucaoCampo->trashed()
+                && IcPermissions::can($user, $tenant, IcPermissions::VIEW, $rnc->contract));
+        }
 
         return $rnc;
+    }
+
+    private function icReferenceForRnc(Request $request, Tenant $tenant, ?int $id, Contract $contract, Obra $obra, ?RelatorioNaoConformidade $rnc = null): ?int
+    {
+        if ($id === null) {
+            return null;
+        }
+        $ic = $tenant->instrucoesCampo()->withTrashed()->where('contract_id', $contract->id)->where('obra_id', $obra->id)->find($id);
+        // Preserve an existing reference when editing, even if IC access was later revoked.
+        if ($ic && $rnc && (int) $rnc->instrucao_campo_id === $id) {
+            return $ic->id;
+        }
+        if (! $ic || $ic->trashed() || ! $ic->notified_at || $ic->status === 'draft'
+            || ! IcPermissions::can($request->user(), $tenant, IcPermissions::VIEW, $contract)) {
+            throw ValidationException::withMessages(['instrucao_campo_id' => 'Selecione uma IC já comunicada, da mesma obra, que você tenha permissão para visualizar.']);
+        }
+
+        return $ic->id;
     }
 
     private function canAccessContract(User $user, Tenant $tenant, Contract $contract): bool
@@ -1063,7 +865,7 @@ class RelatorioNaoConformidadeController extends Controller
 
     private function isFinalizedRnc(RelatorioNaoConformidade $rnc): bool
     {
-        return $rnc->status === 'finalizada' || $rnc->finalized_at !== null || $rnc->evidencias_count > 0;
+        return $rnc->status === 'finalizada' || $rnc->finalized_at !== null;
     }
 
     private function isResponseOverdueRnc(RelatorioNaoConformidade $rnc, Carbon $today): bool
@@ -1170,8 +972,7 @@ class RelatorioNaoConformidadeController extends Controller
         Contract $contract,
         Obra $obra,
         string $errorKey = 'project_document_ids'
-    ): Collection
-    {
+    ): Collection {
         $ids = collect(is_array($projectDocumentIds) ? $projectDocumentIds : [$projectDocumentIds])
             ->filter(fn ($id): bool => filled($id))
             ->map(fn ($id): int => (int) $id)
@@ -1221,6 +1022,7 @@ class RelatorioNaoConformidadeController extends Controller
         abort_unless((int) $rnc->tenant_id === (int) $tenant->id, 404);
 
         $rnc->load([
+            'instrucaoCampo:id,contract_id,obra_id,sequence_number,sequence_year,assunto,notified_at,deleted_at',
             'contract:id,tenant_id,code,name,total_value,currency,starts_at,ends_at,city,state',
             'obra:id,tenant_id,contract_id,nome,codigo,tipo',
             'projectDocument:id,tenant_id,contract_id,obra_id,title,code,document_number,status',

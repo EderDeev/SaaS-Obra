@@ -13,17 +13,19 @@ use App\Notifications\RncCorrectiveActionSubmittedNotification;
 use App\Notifications\RncCorrectiveActionReviewedNotification;
 use App\Support\RncPermissions;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RncAcaoCorretivaController extends Controller
 {
-    public function create(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): Response
+    public function create(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): Response|JsonResponse
     {
         $rnc = $this->loadAccessibleRnc($request, $tenant, $rnc);
 
@@ -31,13 +33,18 @@ class RncAcaoCorretivaController extends Controller
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::CORRECTIVE_ACTION, $rnc->contract), 403);
         abort_unless($this->canCreateNewProposal($rnc), 403);
 
-        return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/AcaoCorretiva', [
+        $data = [
             'tenant' => $tenant,
             'rnc' => $rnc,
             'acoesCorretivas' => $rnc->acoesCorretivas
                 ->map(fn (RelatorioNaoConformidadeAcaoCorretiva $acao): array => $this->formatCorrectiveAction($acao, $tenant, $rnc))
                 ->values(),
-        ]);
+        ];
+        if ($request->expectsJson()) {
+            return response()->json($data)->header('Cache-Control', 'private, no-store');
+        }
+
+        return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/AcaoCorretiva', $data);
     }
 
     public function store(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): RedirectResponse
@@ -46,9 +53,13 @@ class RncAcaoCorretivaController extends Controller
 
         abort_unless($rnc->notified_at !== null, 403);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::CORRECTIVE_ACTION, $rnc->contract), 403);
+        if ($request->boolean('from_modal') && ! $this->canCreateNewProposal($rnc)) {
+            throw ValidationException::withMessages(['rnc' => 'A etapa desta RNC mudou. Feche o modal e atualize a página.']);
+        }
         abort_unless($this->canCreateNewProposal($rnc), 403);
 
         $data = $request->validate([
+            'from_modal' => ['sometimes', 'boolean'],
             'descricao_proposta' => ['required', 'string', 'max:10000'],
             'prazo_execucao_proposto' => ['required', 'date'],
             'attachment' => ['required', 'file', 'mimes:zip', 'max:30720'],
@@ -81,12 +92,11 @@ class RncAcaoCorretivaController extends Controller
         $this->responsibleUsers($tenant, $rnc->contract)
             ->each(fn (User $user) => $user->notify($notification));
 
-        return redirect()
-            ->route('tenant.qualidade.rnc.index', $tenant)
+        return (($data['from_modal'] ?? false) ? back() : redirect()->route('tenant.qualidade.rnc.index', $tenant))
             ->with('success', 'Proposta de acao corretiva enviada.');
     }
 
-    public function review(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): Response
+    public function review(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): Response|JsonResponse
     {
         $rnc = $this->loadAccessibleRnc($request, $tenant, $rnc);
 
@@ -97,14 +107,19 @@ class RncAcaoCorretivaController extends Controller
 
         abort_unless($acaoCorretiva, 404);
 
-        return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/AnalisarProposta', [
+        $data = [
             'tenant' => $tenant,
             'rnc' => $rnc,
             'acaoCorretiva' => $this->formatCorrectiveAction($acaoCorretiva, $tenant, $rnc),
             'acoesCorretivas' => $rnc->acoesCorretivas
                 ->map(fn (RelatorioNaoConformidadeAcaoCorretiva $acao): array => $this->formatCorrectiveAction($acao, $tenant, $rnc))
                 ->values(),
-        ]);
+        ];
+        if ($request->expectsJson()) {
+            return response()->json($data)->header('Cache-Control', 'private, no-store');
+        }
+
+        return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/AnalisarProposta', $data);
     }
 
     public function submitReview(Request $request, Tenant $tenant, RelatorioNaoConformidade $rnc): RedirectResponse
@@ -115,6 +130,8 @@ class RncAcaoCorretivaController extends Controller
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::REVIEW, $rnc->contract), 403);
 
         $data = $request->validate([
+            'from_modal' => ['sometimes', 'boolean'],
+            'proposal_id' => ['nullable', 'integer'],
             'decision' => ['required', Rule::in(['approved', 'rejected'])],
             'review_observation' => ['required', 'string', 'max:10000'],
         ], [
@@ -128,6 +145,9 @@ class RncAcaoCorretivaController extends Controller
             ->latest('submitted_at')
             ->first();
 
+        if (($data['from_modal'] ?? false) && (! $acaoCorretiva || (int) ($data['proposal_id'] ?? 0) !== (int) $acaoCorretiva->id)) {
+            throw ValidationException::withMessages(['rnc' => 'Esta proposta não está mais aguardando análise. Feche o modal e atualize a página.']);
+        }
         abort_unless($acaoCorretiva, 404);
 
         $acaoCorretiva->forceFill([
@@ -148,8 +168,7 @@ class RncAcaoCorretivaController extends Controller
             ? 'Proposta aprovada. Os responsaveis foram notificados para iniciar o processo corretivo.'
             : 'Proposta reprovada. Os responsaveis foram notificados e a RNC voltou para envio de nova proposta.';
 
-        return redirect()
-            ->route('tenant.qualidade.rnc.show', [$tenant, $rnc])
+        return (($data['from_modal'] ?? false) ? back() : redirect()->route('tenant.qualidade.rnc.show', [$tenant, $rnc]))
             ->with('success', $message);
     }
 

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'tenant_id',
     'rdo_diario_id',
+    'relatorio_nao_conformidade_id',
     'requested_by_id',
     'provider',
     'provider_request_id',
@@ -55,6 +56,16 @@ class RdoSignatureRequest extends Model
     public function requestedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requested_by_id');
+    }
+
+    public function rnc(): BelongsTo
+    {
+        return $this->belongsTo(RelatorioNaoConformidade::class, 'relatorio_nao_conformidade_id')->withTrashed();
+    }
+
+    public function artifactDisk(): string
+    {
+        return $this->relatorio_nao_conformidade_id ? 'local' : 'public';
     }
 
     public function signers(): HasMany

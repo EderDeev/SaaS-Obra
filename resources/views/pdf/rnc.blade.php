@@ -314,6 +314,14 @@
                 </div>
             </div>
         </div>
+        @if ($rnc->instrucaoCampo)
+            <div class="text-box">
+                <h3>IC de refer&ecirc;ncia</h3>
+                <div class="formatted-text">IC {{ $rnc->instrucaoCampo->formatted_number }} - {{ $rnc->instrucaoCampo->assunto }}
+                    @if ($rnc->instrucaoCampo->notified_at)<br>Comunicada em {{ $rnc->instrucaoCampo->notified_at->format('d/m/Y H:i') }}.@endif
+                </div>
+            </div>
+        @endif
     </section>
 
     <section class="section">
@@ -376,17 +384,18 @@
             </table>
         </section>
     @empty
-        <section class="section photo-page">
+        <section class="section">
             <h2 class="section-title">Imagens</h2>
             <p class="muted">Nenhuma imagem cadastrada nesta RNC.</p>
         </section>
     @endforelse
 
+    @if ($includeAnalysis ?? true)
     <section class="section">
-        <h2 class="section-title">Proposta de a&ccedil;&atilde;o corretiva aprovada</h2>
+        <h2 class="section-title">Proposta de a&ccedil;&atilde;o corretiva e an&aacute;lise</h2>
         @if ($approvedAction)
             <div class="text-box">
-                <h3>Proposta aprovada</h3>
+                <h3>Proposta apresentada</h3>
                 <div class="formatted-text">{!! nl2br(e($approvedAction->descricao_proposta)) !!}</div>
             </div>
             <div class="grid">
@@ -419,7 +428,7 @@
                     </div>
                     <div class="cell">
                         <span class="label">Status da proposta</span>
-                        <span class="value">{{ $approvedAction->status }}</span>
+                        <span class="value">{{ ['pending' => 'Em análise', 'approved' => 'Aprovada', 'rejected' => 'Reprovada'][$approvedAction->status] ?? $approvedAction->status }}</span>
                     </div>
                     <div class="cell">
                         <span class="label">RNC</span>
@@ -438,6 +447,8 @@
         @endif
     </section>
 
+    @endif
+    @if ($includeEvidence ?? true)
     <section class="section">
         <h2 class="section-title">Evid&ecirc;ncias da corre&ccedil;&atilde;o</h2>
         @if ($latestEvidence)
@@ -457,10 +468,21 @@
                     </div>
                     <div class="cell">
                         <span class="label">Status</span>
-                        <span class="value">{{ $rnc->finalized_at ? 'RNC finalizada' : $rnc->status }}</span>
+                        <span class="value">{{ $rnc->finalized_at ? 'RNC finalizada' : 'Evidências registradas' }}</span>
                     </div>
                 </div>
             </div>
+
+            <div class="text-box">
+                <h3>O problema foi resolvido?</h3>
+                <div class="formatted-text">{{ $latestEvidence->resolution_label }}</div>
+            </div>
+            @if ($latestEvidence->resolution_reason)
+                <div class="text-box">
+                    <h3>Motivo</h3>
+                    <div class="formatted-text">{!! nl2br(e($latestEvidence->resolution_reason)) !!}</div>
+                </div>
+            @endif
 
             @forelse ($evidencePhotos->chunk(6) as $photoPage)
                 <table class="photo-grid">
@@ -500,6 +522,7 @@
         @endif
     </section>
 
+    @endif
     <section class="section">
         <h2 class="section-title">Fluxo da RNC</h2>
         <table class="flow-table">
@@ -525,5 +548,19 @@
             </tbody>
         </table>
     </section>
+    @if (!empty($signatureSigners))
+        <section style="page-break-before:always;position:relative;height:740pt;">
+            <h2 class="section-title">Assinaturas das partes</h2>
+            <p>RNC {{ $rnc->formatted_number }} - {{ $rnc->assunto }}</p>
+            <p class="muted" style="margin-top:12pt;">As partes abaixo assinam o documento que reúne a abertura, a proposta, a análise e as evidências da correção.</p>
+            @foreach ($signatureSigners as $signer)
+                <p style="margin-top:14pt;"><strong>{{ \App\Models\RncSignatureSetting::ROLES[$signer['role']] }}</strong><br>{{ $signer['name'] }}<br>{{ $signer['email'] }}</p>
+                <div style="position:absolute;top:630pt;left:{{ ['construtora' => 31.5, 'gerenciadora' => 221.5, 'cliente' => 411.5][$signer['role']] }}pt;width:112pt;text-align:center;font-size:8pt;">
+                    <strong>{{ \App\Models\RncSignatureSetting::ROLES[$signer['role']] }}</strong><br>{{ $signer['name'] }}
+                </div>
+            @endforeach
+            <p style="position:absolute;top:585pt;left:0;font-size:8pt;color:#667085;">Documento preparado para assinatura eletrônica pelo OpenSign.</p>
+        </section>
+    @endif
 </body>
 </html>

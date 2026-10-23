@@ -49,7 +49,7 @@ class TenantIcTest extends TestCase
         $company = $this->tenant->empresas()->create(['contract_id' => $this->contract->id, 'nome' => 'Empresa IC', 'sigla' => 'IC', 'cnpj' => '11.111.111/0001-11', 'tipo_empresa_id' => TipoEmpresa::firstOrCreate(['nome' => 'gerenciadora'])->id]);
         $this->payload = ['contract_id' => $this->contract->id, 'obra_id' => $obra->id, 'disciplina_id' => $disciplina->id,
             'contratante_empresa_id' => $company->id, 'contratada_empresa_id' => $company->id, 'opened_at' => '2026-10-22',
-            'gravidade' => 'Leve', 'instrucao' => 'Corrigir o acabamento do concreto.', 'latitude' => 0, 'longitude' => 0];
+            'assunto' => 'Acabamento do concreto', 'gravidade' => 'Leve', 'instrucao' => 'Corrigir o acabamento do concreto.', 'latitude' => 0, 'longitude' => 0];
         $this->actingAs($this->owner);
     }
 
@@ -88,6 +88,121 @@ class TenantIcTest extends TestCase
         return new UploadedFile($path, 'evidencia.png', 'image/png', null, true);
     }
 
+    public function test_subject_is_saved_updated_and_searchable_independently_of_the_instruction(): void
+    {
+        $ic = $this->draft();
+        $this->assertSame($this->payload['assunto'], $ic->assunto);
+        $this->patch($this->url('update', $ic), array_replace($this->payload, ['assunto' => 'Junta de dilatação']))->assertSessionHasNoErrors();
+        $this->get(route('tenant.qualidade.ic.index', [$this->tenant, 'q' => 'dilatação']))->assertOk()
+            ->assertInertia(fn (Assert $p) => $p->where('ics.total', 1)->where('ics.data.0.assunto', 'Junta de dilatação'));
+        $this->post($this->url('store'), array_replace($this->payload, ['assunto' => str_repeat('x', 256)]))->assertSessionHasErrors('assunto');
+    }
+
+    public function test_supervision_evidence_screen_supports_private_documents_and_images(): void
+    {
+        [$engineer, $contractor, $client] = $this->people();
+        $ic = $this->draft();
+        $this->actingAs($engineer)->get($this->url('evidence.create', $ic))->assertStatus(409);
+        $this->post($this->url('notify', $ic))->assertSessionHasNoErrors();
+        foreach ([$contractor, $client] as $user) {
+            $this->actingAs($user)->get($this->url('evidence.create', $ic))->assertForbidden();
+            $this->get($this->url('show', $ic))->assertOk();
+        }
+        $this->actingAs($engineer)->get($this->url('evidence.create', $ic))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->component('Tenant/Qualidade/InstrucaoCampo/Evidence')->where('ic.assunto', $ic->assunto)->where('resolutionOptions', InstrucaoCampo::RESOLUTION_RESULTS));
+        $this->post($this->url('finalize', $ic), ['resolution_result' => 'partial', 'comment' => 'Reparo parcialmente concluído.', 'attachments' => [
+            UploadedFile::fake()->createWithContent('plano.pdf', "%PDF-1.4\nPlano de reparo"),
+            UploadedFile::fake()->create('memorial.docx', 8, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+            $this->photo(),
+        ]])->assertSessionHasNoErrors()->assertRedirect($this->url('show', $ic));
+        $event = $ic->events()->where('type', 'finalized')->sole();
+        $this->assertSame(3, $ic->attachments()->where('event_id', $event->id)->count());
+        $this->assertSame('closed', $ic->fresh()->status);
+        $pdf = $ic->attachments()->where('original_name', 'plano.pdf')->sole();
+        Storage::disk('local')->assertExists($pdf->path);
+        $download = route('tenant.qualidade.ic.attachment', [$this->tenant, $ic, $pdf]);
+        $this->get($download)->assertOk()->assertDownload('plano.pdf')->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->get($this->url('show', $ic))->assertOk()->assertInertia(fn (Assert $p) => $p->has('ic.attachments', 3)->missing('ic.attachments.0.path')->where('ic.resolution_result', 'partial'));
+        $this->get($this->url('evidence.create', $ic))->assertStatus(409);
+        $this->post($this->url('finalize', $ic), ['resolution_result' => 'yes', 'attachments' => [$this->photo()]])->assertStatus(409);
+        $this->assertSame('partial', $ic->fresh()->resolution_result);
+        $this->assertSame(1, $ic->events()->where('type', 'finalized')->count());
+        $this->actingAs($this->owner);
+        $another = $this->draft();
+        $this->get(route('tenant.qualidade.ic.attachment', [$this->tenant, $another, $pdf]))->assertNotFound();
+        $unrelated = User::factory()->create();
+        $this->tenant->memberships()->create(['user_id' => $unrelated->id, 'role' => 'team_member', 'status' => 'active']);
+        $this->actingAs($unrelated)->get($download)->assertForbidden();
+    }
+
+    public function test_evidence_photos_keep_their_order_and_captions_alongside_documents(): void
+    {
+        [$engineer] = $this->people();
+        $ic = $this->draft();
+        $this->actingAs($engineer)->post($this->url('notify', $ic))->assertSessionHasNoErrors();
+        $this->post($this->url('finalize', $ic), [
+            'resolution_result' => 'yes',
+            'photos' => [$this->photo(), $this->photo()],
+            'photo_comments' => ['Vista geral da correção.', 'Detalhe do acabamento.'],
+            'photo_positions' => [2, 1],
+            'attachments' => [UploadedFile::fake()->createWithContent('relatorio.pdf', "%PDF-1.4\nRelatório de campo")],
+        ])->assertSessionHasNoErrors()->assertRedirect($this->url('show', $ic));
+
+        $event = $ic->events()->where('type', 'finalized')->sole();
+        $photos = $ic->photos()->where('event_id', $event->id)->get();
+        $this->assertSame(['Detalhe do acabamento.', 'Vista geral da correção.'], $photos->pluck('comment')->all());
+        $this->assertSame([1, 2], $photos->pluck('position')->all());
+        foreach ($photos as $photo) {
+            Storage::disk('local')->assertExists($photo->path);
+        }
+        $this->assertSame(1, $ic->attachments()->where('event_id', $event->id)->count());
+        $this->get($this->url('show', $ic))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->has('ic.photos', 2)->where('ic.photos.0.comment', 'Detalhe do acabamento.')
+            ->has('ic.attachments', 1)->where('ic.resolution_result', 'yes'));
+    }
+
+    public function test_finalization_requires_valid_evidence_and_an_explicit_questionnaire_answer(): void
+    {
+        [$engineer] = $this->people();
+        $ic = $this->draft();
+        $this->actingAs($engineer)->post($this->url('notify', $ic))->assertSessionHasNoErrors();
+        foreach ([
+            ['attachments' => [$this->photo()]],
+            ['resolution_result' => 'maybe', 'attachments' => [$this->photo()]],
+            ['resolution_result' => 'yes', 'attachments' => []],
+            ['resolution_result' => 'no', 'attachments' => [UploadedFile::fake()->createWithContent('script.php', '<?php echo 1;')]],
+            ['resolution_result' => 'partial', 'attachments' => [UploadedFile::fake()->create('grande.pdf', 10241, 'application/pdf')]],
+        ] as $payload) {
+            $this->post($this->url('finalize', $ic), $payload)->assertSessionHasErrors();
+        }
+        $this->assertSame('notified', $ic->fresh()->status);
+        $this->assertNull($ic->fresh()->resolution_result);
+        $this->assertSame(0, $ic->attachments()->count());
+        $this->assertSame(0, $ic->events()->where('type', 'finalized')->count());
+    }
+
+    public function test_evidence_modal_loads_authorized_data_and_returns_to_the_filtered_list_after_finalization(): void
+    {
+        [$engineer, $contractor] = $this->people();
+        $ic = $this->draft();
+        $this->actingAs($engineer)->post($this->url('notify', $ic))->assertSessionHasNoErrors();
+        $this->getJson($this->url('evidence.create', $ic))->assertOk()->assertJsonPath('ic.id', $ic->id)
+            ->assertJsonPath('ic.instrucao', $ic->instrucao)->assertJsonPath('resolutionOptions.partial', 'Parcialmente')
+            ->assertHeader('Cache-Control', 'no-store, private');
+        $this->actingAs($contractor)->getJson($this->url('evidence.create', $ic))->assertForbidden();
+        $parent = route('tenant.qualidade.ic.index', [$this->tenant, 'status' => 'notified', 'q' => 'concreto']);
+        $this->actingAs($engineer)->from($parent)->post($this->url('finalize', $ic), [
+            'from_modal' => true, 'resolution_result' => 'yes', 'attachments' => [$this->photo()],
+        ])->assertSessionHasNoErrors()->assertRedirect($parent);
+        $this->assertSame('closed', $ic->fresh()->status);
+        $this->getJson($this->url('evidence.create', $ic))->assertStatus(409);
+        $this->from($parent)->post($this->url('finalize', $ic), [
+            'from_modal' => true, 'resolution_result' => 'no', 'attachments' => [$this->photo()],
+        ])->assertSessionHasErrors('ic')->assertRedirect($parent);
+        $this->assertSame('yes', $ic->fresh()->resolution_result);
+        $this->assertSame(1, $ic->events()->where('type', 'finalized')->count());
+    }
+
     public function test_creation_has_only_instruction_and_automatic_numbers_that_are_not_reused_after_soft_delete(): void
     {
         $ic = $this->draft();
@@ -102,34 +217,37 @@ class TenantIcTest extends TestCase
         $this->payload['opened_at'] = '2027-01-01';
         $this->assertSame('001/2027', $this->draft()->formatted_number);
         $this->get($this->url('create'))->assertOk()->assertInertia(fn (Assert $p) => $p->component('Tenant/Qualidade/InstrucaoCampo/Create')->has('obras', 1));
-        foreach (['instrucao' => ' ', 'project_document_id' => 9, 'prazo_resposta_acao_corretiva' => '2026-11-01'] as $key => $value) {
+        foreach (['assunto' => ' ', 'instrucao' => ' ', 'project_document_id' => 9, 'prazo_resposta_acao_corretiva' => '2026-11-01'] as $key => $value) {
             $this->post($this->url('store'), array_replace($this->payload, [$key => $value]))->assertSessionHasErrors($key);
         }
     }
 
-    public function test_complete_flow_notifies_all_parties_and_requires_the_engineer_comment(): void
+    public function test_supervision_finalizes_each_questionnaire_outcome_directly_and_notifies_all_parties(): void
     {
         [$engineer, $contractor, $client] = $this->people();
-        $ic = $this->draft();
-        $this->actingAs($engineer)->post($this->url('notify', $ic))->assertSessionHasNoErrors()->assertRedirect();
-        foreach ([$engineer, $contractor, $client] as $u) {
-            Notification::assertSentTo($u, IcFlowNotification::class, fn ($n) => $n->event === 'notified');
+        foreach (InstrucaoCampo::RESOLUTION_RESULTS as $answer => $label) {
+            $this->actingAs($this->owner)->post($this->url('store'), $this->payload + ['photos' => [$this->photo()]])->assertSessionHasNoErrors();
+            $ic = InstrucaoCampo::latest('id')->firstOrFail();
+            $this->actingAs($engineer)->post($this->url('notify', $ic))->assertSessionHasNoErrors();
+            foreach ([$contractor, $client] as $user) {
+                $this->actingAs($user)->post($this->url('finalize', $ic), ['resolution_result' => $answer, 'photos' => [$this->photo()]])->assertForbidden();
+            }
+            $this->actingAs($engineer)->get($this->url('evidence.create', $ic))->assertOk()->assertInertia(fn (Assert $p) => $p->has('ic.photos', 1));
+            $this->post($this->url('finalize', $ic), ['resolution_result' => $answer, 'photos' => [$this->photo()]])->assertSessionHasNoErrors()->assertRedirect($this->url('show', $ic));
+            $this->assertSame('closed', $ic->fresh()->status);
+            $this->assertSame($answer, $ic->fresh()->resolution_result);
+            $this->assertSame($engineer->id, $ic->fresh()->closed_by_id);
+            $this->assertNotNull($ic->fresh()->closed_at);
+            $event = $ic->events()->where('type', 'finalized')->sole();
+            $this->assertSame(1, $ic->photos()->where('event_id', $event->id)->count());
+            $this->assertSame(['created', 'notified', 'finalized'], $ic->events()->pluck('type')->all());
+            foreach ([$engineer, $contractor, $client] as $user) {
+                Notification::assertSentTo($user, IcFlowNotification::class, fn ($n) => $n->event === 'finalized' && $n->ic->id === $ic->id);
+            }
+            $notification = new IcFlowNotification($ic->fresh(), $engineer, 'finalized');
+            $this->assertStringContainsString($label, $notification->toArray($client)['body']);
         }
-        $this->assertSame('notified', $ic->fresh()->status);
-        $this->actingAs($client)->post($this->url('correction', $ic), ['comment' => 'Tentar corrigir'])->assertForbidden();
-        $this->actingAs($contractor)->post($this->url('correction', $ic), ['comment' => 'Acabamento corrigido.', 'photos' => [$this->photo()]])->assertSessionHasNoErrors()->assertRedirect();
-        $this->assertSame('correction_submitted', $ic->fresh()->status);
-        $event = $ic->events()->where('type', 'correction_submitted')->first();
-        $this->assertSame($event->id, $ic->photos()->first()->event_id);
-        Notification::assertSentTo($engineer, IcFlowNotification::class, fn ($n) => $n->event === 'correction_submitted');
-        $this->post($this->url('close', $ic), ['comment' => 'OK', 'decision' => 'resolved'])->assertForbidden();
-        $this->actingAs($engineer)->post($this->url('close', $ic), ['comment' => ' ', 'decision' => 'resolved'])->assertSessionHasErrors('comment');
-        $this->post($this->url('close', $ic), ['comment' => 'Correção verificada em campo.', 'decision' => 'resolved'])->assertSessionHasNoErrors()->assertRedirect();
-        $this->assertSame('closed', $ic->fresh()->status);
-        $this->assertSame($engineer->id, $ic->fresh()->closed_by_id);
-        Notification::assertSentTo($client, IcFlowNotification::class, fn ($n) => $n->event === 'closed');
-        $this->post($this->url('close', $ic), ['comment' => 'Outro comentário', 'decision' => 'resolved'])->assertStatus(409);
-        $this->assertSame(4, $ic->events()->count());
+        $this->assertDatabaseCount('relatorio_nao_conformidades', 0);
     }
 
     public function test_communication_requires_active_responsibles_and_cannot_be_repeated(): void
@@ -147,21 +265,20 @@ class TenantIcTest extends TestCase
         $this->assertSame(1, $ic->events()->where('type', 'notified')->count());
     }
 
-    public function test_return_and_rnc_required_preserve_the_full_history_without_changing_rnc(): void
+    public function test_legacy_proposal_and_analysis_endpoints_cannot_restore_the_old_workflow(): void
     {
         [$engineer, $contractor] = $this->people();
         $ic = $this->draft();
-        $this->post($this->url('notify', $ic));
-        $this->actingAs($contractor)->post($this->url('correction', $ic), ['comment' => 'Primeira correção']);
-        $this->actingAs($engineer)->post($this->url('close', $ic), ['comment' => 'Ainda há falhas no acabamento.', 'decision' => 'return'])->assertSessionHasNoErrors();
+        $this->actingAs($engineer)->post($this->url('notify', $ic))->assertSessionHasNoErrors();
+        $this->actingAs($contractor)->post($this->url('correction', $ic), ['comment' => 'Proposta'])->assertForbidden();
+        $this->get($this->url('correction.create', $ic))->assertForbidden();
+        $this->actingAs($engineer)->post($this->url('close', $ic), ['comment' => 'Análise antiga', 'decision' => 'resolved'])->assertSessionHasErrors('resolution_result');
         $this->assertSame('notified', $ic->fresh()->status);
-        $this->assertNull($ic->fresh()->closed_at);
-        $this->actingAs($contractor)->post($this->url('correction', $ic), ['comment' => 'Segunda correção']);
-        $this->actingAs($engineer)->post($this->url('close', $ic), ['comment' => 'O problema persiste. Abrir RNC.', 'decision' => 'rnc_required'])->assertSessionHasNoErrors();
-        $this->assertSame('rnc_required', $ic->fresh()->status);
-        $this->assertSame(2, $ic->events()->where('type', 'correction_submitted')->count());
+        $this->post($this->url('finalize', $ic), ['resolution_result' => 'no', 'attachments' => [$this->photo()]])->assertSessionHasNoErrors();
+        $this->assertSame('closed', $ic->fresh()->status);
+        $this->assertSame('no', $ic->fresh()->resolution_result);
         $this->assertDatabaseCount('relatorio_nao_conformidades', 0);
-        Notification::assertSentTo($contractor, IcFlowNotification::class, fn ($n) => $n->event === 'rnc_required');
+        $this->assertSame(0, $ic->events()->whereIn('type', ['correction_submitted', 'returned', 'rnc_required'])->count());
     }
 
     public function test_only_drafts_can_be_edited_deleted_and_photos_removed(): void
@@ -311,37 +428,89 @@ class TenantIcTest extends TestCase
         $this->actingAs($u)->get(route('dashboard'))->assertRedirect($this->url('index'));
     }
 
-    public function test_dashboard_counts_filters_months_and_recent_records_follow_the_authorized_scope(): void
+    public function test_dashboard_counts_filters_months_and_options_follow_the_authorized_scope(): void
     {
         $this->travelTo(Carbon::parse('2026-10-22 12:00:00'));
-        foreach (array_keys(InstrucaoCampo::STATUSES) as $status) {
-            $this->draft()->update(['status' => $status]);
+        foreach ([['draft', null], ['notified', null], ['closed', 'yes'], ['closed', 'partial'], ['closed', 'no']] as [$status, $answer]) {
+            $this->draft()->update(['status' => $status, 'resolution_result' => $answer]);
         }
         $old = $this->draft();
         $old->update(['opened_at' => '2025-01-01']);
         $deleted = $this->draft();
         $deleted->delete();
         $other = $this->tenant->contracts()->create(['code' => 'PRIVATE', 'name' => 'Outro contrato', 'status' => 'active']);
-        $ic = InstrucaoCampo::create(array_replace($old->getAttributes(), ['id' => null, 'contract_id' => $other->id, 'sequence_number' => 100, 'opened_at' => '2026-10-22', 'status' => 'rnc_required']));
+        $ic = InstrucaoCampo::create(array_replace($old->getAttributes(), ['id' => null, 'contract_id' => $other->id, 'sequence_number' => 100, 'opened_at' => '2026-10-22', 'status' => 'closed', 'resolution_result' => 'no']));
         $this->get($this->url('dashboard'))->assertOk()->assertInertia(fn (Assert $p) => $p
             ->component('Tenant/Qualidade/InstrucaoCampo/Dashboard')->where('counts.all', 7)->where('counts.draft', 2)
-            ->where('counts.rnc_required', 2)->has('recent', 6)->has('contracts', 2)->has('months', 6)
+            ->where('counts.resolved_no', 2)->missing('recent')->has('contracts', 2)->has('months', 6)->has('obras', 1)->has('disciplinas', 1)
             ->where('months', fn ($months) => collect($months)->sum('total') === 6)
-            ->where('byContract.0.total', 6)->where('recent.0.id', $ic->id));
+            ->where('byContract.0.total', 6));
         $this->get($this->url('dashboard').'?contract_id='.$this->contract->id)->assertInertia(fn (Assert $p) => $p
-            ->where('counts.all', 6)->where('counts.rnc_required', 1)->where('months', fn ($months) => collect($months)->sum('total') === 5)
+            ->where('counts.all', 6)->where('counts.resolved_no', 1)->where('months', fn ($months) => collect($months)->sum('total') === 5)
             ->has('byContract', 1));
         $u = $this->responsible('monitoring');
         $this->actingAs($u)->get($this->url('dashboard'))->assertForbidden();
         InstrucaoCampoResponsavel::where('user_id', $u->id)->first()->update(['permissions' => [P::DASHBOARD]]);
         $this->get($this->url('dashboard'))->assertOk()->assertInertia(fn (Assert $p) => $p
             ->where('counts.all', 6)->has('contracts', 1)->where('icPermissions.can.dashboard_ic', true)
-            ->where('icPermissions.can.view_ic', false)->where('recent', fn ($records) => collect($records)->every(fn ($record) => ! $record['can_view'])));
+            ->where('icPermissions.can.view_ic', false)->missing('recent')->has('obras', 1)->has('disciplinas', 1));
         $this->get($this->url('dashboard').'?contract_id='.$other->id)->assertSessionHasErrors('contract_id');
         $tenant2 = Tenant::create(['name' => 'Outro IC dashboard', 'slug' => 'outro-ic-dashboard', 'status' => 'active', 'plan' => 'starter']);
         $tenant2->memberships()->create(['user_id' => $this->owner->id, 'role' => 'tenant_owner', 'status' => 'active']);
         $this->actingAs($this->owner)->get(route('tenant.qualidade.ic.dashboard', $tenant2))->assertOk()->assertInertia(fn (Assert $p) => $p
-            ->where('counts.all', 0)->has('recent', 0)->has('contracts', 0)->has('byContract', 0));
+            ->where('counts.all', 0)->missing('recent')->has('contracts', 0)->has('byContract', 0)->has('obras', 0)->has('disciplinas', 0));
+    }
+
+    public function test_dashboard_filters_combine_and_apply_to_every_metric_and_chart(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-22 12:00:00'));
+        $obra = $this->tenant->obras()->create(['contract_id' => $this->contract->id, 'codigo' => 'OB2', 'nome' => 'Segunda obra', 'tipo' => 'pai']);
+        $disciplina = $this->tenant->disciplinas()->create(['contract_id' => $this->contract->id, 'nome' => 'Estrutura', 'sigla' => 'EST', 'cor' => '#000000']);
+        foreach (['yes', 'partial', 'no'] as $answer) {
+            $ic = $this->draft();
+            $ic->update(['obra_id' => $obra->id, 'disciplina_id' => $disciplina->id, 'gravidade' => 'Grave',
+                'opened_at' => '2026-10-10', 'status' => 'closed', 'resolution_result' => $answer]);
+        }
+        foreach ([['obra_id' => $this->payload['obra_id']], ['disciplina_id' => $this->payload['disciplina_id']],
+            ['gravidade' => 'Leve'], ['opened_at' => '2026-10-09'], ['opened_at' => '2026-10-11']] as $difference) {
+            $ic = $this->draft();
+            $ic->update(array_replace(['obra_id' => $obra->id, 'disciplina_id' => $disciplina->id,
+                'gravidade' => 'Grave', 'opened_at' => '2026-10-10', 'status' => 'closed', 'resolution_result' => 'no'], $difference));
+        }
+        $query = ['contract_id' => $this->contract->id, 'obra_id' => $obra->id, 'disciplina_id' => $disciplina->id,
+            'gravidade' => 'Grave', 'date_from' => '2026-10-10', 'date_to' => '2026-10-10'];
+        $this->get($this->url('dashboard').'?'.http_build_query($query))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('counts.all', 3)->where('counts.closed', 3)->where('counts.resolved_yes', 1)
+            ->where('counts.resolved_partial', 1)->where('counts.resolved_no', 1)
+            ->where('months', fn ($months) => collect($months)->sum('total') === 3)
+            ->where('byContract.0.total', 3)->where('filters.gravidade', 'Grave')->missing('recent'));
+        foreach (['obra_id', 'disciplina_id', 'gravidade', 'date_from', 'date_to'] as $filter) {
+            $this->get($this->url('dashboard').'?'.http_build_query([$filter => $query[$filter]]))->assertOk();
+        }
+        $this->get($this->url('dashboard').'?'.http_build_query(array_replace($query, ['date_from' => '2026-11-01', 'date_to' => '2026-11-30'])))
+            ->assertInertia(fn (Assert $p) => $p->where('counts.all', 0)->where('counts.resolved_yes', 0)
+                ->where('counts.resolved_partial', 0)->where('counts.resolved_no', 0)->has('byContract', 0));
+        $this->get($this->url('dashboard').'?date_from=2026-10-20&date_to=2026-10-10')->assertSessionHasErrors('date_to');
+        $this->get($this->url('dashboard').'?date_from=invalid')->assertSessionHasErrors('date_from');
+        $this->get($this->url('dashboard').'?gravidade=invalid')->assertSessionHasErrors('gravidade');
+    }
+
+    public function test_dashboard_rejects_work_and_discipline_filters_outside_the_authorized_contracts(): void
+    {
+        $this->draft();
+        $other = $this->tenant->contracts()->create(['code' => 'PRIVATE-FILTERS', 'name' => 'Outro contrato', 'status' => 'active']);
+        $obra = $this->tenant->obras()->create(['contract_id' => $other->id, 'codigo' => 'PRIVATE-OB', 'nome' => 'Obra privada', 'tipo' => 'pai']);
+        $disciplina = $this->tenant->disciplinas()->create(['contract_id' => $other->id, 'nome' => 'Disciplina privada', 'sigla' => 'PRV', 'cor' => '#000000']);
+        foreach (['obra_id' => $obra->id, 'disciplina_id' => $disciplina->id] as $key => $value) {
+            $this->get($this->url('dashboard').'?'.http_build_query(['contract_id' => $this->contract->id, $key => $value]))->assertSessionHasErrors($key);
+        }
+        $user = $this->responsible('operational');
+        InstrucaoCampoResponsavel::where('user_id', $user->id)->first()->update(['permissions' => [P::DASHBOARD]]);
+        $this->actingAs($user)->get($this->url('dashboard'))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->has('contracts', 1)->has('obras', 1)->has('disciplinas', 1)->where('counts.all', 1));
+        foreach (['obra_id' => $obra->id, 'disciplina_id' => $disciplina->id] as $key => $value) {
+            $this->get($this->url('dashboard').'?'.http_build_query([$key => $value]))->assertSessionHasErrors($key);
+        }
     }
 
     public function test_responsibles_and_permission_screens_include_the_new_module(): void
