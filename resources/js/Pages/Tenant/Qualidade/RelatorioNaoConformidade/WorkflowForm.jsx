@@ -48,7 +48,7 @@ export default function WorkflowForm({ stage, tenant, rnc, acaoCorretiva, acoesC
     const needsReason = stage === 'evidence' && ['partial', 'no'].includes(form.data.resolution_result);
     const ready = stage === 'proposal' ? Boolean(form.data.descricao_proposta.trim() && form.data.prazo_execucao_proposto && form.data.attachment)
         : stage === 'review' ? Boolean(form.data.decision && form.data.review_observation.trim())
-            : Boolean(photos.length && form.data.attachment && form.data.resolution_result && (!needsReason || form.data.resolution_reason.trim()));
+            : Boolean((photos.length || form.data.attachment) && form.data.resolution_result && (!needsReason || form.data.resolution_reason.trim()));
     const chooseZip = (event) => {
         const file = event.target.files?.[0] || null;
         if (file && (!/\.zip$/i.test(file.name) || file.size > 30 * 1024 * 1024)) {
@@ -103,7 +103,8 @@ export default function WorkflowForm({ stage, tenant, rnc, acaoCorretiva, acoesC
                                     {needsReason && <label className="grid gap-2 text-sm font-medium">{form.data.resolution_result === 'partial' ? 'Motivo da resolução parcial' : 'Motivo de não resolução'}<textarea className="sig-input min-h-32 w-full resize-y" value={form.data.resolution_reason} onChange={(event) => form.setData('resolution_reason', event.target.value)} maxLength={10000} required placeholder="Explique o que ficou pendente e por quê." /></label>}
                                 </>}
                                 {stage !== 'review' && <>
-                                    <label className="grid gap-2 text-sm font-medium">{stage === 'evidence' ? 'Documento ZIP das evidências' : 'Anexo ZIP da proposta'}<input type="file" className="block w-full min-w-0 text-sm" accept=".zip,application/zip" onChange={chooseZip} required /></label>
+                                    <label className="grid gap-2 text-sm font-medium">{stage === 'evidence' ? 'Documento ZIP das evidências' : 'Anexo ZIP da proposta'}<input type="file" className="block w-full min-w-0 text-sm" accept=".zip,application/zip" onChange={chooseZip} required={stage === 'proposal'} /></label>
+                                    {stage === 'evidence' && <p className="text-xs text-[var(--ink-500)]">Envie imagens, um arquivo ZIP ou ambos.</p>}
                                     <p className="text-xs text-[var(--ink-500)]">Arquivo ZIP de até 30 MB.</p>
                                     {form.data.attachment && <p className="break-words rounded-lg bg-slate-50 p-3 text-sm">{form.data.attachment.name} · {(form.data.attachment.size / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} MB</p>}
                                 </>}

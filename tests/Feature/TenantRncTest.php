@@ -306,6 +306,55 @@ class TenantRncTest extends TestCase
         Notification::assertSentTo($owner, RncEvidenceSubmittedNotification::class);
     }
 
+    public function test_rnc_evidence_accepts_photos_or_zip_or_both_and_rejects_empty_uploads(): void
+    {
+        Notification::fake();
+        Storage::fake('public');
+        [$tenant, $user, $contract, $obra, $contratante, $contratada] = $this->tenantScenario();
+
+        $base = $this->createRnc($tenant, $user, $contract, $obra, $contratante, $contratada);
+        foreach (['photos', 'zip', 'both'] as $kind) {
+            $rnc = $base->replicate();
+            $rnc->forceFill(['sequence_number' => RelatorioNaoConformidade::max('sequence_number') + 1, 'notified_at' => now()])->save();
+            $action = $this->createCorrectiveAction($tenant, $rnc, $user);
+            $action->update(['status' => 'approved', 'reviewed_at' => now(), 'reviewed_by_id' => $user->id]);
+            $endpoint = route('tenant.qualidade.rnc.evidencias.store', [$tenant, $rnc]);
+            $payload = ['from_modal' => true, 'proposal_id' => $action->id, 'resolution_result' => 'yes'];
+
+            foreach ([[], ['evidence_photos' => [], 'attachment' => null]] as $empty) {
+                $this->actingAs($user)->post($endpoint, $payload + $empty)
+                    ->assertSessionHasErrors(['attachment', 'evidence_photos']);
+                $this->assertSame(0, $rnc->evidencias()->count());
+            }
+            $this->post($endpoint, $payload + ['attachment' => UploadedFile::fake()->create('texto.txt', 1, 'text/plain')])
+                ->assertSessionHasErrors('attachment');
+            $this->post($endpoint, $payload + ['evidence_photos' => [UploadedFile::fake()->create('texto.txt', 1, 'text/plain')]])
+                ->assertSessionHasErrors('evidence_photos.0');
+
+            $hasPhotos = $kind !== 'zip';
+            $hasZip = $kind !== 'photos';
+            $this->post($endpoint, $payload + [
+                'evidence_photos' => $hasPhotos ? [$this->fakePhotoUpload()] : [],
+                'attachment' => $hasZip ? UploadedFile::fake()->create('evidencias.zip', 8, 'application/zip') : null,
+            ])->assertSessionHasNoErrors()->assertRedirect();
+
+            $evidence = $rnc->evidencias()->sole();
+            $this->assertSame($hasPhotos ? 1 : 0, $evidence->photos()->count());
+            $this->assertSame($hasZip ? 'evidencias.zip' : null, $evidence->attachment_original_name);
+            if ($hasZip) {
+                Storage::disk('public')->assertExists($evidence->attachment_path);
+            } else {
+                $this->assertNull($evidence->attachment_path);
+                $this->assertSame(0, $evidence->attachment_size);
+                $this->get(route('tenant.qualidade.rnc.evidencias.download', [$tenant, $rnc, $evidence]))->assertNotFound();
+            }
+            $this->assertSame('em_assinatura', $rnc->fresh()->status);
+            $this->assertNull($rnc->fresh()->finalized_at);
+            $this->get(route('tenant.qualidade.rnc.show', [$tenant, $rnc]))->assertOk();
+            $this->get(route('tenant.qualidade.rnc.pdf', [$tenant, $rnc, 'scope' => 'evidence']))->assertOk();
+        }
+    }
+
     public function test_rnc_evidence_requires_an_answer_and_reasons_for_partial_or_unresolved_results(): void
     {
         Notification::fake();
