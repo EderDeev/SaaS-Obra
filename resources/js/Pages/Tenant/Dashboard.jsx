@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import OverviewTour from '@/Components/OverviewTour';
+import OsDnitManagementCard from '@/Components/OsDnitManagementCard';
 import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import {
@@ -29,7 +30,7 @@ const eventIcons = {
     Documento: FileText,
     RDO: HardHat,
     Medição: ReceiptText,
-    'Ordem de serviço': ClipboardCheck,
+    'Liberação de Serviço': ClipboardCheck,
     Aditivo: ClipboardList,
 };
 
@@ -66,7 +67,8 @@ const activityCategories = {
     budget: 'Orcamento',
     measurement: 'Medicao',
     documentation: 'Documentacao',
-    service_order: 'Ordem de servico',
+    service_order: 'Liberação de Serviço',
+    os_dnit: 'Ordem de Serviço',
     construction_diary: 'Diario de obra',
     contract: 'Contrato',
     administrative: 'Administrativo',
@@ -98,6 +100,7 @@ export default function TenantDashboard({
     attentionItems,
     recentEvents,
     capabilities,
+    osSummary = null,
 }) {
     const [attentionFilter, setAttentionFilter] = useState('all');
     const filteredAttentionItems = attentionFilter === 'all'
@@ -154,6 +157,8 @@ export default function TenantDashboard({
                     </div>
                 </section>
 
+                {osSummary && <div className="mt-6"><OsDnitManagementCard tenant={tenant} summary={osSummary} /></div>}
+
                 <section data-tour="overview-operation" className="mt-6">
                     <div className="mb-3">
                         <h2 className="text-[16px] font-semibold text-[var(--ink-900)]">Operação do contrato</h2>
@@ -163,7 +168,7 @@ export default function TenantDashboard({
                         {capabilities.documentation && <OperationalCard icon={Inbox} title="Documentação" value={stats.documents} detail={stats.pendingTriage > 0 ? `${stats.pendingTriage} e-mail(s) em triagem` : `${stats.documentsInProgress} em processamento OCR`} tone={stats.pendingTriage > 0 ? 'amber' : stats.documentsInProgress > 0 ? 'blue' : 'green'} href={route(stats.pendingTriage > 0 && capabilities.documentationEmail ? 'tenant.ged.triage' : 'tenant.ged.index', tenant.slug)} />}
                         {capabilities.rdo && <OperationalCard icon={HardHat} title="Diário de obra" value={stats.rdoAwaitingReview} detail={stats.rdoAwaitingReview > 0 ? 'RDO(s) aguardando fluxo' : 'Nenhum RDO pendente'} tone={stats.rdoAwaitingReview > 0 ? 'amber' : 'green'} href={route('tenant.diario-obra.rdo.dashboard', tenant.slug)} />}
                         {capabilities.measurements && <OperationalCard icon={ReceiptText} title="Medição" value={stats.openBoletins} detail={stats.openBoletins > 0 ? 'boletim(ns) em lançamento' : 'Nenhum boletim aberto'} tone={stats.openBoletins > 0 ? 'blue' : 'green'} href={route('tenant.medicao.boletim-medicao.index', tenant.slug)} />}
-                        {capabilities.serviceOrders && <OperationalCard icon={ClipboardCheck} title="Ordem de serviço" value={stats.pendingOrders} detail={stats.pendingOrders > 0 ? 'OS(s) em análise ou aprovação' : 'Nenhuma OS pendente'} tone={stats.pendingOrders > 0 ? 'amber' : 'green'} href={route('tenant.ordem-servico.analise.index', tenant.slug)} />}
+                        {capabilities.serviceOrders && <OperationalCard icon={ClipboardCheck} title="Liberação de Serviço" value={stats.pendingOrders} detail={stats.pendingOrders > 0 ? 'Liberações em análise ou aprovação' : 'Nenhuma liberação pendente'} tone={stats.pendingOrders > 0 ? 'amber' : 'green'} href={route('tenant.ordem-servico.analise.index', tenant.slug)} />}
                     </div>
                 </section>
 

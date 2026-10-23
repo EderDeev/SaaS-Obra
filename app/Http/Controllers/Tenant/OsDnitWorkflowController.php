@@ -26,7 +26,7 @@ class OsDnitWorkflowController extends Controller
             $order->update(['status' => 'awaiting_concremat', 'submitted_at' => now(),
                 'review_comment' => null, 'estimated_deadline' => null, 'review_items' => null, 'analyzed_by_id' => null, 'reviewed_at' => null]);
             $this->record($order, $request, 'submitted', $from);
-        }, 'OS enviada ao fiscal Concremat.');
+        }, 'OS enviada à Supervisão.');
     }
 
     public function review(Request $request, Tenant $tenant, OsDnitOrder $order)
@@ -48,8 +48,10 @@ class OsDnitWorkflowController extends Controller
             ], ['items.required' => 'Mantenha pelo menos um produto na análise.',
                 'review_comment.required' => 'Informe o comentário da análise.',
                 'items.*.product_id.exists' => 'Selecione um produto deste contrato.',
-                'estimated_deadline.required' => 'Informe o prazo estimado pela Concremat.']);
-            if ($data['mode'] === 'forward') $this->recipient($tenant, $order, 'contract_inspector');
+                'estimated_deadline.required' => 'Informe o prazo estimado pela Supervisão.']);
+            if ($data['mode'] === 'forward') {
+                $this->recipient($tenant, $order, 'contract_inspector');
+            }
             $products = OsDnitProduct::where('tenant_id', $tenant->id)->where('contract_id', $order->contract_id)
                 ->whereIn('id', array_column($data['items'], 'product_id'))->sharedLock()->get()->keyBy('id');
             if ($products->count() !== count($data['items'])) {
@@ -58,7 +60,8 @@ class OsDnitWorkflowController extends Controller
             $items = array_map(function ($item) use ($products, $order) {
                 $product = $products->get($item['product_id']);
                 // Preserve the proposal's labels when only its quantity changes.
-                $original = collect($order->review_items ?? $order->items->toArray())->firstWhere('product_id', $product->id);
+                $original = collect($order->review_items ?? [])->firstWhere('product_id', $product->id);
+
                 return ['product_id' => $product->id, 'product_code' => $original['product_code'] ?? $product->code,
                     'product_name' => $original['product_name'] ?? $product->name, 'unit' => $original['unit'] ?? $product->unit,
                     'frequency' => $original['frequency'] ?? $product->frequency,
@@ -86,12 +89,24 @@ class OsDnitWorkflowController extends Controller
                 'comment' => ['required', 'string', 'max:20000'],
             ], ['comment.required' => $request->input('decision') === 'return' ? 'Informe o motivo da reprovação.' : 'Informe o comentário da decisão.',
                 'return_to.required_if' => 'Selecione para quem a OS será devolvida.']);
-            if ($data['decision'] === 'return') $this->recipient($tenant, $order, $data['return_to']);
+            if ($data['decision'] === 'return') {
+                $this->recipient($tenant, $order, $data['return_to']);
+            }
             $from = $order->status;
             $order->update(['status' => $data['decision'] === 'approve' ? 'approved'
                 : ($data['return_to'] === 'concremat' ? 'returned_concremat' : 'returned_analyst')]);
             $this->record($order, $request, $data['decision'] === 'approve' ? 'approved' : 'returned', $from, $data['comment'] ?? null);
         }, $request->input('decision') === 'approve' ? 'Serviço aprovado.' : 'OS devolvida com justificativa.');
+    }
+
+    public function finalize(Request $request, Tenant $tenant, OsDnitOrder $order)
+    {
+        return $this->mutate($request, $tenant, $order, function ($order) use ($request, $tenant) {
+            abort_unless(Access::hasRole($request->user(), $tenant, $order->contract_id, 'contract_inspector'), 403);
+            $this->state($order, ['approved']);
+            $order->update(['status' => 'completed', 'finalized_at' => now(), 'finalized_by_id' => $request->user()->id]);
+            $this->record($order, $request, 'completed', 'approved', 'Serviço concluído. OS finalizada pelo fiscal do contrato.');
+        }, 'OS finalizada. Serviço concluído.');
     }
 
     private function mutate(Request $request, Tenant $tenant, OsDnitOrder $order, callable $action, string $message)
@@ -106,6 +121,7 @@ class OsDnitWorkflowController extends Controller
             }
             $action($locked);
         });
+
         return back()->with('success', $message);
     }
 
@@ -117,7 +133,7 @@ class OsDnitWorkflowController extends Controller
 
     private function state(OsDnitOrder $order, array $states): void
     {
-        if (!in_array($order->status, $states, true)) {
+        if (! in_array($order->status, $states, true)) {
             throw ValidationException::withMessages(['status' => 'Esta ação não está disponível na etapa atual da OS. Atualize a página.']);
         }
     }
@@ -127,6 +143,8 @@ class OsDnitWorkflowController extends Controller
         $exists = $role === 'analyst'
             ? Access::contracts($order->creator, $tenant, 'analyst')->whereKey($order->contract_id)->exists()
             : Access::hasRecipient($tenant, $order->contract_id, $role);
-        if (!$exists) throw ValidationException::withMessages(['workflow' => 'Cadastre um responsável com vínculo ativo para a etapa de destino em Responsáveis.']);
+        if (! $exists) {
+            throw ValidationException::withMessages(['workflow' => 'Cadastre um responsável com vínculo ativo para a etapa de destino em Responsáveis.']);
+        }
     }
 }

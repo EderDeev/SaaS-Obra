@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\ContractParticipant;
 use App\Models\AiMonthlyUsage;
+use App\Models\ContractParticipant;
+use App\Models\InstrucaoCampoResponsavel;
 use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\TenantUser;
@@ -15,6 +16,7 @@ use App\Support\BudgetPermissions;
 use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
+use App\Support\IcPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
@@ -69,12 +71,17 @@ class UserController extends Controller
             ->where('status', 'active')
             ->get()
             ->keyBy(fn (RelatorioNaoConformidadeResponsavel $responsavel): string => "{$responsavel->user_id}:{$responsavel->contract_id}");
+        $icPermissionsByUserContract = InstrucaoCampoResponsavel::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('status', 'active')
+            ->get()
+            ->keyBy(fn (InstrucaoCampoResponsavel $responsavel): string => "{$responsavel->user_id}:{$responsavel->contract_id}");
         $aiUsageByUser = AiMonthlyUsage::query()
             ->where('tenant_id', $tenant->id)
             ->whereDate('period', now()->startOfMonth()->toDateString())
             ->pluck('total_tokens', 'user_id');
 
-        $memberships->each(function (TenantUser $membership) use ($participantsByUser, $rncPermissionsByUserContract, $aiUsageByUser): void {
+        $memberships->each(function (TenantUser $membership) use ($participantsByUser, $rncPermissionsByUserContract, $icPermissionsByUserContract, $aiUsageByUser): void {
             $userPermissions = $membership->role === 'tenant_owner'
                 ? UserPermissions::all()
                 : UserPermissions::normalize(
@@ -128,6 +135,11 @@ class UserController extends Controller
                                 ->get("{$membership->user_id}:{$participant->contract_id}")
                                 ?->permissions ?? [],
                         ),
+                        'ic_permissions' => IcPermissions::normalize(
+                            $icPermissionsByUserContract
+                                ->get("{$membership->user_id}:{$participant->contract_id}")
+                                ?->permissions ?? [],
+                        ),
                     ])
                     ->values()
                     ->all(),
@@ -178,6 +190,10 @@ class UserController extends Controller
                     'label' => 'RNC',
                     'permissions' => RncPermissions::labels(),
                 ],
+                'ic_permissions' => [
+                    'label' => 'IC - Instrução de Campo',
+                    'permissions' => IcPermissions::labels(),
+                ],
                 'documentation_permissions' => [
                     'label' => 'Documentação',
                     'permissions' => DocumentationPermissions::labels(),
@@ -191,7 +207,7 @@ class UserController extends Controller
                     'permissions' => OrdemServicoPermissions::labels(),
                 ],
                 'os_dnit_permissions' => [
-                    'label' => 'OS DNIT',
+                    'label' => 'Ordem de Serviço',
                     'permissions' => OsDnitPermissions::labels(),
                 ],
                 'medicao_permissions' => [
@@ -245,7 +261,9 @@ class UserController extends Controller
             'contract_accesses.*.project_permissions' => ['nullable', 'array'],
             'contract_accesses.*.project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
             'contract_accesses.*.rnc_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.ic_permissions' => ['nullable', 'array'],
             'contract_accesses.*.rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
+            'contract_accesses.*.ic_permissions.*' => ['required', 'string', Rule::in(IcPermissions::all())],
             'contract_accesses.*.documentation_permissions' => ['nullable', 'array'],
             'contract_accesses.*.documentation_permissions.*' => ['required', 'string', Rule::in(DocumentationPermissions::all())],
             'contract_accesses.*.diario_obra_permissions' => ['nullable', 'array'],
@@ -370,7 +388,9 @@ class UserController extends Controller
             'contract_accesses.*.project_permissions' => ['nullable', 'array'],
             'contract_accesses.*.project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
             'contract_accesses.*.rnc_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.ic_permissions' => ['nullable', 'array'],
             'contract_accesses.*.rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
+            'contract_accesses.*.ic_permissions.*' => ['required', 'string', Rule::in(IcPermissions::all())],
             'contract_accesses.*.documentation_permissions' => ['nullable', 'array'],
             'contract_accesses.*.documentation_permissions.*' => ['required', 'string', Rule::in(DocumentationPermissions::all())],
             'contract_accesses.*.diario_obra_permissions' => ['nullable', 'array'],
@@ -500,6 +520,7 @@ class UserController extends Controller
             $rules["tenant_module_permissions.{$field}"] = ['sometimes', 'array'];
             $rules["tenant_module_permissions.{$field}.*"] = ['required', 'string', Rule::in($permissions::all())];
         }
+
         return $rules;
     }
 
@@ -514,8 +535,7 @@ class UserController extends Controller
         User $user,
         array $accesses,
         bool $removeMissing = false
-    ): void
-    {
+    ): void {
         if ($removeMissing) {
             $selectedKeys = collect($accesses)
                 ->map(fn (array $access): string => "{$access['contract_id']}:{$access['side']}")
@@ -553,6 +573,24 @@ class UserController extends Controller
             $rncLinksToRemove
                 ->get()
                 ->each(function (RelatorioNaoConformidadeResponsavel $link): void {
+                    $link->update([
+                        'status' => 'inactive',
+                        'permissions' => [],
+                    ]);
+                    $link->delete();
+                });
+            $icLinksToRemove = InstrucaoCampoResponsavel::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('user_id', $user->id)
+                ->where('status', 'active');
+
+            if ($selectedContractIds->isNotEmpty()) {
+                $icLinksToRemove->whereNotIn('contract_id', $selectedContractIds);
+            }
+
+            $icLinksToRemove
+                ->get()
+                ->each(function (InstrucaoCampoResponsavel $link): void {
                     $link->update([
                         'status' => 'inactive',
                         'permissions' => [],
@@ -600,6 +638,9 @@ class UserController extends Controller
             }
 
             $this->syncRncPermissions($request, $tenant, $user, (int) $access['contract_id'], RncPermissions::normalize($access['rnc_permissions'] ?? []));
+            if (array_key_exists('ic_permissions', $access)) {
+                $this->syncIcPermissions($request, $tenant, $user, (int) $access['contract_id'], IcPermissions::normalize($access['ic_permissions'] ?? []));
+            }
         }
     }
 
@@ -645,4 +686,45 @@ class UserController extends Controller
         }
     }
 
+    private function syncIcPermissions(Request $request, Tenant $tenant, User $user, int $contractId, array $permissions): void
+    {
+        $link = InstrucaoCampoResponsavel::withTrashed()
+            ->where('tenant_id', $tenant->id)
+            ->where('contract_id', $contractId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if ($permissions === []) {
+            if ($link) {
+                $link->update([
+                    'status' => 'inactive',
+                    'permissions' => [],
+                ]);
+
+                if (! $link->trashed()) {
+                    $link->delete();
+                }
+            }
+
+            return;
+        }
+
+        $link ??= new InstrucaoCampoResponsavel([
+            'contract_id' => $contractId,
+            'user_id' => $user->id,
+        ]);
+
+        $link->fill([
+            'tenant_id' => $tenant->id,
+            'created_by_id' => $link->created_by_id ?? $request->user()->id,
+            'status' => 'active',
+            'responsibility_type' => IcPermissions::responsibilityTypeForPermissions($permissions),
+            'permissions' => $permissions,
+        ]);
+        $link->save();
+
+        if ($link->trashed()) {
+            $link->restore();
+        }
+    }
 }

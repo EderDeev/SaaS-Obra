@@ -2,9 +2,20 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Contract, ContractParticipant, Tenant, TipoEmpresa, User};
-use App\Support\{OrdemServicoPermissions, OsDnitPermissions as P};
-use App\Support\{ActivityPermissions, ContractPermissions, DiarioObraPermissions, DocumentationPermissions, MedicaoPermissions, ProjectPermissions, RncPermissions};
+use App\Models\Contract;
+use App\Models\ContractParticipant;
+use App\Models\Tenant;
+use App\Models\TipoEmpresa;
+use App\Models\User;
+use App\Support\ActivityPermissions;
+use App\Support\ContractPermissions;
+use App\Support\DiarioObraPermissions;
+use App\Support\DocumentationPermissions;
+use App\Support\MedicaoPermissions;
+use App\Support\OrdemServicoPermissions;
+use App\Support\OsDnitPermissions as P;
+use App\Support\ProjectPermissions;
+use App\Support\RncPermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -14,9 +25,13 @@ class TenantUserOsDnitPermissionsTest extends TestCase
     use RefreshDatabase;
 
     private Tenant $tenant;
+
     private User $user;
+
     private array $payload;
+
     private ContractParticipant $a;
+
     private ContractParticipant $b;
 
     protected function setUp(): void
@@ -52,6 +67,7 @@ class TenantUserOsDnitPermissionsTest extends TestCase
                 $accesses = collect($memberships)->firstWhere('user_id', $this->user->id)['contract_accesses'];
                 $this->assertSame(P::defaultForRole('engineer'), collect($accesses)->firstWhere('contract_id', $this->a->contract_id)['os_dnit_permissions']);
                 $this->assertSame([], collect($accesses)->firstWhere('contract_id', $this->b->contract_id)['os_dnit_permissions']);
+
                 return true;
             }));
         $this->get(route('tenant.permissions.index', $this->tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
@@ -125,6 +141,7 @@ class TenantUserOsDnitPermissionsTest extends TestCase
                     $this->assertSame($permissions::normalize([$permission]), $accesses->firstWhere('contract_id', $this->a->contract_id)[$field]);
                     $this->assertSame([], $accesses->firstWhere('contract_id', $this->b->contract_id)[$field]);
                 }
+
                 return true;
             }));
     }
@@ -146,6 +163,7 @@ class TenantUserOsDnitPermissionsTest extends TestCase
             ->where('memberships', function ($memberships) {
                 $permissions = collect($memberships)->firstWhere('user_id', $this->user->id)['tenant_module_permissions'];
                 $this->assertContains(ActivityPermissions::CREATE, $permissions['activity_permissions']);
+
                 return true;
             }));
         $data['tenant_module_permissions'] = ['os_dnit_permissions' => P::all()];

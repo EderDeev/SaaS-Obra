@@ -11,7 +11,7 @@ class OsDnitOrderHistory
     {
         $order->load(['items', 'attachments']);
         $snapshot = $order->only(['request_number', 'supervision_lot', 'highway_name', 'km_start', 'km_end', 'subject',
-            'technical_need', 'justification', 'sei_reference', 'review_comment', 'review_items', 'workflow_version']);
+            'technical_need', 'justification', 'sei_reference', 'review_comment', 'review_items', 'workflow_version', 'supervision_lot_id', 'finalized_at', 'finalized_by_id']);
         $snapshot['desired_deadline'] = $order->desired_deadline->format('Y-m-d');
         $snapshot['estimated_deadline'] = $order->estimated_deadline?->format('Y-m-d');
         $snapshot['items'] = $order->items->map->only(['product_id', 'product_code', 'product_name', 'unit', 'frequency', 'quantity'])->all();

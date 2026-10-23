@@ -20,6 +20,7 @@ class TenantLandingPage
             [DocumentationPermissions::class, DocumentationPermissions::VIEW, 'ged.index'],
             [ProjectPermissions::class, ProjectPermissions::VIEW, 'projects.index'],
             [RncPermissions::class, RncPermissions::VIEW, 'qualidade.rnc.index'],
+            [IcPermissions::class, IcPermissions::VIEW, 'qualidade.ic.index'],
             [UserPermissions::class, UserPermissions::VIEW, 'users.index'],
         ] as [$permissions, $permission, $route]) {
             if ($permissions::canAny($user, $tenant, $permission)) return route('tenant.'.$route, $tenant);

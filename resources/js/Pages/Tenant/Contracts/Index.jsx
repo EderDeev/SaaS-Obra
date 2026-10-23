@@ -1,4 +1,5 @@
 import ContractAccessCard from '@/Components/ContractAccessCard';
+import { OsDnitContractSnapshot } from '@/Components/OsDnitManagementCard';
 import ContractTour, { startContractTour } from '@/Components/ContractTour';
 import brazilCities from '@/Data/brazilCities';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
@@ -727,6 +728,7 @@ function ContractsTable({ tenant, contracts, contractCapabilities, showTourDemo,
                                     <CountPill label="RNCs" count={contract.open_rncs_count} />
                                     <CountPill label="Projetos" count={contract.pending_projects_count} />
                                 </div>
+                                <div className="mt-2"><OsDnitContractSnapshot tenant={tenant} contract={contract} /></div>
                             </td>
                             <td>
                                 {Number(contract.contract_additives_count || 0) > 0 ? (

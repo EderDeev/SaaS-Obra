@@ -14,6 +14,7 @@ class OsDnitWorkflowAccess
     {
         $ids = OsDnitResponsible::where('tenant_id', $tenant->id)->where('user_id', $user->id)
             ->where('role', $role)->where('active', true)->select('contract_id');
+
         return OsDnitContractAccess::contracts($user, $tenant, OsDnitPermissions::VIEW)->whereIn('id', $ids);
     }
 
@@ -47,6 +48,11 @@ class OsDnitWorkflowAccess
             && in_array($order->status, ['draft', 'returned_analyst'], true)
             && ($order->status !== 'draft' || $order->submitted_at === null)
             && self::hasRole($user, $tenant, $order->contract_id, 'analyst');
+    }
+
+    public static function canFinalize(User $user, Tenant $tenant, OsDnitOrder $order): bool
+    {
+        return $order->status === 'approved' && self::hasRole($user, $tenant, $order->contract_id, 'contract_inspector');
     }
 
     public static function hasRecipient(Tenant $tenant, int $contractId, string $role): bool

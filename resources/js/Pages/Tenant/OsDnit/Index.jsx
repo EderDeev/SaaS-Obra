@@ -43,11 +43,11 @@ export default function Index({ section = 'orders' }) {
 
     return (
         <AuthenticatedLayout>
-            <Head title={`OS DNIT · ${current.title}`} />
+            <Head title={`Ordem de Serviço · ${current.title}`} />
 
             <div className="sig-content os-dnit-page space-y-6">
                 <header>
-                    <div className="eyebrow">OS DNIT</div>
+                    <div className="eyebrow">Ordem de Serviço</div>
                     <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">{current.title}</h1>
                     <p className="mt-2 text-sm text-[var(--ink-500)]">{current.description}</p>
                 </header>

@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Models\OsDnitHighway;
 use App\Models\Contract;
 use App\Models\ContractParticipant;
+use App\Models\OsDnitHighway;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\OsDnitPermissions;
@@ -66,8 +66,8 @@ class OsDnitHighwaysTest extends TestCase
         OsDnitHighway::create(['tenant_id' => $otherTenant->id, 'contract_id' => Contract::where('tenant_id', $otherTenant->id)->sole()->id, 'name' => 'BR-999/AC']);
         $this->actingAs($user)->get(route('tenant.os-dnit.settings.index', $tenant))
             ->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->component('Tenant/OsDnit/Settings')->has('highways.data', 15)
-                ->where('highways.total', 16)->where('highways.per_page', 15)->where('canManage', false));
+            ->component('Tenant/OsDnit/Settings')->has('highways.data', 15)
+            ->where('highways.total', 16)->where('highways.per_page', 15)->where('canManage', false));
         $this->get(route('tenant.os-dnit.settings.index', [$tenant, 'q' => 'br-016']))
             ->assertOk()->assertInertia(fn (Assert $page) => $page->has('highways.data', 1)->where('highways.data.0.name', 'BR-016/AC'));
         $this->post(route('tenant.os-dnit.settings.highways.store', $tenant), ['contract_id' => $contract->id, 'name' => 'BR-364/AC'])->assertForbidden();
@@ -83,6 +83,7 @@ class OsDnitHighwaysTest extends TestCase
 
         $contract = Contract::create(['tenant_id' => $tenant->id, 'code' => 'CT-01', 'name' => 'Contrato', 'status' => 'active']);
         ContractParticipant::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'user_id' => $user->id, 'side' => 'client', 'role' => 'manager', 'status' => 'active']);
+
         return [$tenant, $user, $contract];
     }
 }

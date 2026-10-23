@@ -6,8 +6,9 @@ use App\Models\Contract;
 use App\Models\ContractParticipant;
 use App\Models\OsDnitHighway;
 use App\Models\OsDnitOrder;
-use App\Models\OsDnitResponsible;
 use App\Models\OsDnitProduct;
+use App\Models\OsDnitResponsible;
+use App\Models\OsDnitSupervisionLot;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,15 +37,14 @@ class OsDnitOrdersTest extends TestCase
         $this->assertSame($tenant->id, $order->tenant_id);
         $this->assertSame($user->id, $order->created_by_id);
         $this->assertSame('draft', $order->status);
-        $this->assertSame('12.500', $order->items->sole()->quantity);
+        $this->assertCount(0, $order->items);
         Storage::disk('local')->assertExists($order->attachments->sole()->path);
 
         $product->update(['name' => 'Nome atualizado', 'unit' => 'km']);
         $highway->update(['name' => 'Nome atualizado da rodovia']);
         $this->get(route('tenant.os-dnit.orders.show', [$tenant, $order]))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->component('Tenant/OsDnit/ShowOrder')
-                ->where('order.highway_name', 'BR-364/AC')->where('order.items.0.product_name', 'Controle de Obras')
-                ->where('order.items.0.unit', 'mês')->missing('order.attachments.0.path'));
+                ->where('order.highway_name', 'BR-364/AC')->has('order.items', 0)->missing('order.attachments.0.path'));
         $this->get(route('tenant.os-dnit.orders.attachments.download', [$tenant, $order, $order->attachments->sole()]))
             ->assertOk()->assertDownload('demanda.pdf');
     }
@@ -91,10 +91,10 @@ class OsDnitOrdersTest extends TestCase
         $this->actingAs($user);
         $url = route('tenant.os-dnit.orders.store', $tenant);
         $this->post($url, [...$payload, 'km_end' => '0'])->assertSessionHasErrors('km_end');
-        $this->post($url, [...$payload, 'items' => []])->assertSessionHasErrors('items');
-        $this->post($url, [...$payload, 'items' => [['product_id' => $product->id, 'quantity' => 0]]])->assertSessionHasErrors('items.0.quantity');
-        $this->post($url, [...$payload, 'items' => [['product_id' => $product->id, 'quantity' => '0.0001']]])->assertSessionHasErrors('items.0.quantity');
-        $this->post($url, [...$payload, 'items' => [$payload['items'][0], $payload['items'][0]]])->assertSessionHasErrors('items.0.product_id');
+        $this->post($url, [...$payload, 'items' => [['product_id' => $product->id, 'quantity' => 1]]])->assertSessionHasErrors('items');
+        $this->post($url, [...$payload, 'items' => [['product_id' => $product->id, 'quantity' => 0]]])->assertSessionHasErrors('items');
+        $this->post($url, [...$payload, 'items' => [['product_id' => $product->id, 'quantity' => '0.0001']]])->assertSessionHasErrors('items');
+        $this->post($url, [...$payload, 'items' => [['product_id' => $product->id, 'quantity' => 1], ['product_id' => $product->id, 'quantity' => 2]]])->assertSessionHasErrors('items');
         $this->post($url, [...$payload, 'desired_deadline' => 'invalid'])->assertSessionHasErrors('desired_deadline');
         $this->assertDatabaseCount('os_dnit_orders', 0);
         $this->assertDatabaseCount('os_dnit_order_items', 0);
@@ -109,7 +109,7 @@ class OsDnitOrdersTest extends TestCase
             ...$payload, 'contract_id' => $otherContract->id, 'highway_id' => $otherHighway->id,
             'items' => [['product_id' => $otherProduct->id, 'quantity' => 1]],
         ])->assertSessionHasErrors('contract_id');
-        $this->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload, 'highway_id' => $otherHighway->id, 'items' => [['product_id' => $otherProduct->id, 'quantity' => 1]]])->assertSessionHasErrors(['highway_id', 'items.0.product_id']);
+        $this->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload, 'highway_id' => $otherHighway->id, 'items' => [['product_id' => $otherProduct->id, 'quantity' => 1]]])->assertSessionHasErrors(['highway_id', 'items']);
         $highway->update(['active' => false]);
         $this->post(route('tenant.os-dnit.orders.store', $tenant), $payload)->assertSessionHasErrors('highway_id');
         $this->get(route('tenant.os-dnit.orders.index', $otherTenant))->assertForbidden();
@@ -181,6 +181,72 @@ class OsDnitOrdersTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->has('orders.data', 1)->where('orders.data.0.request_number', sprintf('016/%d', now()->year)));
     }
 
+    public function test_listing_combines_lot_road_search_stage_and_pagination_filters(): void
+    {
+        [$tenant, $user, $contract, $highway, $product] = $this->context();
+        $payload = $this->payload($contract, $highway, $product);
+        $lot = OsDnitSupervisionLot::findOrFail($payload['supervision_lot_id']);
+        $otherLot = OsDnitSupervisionLot::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'name' => 'Lote 02', 'active' => true]);
+        $otherRoad = OsDnitHighway::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'name' => 'BR-307/AC', 'active' => true]);
+        $this->actingAs($user);
+        for ($i = 0; $i < 12; $i++) {
+            $this->post(route('tenant.os-dnit.orders.store', $tenant), $payload)->assertSessionHasNoErrors();
+        }
+        $approved = OsDnitOrder::first()->replicate();
+        $approved->fill(['request_number' => '013/'.now()->year, 'status' => 'approved'])->save();
+        $this->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload, 'supervision_lot_id' => $otherLot->id])->assertSessionHasNoErrors();
+        $this->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload, 'highway_id' => $otherRoad->id])->assertSessionHasNoErrors();
+        $deleted = OsDnitOrder::first()->replicate();
+        $deleted->fill(['request_number' => '099/'.now()->year])->save();
+        $deleted->delete();
+        $lot->update(['name' => 'Lote renomeado', 'active' => false]);
+        $highway->update(['name' => 'Rodovia renomeada', 'active' => false]);
+        $index = route('tenant.os-dnit.orders.index', $tenant);
+        $filters = ['contract_id' => $contract->id, 'supervision_lot_id' => $lot->id, 'highway_id' => $highway->id, 'q' => 'SUPERVISÃO'];
+
+        $this->get($index.'?'.http_build_query([...$filters, 'stage' => 'analyst', 'page' => 2]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('lots', 2)->has('highways', 2)
+                ->where('filters.supervision_lot_id', (string) $lot->id)->where('filters.highway_id', (string) $highway->id)
+                ->where('stageCounts.all', 13)->where('stageCounts.analyst', 12)->where('stageCounts.approved', 1)
+                ->where('orders.total', 12)->where('orders.current_page', 2)->has('orders.data', 2)
+                ->where('orders.first_page_url', fn ($url) => str_contains($url, 'supervision_lot_id='.$lot->id) && str_contains($url, 'highway_id='.$highway->id)));
+        $this->get($index.'?'.http_build_query([...$filters, 'status' => 'approved']))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('orders.total', 1)->where('orders.data.0.id', $approved->id));
+        $this->get($index.'?'.http_build_query(['supervision_lot_id' => $lot->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('orders.total', 14));
+        $this->get($index.'?'.http_build_query(['highway_id' => $highway->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('orders.total', 14));
+        $redirect = $this->get(route('tenant.os-dnit.analysis.index', [$tenant, ...$filters]))->assertRedirect();
+        parse_str(parse_url($redirect->headers->get('Location'), PHP_URL_QUERY), $redirectFilters);
+        $this->assertEquals([...$filters, 'pending' => 1], $redirectFilters);
+        $this->assertSame(parse_url($index, PHP_URL_PATH), parse_url($redirect->headers->get('Location'), PHP_URL_PATH));
+    }
+
+    public function test_listing_lot_and_road_options_and_filters_are_scoped_to_accessible_contracts(): void
+    {
+        [$tenant, $user, $contract, $highway, $product] = $this->context();
+        $lot = OsDnitSupervisionLot::findOrFail($this->payload($contract, $highway, $product)['supervision_lot_id']);
+        $hiddenContract = Contract::create(['tenant_id' => $tenant->id, 'code' => 'HIDDEN', 'name' => 'Sem acesso', 'status' => 'active']);
+        [$hiddenRoad, $hiddenProduct] = $this->catalog($hiddenContract);
+        $hiddenLot = OsDnitSupervisionLot::findOrFail($this->payload($hiddenContract, $hiddenRoad, $hiddenProduct)['supervision_lot_id']);
+        [$foreignTenant, , $foreignContract, $foreignRoad, $foreignProduct] = $this->context();
+        $foreignLot = OsDnitSupervisionLot::findOrFail($this->payload($foreignContract, $foreignRoad, $foreignProduct)['supervision_lot_id']);
+        $index = route('tenant.os-dnit.orders.index', $tenant);
+        $this->actingAs($user)->get($index)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('lots', 1)->where('lots.0.id', $lot->id)->has('highways', 1)->where('highways.0.id', $highway->id));
+        foreach ([$hiddenLot->id, $foreignLot->id, 999999, 'invalid'] as $id) {
+            $this->get($index.'?'.http_build_query(['supervision_lot_id' => $id]))->assertSessionHasErrors('supervision_lot_id');
+        }
+        foreach ([$hiddenRoad->id, $foreignRoad->id, 999999, 'invalid'] as $id) {
+            $this->get($index.'?'.http_build_query(['highway_id' => $id]))->assertSessionHasErrors('highway_id');
+        }
+        $this->link($tenant, $hiddenContract, $user);
+        $this->get($index.'?'.http_build_query(['contract_id' => $contract->id, 'supervision_lot_id' => $hiddenLot->id, 'highway_id' => $hiddenRoad->id]))
+            ->assertSessionHasErrors(['supervision_lot_id', 'highway_id']);
+        $this->get($index.'?'.http_build_query(['contract_id' => $contract->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('lots', 1)->where('lots.0.id', $lot->id)->has('highways', 1)->where('highways.0.id', $highway->id));
+    }
+
     public function test_existing_accessible_contracts_are_available_regardless_of_status(): void
     {
         [$tenant, $user, $contract, $highway, $product] = $this->context();
@@ -225,7 +291,7 @@ class OsDnitOrdersTest extends TestCase
         OsDnitOrder::sole()->update(['request_number' => '010/2026']);
         $this->get(route('tenant.os-dnit.orders.create', $tenant))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where("numberPreviews.{$contract->id}", '011/2026'));
-        $this->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload, 'items' => []])->assertSessionHasErrors('items');
+        $this->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload, 'subject' => ''])->assertSessionHasErrors('subject');
         $this->post(route('tenant.os-dnit.orders.store', $tenant), $payload)->assertSessionHasNoErrors();
         $this->assertSame(['010/2026', '011/2026'], OsDnitOrder::orderBy('id')->pluck('request_number')->all());
     }
@@ -240,6 +306,7 @@ class OsDnitOrdersTest extends TestCase
     {
         $highway = OsDnitHighway::create(['tenant_id' => $contract->tenant_id, 'contract_id' => $contract->id, 'name' => 'BR-364/AC', 'active' => true]);
         $product = OsDnitProduct::create(['tenant_id' => $contract->tenant_id, 'contract_id' => $contract->id, 'code' => '02', 'name' => 'Controle de Obras', 'category' => 'gestao_controle', 'unit' => 'mês', 'frequency' => 'monthly']);
+
         return [$highway, $product];
     }
 
@@ -253,14 +320,14 @@ class OsDnitOrdersTest extends TestCase
         $product = OsDnitProduct::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'code' => '02', 'name' => 'Controle de Obras', 'category' => 'gestao_controle', 'unit' => 'mês', 'frequency' => 'monthly']);
 
         $this->link($tenant, $contract, $user);
+
         return [$tenant, $user, $contract, $highway, $product];
     }
 
     private function payload(Contract $contract, OsDnitHighway $highway, OsDnitProduct $product): array
     {
-        return ['contract_id' => $contract->id, 'supervision_lot' => 'Lote 01', 'highway_id' => $highway->id,
+        return ['contract_id' => $contract->id, 'supervision_lot_id' => OsDnitSupervisionLot::firstOrCreate(['tenant_id' => $contract->tenant_id, 'contract_id' => $contract->id, 'name' => 'Lote 01'], ['active' => true])->id, 'highway_id' => $highway->id,
             'km_start' => '10.500', 'km_end' => '25.750', 'subject' => 'Supervisão de trecho', 'desired_deadline' => '2026-12-01',
-            'technical_need' => 'Levantamento das condições do trecho.', 'justification' => 'Subsidiar a execução dos serviços.', 'sei_reference' => 'SEI 123',
-            'items' => [['product_id' => $product->id, 'quantity' => '12.500']]];
+            'technical_need' => 'Levantamento das condições do trecho.', 'justification' => 'Subsidiar a execução dos serviços.', 'sei_reference' => 'SEI 123'];
     }
 }

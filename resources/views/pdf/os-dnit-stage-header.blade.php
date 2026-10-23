@@ -1,5 +1,5 @@
 <div class="stage-heading">
-    <div class="eyebrow">OS DNIT · {{ $sectionTitle }}</div>
+    <div class="eyebrow">Ordem de Serviço · {{ $sectionTitle }}</div>
     <table class="plain"><tr><td style="width: 70%"><h1>Ordem de Serviço</h1></td><td style="width: 30%; text-align: right"><span class="number">{{ $order->request_number }}</span></td></tr></table>
     @if($compact ?? false)
     <p class="muted">Contrato {{ $order->contract->code }} · {{ $order->supervision_lot }} · {{ $order->highway_name }} · km {{ $number($order->km_start, true) }} a {{ $number($order->km_end, true) }}<br>Referência SEI / processo: {{ $order->sei_reference ?: 'Não informado' }}</p>

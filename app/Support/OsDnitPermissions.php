@@ -2,28 +2,43 @@
 
 namespace App\Support;
 
-use App\Models\{ContractParticipant, Tenant, User};
+use App\Models\ContractParticipant;
+use App\Models\Tenant;
+use App\Models\User;
 
 class OsDnitPermissions
 {
     public const VIEW = 'view_orders';
+
     public const CREATE = 'create_orders';
+
     public const EDIT = 'edit_orders';
+
     public const DELETE = 'delete_orders';
+
     public const VIEW_PRODUCTS = 'view_products';
+
     public const CREATE_PRODUCTS = 'create_products';
+
     public const EDIT_PRODUCTS = 'edit_products';
+
     public const DELETE_PRODUCTS = 'delete_products';
+
     public const DASHBOARD = 'view_dashboard';
+
     public const VIEW_SETTINGS = 'view_settings';
+
     public const CREATE_SETTINGS = 'create_settings';
+
     public const EDIT_SETTINGS = 'edit_settings';
+
     public const DELETE_SETTINGS = 'delete_settings';
+
     public const RESPONSIBLES = 'manage_responsibles';
 
     public const LABELS = [
-        self::VIEW => 'Visualizar OS (exibir menu OS DNIT)',
-        self::CREATE => 'Criar OS', self::EDIT => 'Editar OS', self::DELETE => 'Excluir OS (somente rascunhos não enviados)',
+        self::VIEW => 'Visualizar OS (exibir menu Ordem de Serviço)',
+        self::CREATE => 'Criar OS', self::EDIT => 'Editar OS', self::DELETE => 'Excluir OS (somente demandas não enviados)',
         self::VIEW_PRODUCTS => 'Visualizar produtos', self::CREATE_PRODUCTS => 'Criar produtos',
         self::EDIT_PRODUCTS => 'Editar produtos', self::DELETE_PRODUCTS => 'Excluir produtos',
         self::DASHBOARD => 'Visualizar dashboard',
@@ -32,23 +47,40 @@ class OsDnitPermissions
         self::DELETE_SETTINGS => 'Excluir parametrização', self::RESPONSIBLES => 'Gerenciar responsáveis',
     ];
 
-    public static function all(): array { return array_keys(self::LABELS); }
-    public static function labels(): array { return self::LABELS; }
+    public static function all(): array
+    {
+        return array_keys(self::LABELS);
+    }
+
+    public static function labels(): array
+    {
+        return self::LABELS;
+    }
 
     public static function normalize(array $permissions): array
     {
         $permissions = array_values(array_unique(array_intersect(self::all(), $permissions)));
-        if ($permissions !== [] && !in_array(self::VIEW, $permissions, true)) array_unshift($permissions, self::VIEW);
+        if ($permissions !== [] && ! in_array(self::VIEW, $permissions, true)) {
+            array_unshift($permissions, self::VIEW);
+        }
         if (array_intersect($permissions, [self::CREATE_PRODUCTS, self::EDIT_PRODUCTS, self::DELETE_PRODUCTS])
-            && !in_array(self::VIEW_PRODUCTS, $permissions, true)) $permissions[] = self::VIEW_PRODUCTS;
+            && ! in_array(self::VIEW_PRODUCTS, $permissions, true)) {
+            $permissions[] = self::VIEW_PRODUCTS;
+        }
         if (array_intersect($permissions, [self::CREATE_SETTINGS, self::EDIT_SETTINGS, self::DELETE_SETTINGS])
-            && !in_array(self::VIEW_SETTINGS, $permissions, true)) $permissions[] = self::VIEW_SETTINGS;
+            && ! in_array(self::VIEW_SETTINGS, $permissions, true)) {
+            $permissions[] = self::VIEW_SETTINGS;
+        }
+
         return $permissions;
     }
 
     public static function defaultForRole(?string $role): array
     {
-        if (TenantRoles::isTenantAdmin($role)) return self::all();
+        if (TenantRoles::isTenantAdmin($role)) {
+            return self::all();
+        }
+
         // Preserve the module's pre-permission access. Workflow roles still gate
         // creation/editing; catalog/settings writes remain explicitly granted.
         return [self::VIEW, self::CREATE, self::EDIT, self::VIEW_PRODUCTS, self::DASHBOARD];
@@ -57,7 +89,9 @@ class OsDnitPermissions
     public static function matrix(User $user, Tenant $tenant): array
     {
         $key = 'os_dnit.permissions.'.$tenant->id.'.'.$user->id;
-        if (!app()->runningInConsole() && request()->attributes->has($key)) return request()->attributes->get($key);
+        if (! app()->runningInConsole() && request()->attributes->has($key)) {
+            return request()->attributes->get($key);
+        }
         $role = $user->tenantRole($tenant);
         $matrix = ContractParticipant::where('tenant_id', $tenant->id)->where('user_id', $user->id)->where('status', 'active')
             ->whereHas('contract', fn ($query) => $query->where('tenant_id', $tenant->id))
@@ -65,7 +99,10 @@ class OsDnitPermissions
                 $participant->contract_id => $role === TenantRoles::OWNER
                     ? self::all() : self::normalize($participant->os_dnit_permissions ?? self::defaultForRole($role)),
             ])->all();
-        if (!app()->runningInConsole()) request()->attributes->set($key, $matrix);
+        if (! app()->runningInConsole()) {
+            request()->attributes->set($key, $matrix);
+        }
+
         return $matrix;
     }
 

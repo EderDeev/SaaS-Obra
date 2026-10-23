@@ -39,6 +39,8 @@ use App\Http\Controllers\Tenant\ProjectReviewWorkspaceController;
 use App\Http\Controllers\Tenant\ProjectSubmissionBatchController;
 use App\Http\Controllers\Tenant\ProjectViewerController;
 use App\Http\Controllers\Tenant\Qualidade\RelatorioNaoConformidadeController;
+use App\Http\Controllers\Tenant\Qualidade\InstrucaoCampoController;
+use App\Http\Controllers\Tenant\Qualidade\IcResponsavelController;
 use App\Http\Controllers\Tenant\Qualidade\RncAcaoCorretivaController;
 use App\Http\Controllers\Tenant\Qualidade\RncEvidenciaController;
 use App\Http\Controllers\Tenant\Qualidade\RncResponsavelController;
@@ -95,6 +97,7 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::get('/notificacoes', [NotificationController::class, 'index'])->name('notifications.index');
     Route::patch('/notificacoes/{notification}/lida', [NotificationController::class, 'read'])->name('notifications.read');
     Route::patch('/notificacoes-ocultas/lidas', [NotificationController::class, 'readHidden'])->name('notifications.hidden.read');
 });
@@ -132,6 +135,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
             Route::patch('/ordens/{order}', [OsDnitOrderController::class, 'update'])->middleware('os-dnit.permission:edit_orders')->name('orders.update');
             Route::post('/ordens/{order}/enviar', [OsDnitWorkflowController::class, 'submit'])->name('orders.submit');
             Route::post('/ordens/{order}/analise', [OsDnitWorkflowController::class, 'review'])->name('orders.review');
+            Route::post('/ordens/{order}/finalizar', [OsDnitWorkflowController::class, 'finalize'])->name('orders.finalize');
             Route::post('/ordens/{order}/decisao', [OsDnitWorkflowController::class, 'decide'])->name('orders.decide');
             Route::get('/ordens/{order}/anexos/{attachment}', [OsDnitOrderController::class, 'download'])->name('orders.attachments.download');
             Route::get('/produtos', [OsDnitProductController::class, 'index'])->middleware('os-dnit.permission:view_products')->name('products.index');
@@ -142,6 +146,9 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
             Route::post('/parametrizacao/rodovias', [OsDnitSettingsController::class, 'store'])->middleware('os-dnit.permission:create_settings')->name('settings.highways.store');
             Route::patch('/parametrizacao/rodovias/{highway}', [OsDnitSettingsController::class, 'update'])->middleware('os-dnit.permission:edit_settings')->name('settings.highways.update');
             Route::delete('/parametrizacao/rodovias/{highway}', [OsDnitSettingsController::class, 'destroy'])->middleware('os-dnit.permission:delete_settings')->name('settings.highways.destroy');
+            Route::post('/parametrizacao/lotes', [OsDnitSettingsController::class, 'storeLot'])->middleware('os-dnit.permission:create_settings')->name('settings.lots.store');
+            Route::patch('/parametrizacao/lotes/{lot}', [OsDnitSettingsController::class, 'updateLot'])->middleware('os-dnit.permission:edit_settings')->name('settings.lots.update');
+            Route::delete('/parametrizacao/lotes/{lot}', [OsDnitSettingsController::class, 'destroyLot'])->middleware('os-dnit.permission:delete_settings')->name('settings.lots.destroy');
             Route::get('/responsaveis', [OsDnitResponsibleController::class, 'index'])->middleware('os-dnit.permission:manage_responsibles')->name('responsibles.index');
             Route::post('/responsaveis', [OsDnitResponsibleController::class, 'store'])->middleware('os-dnit.permission:manage_responsibles')->name('responsibles.store');
         });
@@ -413,6 +420,22 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::patch('/projetos/{document}/status', [ProjectController::class, 'updateStatus'])->name('projects.status.update');
         Route::patch('/projetos/{document}/inativar', [ProjectController::class, 'inactivate'])->name('projects.inactivate');
         Route::delete('/projetos/{document}', [ProjectController::class, 'destroy'])->name('projects.destroy');
+        Route::get('/qualidade/ic', [InstrucaoCampoController::class, 'index'])->name('qualidade.ic.index');
+        Route::get('/qualidade/ic/dashboard', [InstrucaoCampoController::class, 'dashboard'])->name('qualidade.ic.dashboard');
+        Route::get('/qualidade/ic/nova', [InstrucaoCampoController::class, 'create'])->name('qualidade.ic.create');
+        Route::post('/qualidade/ic', [InstrucaoCampoController::class, 'store'])->name('qualidade.ic.store');
+        Route::get('/qualidade/ic/responsaveis', [IcResponsavelController::class, 'index'])->name('qualidade.ic.responsaveis.index');
+        Route::post('/qualidade/ic/responsaveis', [IcResponsavelController::class, 'store'])->name('qualidade.ic.responsaveis.store');
+        Route::delete('/qualidade/ic/responsaveis/{responsavel}', [IcResponsavelController::class, 'destroy'])->name('qualidade.ic.responsaveis.destroy');
+        Route::get('/qualidade/ic/{ic}/editar', [InstrucaoCampoController::class, 'edit'])->name('qualidade.ic.edit');
+        Route::patch('/qualidade/ic/{ic}', [InstrucaoCampoController::class, 'update'])->name('qualidade.ic.update');
+        Route::get('/qualidade/ic/{ic}', [InstrucaoCampoController::class, 'show'])->name('qualidade.ic.show');
+        Route::post('/qualidade/ic/{ic}/comunicar', [InstrucaoCampoController::class, 'notify'])->name('qualidade.ic.notify');
+        Route::post('/qualidade/ic/{ic}/correcao', [InstrucaoCampoController::class, 'correction'])->name('qualidade.ic.correction');
+        Route::post('/qualidade/ic/{ic}/encerrar', [InstrucaoCampoController::class, 'close'])->name('qualidade.ic.close');
+        Route::get('/qualidade/ic/{ic}/fotos/{photo}', [InstrucaoCampoController::class, 'photo'])->name('qualidade.ic.photo');
+        Route::delete('/qualidade/ic/{ic}', [InstrucaoCampoController::class, 'destroy'])->name('qualidade.ic.destroy');
+
         Route::get('/qualidade/rnc', [RelatorioNaoConformidadeController::class, 'index'])->name('qualidade.rnc.index');
         Route::get('/qualidade/rnc/tour-preview', [RelatorioNaoConformidadeController::class, 'tourPreview'])->name('qualidade.rnc.tour-preview');
         Route::get('/qualidade/rnc/dashboard', [RelatorioNaoConformidadeController::class, 'dashboard'])->name('qualidade.rnc.dashboard');

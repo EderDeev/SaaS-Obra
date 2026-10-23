@@ -8,9 +8,9 @@
         body { word-wrap: break-word; font-family: 'DejaVu Sans', sans-serif; font-size: 8.5pt; color: #152839; line-height: 1.4; }
         * { box-sizing: border-box; }
         .header { position: fixed; top: -65pt; left: 0; right: 0; height: 46pt; border-bottom: 1pt solid #244d6a; }
-        .header img { width: 100pt; }
+        .header img { width: 145pt; }
         .brand { font-weight: bold; color: #244d6a; font-size: 13pt; }
-        .header-label { position: absolute; top: 3pt; right: 0; width: 75%; text-align: right; font-size: 7pt; color: #244d6a; word-wrap: break-word; }
+        .header-label { position: absolute; top: 3pt; right: 0; width: 65%; text-align: right; font-size: 7pt; color: #244d6a; word-wrap: break-word; }
         h1, h2 { font-family: 'DejaVu Serif', serif; color: #163348; font-weight: bold; }
         h1 { font-size: 23pt; margin: 8pt 0; line-height: 1.15; }
         h2 { font-size: 12pt; border-bottom: .6pt solid #d8e1e8; margin: 17pt 0 10pt; padding-bottom: 7pt; page-break-after: avoid; }
@@ -60,31 +60,29 @@
 </head>
 <body>
     <div class="header">
-        @if($logo)<img src="{{ $logo }}" alt="Concremat">@else<span class="brand">Concremat</span>@endif
-        <span class="header-label">OS DNIT · {{ $tenant->name }} · OS {{ $order->request_number }}</span>
+        @if($logo)<img src="{{ $logo }}" alt="DNIT">@else<span class="brand">DNIT</span>@endif
+        <span class="header-label">Ordem de Serviço · {{ $tenant->name }} · OS {{ $order->request_number }}</span>
     </div>
 
     @include('pdf.os-dnit-stage-header', ['sectionTitle' => 'Solicitação do analista DNIT'])
     <p class="stage-person">Analista DNIT: <strong>{{ $order->creator?->name ?? 'Usuário não disponível' }}</strong> · Prazo pretendido: <strong>{{ $date($order->desired_deadline) }}</strong></p>
     <h2>Descrição da necessidade técnica</h2><p class="prose">{{ $order->technical_need }}</p>
     <h2>Justificativa / resultado esperado</h2><p class="prose">{{ $order->justification }}</p>
-    <h2>Produtos solicitados</h2>
-    @include('pdf.os-dnit-products', ['items' => $requested])
     <h3>Anexos de referência</h3>
     @forelse($order->attachments as $attachment)<p class="muted">{{ $attachment->original_name }}</p>@empty<p class="muted">Nenhum anexo.</p>@endforelse
     @if($order->attachments->isNotEmpty())<p class="muted">Os arquivos estão relacionados acima; seus conteúdos não integram este PDF.</p>@endif
 
     @if($includeConcremat)
     <div class="page-break"></div>
-    @include('pdf.os-dnit-stage-header', ['sectionTitle' => 'Análise Concremat'])
-    <h2>Análise Concremat</h2>
+    @include('pdf.os-dnit-stage-header', ['sectionTitle' => 'Análise Supervisão'])
+    <h2>Análise Supervisão</h2>
     @if($hasReview)
-        <p class="stage-person">{{ $order->analystReview?->name ?? 'Responsável não registrado' }} · Fiscal Concremat · {{ $time($order->reviewed_at) }}</p>
-        <table class="deadline-box"><tr><td><span class="label">Prazo solicitado pelo analista</span>{{ $date($order->desired_deadline) }}</td><td><span class="label">Prazo estimado pela Concremat</span>{{ $date($reviewedDeadline) }}</td></tr></table>
+        <p class="stage-person">{{ $order->analystReview?->name ?? 'Responsável não registrado' }} · Supervisão · {{ $time($order->reviewed_at) }}</p>
+        <table class="deadline-box"><tr><td><span class="label">Prazo solicitado pelo analista</span>{{ $date($order->desired_deadline) }}</td><td><span class="label">Prazo estimado pela Supervisão</span>{{ $date($reviewedDeadline) }}</td></tr></table>
         <h3>Comentário da análise</h3><p class="prose">{{ filled($reviewComment) ? $reviewComment : 'Comentário da análise não registrado.' }}</p>
-        <h2>Produtos: solicitação do analista × Análise Concremat</h2>
-        @include('pdf.os-dnit-comparison', ['rows' => $comparison])
-    @else<p>Análise Concremat ainda não registrada.</p>@endif
+        <h2>Produtos solicitados pela Supervisão</h2>
+        @include('pdf.os-dnit-products', ['items' => $reviewed])
+    @else<p>Análise Supervisão ainda não registrada.</p>@endif
     @endif
 
     @if($includeInspector)
@@ -95,7 +93,7 @@
         <p class="stage-person">{{ $decision->actor?->name ?? 'Responsável não registrado' }} · Fiscal do contrato · {{ $time($decision->created_at) }}</p>
         <p><span class="status {{ $decision->action === 'approved' ? 'approved' : '' }}">{{ $decision->action === 'approved' ? 'Serviço aprovado' : ($statuses[$decision->to_status] ?? 'Reprovada e devolvida') }}</span></p>
         @if($decision->action === 'approved')
-            <p class="intro">Fica autorizada a execução dos serviços abaixo, conforme a Análise Concremat aprovada.</p>
+            <p class="intro">Fica autorizada a execução dos serviços abaixo, conforme a Análise Supervisão aprovada.</p>
         @else
             <p>Esta decisão devolveu a solicitação para correção e não autoriza a execução do serviço.</p>
             @if($order->status !== $decision->to_status)<p class="muted">A OS teve novas movimentações após esta decisão. Situação atual: {{ $statuses[$order->status] ?? $order->status }}.</p>@endif
@@ -108,6 +106,10 @@
     @else
         <p>Decisão do fiscal do contrato ainda não registrada. A execução ainda não foi autorizada pelo fiscal do contrato.</p>
     @endif
+    @endif
+
+    @if($includeInspector && $order->status === 'completed')
+        <div class="decision"><p class="decision-title">OS FINALIZADA - SERVIÇO CONCLUÍDO</p><p>Conclusão registrada em {{ $time($order->finalized_at) }}.</p></div>
     @endif
 
     @if($includeFlow)
@@ -127,7 +129,7 @@
                 @endif
                 @if($record['analysisChanged'])
                     <p class="muted">Prazo registrado nesta análise: <strong>{{ $date($record['deadline']) }}</strong></p>
-                    @foreach($record['comparison'] as $row)<p class="muted"><strong>{{ $row['product']['product_code'] }}</strong> · {{ $row['product']['product_name'] }}: {{ $row['reviewed'] ? $number($row['reviewed']['quantity']).' '.$row['reviewed']['unit'] : 'Não incluído na análise' }} · {{ $row['label'] }}.</p>@endforeach
+                    @foreach($event->snapshot['review_items'] ?? [] as $item)<p class="muted"><strong>{{ $item['product_code'] }}</strong> · {{ $item['product_name'] }}: {{ $number($item['quantity']) }} {{ $item['unit'] }}.</p>@endforeach
                 @endif
             @endif
         </div>

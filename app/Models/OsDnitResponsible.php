@@ -9,9 +9,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['tenant_id', 'contract_id', 'user_id', 'role', 'active'])]
 class OsDnitResponsible extends Model
 {
-    public const ROLES = ['analyst' => 'Analista DNIT', 'concremat' => 'Fiscal Concremat', 'contract_inspector' => 'Fiscal do contrato'];
+    public const ROLES = ['analyst' => 'Analista DNIT', 'concremat' => 'Supervisão', 'contract_inspector' => 'Fiscal do contrato'];
 
-    protected function casts(): array { return ['active' => 'boolean']; }
+    protected function casts(): array
+    {
+        return ['active' => 'boolean'];
+    }
 
-    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 }

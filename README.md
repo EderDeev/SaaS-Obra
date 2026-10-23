@@ -106,6 +106,10 @@ docker compose -f docker-compose.local.yml up --build
 
 Serviços iniciados:
 
+O código e os arquivos de interface são copiados para a imagem durante o build. Depois de alterar o projeto, atualize o contêiner local com `docker compose -f docker-compose.local.yml up -d --build app`. Apenas reiniciar o contêiner mantém a versão anterior. Os uploads e o banco existente são preservados.
+
+Os módulos são separados: **Liberação de Serviço** usa `/t/{tenant}/ordem-servico/os`; **Ordem de Serviço** (antigo OS DNIT) usa `/t/{tenant}/os-dnit`.
+
 - `app`: equivalente ao serviço `SaaS-Obra` do Railway.
 
 Dentro do container `app`, o script `railway/start-app.sh` inicia os mesmos processos da produção:

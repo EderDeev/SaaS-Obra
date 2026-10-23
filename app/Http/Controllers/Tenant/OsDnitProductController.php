@@ -3,17 +3,17 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\OsDnitProduct;
-use App\Models\Tenant;
-use App\Support\OsDnitPermissions as Permissions;
 use App\Models\OsDnitOrder;
 use App\Models\OsDnitOrderItem;
-use Illuminate\Support\Facades\DB;
+use App\Models\OsDnitProduct;
+use App\Models\Tenant;
 use App\Support\OsDnitContractAccess;
-use Illuminate\Database\UniqueConstraintViolationException;
+use App\Support\OsDnitPermissions as Permissions;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -45,8 +45,8 @@ class OsDnitProductController extends Controller
             ->orderBy('code')
             ->paginate(15)
             ->withQueryString()->through(fn ($product) => $product
-                ->setAttribute('can_edit', Permissions::can($request->user(), $tenant, Permissions::EDIT_PRODUCTS, $product->contract_id))
-                ->setAttribute('can_delete', Permissions::can($request->user(), $tenant, Permissions::DELETE_PRODUCTS, $product->contract_id)));
+            ->setAttribute('can_edit', Permissions::can($request->user(), $tenant, Permissions::EDIT_PRODUCTS, $product->contract_id))
+            ->setAttribute('can_delete', Permissions::can($request->user(), $tenant, Permissions::DELETE_PRODUCTS, $product->contract_id)));
 
         return Inertia::render('Tenant/OsDnit/Products', [
             'products' => $products,
@@ -71,6 +71,7 @@ class OsDnitProductController extends Controller
         return to_route('tenant.os-dnit.products.index', $tenant->slug)
             ->with('success', 'Produto cadastrado com sucesso.');
     }
+
     public function update(Request $request, Tenant $tenant, OsDnitProduct $product): RedirectResponse
     {
         $data = $this->validatedProduct($request, $tenant, $product);
@@ -79,6 +80,7 @@ class OsDnitProductController extends Controller
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['code' => 'Já existe um produto com este código neste contrato.']);
         }
+
         return back()->with('success', 'Produto atualizado. As OSs existentes preservam seus registros.');
     }
 
@@ -101,6 +103,7 @@ class OsDnitProductController extends Controller
             }
             throw $exception;
         }
+
         return back()->with('success', 'Produto excluído.');
     }
 
@@ -133,5 +136,4 @@ class OsDnitProductController extends Controller
         ]);
 
     }
-
 }

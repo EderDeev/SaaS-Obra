@@ -66,6 +66,16 @@ class Tenant extends Model
         return $this->hasMany(RelatorioNaoConformidadeResponsavel::class);
     }
 
+    public function instrucoesCampo(): HasMany
+    {
+        return $this->hasMany(InstrucaoCampo::class);
+    }
+
+    public function instrucaoCampoResponsaveis(): HasMany
+    {
+        return $this->hasMany(InstrucaoCampoResponsavel::class);
+    }
+
     public function empresas(): HasMany
     {
         return $this->hasMany(Empresa::class);

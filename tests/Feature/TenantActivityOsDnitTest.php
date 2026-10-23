@@ -2,7 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Activity, Contract, ContractParticipant, OsDnitHighway, OsDnitOrder, Tenant, User};
+use App\Models\Activity;
+use App\Models\Contract;
+use App\Models\ContractParticipant;
+use App\Models\OsDnitHighway;
+use App\Models\OsDnitOrder;
+use App\Models\Tenant;
+use App\Models\User;
 use App\Support\OsDnitPermissions as P;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -13,11 +19,17 @@ class TenantActivityOsDnitTest extends TestCase
     use RefreshDatabase;
 
     private Tenant $tenant;
+
     private User $user;
+
     private Contract $contract;
+
     private Contract $other;
+
     private ContractParticipant $link;
+
     private OsDnitOrder $order;
+
     private OsDnitOrder $otherOrder;
 
     protected function setUp(): void
@@ -30,7 +42,9 @@ class TenantActivityOsDnitTest extends TestCase
             $this->$key = $this->tenant->contracts()->create(['code' => $key, 'name' => $key, 'status' => 'active']);
             $link = $this->$key->participants()->create(['tenant_id' => $this->tenant->id, 'user_id' => $this->user->id,
                 'side' => 'client', 'role' => 'team_member', 'status' => 'active', 'os_dnit_permissions' => [P::VIEW]]);
-            if ($key === 'contract') $this->link = $link;
+            if ($key === 'contract') {
+                $this->link = $link;
+            }
         }
         $this->order = $this->order($this->contract, '001/2026', 'Levantamento topográfico');
         $this->otherOrder = $this->order($this->other, '001/2026', 'Outro contrato');
@@ -46,7 +60,9 @@ class TenantActivityOsDnitTest extends TestCase
         $deleted = $this->order($this->contract, '002/2026', 'Excluída');
         $deleted->delete();
         $this->getJson($this->search(['q' => 'Excluída']))->assertOk()->assertJsonCount(0, 'orders');
-        for ($number = 3; $number <= 24; $number++) $this->order($this->contract, sprintf('%03d/2026', $number), 'Serviço '.$number);
+        for ($number = 3; $number <= 24; $number++) {
+            $this->order($this->contract, sprintf('%03d/2026', $number), 'Serviço '.$number);
+        }
         $this->getJson($this->search())->assertOk()->assertJsonCount(20, 'orders')->assertJsonPath('has_more', true);
     }
 
@@ -99,6 +115,7 @@ class TenantActivityOsDnitTest extends TestCase
     private function order(Contract $contract, string $number, string $subject): OsDnitOrder
     {
         $road = OsDnitHighway::firstOrCreate(['tenant_id' => $contract->tenant_id, 'contract_id' => $contract->id, 'name' => 'BR-364/AC'], ['active' => true]);
+
         return OsDnitOrder::create(['tenant_id' => $contract->tenant_id, 'contract_id' => $contract->id, 'highway_id' => $road->id,
             'created_by_id' => $this->user->id, 'request_number' => $number, 'supervision_lot' => '01', 'highway_name' => $road->name,
             'km_start' => 1, 'km_end' => 2, 'subject' => $subject, 'desired_deadline' => '2026-12-01', 'technical_need' => 'Necessidade', 'justification' => 'Justificativa']);

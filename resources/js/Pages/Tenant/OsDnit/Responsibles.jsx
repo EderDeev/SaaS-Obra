@@ -13,8 +13,8 @@ export default function Responsibles({ contracts, roles, participants, responsib
     const users = [...new Map(participants.filter((p) => String(p.contract_id) === form.data.contract_id).map((p) => [p.user_id, p.user])).values()];
     const toggle = (user_id, role) => form.setData('assignments', form.data.assignments.some((a) => a.user_id === user_id && a.role === role)
         ? form.data.assignments.filter((a) => a.user_id !== user_id || a.role !== role) : [...form.data.assignments, { user_id, role }]);
-    return <AuthenticatedLayout><Head title="OS DNIT · Responsáveis" /><div className="sig-content os-dnit-page space-y-6">
-        <header className="flex flex-wrap items-start justify-between gap-4"><div><div className="eyebrow">OS DNIT</div><h1 className="mt-2 text-2xl font-semibold">Responsáveis</h1><p className="mt-2 text-sm text-[var(--ink-500)]">Defina quem solicita, analisa e autoriza os serviços em cada contrato. Somente usuários com vínculo ativo podem atuar.</p></div><OsDnitTourButton tenantSlug={currentTenant.slug} /></header>
+    return <AuthenticatedLayout><Head title="Ordem de Serviço · Responsáveis" /><div className="sig-content os-dnit-page space-y-6">
+        <header className="flex flex-wrap items-start justify-between gap-4"><div><div className="eyebrow">Ordem de Serviço</div><h1 className="mt-2 text-2xl font-semibold">Responsáveis</h1><p className="mt-2 text-sm text-[var(--ink-500)]">Defina quem solicita, analisa e autoriza os serviços em cada contrato. Somente usuários com vínculo ativo podem atuar.</p></div><OsDnitTourButton tenantSlug={currentTenant.slug} /></header>
         {flash.success && <p role="status" className="rounded-lg bg-emerald-50 p-4 text-emerald-800">{flash.success}</p>}
         {Object.keys(form.errors).length > 0 && <div role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-800">{Object.values(form.errors).map((e, i) => <p key={i}>{e}</p>)}</div>}
         <form onSubmit={(e) => { e.preventDefault(); form.post(route('tenant.os-dnit.responsibles.store', currentTenant.slug), { preserveScroll: true }); }} className="space-y-5">

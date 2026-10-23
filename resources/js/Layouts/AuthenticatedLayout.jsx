@@ -1,5 +1,8 @@
 import SigLogo from '@/Components/SigLogo';
 import AiAssistantChat from '@/Components/AiAssistantChat';
+import useNotificationSound from '@/Hooks/useNotificationSound';
+import useNotificationFeed from '@/Hooks/useNotificationFeed';
+import { NOTIFICATION_SOUND_URL } from '@/Support/notificationSound';
 import { Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
@@ -25,7 +28,6 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
     Ruler,
-    Search,
     Settings,
     ShieldCheck,
     SlidersHorizontal,
@@ -102,6 +104,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     const diarioObraTourScreen = route().current('tenant.diario-obra.tour-preview') ? props.screen : null;
     const canManageTenantUsers = Boolean(userCan.view_users);
     const canManagePermissions = ['tenant_owner', 'tenant_admin'].includes(tenantRole);
+    const icCan = props.icPermissions?.can || {};
     const rncCan = props.rncPermissions?.can || {};
     const activityCan = props.activityPermissions?.can || {};
     const projectCan = props.projectPermissions?.can || {};
@@ -116,6 +119,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     const [parametrizacaoOpen, setParametrizacaoOpen] = useState(() => route().current('tenant.parametrizacao.*'));
     const [qualidadeOpen, setQualidadeOpen] = useState(() => route().current('tenant.qualidade.*'));
     const [rncOpen, setRncOpen] = useState(() => route().current('tenant.qualidade.rnc.*'));
+    const [icOpen, setIcOpen] = useState(() => route().current('tenant.qualidade.ic.*'));
     const [projectOpen, setProjectOpen] = useState(() => route().current('tenant.projects.*'));
     const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
     const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
@@ -154,8 +158,10 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     const mobileNavRef = useRef(null);
     const userMenuRef = useRef(null);
     const [locallyReadNotificationIds, setLocallyReadNotificationIds] = useState(() => new Set());
-    const notificationItems = props.notifications?.items || [];
-    const sourceUnreadNotificationsCount = props.notifications?.unread_count
+    const notificationFeed = useNotificationFeed(user.id, props.notifications);
+    const notificationItems = notificationFeed.items;
+    const notificationSound = useNotificationSound(user.id, notificationItems);
+    const sourceUnreadNotificationsCount = notificationFeed.unread_count
         ?? notificationItems.filter((notification) => notification.unread).length;
     const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(sourceUnreadNotificationsCount);
     const notifications = notificationItems.map((notification) => ({
@@ -225,7 +231,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
 
     useEffect(() => {
         setUnreadNotificationsCount(sourceUnreadNotificationsCount);
-    }, [sourceUnreadNotificationsCount]);
+    }, [sourceUnreadNotificationsCount, notificationItems]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -362,20 +368,29 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
             ] : []),
         ]
         : [];
-    const qualidadeItems = rncChildren.length > 0
-        ? [
-            {
-                label: 'RNC',
-                active: route().current('tenant.qualidade.rnc.*'),
-                children: rncChildren,
-            },
-            {
-                label: 'IC',
-                active: false,
-                disabled: true,
-            },
-        ]
-        : [];
+    const icChildren = tenant ? [
+        ...(icCan.view_ic ? [{
+            label: 'IC',
+            href: route('tenant.qualidade.ic.index', tenant.slug),
+            active: route().current('tenant.qualidade.ic.*')
+                && !route().current('tenant.qualidade.ic.dashboard')
+                && !route().current('tenant.qualidade.ic.responsaveis.*'),
+        }] : []),
+        ...(icCan.dashboard_ic ? [{
+            label: 'Dashboard',
+            href: route('tenant.qualidade.ic.dashboard', tenant.slug),
+            active: route().current('tenant.qualidade.ic.dashboard'),
+        }] : []),
+        ...(icCan.responsibles_ic ? [{
+            label: 'Responsáveis',
+            href: route('tenant.qualidade.ic.responsaveis.index', tenant.slug),
+            active: route().current('tenant.qualidade.ic.responsaveis.*'),
+        }] : []),
+    ] : [];
+    const qualidadeItems = [
+        ...(rncChildren.length ? [{ label: 'RNC', active: route().current('tenant.qualidade.rnc.*'), children: rncChildren }] : []),
+        ...(icChildren.length ? [{ label: 'IC', active: route().current('tenant.qualidade.ic.*'), children: icChildren }] : []),
+    ];
     const orcamentoItems = tenant
         ? [
             {
@@ -504,7 +519,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     : [];
     const osDnitItems = tenant && osDnitCan.view_orders
         ? [
-            { label: 'Ordem de Serviço', href: route('tenant.os-dnit.orders.index', tenant.slug), active: osDnitTourScreen ? ['create', 'submission', 'concremat', 'inspector'].includes(osDnitTourScreen) : route().current('tenant.os-dnit.orders.*') || route().current('tenant.os-dnit.analysis.*'), badge: String(props.osDnitNavigation?.pending_analysis_count ?? 0) },
+            { label: 'Ordens de Serviço', href: route('tenant.os-dnit.orders.index', tenant.slug), active: osDnitTourScreen ? ['create', 'submission', 'concremat', 'inspector'].includes(osDnitTourScreen) : route().current('tenant.os-dnit.orders.*') || route().current('tenant.os-dnit.analysis.*'), badge: String(props.osDnitNavigation?.pending_analysis_count ?? 0) },
             ...(osDnitCan.view_products ? [{ label: 'Produtos', href: route('tenant.os-dnit.products.index', tenant.slug), active: route().current('tenant.os-dnit.products.*') || osDnitTourScreen === 'products' }] : []),
             ...(osDnitCan.view_dashboard ? [{ label: 'Dashboard', href: route('tenant.os-dnit.dashboard', tenant.slug), active: route().current('tenant.os-dnit.dashboard') || osDnitTourScreen === 'dashboard' }] : []),
             ...(osDnitCan.view_settings ? [{ label: 'Parametrização', href: route('tenant.os-dnit.settings.index', tenant.slug), active: route().current('tenant.os-dnit.settings.*') }] : []),
@@ -662,7 +677,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
             ...(ordemServicoItems.length > 0 ? [
                 { label: 'Liberação de Serviço', icon: ClipboardList, active: route().current('tenant.ordem-servico.*'), children: ordemServicoItems },
             ] : []),
-            ...(osDnitItems.length > 0 ? [{ label: 'OS DNIT', icon: ClipboardList, active: route().current('tenant.os-dnit.*'), children: osDnitItems }] : []),
+            ...(osDnitItems.length > 0 ? [{ label: 'Ordem de Serviço', icon: ClipboardList, active: route().current('tenant.os-dnit.*'), children: osDnitItems }] : []),
             ...(diarioObraItems.length > 0 ? [
                 { label: 'Diário de Obra', icon: CalendarDays, active: route().current('tenant.diario-obra.*'), children: diarioObraItems },
             ] : []),
@@ -706,7 +721,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
         : tenant
             ? [
                 { label: tenant.name, href: tenantHomeUrl },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Liberação de Serviço' : route().current('tenant.os-dnit.*') ? 'OS DNIT' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
+                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Liberação de Serviço' : route().current('tenant.os-dnit.*') ? 'Ordem de Serviço' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -742,7 +757,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
         },
         {
             label: 'Acompanhamento',
-            items: navItems.filter((item) => ['Medição', 'Liberação de Serviço', 'OS DNIT'].includes(item.label)),
+            items: navItems.filter((item) => ['Medição', 'Liberação de Serviço', 'Ordem de Serviço'].includes(item.label)),
         },
         {
             label: 'Campo',
@@ -765,9 +780,9 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     return (
         <div className={`sig-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
             <aside className="sig-side">
-                <div className="flex h-[60px] items-center border-b border-[var(--side-border)] px-[18px]">
-                    <Link href={tenant ? tenantHomeUrl : route('dashboard')}>
-                        <SigLogo size={24} />
+                <div className="flex h-[60px] shrink-0 items-center justify-center border-b border-[var(--side-border)] px-[18px]">
+                    <Link className="inline-flex min-h-11 items-center justify-center" href={tenant ? tenantHomeUrl : route('dashboard')}>
+                        <SigLogo size={20} />
                     </Link>
                 </div>
 
@@ -816,7 +831,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                                     ? medicaoOpen
                                     : item.label === 'Liberação de Serviço'
                                         ? ordemServicoOpen
-                                        : item.label === 'OS DNIT'
+                                        : item.label === 'Ordem de Serviço'
                                             ? osDnitOpen
                                         : item.label === 'Documentação'
                                             ? gedOpen
@@ -831,7 +846,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                                     ? () => setMedicaoOpen((open) => !open)
                                     : item.label === 'Liberação de Serviço'
                                         ? () => setOrdemServicoOpen((open) => !open)
-                                        : item.label === 'OS DNIT'
+                                        : item.label === 'Ordem de Serviço'
                                             ? () => setOsDnitOpen((open) => !open)
                                         : item.label === 'Documentação'
                                             ? () => setGedOpen((open) => !open)
@@ -856,6 +871,8 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                                             {item.children.map((child) => {
                                                 const [nestedOpen, toggleNestedOpen] = child.label === 'RNC' && item.label === 'Qualidade'
                                                     ? [rncOpen, setRncOpen]
+                                                    : child.label === 'IC' && item.label === 'Qualidade'
+                                                        ? [icOpen, setIcOpen]
                                                     : child.label === 'RDA'
                                                     ? [rdaOpen, setRdaOpen]
                                                     : child.label === 'Relatórios'
@@ -1041,12 +1058,8 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                         ))}
                     </div>
 
-                    <div className="hidden w-[280px] items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[var(--ink-500)] lg:flex">
-                        <Search size={15} />
-                        <span className="text-[13px]">Buscar contrato, obra, medição...</span>
-                    </div>
-
                     <div ref={notificationsRef} className="relative">
+                        <audio ref={notificationSound.audioRef} src={NOTIFICATION_SOUND_URL} preload={notificationSound.enabled ? 'auto' : 'none'} hidden />
                         <button
                             type="button"
                             className="sig-btn sig-btn-ghost relative !min-h-9 !px-2"
@@ -1063,21 +1076,20 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
 
                         {notificationsOpen && (
                             <div
-                                className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(340px,calc(100vw-32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.14)]"
+                                className="absolute right-0 top-[calc(100%+10px)] z-50 flex max-h-[calc(100dvh-80px)] w-[min(340px,calc(100vw-32px))] flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.14)]"
                                 role="menu"
                                 aria-label="Notificações do usuário"
                             >
-                                <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+                                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
                                     <div>
                                         <div className="text-[13.5px] font-semibold text-[var(--ink-900)]">Notificações</div>
-                                        <div className="text-[11.5px] text-[var(--ink-500)]">Alertas vinculados ao seu usuário</div>
                                     </div>
                                     <span className="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-700)]">
                                         {unreadNotificationsCount > 0 ? `${unreadNotificationsCount} nova${unreadNotificationsCount === 1 ? '' : 's'}` : 'Sem novas'}
                                     </span>
                                 </div>
 
-                                <div className="max-h-[360px] overflow-y-auto p-2">
+                                <div className="min-h-0 max-h-[360px] overflow-y-auto p-2">
                                     {notifications.length > 0 ? notifications.map((notification) => {
                                         const content = (
                                             <>

@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ContractTour from '@/Components/ContractTour';
+import OsDnitManagementCard from '@/Components/OsDnitManagementCard';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     Activity,
@@ -196,6 +197,7 @@ export default function ContractShow({
     capabilities = {},
     parametrizacao = {},
     additives = [],
+    osSummary = null,
 }) {
     const [showParametrizacao, setShowParametrizacao] = useState(false);
     const [showAdditive, setShowAdditive] = useState(false);
@@ -251,6 +253,7 @@ export default function ContractShow({
 
                 <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
                     <div data-tour="contract-detail-modules" className="grid content-start gap-5">
+                        <OsDnitManagementCard tenant={tenant} summary={osSummary} contractId={contract.id} />
                         <ModulePanel
                             title="Atividades"
                             subtitle="Acompanhamento das tarefas recentes deste contrato"

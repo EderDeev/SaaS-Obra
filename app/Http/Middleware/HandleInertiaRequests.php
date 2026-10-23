@@ -9,18 +9,22 @@ use App\Support\BudgetPermissions;
 use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
+use App\Support\IcPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\NavigationPermissions;
+use App\Support\NotificationFeed;
 use App\Support\OrdemServicoPermissions;
-use App\Support\OsDnitPermissions;
 use App\Support\OsDnitContractAccess;
+use App\Support\OsDnitPermissions;
 use App\Support\OsDnitWorkflowAccess;
 use App\Support\ParametrizacaoPermissions;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
+use App\Support\TenantLandingPage;
 use App\Support\TenantRoles;
 use App\Support\UserPermissions;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -65,23 +69,7 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'notifications' => fn () => $request->user()
-                ? [
-                    'unread_count' => $request->user()->unreadNotifications()->count(),
-                    'items' => $request->user()->notifications()
-                        ->latest()
-                        ->limit(50)
-                        ->get()
-                        ->map(fn ($notification): array => [
-                            'id' => $notification->id,
-                            'title' => $notification->data['title'] ?? 'Notificação',
-                            'body' => $notification->data['body'] ?? '',
-                            'url' => $notification->data['url'] ?? null,
-                            'contract' => $notification->data['contract'] ?? null,
-                            'time' => $notification->created_at?->format('d/m H:i'),
-                            'unread' => $notification->read_at === null,
-                        ])
-                        ->values(),
-                ]
+                ? NotificationFeed::forUser($request->user())
                 : ['unread_count' => 0, 'items' => []],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
@@ -92,22 +80,26 @@ class HandleInertiaRequests extends Middleware
             'currentTenant' => fn () => $tenantForNavigation(),
             'tenantHomeUrl' => function () use ($request, $tenantForNavigation): ?string {
                 $tenant = $tenantForNavigation();
-                return $request->user() && $tenant ? \App\Support\TenantLandingPage::url($request->user(), $tenant) : null;
+
+                return $request->user() && $tenant ? TenantLandingPage::url($request->user(), $tenant) : null;
             },
             'navigationPermissions' => function () use ($request, $tenantForNavigation): array {
                 $tenant = $tenantForNavigation();
                 $permissions = $request->user() && $tenant ? NavigationPermissions::permissionsFor($request->user(), $tenant) : [];
+
                 return ['can' => array_replace(array_fill_keys(NavigationPermissions::all(), false), array_fill_keys($permissions, true))];
             },
-            'osDnitPermissions' => \Inertia\Inertia::always(function () use ($request, $tenantForNavigation): array {
+            'osDnitPermissions' => Inertia::always(function () use ($request, $tenantForNavigation): array {
                 $tenant = $tenantForNavigation();
                 $matrix = $request->user() && $tenant ? OsDnitPermissions::matrix($request->user(), $tenant) : [];
+
                 return ['byContract' => $matrix, 'can' => collect(OsDnitPermissions::all())->mapWithKeys(fn ($permission) => [
                     $permission => collect($matrix)->contains(fn ($permissions) => in_array($permission, $permissions, true)),
                 ])->all()];
             }),
-            'osDnitNavigation' => \Inertia\Inertia::always(function () use ($request, $tenantForNavigation): array {
+            'osDnitNavigation' => Inertia::always(function () use ($request, $tenantForNavigation): array {
                 $tenant = $tenantForNavigation();
+
                 return ['pending_analysis_count' => $request->user() && $tenant
                     ? OsDnitWorkflowAccess::pendingOrders($request->user(), $tenant)->count() : 0];
             }),
@@ -257,13 +249,28 @@ class HandleInertiaRequests extends Middleware
 
                 return $request->user() && $tenant
                     ? [
-                    'all' => RncPermissions::all(),
-                    'labels' => RncPermissions::labels(),
-                    'can' => collect(RncPermissions::all())
-                        ->mapWithKeys(fn (string $permission): array => [
-                            $permission => RncPermissions::canAny($request->user(), $tenant, $permission),
-                        ])
-                        ->all(),
+                        'all' => RncPermissions::all(),
+                        'labels' => RncPermissions::labels(),
+                        'can' => collect(RncPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => RncPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
+                    ]
+                    : ['all' => [], 'labels' => [], 'can' => []];
+            },
+            'icPermissions' => function () use ($request, $tenantForNavigation): array {
+                $tenant = $tenantForNavigation();
+
+                return $request->user() && $tenant
+                    ? [
+                        'all' => IcPermissions::all(),
+                        'labels' => IcPermissions::labels(),
+                        'can' => collect(IcPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => IcPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
                     ]
                     : ['all' => [], 'labels' => [], 'can' => []];
             },
@@ -272,13 +279,13 @@ class HandleInertiaRequests extends Middleware
 
                 return $request->user() && $tenant
                     ? [
-                    'all' => ActivityPermissions::all(),
-                    'labels' => ActivityPermissions::labels(),
-                    'can' => collect(ActivityPermissions::all())
-                        ->mapWithKeys(fn (string $permission): array => [
-                            $permission => ActivityPermissions::canAny($request->user(), $tenant, $permission),
-                        ])
-                        ->all(),
+                        'all' => ActivityPermissions::all(),
+                        'labels' => ActivityPermissions::labels(),
+                        'can' => collect(ActivityPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => ActivityPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
                     ]
                     : ['all' => [], 'labels' => [], 'can' => []];
             },
@@ -287,13 +294,13 @@ class HandleInertiaRequests extends Middleware
 
                 return $request->user() && $tenant
                     ? [
-                    'all' => BudgetPermissions::all(),
-                    'labels' => BudgetPermissions::labels(),
-                    'can' => collect(BudgetPermissions::all())
-                        ->mapWithKeys(fn (string $permission): array => [
-                            $permission => BudgetPermissions::canAny($request->user(), $tenant, $permission),
-                        ])
-                        ->all(),
+                        'all' => BudgetPermissions::all(),
+                        'labels' => BudgetPermissions::labels(),
+                        'can' => collect(BudgetPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => BudgetPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
                     ]
                     : ['all' => [], 'labels' => [], 'can' => []];
             },
@@ -302,13 +309,13 @@ class HandleInertiaRequests extends Middleware
 
                 return $request->user() && $tenant
                     ? [
-                    'all' => ProjectPermissions::all(),
-                    'labels' => ProjectPermissions::labels(),
-                    'can' => collect(ProjectPermissions::all())
-                        ->mapWithKeys(fn (string $permission): array => [
-                            $permission => ProjectPermissions::canAny($request->user(), $tenant, $permission),
-                        ])
-                        ->all(),
+                        'all' => ProjectPermissions::all(),
+                        'labels' => ProjectPermissions::labels(),
+                        'can' => collect(ProjectPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => ProjectPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
                     ]
                     : ['all' => [], 'labels' => [], 'can' => []];
             },
@@ -317,13 +324,13 @@ class HandleInertiaRequests extends Middleware
 
                 return $request->user() && $tenant
                     ? [
-                    'all' => UserPermissions::all(),
-                    'labels' => UserPermissions::labels(),
-                    'can' => collect(UserPermissions::all())
-                        ->mapWithKeys(fn (string $permission): array => [
-                            $permission => UserPermissions::canAny($request->user(), $tenant, $permission),
-                        ])
-                        ->all(),
+                        'all' => UserPermissions::all(),
+                        'labels' => UserPermissions::labels(),
+                        'can' => collect(UserPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => UserPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
                     ]
                     : ['all' => [], 'labels' => [], 'can' => []];
             },
@@ -332,13 +339,13 @@ class HandleInertiaRequests extends Middleware
 
                 return $request->user() && $tenant
                     ? [
-                    'all' => ParametrizacaoPermissions::all(),
-                    'labels' => ParametrizacaoPermissions::labels(),
-                    'can' => collect(ParametrizacaoPermissions::all())
-                        ->mapWithKeys(fn (string $permission): array => [
-                            $permission => ParametrizacaoPermissions::canAny($request->user(), $tenant, $permission),
-                        ])
-                        ->all(),
+                        'all' => ParametrizacaoPermissions::all(),
+                        'labels' => ParametrizacaoPermissions::labels(),
+                        'can' => collect(ParametrizacaoPermissions::all())
+                            ->mapWithKeys(fn (string $permission): array => [
+                                $permission => ParametrizacaoPermissions::canAny($request->user(), $tenant, $permission),
+                            ])
+                            ->all(),
                     ]
                     : ['all' => [], 'labels' => [], 'can' => []];
             },

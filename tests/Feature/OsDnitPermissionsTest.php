@@ -2,8 +2,18 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Contract, ContractParticipant, OsDnitHighway, OsDnitOrder, OsDnitProduct, OsDnitResponsible, Tenant, User};
-use App\Services\{OsDnitOrderHistory, OsDnitOrderNumber};
+use App\Models\Contract;
+use App\Models\ContractParticipant;
+use App\Models\OsDnitHighway;
+use App\Models\OsDnitOrder;
+use App\Models\OsDnitProduct;
+use App\Models\OsDnitResponsible;
+use App\Models\OsDnitSupervisionLot;
+use App\Models\Tenant;
+use App\Models\User;
+use App\Services\OsDnitFlowRecipients;
+use App\Services\OsDnitOrderHistory;
+use App\Services\OsDnitOrderNumber;
 use App\Support\OsDnitPermissions as P;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -15,13 +25,21 @@ class OsDnitPermissionsTest extends TestCase
     use RefreshDatabase;
 
     private Tenant $tenant;
+
     private User $user;
+
     private User $owner;
+
     private Contract $a;
+
     private Contract $b;
+
     private OsDnitHighway $road;
+
     private OsDnitProduct $product;
+
     private OsDnitOrder $order;
+
     private ContractParticipant $link;
 
     protected function setUp(): void
@@ -37,7 +55,9 @@ class OsDnitPermissionsTest extends TestCase
             $this->$key = Contract::create(['tenant_id' => $this->tenant->id, 'code' => strtoupper($key), 'name' => 'Contrato '.$key, 'status' => 'active']);
             $link = ContractParticipant::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->$key->id, 'user_id' => $this->user->id,
                 'side' => 'client', 'role' => 'team_member', 'status' => 'active', 'os_dnit_permissions' => []]);
-            if ($key === 'a') $this->link = $link;
+            if ($key === 'a') {
+                $this->link = $link;
+            }
         }
         $this->road = OsDnitHighway::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->a->id, 'name' => 'BR-364/AC', 'active' => true]);
         $this->product = OsDnitProduct::create(['tenant_id' => $this->tenant->id, ...$this->productData()]);
@@ -77,7 +97,9 @@ class OsDnitPermissionsTest extends TestCase
             ->has('contracts', 1)->where('osDnitPermissions.can.view_products', false));
         $this->get($this->url('orders.show', $this->order))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('capabilities.edit', false)->where('capabilities.delete', false)->has('products', 0));
-        foreach (['orders.create', 'products.index', 'dashboard', 'responsibles.index'] as $route) $this->get($this->url($route))->assertForbidden();
+        foreach (['orders.create', 'products.index', 'dashboard', 'responsibles.index'] as $route) {
+            $this->get($this->url($route))->assertForbidden();
+        }
         $this->get($this->url('settings.index'))->assertForbidden();
         $this->get(route('tenant.os-dnit.orders.index', [$this->tenant, 'contract_id' => $this->b->id]))->assertSessionHasErrors('contract_id');
     }
@@ -251,7 +273,7 @@ class OsDnitPermissionsTest extends TestCase
         OsDnitResponsible::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->a->id, 'user_id' => $this->user->id, 'role' => 'concremat', 'active' => true]);
         $this->order->update(['status' => 'awaiting_concremat', 'submitted_at' => now()]);
         $event = $this->order->events()->create(['actor_id' => $this->user->id, 'action' => 'submitted', 'from_status' => 'draft', 'to_status' => 'awaiting_concremat', 'snapshot' => []]);
-        $recipients = app(\App\Services\OsDnitFlowRecipients::class);
+        $recipients = app(OsDnitFlowRecipients::class);
         $this->grant([P::VIEW]);
         $this->getJson($this->url('analysis.show', $this->order))->assertOk()->assertJsonPath('capabilities.review', true);
         $this->assertSame([$this->user->id], $recipients->forEvent($event)->modelKeys());
@@ -277,9 +299,24 @@ class OsDnitPermissionsTest extends TestCase
         $this->assertSame($saved, $this->link->fresh()->os_dnit_permissions);
     }
 
-    private function grant(array $permissions): void { $this->link->update(['os_dnit_permissions' => P::normalize($permissions)]); }
-    private function url(string $route, mixed $model = null): string { return route('tenant.os-dnit.'.$route, $model ? [$this->tenant, $model] : [$this->tenant]); }
-    private function productData(string $code = '02'): array { return ['contract_id' => $this->a->id, 'code' => $code, 'name' => 'Controle de Obras', 'category' => 'gestao_controle', 'unit' => 'mês', 'frequency' => 'monthly']; }
-    private function demand(): array { return ['contract_id' => $this->a->id, 'highway_id' => $this->road->id, 'supervision_lot' => '01', 'km_start' => 1, 'km_end' => 2,
-        'subject' => 'Serviço de teste', 'technical_need' => 'Necessidade técnica', 'justification' => 'Justificativa', 'desired_deadline' => '2026-12-01', 'items' => [['product_id' => $this->product->id, 'quantity' => 1]]]; }
+    private function grant(array $permissions): void
+    {
+        $this->link->update(['os_dnit_permissions' => P::normalize($permissions)]);
+    }
+
+    private function url(string $route, mixed $model = null): string
+    {
+        return route('tenant.os-dnit.'.$route, $model ? [$this->tenant, $model] : [$this->tenant]);
+    }
+
+    private function productData(string $code = '02'): array
+    {
+        return ['contract_id' => $this->a->id, 'code' => $code, 'name' => 'Controle de Obras', 'category' => 'gestao_controle', 'unit' => 'mês', 'frequency' => 'monthly'];
+    }
+
+    private function demand(): array
+    {
+        return ['contract_id' => $this->a->id, 'highway_id' => $this->road->id, 'supervision_lot' => '01', 'supervision_lot_id' => OsDnitSupervisionLot::firstOrCreate(['tenant_id' => $this->tenant->id, 'contract_id' => $this->a->id, 'name' => '01'], ['active' => true])->id, 'km_start' => 1, 'km_end' => 2,
+            'subject' => 'Serviço de teste', 'technical_need' => 'Necessidade técnica', 'justification' => 'Justificativa', 'desired_deadline' => '2026-12-01'];
+    }
 }

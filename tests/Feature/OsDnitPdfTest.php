@@ -2,7 +2,15 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Contract, ContractParticipant, OsDnitHighway, OsDnitOrder, OsDnitProduct, OsDnitResponsible, Tenant, User};
+use App\Models\Contract;
+use App\Models\ContractParticipant;
+use App\Models\OsDnitHighway;
+use App\Models\OsDnitOrder;
+use App\Models\OsDnitProduct;
+use App\Models\OsDnitResponsible;
+use App\Models\OsDnitSupervisionLot;
+use App\Models\Tenant;
+use App\Models\User;
 use App\Services\OsDnitPdfRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -18,14 +26,16 @@ class OsDnitPdfTest extends TestCase
         $tenant->memberships()->create(['user_id' => $user->id, 'role' => 'tenant_owner', 'status' => 'active']);
         $contract = Contract::create(['tenant_id' => $tenant->id, 'code' => 'CT-PDF', 'name' => 'Supervisão de rodovias', 'status' => 'active']);
         ContractParticipant::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'user_id' => $user->id, 'side' => 'client', 'role' => 'manager', 'status' => 'active']);
-        foreach (['analyst', 'concremat', 'contract_inspector'] as $role) OsDnitResponsible::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'user_id' => $user->id, 'role' => $role, 'active' => true]);
+        foreach (['analyst', 'concremat', 'contract_inspector'] as $role) {
+            OsDnitResponsible::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'user_id' => $user->id, 'role' => $role, 'active' => true]);
+        }
         $highway = OsDnitHighway::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'name' => 'BR-307/AC', 'active' => true]);
         $product = OsDnitProduct::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'code' => '18E', 'name' => 'Levantamento em ponto localizado', 'unit' => 'unid', 'category' => 'levantamentos_estudos', 'frequency' => 'on_demand']);
         $extra = OsDnitProduct::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'code' => '18D', 'name' => 'Levantamento topográfico', 'unit' => 'm²', 'category' => 'levantamentos_estudos', 'frequency' => 'on_demand']);
         $this->actingAs($user)->post(route('tenant.os-dnit.orders.store', $tenant), [
-            'contract_id' => $contract->id, 'highway_id' => $highway->id, 'supervision_lot' => 'Lote 01', 'km_start' => '4.760', 'km_end' => '4.980',
+            'contract_id' => $contract->id, 'highway_id' => $highway->id, 'supervision_lot_id' => OsDnitSupervisionLot::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'name' => 'Lote 01', 'active' => true])->id, 'km_start' => '4.760', 'km_end' => '4.980',
             'subject' => 'Levantamento topográfico', 'desired_deadline' => '2026-10-31', 'technical_need' => 'Pedido original preservado.',
-            'justification' => 'Apoiar a fiscalização.', 'sei_reference' => 'SEI-PDF', 'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            'justification' => 'Apoiar a fiscalização.', 'sei_reference' => 'SEI-PDF',
         ])->assertSessionHasNoErrors();
 
         return [$tenant, $user, $contract, OsDnitOrder::sole(), $extra];
@@ -41,8 +51,11 @@ class OsDnitPdfTest extends TestCase
         [$tenant, $user, $contract, $order] = $this->context();
         $data = app(OsDnitPdfRenderer::class)->data($tenant, $order);
         $html = view('pdf.os-dnit', $data)->render();
+        $this->assertSame('data:image/png;base64,'.base64_encode(file_get_contents(public_path('brand/dnit-logo.png'))), $data['logo']);
+        $this->assertStringContainsString('alt="DNIT"', $html);
+        $this->assertStringNotContainsString('alt="Concremat"', $html);
         $this->assertStringContainsString('execução ainda não foi autorizada', $html);
-        $this->assertStringContainsString('Produtos solicitados', $html);
+        $this->assertStringNotContainsString('Produtos solicitados</h2>', $html);
         $this->assertStringNotContainsString('Fica autorizada a execução', $html);
         $this->assertStringNotContainsString('Serviços autorizados', $html);
         $before = [$order->fresh()->workflow_version, $order->events()->count()];
@@ -67,12 +80,14 @@ class OsDnitPdfTest extends TestCase
         $data = app(OsDnitPdfRenderer::class)->data($tenant, $order->fresh());
         $this->assertTrue($data['approved']);
         $this->assertSame('1250.000', $data['summaryItems'][0]['quantity']);
-        $this->assertSame('1.000', $data['requested'][0]['quantity']);
-        $this->assertCount(2, $data['comparison']);
-        $this->assertSame(['Retirado', 'Incluído'], array_column($data['comparison'], 'label'));
+        $this->assertSame([], $data['requested']);
+        $this->assertCount(1, $data['comparison']);
+        $this->assertSame(['Incluído'], array_column($data['comparison'], 'label'));
         $this->assertSame('2026-11-02', $data['reviewedDeadline']);
         $html = view('pdf.os-dnit', $data)->render();
-        foreach (['Fica autorizada a execução', 'Pedido original preservado.', 'Primeira análise técnica.', 'Rever área e prazo.', 'Análise final revisada.', 'Aprovo somente a área revisada.', '1.500', '1.250', '04/11/2026', '02/11/2026'] as $text) $this->assertStringContainsString($text, $html);
+        foreach (['Fica autorizada a execução', 'Pedido original preservado.', 'Primeira análise técnica.', 'Rever área e prazo.', 'Análise final revisada.', 'Aprovo somente a área revisada.', '1.500', '1.250', '04/11/2026', '02/11/2026'] as $text) {
+            $this->assertStringContainsString($text, $html);
+        }
         $this->assertStringNotContainsString('Catálogo alterado depois', $html);
         $response = $this->get(route('tenant.os-dnit.orders.pdf', [$tenant, $order]))->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $this->assertStringStartsWith('%PDF-', $response->getContent());
@@ -123,11 +138,17 @@ class OsDnitPdfTest extends TestCase
             $this->assertSame($index + 1, substr_count($html, '<div class="stage-heading">'));
             $this->assertStringContainsString('Pedido original preservado.', $html);
             $this->assertLessThan(strpos($html, 'Justificativa / resultado esperado'), strpos($html, 'Descrição da necessidade técnica'));
-            $this->assertLessThan(strpos($html, 'Produtos solicitados'), strpos($html, 'Justificativa / resultado esperado'));
+            if ($scope !== 'analyst') {
+                $this->assertLessThan(strpos($html, 'Produtos solicitados'), strpos($html, 'Justificativa / resultado esperado'));
+            } else {
+                $this->assertStringNotContainsString('Produtos solicitados', $html);
+            }
             $this->assertSame($scope !== 'analyst', str_contains($html, 'PARECER_CONCREMAT'));
             $this->assertSame(in_array($scope, ['inspector', 'complete'], true), str_contains($html, 'DECISAO_FISCAL'));
             $this->assertSame($scope === 'complete', str_contains($html, 'Histórico das movimentações'));
-            if ($scope === 'complete') $this->assertGreaterThan(strpos($html, 'DECISAO_FISCAL'), strpos($html, 'Histórico das movimentações'));
+            if ($scope === 'complete') {
+                $this->assertGreaterThan(strpos($html, 'DECISAO_FISCAL'), strpos($html, 'Histórico das movimentações'));
+            }
             $this->assertSame($index + 1, substr_count($html, 'Referência SEI / processo'));
             $response = $this->get(route('tenant.os-dnit.orders.pdf', [$tenant, $order, 'scope' => $scope]))->assertOk()->assertHeader('Content-Type', 'application/pdf');
             $this->assertStringStartsWith('%PDF-', $response->getContent());
@@ -135,7 +156,9 @@ class OsDnitPdfTest extends TestCase
         }
         $this->get(route('tenant.os-dnit.orders.pdf', [$tenant, $order, 'scope' => 'invalid']))->assertSessionHasErrors('scope');
         ContractParticipant::where('user_id', $user->id)->update(['status' => 'inactive']);
-        foreach (array_keys(OsDnitPdfRenderer::SCOPES) as $scope) $this->get(route('tenant.os-dnit.orders.pdf', [$tenant, $order, 'scope' => $scope]))->assertNotFound();
+        foreach (array_keys(OsDnitPdfRenderer::SCOPES) as $scope) {
+            $this->get(route('tenant.os-dnit.orders.pdf', [$tenant, $order, 'scope' => $scope]))->assertNotFound();
+        }
     }
 
     public function test_inspector_section_preserves_the_reason_and_scope_of_the_last_return(): void
@@ -150,7 +173,9 @@ class OsDnitPdfTest extends TestCase
         $this->assertSame('1500.000', $data['decisionItems'][0]['quantity']);
         $this->assertSame('1250.000', $data['reviewed'][0]['quantity']);
         $html = view('pdf.os-dnit', $data)->render();
-        foreach (['Motivo da reprovação', 'Ajustar o levantamento.', 'novas movimentações após esta decisão', '1.500', '1.250'] as $text) $this->assertStringContainsString($text, $html);
+        foreach (['Motivo da reprovação', 'Ajustar o levantamento.', 'novas movimentações após esta decisão', '1.500', '1.250'] as $text) {
+            $this->assertStringContainsString($text, $html);
+        }
         $this->assertStringNotContainsString('Fica autorizada a execução', $html);
     }
 }

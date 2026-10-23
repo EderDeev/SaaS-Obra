@@ -1545,7 +1545,7 @@ export default function Viewer({
 
             <section className="sig-content sig-viewer-content">
                 <header className="sig-viewer-header flex flex-wrap items-center justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                         <div className="flex items-center gap-2 text-[var(--ink-500)]">
                             <Eye size={15} />
                             <span className="eyebrow">Projetos</span>

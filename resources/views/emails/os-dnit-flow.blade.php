@@ -4,7 +4,7 @@
 <body style="margin:0;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#111827;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px;"><tr><td align="center">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">
-        <tr><td style="background:#0b5fff;color:#ffffff;padding:22px 26px;"><div style="font-size:12px;font-weight:700;">SigWorks · OS DNIT</div><h1 style="margin:10px 0 0;font-size:22px;line-height:1.3;">{{ $headline }}</h1></td></tr>
+        <tr><td style="background:#0b5fff;color:#ffffff;padding:22px 26px;"><div style="font-size:12px;font-weight:700;">SigWorks · Ordem de Serviço</div><h1 style="margin:10px 0 0;font-size:22px;line-height:1.3;">{{ $headline }}</h1></td></tr>
         <tr><td style="padding:26px;">
             <p style="font-size:15px;line-height:1.6;">Olá, {{ $notifiable->name }}.</p>
             <p style="font-size:15px;line-height:1.6;">{{ $nextStep }}</p>
@@ -13,7 +13,7 @@
                     <tr><td style="padding:10px 0;border-bottom:1px solid #eef2f7;color:#667085;font-size:13px;width:36%;vertical-align:top;">{{ $label }}</td><td style="padding:10px 0 10px 12px;border-bottom:1px solid #eef2f7;font-size:14px;word-break:break-word;">{{ $value }}</td></tr>
                 @endforeach
                 @if ($snapshot['estimated_deadline'])
-                    <tr><td style="padding:10px 0;color:#667085;font-size:13px;">Prazo estimado Concremat</td><td style="padding:10px 0 10px 12px;font-size:14px;">{{ \Carbon\Carbon::parse($snapshot['estimated_deadline'])->format('d/m/Y') }}</td></tr>
+                    <tr><td style="padding:10px 0;color:#667085;font-size:13px;">Prazo estimado Supervisão</td><td style="padding:10px 0 10px 12px;font-size:14px;">{{ \Carbon\Carbon::parse($snapshot['estimated_deadline'])->format('d/m/Y') }}</td></tr>
                 @endif
             </table>
             @if ($event->comment)

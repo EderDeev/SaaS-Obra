@@ -2,15 +2,38 @@
 
 namespace App\Services;
 
-use App\Http\Controllers\Tenant\{ActivityController, OsDnitOrderController, OsDnitProductController, OsDnitResponsibleController, OsDnitSettingsController, OsDnitWorkflowController};
-use App\Models\{Activity, Contract, OsDnitHighway, OsDnitOrder, OsDnitOrderEvent, OsDnitProduct, Tenant, User};
-use App\Support\{ActivityPermissions as AP, OsDnitContractAccess, OsDnitPermissions as P};
+use App\Http\Controllers\Tenant\ActivityController;
+use App\Http\Controllers\Tenant\OsDnitOrderController;
+use App\Http\Controllers\Tenant\OsDnitProductController;
+use App\Http\Controllers\Tenant\OsDnitResponsibleController;
+use App\Http\Controllers\Tenant\OsDnitSettingsController;
+use App\Http\Controllers\Tenant\OsDnitWorkflowController;
+use App\Models\Activity;
+use App\Models\Contract;
+use App\Models\OsDnitHighway;
+use App\Models\OsDnitOrder;
+use App\Models\OsDnitOrderEvent;
+use App\Models\OsDnitProduct;
+use App\Models\OsDnitSupervisionLot;
+use App\Models\Tenant;
+use App\Models\User;
+use App\Support\ActivityPermissions as AP;
+use App\Support\OsDnitContractAccess;
+use App\Support\OsDnitPermissions as P;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Transport\ArrayTransport;
+use Illuminate\Queue\QueueManager;
+use Illuminate\Queue\QueueServiceProvider;
+use Illuminate\Queue\SyncQueue;
 use Illuminate\Routing\Route;
-use Illuminate\Session\{ArraySessionHandler, Store};
+use Illuminate\Session\ArraySessionHandler;
+use Illuminate\Session\Store;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\{Auth, DB, Hash, Mail, Queue};
-use Illuminate\Queue\{QueueManager, QueueServiceProvider};
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -19,15 +42,23 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 class OsDnitSandbox
 {
     public const MARKER = 'os-dnit-sandbox-v1';
+
     public const CONTRACTS = 4;
+
     public const ORDERS_PER_CONTRACT = 30;
 
     private Tenant $tenant;
+
     private User $manager;
+
     private Store $session;
+
     private array $contexts = [];
+
     private array $accounts = [];
+
     private array $checks = [];
+
     private int $actions = 0;
 
     public static function assertEnvironment(): void
@@ -37,22 +68,31 @@ class OsDnitSandbox
         $localPg = app()->environment('local') && $driver === 'pgsql'
             && in_array($connection->getConfig('host'), ['127.0.0.1', 'localhost', '::1'], true);
         $isolatedTests = app()->environment('testing') && $driver === 'sqlite' && $connection->getDatabaseName() === ':memory:';
-        if ((!$localPg && !$isolatedTests) || config('database.protect_destructive_commands', false)
+        if ((! $localPg && ! $isolatedTests) || config('database.protect_destructive_commands', false)
             || filter_var(env('DB_PROTECT_DESTRUCTIVE', false), FILTER_VALIDATE_BOOLEAN)) {
             throw new RuntimeException('Carga permitida somente no PostgreSQL local em loopback ou no SQLite :memory: de testing, sem marcador de produção.');
         }
         foreach (['RAILWAY_ENVIRONMENT_ID', 'RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID'] as $marker) {
-            if (env($marker)) throw new RuntimeException('Carga bloqueada: marcador de ambiente publicado presente.');
+            if (env($marker)) {
+                throw new RuntimeException('Carga bloqueada: marcador de ambiente publicado presente.');
+            }
         }
     }
 
     public function create(string $slug, User $viewer, string $password): array
     {
         self::assertEnvironment();
-        if (!preg_match('/^teste-os-dnit(?:-[a-z0-9-]+)?$/D', $slug)) throw new RuntimeException('Use um slug de testes iniciado por teste-os-dnit.');
-        if (!$viewer->is_platform_admin) throw new RuntimeException('O usuário de visualização deve ser o administrador da plataforma.');
+        if (! preg_match('/^teste-os-dnit(?:-[a-z0-9-]+)?$/D', $slug)) {
+            throw new RuntimeException('Use um slug de testes iniciado por teste-os-dnit.');
+        }
+        if (! $viewer->is_platform_admin) {
+            throw new RuntimeException('O usuário de visualização deve ser o administrador da plataforma.');
+        }
         if ($existing = Tenant::where('slug', $slug)->first()) {
-            if (data_get($existing->settings, 'sandbox.marker') !== self::MARKER) throw new RuntimeException('O slug já pertence a outro ambiente; nada foi alterado.');
+            if (data_get($existing->settings, 'sandbox.marker') !== self::MARKER) {
+                throw new RuntimeException('O slug já pertence a outro ambiente; nada foi alterado.');
+            }
+
             return ['created' => false, 'tenant' => $existing, 'report' => data_get($existing->settings, 'sandbox.report', []), 'accounts' => []];
         }
 
@@ -74,12 +114,12 @@ class OsDnitSandbox
         app('redirect')->setSession($this->session);
 
         try {
-            if (!(Mail::mailer('sandbox_memory')->getSymfonyTransport() instanceof \Illuminate\Mail\Transport\ArrayTransport)
-                || !(app('queue')->connection('os_dnit_mail') instanceof \Illuminate\Queue\SyncQueue)) {
+            if (! (Mail::mailer('sandbox_memory')->getSymfonyTransport() instanceof ArrayTransport)
+                || ! (app('queue')->connection('os_dnit_mail') instanceof SyncQueue)) {
                 throw new RuntimeException('A simulação exige transporte de e-mail em memória e fila síncrona.');
             }
             $result = DB::transaction(function () use ($slug, $viewer, $password, $baseTime) {
-                $this->tenant = Tenant::create(['slug' => $slug, 'name' => 'Laboratório OS DNIT', 'plan' => 'enterprise', 'status' => 'active',
+                $this->tenant = Tenant::create(['slug' => $slug, 'name' => 'Laboratório Ordem de Serviço', 'plan' => 'enterprise', 'status' => 'active',
                     'settings' => ['sandbox' => ['marker' => self::MARKER, 'synthetic_data' => true]]]);
                 $hash = Hash::make($password);
                 $this->manager = $this->user($slug, 'gestor', 'Gestor do Laboratório', $hash, 'tenant_owner');
@@ -90,7 +130,9 @@ class OsDnitSandbox
                     ['MT-003', 'Projetos BR-163 — Mato Grosso', 'MT', 'Cuiabá', ['BR-163/MT', 'BR-070/MT'], 'levantamentos e projetos'],
                     ['GO-004', 'Fiscalização BR-153 — Goiás', 'GO', 'Goiânia', ['BR-153/GO', 'BR-060/GO'], 'controle tecnológico e ambiental'],
                 ];
-                foreach ($definitions as $index => $definition) $this->prepareContract($slug, $definition, $index, $hash, $viewer, $baseTime);
+                foreach ($definitions as $index => $definition) {
+                    $this->prepareContract($slug, $definition, $index, $hash, $viewer, $baseTime);
+                }
 
                 $scenarios = ['draft', 'concremat', 'concremat_saved', 'inspector', 'returned_concremat', 'returned_analyst',
                     'approved', 'approved_changes', 'approved_after_concremat', 'approved_after_analyst'];
@@ -111,15 +153,19 @@ class OsDnitSandbox
                 $mailCount = Mail::mailer('sandbox_memory')->getSymfonyTransport()->messages()->count();
                 $report = $this->report($mailCount);
                 $this->tenant->update(['settings' => ['sandbox' => ['marker' => self::MARKER, 'synthetic_data' => true, 'report' => $report]]]);
+
                 return ['created' => true, 'tenant' => $this->tenant, 'report' => $report, 'accounts' => $this->accounts];
             });
+
             return $result;
         } finally {
             Carbon::setTestNow($originalNow);
             app()->instance('request', $originalRequest);
             app('url')->setRequest($originalRequest);
             Auth::forgetGuards();
-            if ($originalUser) Auth::setUser($originalUser);
+            if ($originalUser) {
+                Auth::setUser($originalUser);
+            }
             config($originalConfig);
             Queue::swap($originalQueue);
             Mail::purge('sandbox_memory');
@@ -129,12 +175,15 @@ class OsDnitSandbox
     private function user(string $slug, string $key, string $name, string $hash, string $role = 'engenheiro_campo'): User
     {
         $email = "{$key}@{$slug}.test";
-        if (User::where('email', $email)->exists()) throw new RuntimeException("Conta de exemplo já existe: {$email}. Nenhuma senha foi alterada.");
+        if (User::where('email', $email)->exists()) {
+            throw new RuntimeException("Conta de exemplo já existe: {$email}. Nenhuma senha foi alterada.");
+        }
         $user = User::create(['name' => $name, 'email' => $email, 'password' => $hash, 'must_change_password' => false, 'is_platform_admin' => false]);
         $user->forceFill(['email_verified_at' => now()])->save();
         $this->tenant->memberships()->create(['user_id' => $user->id, 'role' => $role, 'status' => 'active', 'joined_at' => now(),
             'activity_permissions' => AP::all()]);
         $this->accounts[] = ['name' => $name, 'email' => $email, 'profile' => $role, 'key' => $key];
+
         return $user;
     }
 
@@ -142,13 +191,13 @@ class OsDnitSandbox
     {
         [$code, $name, $state, $city, $roads, $theme] = $definition;
         $contract = Contract::create(['tenant_id' => $this->tenant->id, 'code' => 'LAB-'.$code, 'name' => $name,
-            'description' => 'Dados fictícios para validação de OS DNIT e Atividades.', 'status' => 'active', 'measurement_mode' => 'simple',
+            'description' => 'Dados fictícios para validação de Ordem de Serviço e Atividades.', 'status' => 'active', 'measurement_mode' => 'simple',
             'starts_at' => $baseTime->subMonths(6)->toDateString(), 'ends_at' => $baseTime->addYear()->toDateString(),
             'total_value' => 1500000 + $index * 550000, 'currency' => 'BRL', 'state' => $state, 'city' => $city,
             'client_company_name' => 'Cliente de demonstração', 'contractor_company_name' => 'Executora de demonstração']);
         $number = $index + 1;
         $actors = [];
-        foreach (['analyst' => ['analista', 'Analista DNIT'], 'concremat' => ['concremat', 'Fiscal Concremat'],
+        foreach (['analyst' => ['analista', 'Analista DNIT'], 'concremat' => ['concremat', 'Supervisão'],
             'contract_inspector' => ['fiscal', 'Fiscal do contrato'], 'viewer' => ['leitor', 'Leitor']] as $role => [$key, $label]) {
             $actors[$role] = $this->user($slug, $key.$number, "{$label} · Contrato {$number}", $hash);
             $readOnly = $role === 'viewer';
@@ -157,9 +206,11 @@ class OsDnitSandbox
                 'joined_at' => now(), 'os_dnit_permissions' => $readOnly ? [P::VIEW, P::VIEW_PRODUCTS, P::DASHBOARD] : P::all(),
                 'activity_permissions' => $readOnly ? [AP::VIEW, AP::VIEW_METRICS] : AP::all()]);
         }
-        foreach ([$this->manager, $viewer] as $admin) $contract->participants()->create(['tenant_id' => $this->tenant->id,
-            'user_id' => $admin->id, 'side' => 'manager', 'role' => 'manager', 'status' => 'active', 'joined_at' => now(),
-            'os_dnit_permissions' => P::all(), 'activity_permissions' => AP::all()]);
+        foreach ([$this->manager, $viewer] as $admin) {
+            $contract->participants()->create(['tenant_id' => $this->tenant->id,
+                'user_id' => $admin->id, 'side' => 'manager', 'role' => 'manager', 'status' => 'active', 'joined_at' => now(),
+                'os_dnit_permissions' => P::all(), 'activity_permissions' => AP::all()]);
+        }
 
         $assignments = [];
         foreach (['analyst', 'concremat', 'contract_inspector'] as $role) {
@@ -207,7 +258,9 @@ class OsDnitSandbox
         $products = $context['products'];
         $start = round(4.5 + $index * 3.25, 2);
         $labels = ['Levantamento de ponto crítico', 'Avaliação de drenagem', 'Controle de pavimentação', 'Inspeção de conservação', 'Estudo técnico de trecho'];
-        return ['contract_id' => $context['contract']->id, 'supervision_lot' => 'Lote '.str_pad((string)($index % 3 + 1), 2, '0', STR_PAD_LEFT),
+        $lot = OsDnitSupervisionLot::firstOrCreate(['tenant_id' => $context['contract']->tenant_id, 'contract_id' => $context['contract']->id, 'name' => 'Lote '.str_pad((string) ($index % 3 + 1), 2, '0', STR_PAD_LEFT)], ['active' => true]);
+
+        return ['supervision_lot_id' => $lot->id, 'contract_id' => $context['contract']->id, 'supervision_lot' => 'Lote '.str_pad((string) ($index % 3 + 1), 2, '0', STR_PAD_LEFT),
             'highway_id' => $context['highways'][$index % 2]->id, 'km_start' => $start, 'km_end' => round($start + 1.35, 2),
             'subject' => sprintf('%02d · %s — %s', $index + 1, $labels[$index % 5], $context['contract']->code),
             'desired_deadline' => now()->addDays(15 + $index % 20)->toDateString(),
@@ -220,17 +273,23 @@ class OsDnitSandbox
     private function order(array $context, string $scenario, int $index): OsDnitOrder
     {
         $data = $this->demand($context, $index);
-        $this->call(OsDnitOrderController::class, 'store', $context['actors']['analyst'], $data);
+        $lot = OsDnitSupervisionLot::firstOrCreate(['tenant_id' => $context['contract']->tenant_id, 'contract_id' => $context['contract']->id, 'name' => $data['supervision_lot']], ['active' => true]);
+        $demand = collect($data)->except(['items', 'supervision_lot'])->all() + ['supervision_lot_id' => $lot->id];
+        $this->call(OsDnitOrderController::class, 'store', $context['actors']['analyst'], $demand);
         $order = OsDnitOrder::where('contract_id', $context['contract']->id)->latest('id')->firstOrFail();
-        if ($scenario === 'draft') return $order;
+        if ($scenario === 'draft') {
+            return $order;
+        }
         $this->transition($context, $order, 'submit', 'analyst');
-        if ($scenario === 'concremat') return $order->refresh();
+        if ($scenario === 'concremat') {
+            return $order->refresh();
+        }
         $items = $data['items'];
         $changed = in_array($scenario, ['approved_changes', 'approved_after_concremat', 'returned_concremat', 'inspector', 'concremat_saved'], true);
         if ($changed) {
-            $items[0]['quantity'] = number_format((float)$items[0]['quantity'] * 1.2, 3, '.', '');
+            $items[0]['quantity'] = number_format((float) $items[0]['quantity'] * 1.2, 3, '.', '');
             array_pop($items);
-            $extra = collect($context['products'])->first(fn ($product) => !in_array($product->id, array_column($data['items'], 'product_id')));
+            $extra = collect($context['products'])->first(fn ($product) => ! in_array($product->id, array_column($data['items'], 'product_id')));
             $items[] = ['product_id' => $extra->id, 'quantity' => '3.500'];
         }
         $analysis = ['mode' => $scenario === 'concremat_saved' ? 'save' : 'forward', 'items' => $items,
@@ -238,21 +297,26 @@ class OsDnitSandbox
             'review_comment' => $changed ? 'Análise técnica: ampliar o quantitativo do primeiro produto e substituir o último serviço após inspeção do trecho. Prazo ajustado para mobilização da equipe.'
                 : 'Análise técnica concluída. Produtos e quantidades coerentes com a necessidade; execução compatível com o prazo estimado.'];
         $this->transition($context, $order, 'review', 'concremat', $analysis);
-        if (in_array($scenario, ['concremat_saved', 'inspector'], true)) return $order->refresh();
+        if (in_array($scenario, ['concremat_saved', 'inspector'], true)) {
+            return $order->refresh();
+        }
         if (in_array($scenario, ['returned_concremat', 'returned_analyst', 'approved_after_concremat', 'approved_after_analyst'], true)) {
             $toAnalyst = in_array($scenario, ['returned_analyst', 'approved_after_analyst'], true);
             $this->transition($context, $order, 'decide', 'contract_inspector', ['decision' => 'return', 'return_to' => $toAnalyst ? 'analyst' : 'concremat',
                 'comment' => $toAnalyst ? 'Esclarecer a necessidade e a prioridade do serviço solicitado. Consultar as observações antes de reenviar.' : 'Reavaliar o quantitativo e o prazo da análise para compatibilizar a mobilização das equipes.']);
-            if (str_starts_with($scenario, 'returned_')) return $order->refresh();
-            if ($toAnalyst) $this->transition($context, $order, 'submit', 'analyst');
+            if (str_starts_with($scenario, 'returned_')) {
+                return $order->refresh();
+            }
+            if ($toAnalyst) {
+                $this->transition($context, $order, 'submit', 'analyst');
+            }
             $this->transition($context, $order, 'review', 'concremat', [...$analysis, 'mode' => 'forward', 'review_comment' => 'Reanálise concluída após devolução. Mantido o pedido original; esclarecimentos e ajustes técnicos registrados nesta análise.']);
         }
-        $this->transition($context, $order, 'decide', 'contract_inspector', ['decision' => 'approve', 'comment' => 'Serviço autorizado conforme parecer técnico e quantitativos da Análise Concremat. Acompanhar a execução e registrar as evidências.']);
-        $original = $order->items()->get()->sortBy('product_id')->map(fn ($item) => [(int)$item->product_id, number_format((float)$item->quantity, 3, '.', '')])->values()->all();
-        $expected = collect($data['items'])->sortBy('product_id')->map(fn ($item) => [(int)$item['product_id'], number_format((float)$item['quantity'], 3, '.', '')])->values()->all();
-        if ($original !== $expected) {
-            throw new RuntimeException('Divergência no pedido original: '.json_encode(['scenario' => $scenario, 'actual' => $original, 'expected' => $expected]));
+        $this->transition($context, $order, 'decide', 'contract_inspector', ['decision' => 'approve', 'comment' => 'Serviço autorizado conforme parecer técnico e quantitativos da Análise Supervisão. Acompanhar a execução e registrar as evidências.']);
+        if ($order->items()->exists()) {
+            throw new RuntimeException('Produtos não podem ser incluídos na demanda do analista.');
         }
+
         return $order->refresh();
     }
 
@@ -279,7 +343,9 @@ class OsDnitSandbox
             'priority' => ['low', 'normal', 'high', 'urgent'][$index % 4], 'due_date' => now()->addDays($index % 2 ? 35 : 5)->toDateString()];
         $this->call(ActivityController::class, 'store', $actor, $data);
         $activity = Activity::where('contract_id', $context['contract']->id)->latest('id')->firstOrFail();
-        if ($status !== 'todo') $this->call(ActivityController::class, 'update', $actor, ['status' => $status], [$activity]);
+        if ($status !== 'todo') {
+            $this->call(ActivityController::class, 'update', $actor, ['status' => $status], [$activity]);
+        }
         foreach ($activity->checklistItems()->take($status === 'done' ? 4 : ($status === 'review' ? 3 : 1))->get() as $item) {
             $this->call(ActivityController::class, 'updateChecklistItem', $context['actors']['concremat'], ['is_completed' => true], [$activity, $item]);
         }
@@ -292,13 +358,15 @@ class OsDnitSandbox
             $other = $this->contexts[($i + 1) % count($this->contexts)];
             $contract = $context['contract'];
             $analyst = $context['actors']['analyst'];
-            if (OsDnitContractAccess::contracts($analyst, $this->tenant)->pluck('id')->all() !== [$contract->id]) throw new RuntimeException('Falha no isolamento contratual.');
+            if (OsDnitContractAccess::contracts($analyst, $this->tenant)->pluck('id')->all() !== [$contract->id]) {
+                throw new RuntimeException('Falha no isolamento contratual.');
+            }
             $this->checks[] = $contract->code.': escopo restrito ao próprio contrato';
             $draft = $context['orders'][0];
             $sent = $context['orders'][1];
             $demand = $this->demand($context, 0);
             $this->reject('Produto de outro contrato', fn () => $this->call(OsDnitOrderController::class, 'store', $analyst,
-                [...$demand, 'items' => [['product_id' => $other['products'][0]->id, 'quantity' => 1]]]), 'items.0.product_id');
+                [...$demand, 'items' => [['product_id' => $other['products'][0]->id, 'quantity' => 1]]]), 'items');
             $this->reject('Rodovia de outro contrato', fn () => $this->call(OsDnitOrderController::class, 'store', $analyst,
                 [...$demand, 'highway_id' => $other['highways'][0]->id]), 'highway_id');
             $this->reject('Acesso à OS de outro contrato', fn () => $this->call(OsDnitOrderController::class, 'show', $analyst, [], [$other['orders'][0]], 'GET'), 404);
@@ -315,20 +383,32 @@ class OsDnitSandbox
                 ['contract_id' => $contract->id, 'title' => 'Referência incompatível', 'priority' => 'normal', 'category' => 'os_dnit', 'os_dnit_order_id' => $other['orders'][0]->id]), 'os_dnit_order_id');
         }
         $expected = ['draft' => 12, 'awaiting_concremat' => 24, 'awaiting_contract' => 12, 'returned_concremat' => 12, 'returned_analyst' => 12, 'approved' => 48];
-        $actual = OsDnitOrder::where('tenant_id', $this->tenant->id)->selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status')->map(fn ($count) => (int)$count)->all();
-        ksort($expected); ksort($actual);
-        if ($actual !== $expected) throw new RuntimeException('A distribuição final de OSs divergiu dos cenários planejados.');
+        $actual = OsDnitOrder::where('tenant_id', $this->tenant->id)->selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status')->map(fn ($count) => (int) $count)->all();
+        ksort($expected);
+        ksort($actual);
+        if ($actual !== $expected) {
+            throw new RuntimeException('A distribuição final de OSs divergiu dos cenários planejados.');
+        }
         $this->checks[] = '120 OSs nas etapas previstas; 48 aprovações com pedido original preservado';
     }
 
     private function reject(string $label, callable $operation, string|int $expected): void
     {
-        try { $operation(); }
-        catch (ValidationException $exception) {
-            if (is_string($expected) && array_key_exists($expected, $exception->errors())) { $this->checks[] = $label.': bloqueado'; return; }
+        try {
+            $operation();
+        } catch (ValidationException $exception) {
+            if (is_string($expected) && array_key_exists($expected, $exception->errors())) {
+                $this->checks[] = $label.': bloqueado';
+
+                return;
+            }
             throw $exception;
         } catch (HttpExceptionInterface $exception) {
-            if ($exception->getStatusCode() === $expected) { $this->checks[] = $label.': bloqueado'; return; }
+            if ($exception->getStatusCode() === $expected) {
+                $this->checks[] = $label.': bloqueado';
+
+                return;
+            }
             throw $exception;
         }
         throw new RuntimeException($label.': a operação deveria ter sido bloqueada.');
@@ -347,6 +427,7 @@ class OsDnitSandbox
         Auth::setUser($actor);
         $response = app($controller)->$method($request, $this->tenant, ...$models);
         $this->actions++;
+
         return $response;
     }
 

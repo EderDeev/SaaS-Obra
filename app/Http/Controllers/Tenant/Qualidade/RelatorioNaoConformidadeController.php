@@ -14,6 +14,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\RncResponsibleNotification;
 use App\Support\RncPermissions;
+use App\Support\RncListing;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -47,8 +48,59 @@ class RelatorioNaoConformidadeController extends Controller
 
         $contractIds = $this->contractIdsForPermission($request, $tenant, RncPermissions::VIEW);
 
-        $rncs = $tenant->relatorioNaoConformidades()
-            ->whereIn('contract_id', $contractIds)
+        $contracts = $tenant->contracts()->whereIn('id', $contractIds)->orderBy('code')->get(['id', 'code', 'name']);
+        $obras = $tenant->obras()->whereIn('contract_id', $contractIds)->orderBy('codigo')->get(['id', 'contract_id', 'codigo', 'nome']);
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'contract_id' => ['nullable', 'integer', Rule::in($contracts->pluck('id')->all())],
+            'obra_id' => ['nullable', 'integer', Rule::in($obras->pluck('id')->all())],
+            'status' => ['nullable', Rule::in(array_keys(RncListing::STATUSES))],
+            'stage' => ['nullable', Rule::in(['all', ...array_keys(RncListing::STAGES)])],
+        ]);
+        $filters['stage'] = $filters['stage'] ?? 'all';
+        if (!empty($filters['contract_id']) && !empty($filters['obra_id'])
+            && (int) $obras->firstWhere('id', $filters['obra_id'])->contract_id !== (int) $filters['contract_id']) {
+            throw ValidationException::withMessages(['obra_id' => 'Selecione uma obra do contrato informado.']);
+        }
+
+        $statusSql = RncListing::statusSql();
+        $query = $tenant->relatorioNaoConformidades()->whereIn('contract_id', $contractIds)
+            ->when($filters['contract_id'] ?? null, fn ($query, $id) => $query->where('contract_id', $id))
+            ->when($filters['obra_id'] ?? null, fn ($query, $id) => $query->where('obra_id', $id))
+            ->when(trim($filters['q'] ?? ''), function ($query, $term) {
+                $like = '%'.mb_strtolower($term).'%';
+                $query->where(function ($query) use ($term, $like) {
+                    $query->whereRaw('LOWER(descricao_problema) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(observacao) LIKE ?', [$like])
+                        ->orWhereHas('contract', fn ($contract) => $contract->whereRaw('LOWER(code) LIKE ?', [$like])->orWhereRaw('LOWER(name) LIKE ?', [$like]))
+                        ->orWhereHas('obra', fn ($obra) => $obra->whereRaw('LOWER(codigo) LIKE ?', [$like])->orWhereRaw('LOWER(nome) LIKE ?', [$like]));
+                    if (preg_match('/^(?:RNC\s*)?(\d+)(?:[-\/](\d{4}))?$/i', $term, $number)) {
+                        $query->orWhere(function ($numberQuery) use ($number) {
+                            $numberQuery->where(function ($sequence) use ($number) {
+                                $sequence->where('sequence_number', (int) $number[1])->orWhere(fn ($legacy) => $legacy
+                                    ->where(fn ($missing) => $missing->whereNull('sequence_number')->orWhere('sequence_number', 0))
+                                    ->where('id', (int) $number[1]));
+                            });
+                            if (isset($number[2])) $numberQuery->where(fn ($year) => $year->where('sequence_year', (int) $number[2])
+                                ->orWhere(fn ($legacy) => $legacy->whereNull('sequence_year')->whereYear('opened_at', $number[2])));
+                        });
+                    }
+                });
+            });
+        $statusCounts = (clone $query)->selectRaw("{$statusSql} AS listing_status, COUNT(*) AS total")
+            ->groupByRaw($statusSql)->pluck('total', 'listing_status');
+        $stageCounts = ['all' => (int) $statusCounts->sum()];
+        foreach (RncListing::STAGES as $stage => $statuses) {
+            $stageCounts[$stage] = (int) $statusCounts->only($statuses)->sum();
+        }
+
+        $rncs = $query->select('relatorio_nao_conformidades.*')->selectRaw("{$statusSql} AS listing_status")
+            ->when(($filters['stage'] ?? 'all') !== 'all', function ($query) use ($filters, $statusSql) {
+                $statuses = RncListing::STAGES[$filters['stage']];
+                $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+                $query->whereRaw("({$statusSql}) IN ({$placeholders})", $statuses);
+            })
+            ->when($filters['status'] ?? null, fn ($query, $status) => $query->whereRaw("({$statusSql}) = ?", [$status]))
             ->with([
                 'contract:id,code,name',
                 'obra:id,nome,codigo',
@@ -56,18 +108,22 @@ class RelatorioNaoConformidadeController extends Controller
                 'contratante:id,nome,sigla,logo_path',
                 'contratada:id,nome,sigla,logo_path',
                 'creator:id,name',
-                'acoesCorretivas:id,tenant_id,relatorio_nao_conformidade_id,user_id,status,review_observation,prazo_execucao_proposto,submitted_at,reviewed_at,reviewed_by_id',
+                'acoesCorretivas' => fn ($query) => $query->select(['id', 'tenant_id', 'relatorio_nao_conformidade_id', 'user_id', 'status', 'review_observation', 'prazo_execucao_proposto', 'submitted_at', 'reviewed_at', 'reviewed_by_id'])->orderByDesc('id'),
                 'acoesCorretivas.user:id,name',
                 'acoesCorretivas.reviewer:id,name',
             ])
             ->withCount(['photos', 'evidencias'])
-            ->latest()
-            ->get();
-        $rncs->each(fn (RelatorioNaoConformidade $rnc): RelatorioNaoConformidade => $this->attachUserPermissions($rnc, $request->user(), $tenant));
+            ->latest()->orderByDesc('id')->paginate(10)->withQueryString()
+            ->through(fn (RelatorioNaoConformidade $rnc): RelatorioNaoConformidade => $this->attachUserPermissions($rnc, $request->user(), $tenant));
 
         return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/Index', [
             'tenant' => $tenant,
             'rncs' => $rncs,
+            'contracts' => $contracts,
+            'obras' => $obras,
+            'filters' => $filters,
+            'statuses' => RncListing::STATUSES,
+            'stageCounts' => $stageCounts,
             'canCreateRnc' => RncPermissions::canAny($request->user(), $tenant, RncPermissions::CREATE),
             'canDeleteRncs' => $this->canDeleteRncs($request->user(), $tenant),
             'canReviewRncProposals' => $this->canReviewRncProposals($request->user(), $tenant),

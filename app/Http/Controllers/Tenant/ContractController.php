@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Models\TipoEmpresa;
 use App\Support\ActivityPermissions;
 use App\Support\ContractPermissions;
+use App\Support\OsDnitManagementSummary;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
 use Illuminate\Database\Eloquent\Builder;
@@ -56,6 +57,8 @@ class ContractController extends Controller
             ->latest()
             ->get();
         $contractIds = $contractCollection->pluck('id');
+        $osCounts = OsDnitManagementSummary::forContracts($request->user(), $tenant, $contractIds);
+        $contractCollection->each(fn (Contract $contract) => $contract->setAttribute('os_summary', $osCounts->get($contract->id)));
 
         return Inertia::render('Tenant/Contracts/Index', [
             'tenant' => $tenant,
@@ -208,6 +211,7 @@ class ContractController extends Controller
         return Inertia::render('Tenant/Contracts/Show', [
             'tenant' => $tenant,
             'contract' => $contract,
+            'osSummary' => OsDnitManagementSummary::forUser($request->user(), $tenant, $contract->id),
             'recentActivities' => $contract->activities()
                 ->visibleTo($request->user())
                 ->with('assignees:id,name,avatar_url')

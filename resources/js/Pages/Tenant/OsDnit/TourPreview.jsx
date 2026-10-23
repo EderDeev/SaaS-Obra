@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import OsDnitTour from '@/Components/OsDnitTour';
-import { ProposalComparison, StatusBadge } from '@/Components/OsDnitWorkflow';
+import { SupervisionAnalysis, StatusBadge } from '@/Components/OsDnitWorkflow';
 import { osDnitTourSteps, tourSections } from '@/Support/osDnitTour';
 import { Head, router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
@@ -12,7 +12,7 @@ const requested = [
     { product_id: 'demo-21g', product_code: '21G', product_name: 'Elaboração de Projetos Básico e Executivo de Pontos Críticos', quantity: 1, unit: 'unid' },
 ];
 const reviewed = [{ ...requested[0], quantity: 3 }, requested[1]];
-const statuses = { draft: 'Rascunho', awaiting_concremat: 'Em análise Concremat', awaiting_contract_inspector: 'Aguardando fiscal do contrato', approved: 'Aprovada' };
+const statuses = { draft: 'Demanda', awaiting_concremat: 'Em análise Supervisão', awaiting_contract_inspector: 'Aguardando fiscal do contrato', approved: 'Aprovada' };
 const comment = 'Recomendo três levantamentos para contemplar os pontos adicionais identificados no trecho.';
 
 function Field({ label, value, type = 'text', multiline = false, children }) {
@@ -22,7 +22,7 @@ function Field({ label, value, type = 'text', multiline = false, children }) {
 }
 
 function PageHeader({ title, description, children }) {
-    return <header className="flex flex-wrap items-start justify-between gap-4"><div><div className="eyebrow">OS DNIT</div><h1 className="mt-2 text-2xl font-semibold">{title}</h1><p className="mt-2 max-w-3xl text-sm text-slate-500">{description}</p></div>{children}</header>;
+    return <header className="flex flex-wrap items-start justify-between gap-4"><div><div className="eyebrow">Ordem de Serviço</div><h1 className="mt-2 text-2xl font-semibold">{title}</h1><p className="mt-2 max-w-3xl text-sm text-slate-500">{description}</p></div>{children}</header>;
 }
 
 function DemoButton({ children, primary = false, ...props }) {
@@ -36,7 +36,7 @@ function RoleCard({ title, target, selected }) {
 function Responsibles() {
     return <><PageHeader title="Responsáveis" description="Defina quem solicita, analisa e autoriza os serviços em cada contrato." />
         <section data-tour="dnit-contract" className="sig-card p-5"><Field label="Contrato"><select value="demo" disabled className="mt-2 w-full rounded-lg border-slate-300 text-sm"><option value="demo">CT-DEMO/2026 — Contrato de demonstração</option></select></Field></section>
-        <div data-tour="dnit-roles" className="grid gap-4 lg:grid-cols-3"><RoleCard title="Analista DNIT" target="analyst" selected="Ana Silva" /><RoleCard title="Fiscal Concremat" target="concremat-role" selected="Beatriz Costa" /><RoleCard title="Fiscal do contrato" target="inspector-role" selected="Carlos Lima" /></div>
+        <div data-tour="dnit-roles" className="grid gap-4 lg:grid-cols-3"><RoleCard title="Analista DNIT" target="analyst" selected="Ana Silva" /><RoleCard title="Supervisão" target="concremat-role" selected="Beatriz Costa" /><RoleCard title="Fiscal do contrato" target="inspector-role" selected="Carlos Lima" /></div>
         <div className="flex justify-end"><DemoButton data-tour="dnit-save-responsibles" primary><Save size={16} />Salvar responsáveis</DemoButton></div>
     </>;
 }
@@ -50,15 +50,15 @@ function Catalog({ modal = false }) {
 }
 
 function ProductLines({ items = requested, review = false }) {
-    return <div className="divide-y divide-slate-100">{items.map(item => <div key={item.product_id} className="flex flex-wrap items-center gap-4 py-4"><div className="min-w-0 flex-1 basis-52"><h3 className="break-words text-sm font-semibold"><span className="mr-2 font-mono text-blue-700">{item.product_code}</span>{item.product_name}</h3><p className="mt-1 text-xs text-slate-500">Por demanda · Unidade: {item.unit}</p>{review && item.quantity !== requested.find(row => row.product_id === item.product_id)?.quantity && <span className="mt-2 inline-block rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900">Quantidade alterada · pedido: 2</span>}</div><div className="w-32"><Field label={`Quantidade (${item.unit})`} value={item.quantity} /></div></div>)}</div>;
+    return <div className="divide-y divide-slate-100">{items.map(item => <div key={item.product_id} className="flex flex-wrap items-center gap-4 py-4"><div className="min-w-0 flex-1 basis-52"><h3 className="break-words text-sm font-semibold"><span className="mr-2 font-mono text-blue-700">{item.product_code}</span>{item.product_name}</h3><p className="mt-1 text-xs text-slate-500">Por demanda · Unidade: {item.unit}</p></div><div className="w-32"><Field label={`Quantidade (${item.unit})`} value={item.quantity} /></div></div>)}</div>;
 }
 
 function CreateRequest() {
-    return <><PageHeader title="Criar OS" description="Preencha a demanda e informe os produtos e quantidades solicitados." />
+    return <><PageHeader title="Criar OS" description="Preencha a demanda. A Supervisão definirá os produtos na análise." />
         <div data-tour="dnit-request-fields" className="space-y-6"><section data-tour="dnit-identification" className="sig-card space-y-5 p-5"><h2 className="font-semibold">Identificação da demanda</h2><div className="grid gap-4 sm:grid-cols-3"><Field label="Número da solicitação" value="001/2026" /><Field label="Contrato de supervisão" value="CT-DEMO/2026" /><Field label="Lote de supervisão" value="Lote 01" /></div><div className="grid gap-4 sm:grid-cols-3"><Field label="Rodovia" value="BR-364/AC" /><Field label="Km inicial" value="4,76" /><Field label="Km final" value="4,98" /></div></section>
         <section data-tour="dnit-request-details" className="sig-card space-y-5 p-5"><div className="grid gap-4 sm:grid-cols-2"><Field label="Assunto da solicitação" value="Levantamento topográfico do trecho" /><Field label="Prazo pretendido" type="date" value="2026-11-10" /></div><Field label="Descrição da necessidade técnica" multiline value="Realizar levantamento topográfico dos pontos críticos para subsidiar o projeto de recuperação do trecho." /><Field label="Justificativa / resultado esperado" multiline value="Obter informações de campo para definir a intervenção e dimensionar o serviço com segurança." /><Field label="Referência SEI / processo" value="Processo de exemplo" /><p className="flex items-center gap-2 text-sm text-slate-600"><Paperclip size={16} />Anexos · croqui-do-trecho.pdf</p></section>
-        </div><section data-tour="dnit-requested-products" className="sig-card p-5"><h2 className="font-semibold">Produtos solicitados</h2><div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-300 p-3 text-sm text-slate-500"><Search size={16} />Pesquisar por código ou descrição</div><div className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">{requested.map(item => <label key={item.product_id} className="flex items-start gap-3 p-3 text-xs"><input type="checkbox" checked readOnly className="mt-0.5 shrink-0 rounded border-slate-300 text-blue-600" /><span className="min-w-0 break-words"><strong className="mr-2 font-mono text-blue-700">{item.product_code}</strong>{item.product_name}</span></label>)}</div><div className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">2 produtos selecionados</div><ProductLines /></section>
-        <div className="flex justify-end"><DemoButton data-tour="dnit-save-draft" primary><Save size={16} />Salvar rascunho</DemoButton></div>
+        </div>
+        <div className="flex justify-end"><DemoButton data-tour="dnit-save-draft" primary><Save size={16} />Salvar demanda</DemoButton></div>
     </>;
 }
 
@@ -68,20 +68,20 @@ function ModalPreview({ title, children }) {
 
 function Submission({ confirmation = false }) {
     return <><PageHeader title="Ordem de Serviço" description="Solicitações, análise e autorização dos serviços por contrato." />
-        {confirmation ? <ModalPreview title="Enviar OS para análise?"><div data-tour="dnit-confirmation" className="space-y-5"><p className="text-sm leading-relaxed text-slate-600">Deseja enviar a OS 001/2026 ao fiscal Concremat? Após o envio, a solicitação ficará bloqueada para edição.</p><div className="flex flex-wrap justify-end gap-3"><DemoButton>Cancelar</DemoButton><DemoButton primary><Send size={15} />Confirmar envio</DemoButton></div></div></ModalPreview>
-        : <><div className="flex flex-wrap gap-2">{['Todas as OSs', 'Rascunho (Analista DNIT)', 'Análise Concremat', 'Fiscal do Contrato', 'Finalizadas'].map((label,i) => <span key={label} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${i === 1 ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white'}`}>{label}</span>)}</div><article className="sig-card space-y-5 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="font-mono text-xs font-semibold text-blue-700">OS 001/2026</span><h2 className="mt-2 font-semibold">Levantamento topográfico do trecho</h2></div><StatusBadge status="draft" statuses={statuses} /></div><p className="text-sm text-slate-500">CT-DEMO/2026 · Lote 01 · BR-364/AC · Km 4,76 a 4,98</p><div className="flex flex-wrap justify-end gap-2"><DemoButton><Eye size={15} />Acessar</DemoButton><DemoButton data-tour="dnit-submit" primary><Send size={15} />Enviar para análise</DemoButton></div></article></>}
+        {confirmation ? <ModalPreview title="Enviar OS para análise?"><div data-tour="dnit-confirmation" className="space-y-5"><p className="text-sm leading-relaxed text-slate-600">Deseja enviar a OS 001/2026 à Supervisão? Após o envio, a solicitação ficará bloqueada para edição.</p><div className="flex flex-wrap justify-end gap-3"><DemoButton>Cancelar</DemoButton><DemoButton primary><Send size={15} />Confirmar envio</DemoButton></div></div></ModalPreview>
+        : <><div className="flex flex-wrap gap-2">{['Todas as OSs', 'Demanda (Analista DNIT)', 'Análise Supervisão', 'Fiscal do Contrato', 'Finalizadas'].map((label,i) => <span key={label} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${i === 1 ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white'}`}>{label}</span>)}</div><article className="sig-card space-y-5 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="font-mono text-xs font-semibold text-blue-700">OS 001/2026</span><h2 className="mt-2 font-semibold">Levantamento topográfico do trecho</h2></div><StatusBadge status="draft" statuses={statuses} /></div><p className="text-sm text-slate-500">CT-DEMO/2026 · Lote 01 · BR-364/AC · Km 4,76 a 4,98</p><div className="flex flex-wrap justify-end gap-2"><DemoButton><Eye size={15} />Acessar</DemoButton><DemoButton data-tour="dnit-submit" primary><Send size={15} />Enviar para análise</DemoButton></div></article></>}
     </>;
 }
 
 function Analysis({ inspector = false, returning = false }) {
     return <><PageHeader title="Ordem de Serviço" description="Abra Analisar OS na listagem para atuar na etapa correspondente ao seu papel." />
-        <ModalPreview title={inspector ? 'Decisão do fiscal do contrato · OS 001/2026' : 'Análise Concremat · OS 001/2026'}>
+        <ModalPreview title={inspector ? 'Decisão do fiscal do contrato · OS 001/2026' : 'Análise Supervisão · OS 001/2026'}>
             {inspector ? <>
-                <section data-tour="dnit-comparison" className="overflow-hidden rounded-xl border border-slate-200"><h3 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold">Pedido do analista × Análise Concremat</h3><ProposalComparison requested={requested} reviewed={reviewed} requestedDeadline="2026-11-10" reviewedDeadline="2026-11-14" reviewComment={comment} /></section>
-                <section data-tour={returning ? 'dnit-return' : 'dnit-decision'} className="space-y-5 rounded-xl border border-slate-200 p-5"><h3 className="font-semibold">Decisão do fiscal do contrato</h3><div className="flex flex-wrap gap-3"><span className={`rounded-lg border px-4 py-2 text-sm ${!returning ? 'border-emerald-400 bg-emerald-50 text-emerald-800' : 'border-slate-200'}`}>Aprovar serviço</span><span className={`rounded-lg border px-4 py-2 text-sm ${returning ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-slate-200'}`}>Reprovar e devolver</span></div><Field label={returning ? 'Motivo da reprovação' : 'Comentário da decisão'} multiline value={returning ? 'Reavaliar o quantitativo previsto e justificar a necessidade do ponto adicional.' : 'Serviço aprovado conforme a análise técnica apresentada.'} />{returning && <Field label="Devolver para"><select disabled value="concremat" className="mt-2 w-full rounded-lg border-slate-300 text-sm"><option value="concremat">Fiscal Concremat — produtos, quantidades ou prazo</option><option value="analyst">Analista DNIT — pedido de serviço</option></select></Field>}<div className="flex flex-wrap justify-end gap-3"><DemoButton><Download size={15} />Baixar PDF</DemoButton><DemoButton primary><ShieldCheck size={16} />{returning ? 'Reprovar e devolver' : 'Aprovar serviço'}</DemoButton></div></section>
+                <section data-tour="dnit-comparison" className="overflow-hidden rounded-xl border border-slate-200"><h3 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold">Análise Supervisão</h3><SupervisionAnalysis items={reviewed} deadline="2026-11-20" comment="Produtos definidos pela Supervisão." /></section>
+                <section data-tour={returning ? 'dnit-return' : 'dnit-decision'} className="space-y-5 rounded-xl border border-slate-200 p-5"><h3 className="font-semibold">Decisão do fiscal do contrato</h3><div className="flex flex-wrap gap-3"><span className={`rounded-lg border px-4 py-2 text-sm ${!returning ? 'border-emerald-400 bg-emerald-50 text-emerald-800' : 'border-slate-200'}`}>Aprovar serviço</span><span className={`rounded-lg border px-4 py-2 text-sm ${returning ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-slate-200'}`}>Reprovar e devolver</span></div><Field label={returning ? 'Motivo da reprovação' : 'Comentário da decisão'} multiline value={returning ? 'Reavaliar o quantitativo previsto e justificar a necessidade do ponto adicional.' : 'Serviço aprovado conforme a análise técnica apresentada.'} />{returning && <Field label="Devolver para"><select disabled value="concremat" className="mt-2 w-full rounded-lg border-slate-300 text-sm"><option value="concremat">Supervisão — produtos, quantidades ou prazo</option><option value="analyst">Analista DNIT — pedido de serviço</option></select></Field>}<div className="flex flex-wrap justify-end gap-3"><DemoButton><Download size={15} />Baixar PDF</DemoButton><DemoButton primary><ShieldCheck size={16} />{returning ? 'Reprovar e devolver' : 'Aprovar serviço'}</DemoButton></div></section>
             </> : <div data-tour="dnit-review" className="space-y-5">
                 <section data-tour="dnit-original" className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4"><h3 className="flex items-center gap-2 text-sm font-semibold"><LockKeyhole size={17} />Consultar pedido do analista e anexos</h3><p className="text-sm text-slate-600">Levantamento topográfico do trecho · BR-364/AC · Km 4,76 a 4,98</p><p className="text-xs text-slate-500">Prazo solicitado: 10/11/2026 · 2 produtos · 1 anexo</p></section>
-                <section data-tour="dnit-review-products" className="space-y-4"><h3 className="text-sm font-semibold">Produtos solicitados</h3><div className="rounded-xl border border-slate-200 px-4"><ProductLines items={reviewed} review /></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Prazo estimado pela Concremat" type="date" value="2026-11-14" /><div className="rounded-lg bg-amber-50 p-4 text-xs text-amber-900">Prazo solicitado pelo analista: 10/11/2026<br /><strong className="mt-2 block">Prazo alterado</strong></div></div></section>
+                <section data-tour="dnit-review-products" className="space-y-4"><h3 className="text-sm font-semibold">Produtos solicitados</h3><div className="rounded-xl border border-slate-200 px-4"><ProductLines items={reviewed} review /></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Prazo estimado pela Supervisão" type="date" value="2026-11-14" /><div className="rounded-lg bg-amber-50 p-4 text-xs text-amber-900">Prazo solicitado pelo analista: 10/11/2026<br /><strong className="mt-2 block">Prazo alterado</strong></div></div></section>
                 <section data-tour="dnit-review-comment" className="space-y-4"><Field label="Comentário da análise" multiline value={comment} /><div className="flex flex-wrap justify-end gap-3"><DemoButton><Save size={15} />Salvar análise</DemoButton><DemoButton primary><Send size={15} />Encaminhar ao fiscal</DemoButton></div></section>
             </div>}
         </ModalPreview>
@@ -89,7 +89,7 @@ function Analysis({ inspector = false, returning = false }) {
 }
 
 function Dashboard() {
-    const metrics = [['Total de OSs', 12], ['Rascunhos', 2], ['Em análise Concremat', 3], ['Com o fiscal do contrato', 2], ['Aprovadas', 4], ['Devolvidas', 1]];
+    const metrics = [['Total de OSs', 12], ['Demandas', 2], ['Em análise Supervisão', 3], ['Com o fiscal do contrato', 2], ['Aprovadas', 4], ['Devolvidas', 1]];
     return <><PageHeader title="Dashboard" description="Acompanhe as solicitações, as etapas de análise e as aprovações dos contratos." />
         <section data-tour="dnit-dashboard-filters" className="sig-card grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4"><Field label="Contrato" value="CT-DEMO/2026" /><Field label="Rodovia" value="BR-364/AC" /><Field label="Período inicial" type="date" value="2026-09-01" /><Field label="Período final" type="date" value="2026-11-30" /></section>
         <section data-tour="dnit-metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-3">{metrics.map(([label,value],i) => <article key={label} className="sig-card space-y-3 p-5"><span className="inline-flex rounded-lg bg-blue-50 p-2 text-blue-700">{i === 4 ? <CheckCircle2 size={18} /> : <ClipboardList size={18} />}</span><p className="text-xs text-slate-500">{label}</p><p className="text-3xl font-bold">{value}</p></article>)}</section>
@@ -109,9 +109,9 @@ export default function TourPreview({ tenant }) {
     };
     const next = () => index === osDnitTourSteps.length - 1 ? exit() : setIndex(current => current + 1);
     return <AuthenticatedLayout osDnitTourScreen={step.section}>
-        <Head title="OS DNIT · Tour guiado" />
+        <Head title="Ordem de Serviço · Tour guiado" />
         <main className="sig-content os-dnit-page space-y-6 pb-16">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3"><p className="flex items-center gap-2 text-xs font-semibold text-blue-900"><Plane size={17} />Tour OS DNIT · Demonstração com dados fictícios</p><button type="button" onClick={exit} className="text-xs font-semibold text-blue-700 underline">Sair do tour</button></div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3"><p className="flex items-center gap-2 text-xs font-semibold text-blue-900"><Plane size={17} />Tour Ordem de Serviço · Demonstração com dados fictícios</p><button type="button" onClick={exit} className="text-xs font-semibold text-blue-700 underline">Sair do tour</button></div>
             <ol aria-label="Etapas do tour" className="flex flex-wrap gap-2">{tourSections.map(([id,label],i) => <li key={id} aria-current={id === step.section ? 'step' : undefined} className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${id === step.section ? 'border-blue-500 bg-blue-600 font-semibold text-white' : 'border-slate-200 bg-white text-slate-500'}`}><span>{i < sectionIndex ? <Check size={13} /> : i + 1}</span>{label}</li>)}</ol>
             <div key={step.view} className="space-y-6">
                 {step.view === 'responsibles' && <Responsibles />}

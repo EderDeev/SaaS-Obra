@@ -1,4 +1,5 @@
 import { Link } from '@inertiajs/react';
+import { OsDnitContractSnapshot } from '@/Components/OsDnitManagementCard';
 import { AlertTriangle, ArrowRight, Building2, Calendar, FilePlus2, FileWarning, FolderOpen, ListTodo, MapPin, Settings } from 'lucide-react';
 
 const currencyLocaleMap = {
@@ -101,6 +102,7 @@ export default function ContractAccessCard({ tenant, contract, shortDate, canPar
             </div>
 
             <footer className="mt-auto grid gap-3 px-[18px] py-3">
+                <OsDnitContractSnapshot tenant={tenant} contract={contract} />
                 <div className="flex flex-wrap items-start justify-between gap-2">
                     <span className="min-w-0 flex-1">
                         <span className="eyebrow block">Valor contratado</span>
