@@ -118,6 +118,31 @@ class OsDnitPermissions
 
     public static function canAny(User $user, Tenant $tenant, string $permission): bool
     {
-        return self::contractIds($user, $tenant, $permission) !== [];
+        if (self::contractIds($user, $tenant, $permission) !== []) {
+            return true;
+        }
+
+        // Administrators can discover and prepare an empty module. This grants
+        // no contract permissions or workflow actions, which still require links.
+        return in_array($permission, [self::VIEW, self::VIEW_PRODUCTS, self::DASHBOARD, self::VIEW_SETTINGS, self::RESPONSIBLES], true)
+            && self::canSetUpEmptyTenant($user, $tenant);
+    }
+
+    public static function canSetUpEmptyTenant(User $user, Tenant $tenant): bool
+    {
+        if (! TenantRoles::isTenantAdmin($user->tenantRole($tenant))) {
+            return false;
+        }
+
+        $key = 'os_dnit.empty_tenant.'.$tenant->id;
+        if (! app()->runningInConsole() && request()->attributes->has($key)) {
+            return request()->attributes->get($key);
+        }
+        $empty = ! $tenant->contracts()->exists();
+        if (! app()->runningInConsole()) {
+            request()->attributes->set($key, $empty);
+        }
+
+        return $empty;
     }
 }

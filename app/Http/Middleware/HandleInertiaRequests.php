@@ -94,7 +94,8 @@ class HandleInertiaRequests extends Middleware
                 $matrix = $request->user() && $tenant ? OsDnitPermissions::matrix($request->user(), $tenant) : [];
 
                 return ['byContract' => $matrix, 'can' => collect(OsDnitPermissions::all())->mapWithKeys(fn ($permission) => [
-                    $permission => collect($matrix)->contains(fn ($permissions) => in_array($permission, $permissions, true)),
+                    $permission => $request->user() && $tenant
+                        ? OsDnitPermissions::canAny($request->user(), $tenant, $permission) : false,
                 ])->all()];
             }),
             'osDnitNavigation' => Inertia::always(function () use ($request, $tenantForNavigation): array {

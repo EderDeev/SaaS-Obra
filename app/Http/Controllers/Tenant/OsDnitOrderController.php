@@ -12,6 +12,7 @@ use App\Models\Tenant;
 use App\Services\OsDnitOrderHistory;
 use App\Services\OsDnitOrderNumber;
 use App\Services\OsDnitPdfRenderer;
+use App\Support\ContractPermissions;
 use App\Support\OsDnitContractAccess;
 use App\Support\OsDnitPermissions as Permissions;
 use App\Support\OsDnitWorkflowAccess as Workflow;
@@ -77,6 +78,8 @@ class OsDnitOrderController extends Controller
                     ->setAttribute('can_analyze', in_array($order->id, $analysisIds, true))
                     ->setAttribute('can_delete', $this->canDelete($request, $tenant, $order))),
             'contracts' => $contracts, 'lots' => $lots, 'highways' => $highways, 'filters' => $filters,
+            'emptyTenantSetup' => Permissions::canSetUpEmptyTenant($request->user(), $tenant),
+            'canCreateContract' => ContractPermissions::canAny($request->user(), $tenant, ContractPermissions::CREATE),
             'stageCounts' => $stageCounts,
             'analysisOrderId' => $request->filled('analysis_order_id') ? (int) $request->input('analysis_order_id') : null,
             'canCreate' => Workflow::contracts($request->user(), $tenant, 'analyst')->whereIn('id', Permissions::contractIds($request->user(), $tenant, Permissions::CREATE))->exists(),
