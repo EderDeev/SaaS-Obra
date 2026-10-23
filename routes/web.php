@@ -5,6 +5,7 @@ use App\Http\Controllers\Platform\ApsUsageController as PlatformApsUsageControll
 use App\Http\Controllers\Platform\DashboardController as PlatformDashboardController;
 use App\Http\Controllers\Platform\TenantController as PlatformTenantController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\TenantSelectionController;
 use App\Http\Controllers\Tenant\ActivityController;
 use App\Http\Controllers\Tenant\AssistantController;
 use App\Http\Controllers\Tenant\BoletimMedicaoController;
@@ -61,20 +62,11 @@ Route::get('/', function () {
         : redirect()->route('login');
 });
 
-Route::get('/dashboard', function () {
-    $user = auth()->user();
-
-    if ($user->is_platform_admin) {
-        return redirect()->route('platform.dashboard');
-    }
-
-    $tenant = $user->tenants()->wherePivot('status', 'active')->first()
-        ?? $user->contractParticipations()->with('tenant')->where('status', 'active')->first()?->tenant;
-
-    abort_if(! $tenant, 403, 'Seu usuário ainda não possui vínculo ativo.');
-
-    return redirect(\App\Support\TenantLandingPage::url($user, $tenant));
-})->middleware(['auth', 'verified', 'password.changed'])->name('dashboard');
+Route::middleware(['auth', 'verified', 'password.changed'])->group(function () {
+    Route::get('/dashboard', [TenantSelectionController::class, 'dashboard'])->name('dashboard');
+    Route::get('/selecionar-tenant', [TenantSelectionController::class, 'index'])->name('tenant-selection.index');
+    Route::post('/selecionar-tenant', [TenantSelectionController::class, 'store'])->name('tenant-selection.store');
+});
 
 if (app()->environment('local')) {
     Route::get('/dev-login/{email}', function (string $email) {

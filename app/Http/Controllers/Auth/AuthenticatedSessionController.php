@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Support\AccessibleTenants;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -32,6 +33,13 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         $request->session()->regenerate();
+        $request->session()->forget('current_tenant_id');
+
+        if (! $request->user()->is_platform_admin && AccessibleTenants::hasMultiple($request->user())) {
+            $request->session()->forget('url.intended');
+
+            return redirect()->route('tenant-selection.index');
+        }
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

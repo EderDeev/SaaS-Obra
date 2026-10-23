@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\GedEmailProcessedMessage;
 use App\Models\Tenant;
+use App\Support\AccessibleTenants;
 use App\Support\ActivityPermissions;
 use App\Support\BudgetPermissions;
 use App\Support\ContractPermissions;
@@ -78,6 +79,7 @@ class HandleInertiaRequests extends Middleware
                 'reset_password' => fn () => $request->session()->get('reset_password'),
             ],
             'currentTenant' => fn () => $tenantForNavigation(),
+            'canSwitchTenant' => fn () => $request->user() && AccessibleTenants::hasMultiple($request->user()),
             'tenantHomeUrl' => function () use ($request, $tenantForNavigation): ?string {
                 $tenant = $tenantForNavigation();
 
