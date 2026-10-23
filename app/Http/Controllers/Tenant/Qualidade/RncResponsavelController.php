@@ -7,6 +7,8 @@ use App\Models\Contract;
 use App\Models\RelatorioNaoConformidadeResponsavel;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\RncSignatureSetting;
+use App\Services\RncSignatureService;
 use App\Support\RncPermissions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -39,6 +41,8 @@ class RncResponsavelController extends Controller
                 'status' => $contract->status,
             ])->values(),
             'usersByContract' => $this->responsibleCandidateUsersByContract($tenant, $contracts),
+            'signatureRoles' => RncSignatureSetting::ROLES,
+            'signatureSettings' => RncSignatureSetting::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))->get()->mapWithKeys(fn ($setting) => [$setting->contract_id => $setting->signers ?? []]),
             'responsibilityProfiles' => collect(RncPermissions::responsibilityProfiles())
                 ->map(fn (array $profile, string $value): array => [
                     'value' => $value,
@@ -139,6 +143,27 @@ class RncResponsavelController extends Controller
         $responsavel->delete();
 
         return back()->with('success', 'Responsável removido com sucesso.');
+    }
+
+    public function storeSignatures(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $data = $request->validate(['contract_id' => ['required', 'integer'], 'signers' => ['present', 'array:cliente,gerenciadora,construtora'],
+            'signers.*' => ['nullable', 'integer']]);
+        $contract = $tenant->contracts()->findOrFail($data['contract_id']);
+        abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::RESPONSIBLES, $contract), 403);
+        $selected = [];
+        $emails = [];
+        foreach (RncSignatureSetting::ROLES as $role => $label) {
+            $id = $data['signers'][$role] ?? null;
+            if (!$id) continue;
+            $user = User::find($id);
+            if (!$user || !RncSignatureService::eligibleUser($tenant, $contract->id, $user)) throw ValidationException::withMessages(["signers.{$role}" => 'Selecione um usuário com vínculo ativo neste contrato.']);
+            if (in_array(mb_strtolower($user->email), $emails, true)) throw ValidationException::withMessages(["signers.{$role}" => 'Escolha responsáveis com e-mails diferentes para cada parte.']);
+            $emails[] = mb_strtolower($user->email);
+            $selected[$role] = $user->id;
+        }
+        RncSignatureSetting::updateOrCreate(['tenant_id' => $tenant->id, 'contract_id' => $contract->id], ['signers' => $selected, 'updated_by_id' => $request->user()->id]);
+        return back()->with('success', 'Responsáveis pelas assinaturas da RNC salvos.');
     }
 
     /**

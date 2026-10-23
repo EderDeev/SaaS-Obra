@@ -48,15 +48,15 @@ class TenantRncListingTest extends TestCase
         $this->proposal($expected['awaiting_review'], 'rejected', now()->subDays(2));
         $this->proposal($expected['awaiting_review'], 'pending', now());
         $this->get($this->url())->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('stageCounts.all', 6)->where('stageCounts.draft', 1)->where('stageCounts.corrective_action', 2)
-            ->where('stageCounts.analysis', 1)->where('stageCounts.evidence', 1)->where('stageCounts.completed', 1)
+            ->where('stageCounts.all', 7)->where('stageCounts.draft', 1)->where('stageCounts.corrective_action', 2)
+            ->where('stageCounts.analysis', 1)->where('stageCounts.evidence', 1)->where('stageCounts.signatures', 1)->where('stageCounts.completed', 1)
             ->where('rncs.data', function ($records) use ($expected) {
                 foreach ($expected as $status => $rnc) $this->assertSame($status, collect($records)->firstWhere('id', $rnc->id)['listing_status']);
                 return true;
             }));
         foreach (RncListing::STAGES as $stage => $statuses) {
             $this->get($this->url(['stage' => $stage]))->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->where('rncs.total', count($statuses))->where('stageCounts.all', 6)
+                ->where('rncs.total', count($statuses))->where('stageCounts.all', 7)
                 ->where('rncs.data', function ($records) use ($statuses) {
                     $this->assertEqualsCanonicalizing($statuses, collect($records)->pluck('listing_status')->all());
                     return true;
@@ -78,7 +78,7 @@ class TenantRncListingTest extends TestCase
         $deleted = $this->rnc('completed');
         $deleted->delete();
         $this->get($this->url(['stage' => 'completed']))->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('rncs.total', 2)->where('stageCounts.all', 2)->where('stageCounts.completed', 2)
+            ->where('rncs.total', 1)->where('stageCounts.all', 2)->where('stageCounts.completed', 1)->where('stageCounts.signatures', 1)
             ->where('rncs.data', fn ($records) => !collect($records)->contains('id', $deleted->id)));
     }
 
@@ -147,8 +147,9 @@ class TenantRncListingTest extends TestCase
             'descricao_problema' => 'Concreto fora do padrão', 'acoes_corretivas_recomendadas' => 'Corrigir acabamento',
             'prazo_resposta_acao_corretiva' => '2026-11-22', 'status' => $status === 'completed' ? 'finalizada' : 'aberta',
             'notified_at' => $status === 'draft' ? null : now()]);
-        $proposalStatus = ['returned' => 'rejected', 'awaiting_review' => 'pending', 'awaiting_evidence' => 'approved'][$status] ?? null;
+        $proposalStatus = ['returned' => 'rejected', 'awaiting_review' => 'pending', 'awaiting_evidence' => 'approved', 'awaiting_signature' => 'approved'][$status] ?? null;
         if ($proposalStatus) $this->proposal($rnc, $proposalStatus, now());
+        if ($status === 'awaiting_signature') $rnc->evidencias()->create(['tenant_id' => $this->tenant->id, 'user_id' => $this->user->id, 'relatorio_nao_conformidade_acao_corretiva_id' => $rnc->acoesCorretivas()->first()->id, 'attachment_path' => 'evidence.zip', 'attachment_original_name' => 'evidence.zip', 'submitted_at' => now()]);
         return $rnc;
     }
 

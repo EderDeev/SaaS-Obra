@@ -12,6 +12,7 @@ class RncListing
         'returned' => 'Proposta devolvida',
         'awaiting_review' => 'Em análise da proposta',
         'awaiting_evidence' => 'Aguardando evidências',
+        'awaiting_signature' => 'Aguardando assinaturas',
         'completed' => 'Finalizada',
     ];
 
@@ -20,6 +21,7 @@ class RncListing
         'corrective_action' => ['awaiting_action', 'returned'],
         'analysis' => ['awaiting_review'],
         'evidence' => ['awaiting_evidence'],
+        'signatures' => ['awaiting_signature'],
         'completed' => ['completed'],
     ];
 
@@ -34,10 +36,10 @@ class RncListing
         // finalized records and evidence, without introducing a new stored status.
         return "CASE
             WHEN relatorio_nao_conformidades.status = 'finalizada'
-                OR relatorio_nao_conformidades.finalized_at IS NOT NULL
-                OR EXISTS (SELECT 1 FROM relatorio_nao_conformidade_evidencias e
+                OR relatorio_nao_conformidades.finalized_at IS NOT NULL THEN 'completed'
+            WHEN EXISTS (SELECT 1 FROM relatorio_nao_conformidade_evidencias e
                     WHERE e.relatorio_nao_conformidade_id = relatorio_nao_conformidades.id
-                      AND e.tenant_id = relatorio_nao_conformidades.tenant_id) THEN 'completed'
+                      AND e.tenant_id = relatorio_nao_conformidades.tenant_id) THEN 'awaiting_signature'
             WHEN relatorio_nao_conformidades.notified_at IS NULL THEN 'draft'
             WHEN ({$latestAction}) = 'pending' THEN 'awaiting_review'
             WHEN ({$latestAction}) = 'approved' THEN 'awaiting_evidence'

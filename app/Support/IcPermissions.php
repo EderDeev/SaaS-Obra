@@ -37,10 +37,9 @@ class IcPermissions
     public const LABELS = [
         self::CREATE => 'Criar IC',
         self::NOTIFY => 'Notificar IC',
-        self::CORRECTIVE_ACTION => 'Informar correção da IC',
         self::EDIT => 'Editar IC',
         self::DELETE => 'Excluir IC',
-        self::REVIEW => 'Encerrar IC / indicar RNC',
+        self::REVIEW => 'Registrar evidências e finalizar IC',
         self::VIEW => 'Visualizar IC',
         self::DASHBOARD => 'Visualizar dashboard IC',
         self::RESPONSIBLES => 'Gerenciar responsáveis IC',
@@ -48,8 +47,8 @@ class IcPermissions
 
     public const RESPONSIBILITY_PROFILES = [
         self::RESPONSIBILITY_OPERATIONAL => [
-            'label' => 'Engenheiro Concremat',
-            'description' => 'Abre a IC, comunica os envolvidos e verifica a correção.',
+            'label' => 'Supervisão',
+            'description' => 'Abre a IC, comunica os envolvidos, registra evidências e finaliza.',
             'permissions' => [
                 self::CREATE,
                 self::NOTIFY,
@@ -59,9 +58,8 @@ class IcPermissions
         ],
         self::RESPONSIBILITY_CONTRACTOR => [
             'label' => 'Responsável da Construtora',
-            'description' => 'Visualiza a instrução e registra a correção.',
+            'description' => 'Recebe a comunicação e acompanha a instrução e o resultado.',
             'permissions' => [
-                self::CORRECTIVE_ACTION,
                 self::VIEW,
             ],
         ],

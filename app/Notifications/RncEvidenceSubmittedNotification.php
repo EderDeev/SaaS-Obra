@@ -47,8 +47,9 @@ class RncEvidenceSubmittedNotification extends Notification
             'tenant_id' => $this->evidencia->tenant_id,
             'contract_id' => $rnc->contract_id,
             'rnc_id' => $rnc->id,
-            'title' => 'RNC finalizada',
-            'body' => "{$this->actor->name} enviou as evidencias da correcao da RNC {$rnc->formatted_number}.",
+            'title' => 'RNC pronta para assinatura',
+            'body' => "{$this->actor->name} enviou as evidencias da correcao da RNC {$rnc->formatted_number}."
+                .($this->evidencia->resolution_result ? " Resultado: {$this->evidencia->resolution_label}." : ''),
             'contract' => $rnc->contract?->code,
             'url' => route('tenant.qualidade.rnc.show', [$rnc->tenant, $rnc], false),
         ];
@@ -61,7 +62,7 @@ class RncEvidenceSubmittedNotification extends Notification
         $systemUrl = route('tenant.dashboard', $rnc->tenant);
 
         return (new MailMessage)
-            ->subject("RNC {$rnc->formatted_number} finalizada")
+            ->subject("RNC {$rnc->formatted_number} - evidências registradas")
             ->view('emails.rnc-evidence-submitted', [
                 'rnc' => $rnc,
                 'evidencia' => $this->evidencia,

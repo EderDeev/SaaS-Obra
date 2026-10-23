@@ -1,3 +1,4 @@
+import SignatureSettings from './SignatureSettings';
 import ConfirmActionButton from '@/Components/ConfirmActionButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
@@ -60,7 +61,7 @@ function MobileMeta({ label, children }) {
     );
 }
 
-export default function RncResponsaveisIndex({ tenant, contracts, usersByContract, responsibilityProfiles, responsaveis }) {
+export default function RncResponsaveisIndex({ tenant, contracts, usersByContract, responsibilityProfiles, responsaveis, signatureRoles = {}, signatureSettings = {} }) {
     const page = usePage();
     const firstContractId = contracts[0]?.id ?? '';
     const form = useForm({
@@ -350,6 +351,7 @@ export default function RncResponsaveisIndex({ tenant, contracts, usersByContrac
                         </div>
                     )}
                 </section>
+                <SignatureSettings tenant={tenant} contracts={contracts} usersByContract={usersByContract} signatureRoles={signatureRoles} signatureSettings={signatureSettings} />
             </section>
         </AuthenticatedLayout>
     );

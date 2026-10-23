@@ -1,3 +1,6 @@
+import SignaturePanel from './SignaturePanel';
+import PdfDownload from './PdfDownload';
+import WorkflowButton from './WorkflowButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { rncDisciplinaLabel } from '@/Support/rnc';
 import { projectEap } from '@/Utils/projectEap';
@@ -17,21 +20,20 @@ const shortDate = (date) => {
 const dateTime = (date) => date ? new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
 }).format(new Date(date)) : '—';
-const pdfUrl = (tenant, rnc) => `${route('tenant.qualidade.rnc.pdf', [tenant.slug, rnc.id])}?v=${encodeURIComponent(rnc.updated_at || rnc.notified_at || rnc.id)}`;
 const companyLabel = (company) => [company?.sigla, company?.nome].filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(' — ');
 const proposalLabels = { pending: 'Em análise', approved: 'Aprovada', rejected: 'Reprovada' };
 
-export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
+export default function RelatorioNaoConformidadeShow({ tenant, rnc, signatureData }) {
     const { flash = {} } = usePage().props;
     const actions = rnc.acoes_corretivas || [];
     const evidences = rnc.evidencias || [];
     const latestAction = actions[0];
     const latestEvidence = evidences[0];
-    const finalized = rnc.status === 'finalizada' || Boolean(rnc.finalized_at) || evidences.length > 0;
+    const finalized = rnc.status === 'finalizada' || Boolean(rnc.finalized_at);
     const canEditRnc = rnc.user_permissions?.includes('edit_rnc');
     const linkedProjects = rnc.project_documents?.length ? rnc.project_documents : rnc.project_document ? [rnc.project_document] : [];
-    const activeStage = finalized ? 3 : latestAction?.status === 'approved' ? 3 : latestAction?.status === 'pending' ? 2 : 1;
-    const statusLabel = finalized ? 'Finalizada' : latestAction?.status === 'pending' ? 'Em análise da proposta'
+    const activeStage = finalized || latestEvidence ? 4 : !rnc.notified_at ? 0 : latestAction?.status === 'approved' ? 3 : latestAction?.status === 'pending' ? 2 : 1;
+    const statusLabel = finalized ? 'Finalizada' : latestEvidence ? 'Aguardando assinaturas' : latestAction?.status === 'pending' ? 'Em análise da proposta'
         : latestAction?.status === 'approved' ? 'Aguardando evidências' : latestAction?.status === 'rejected' ? 'Proposta devolvida'
             : rnc.status === 'aberta' ? 'Aberta' : rnc.status || 'Aberta';
     const proposalReview = latestAction
@@ -94,7 +96,7 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
         },
         {
             etapa: 'Evidências da correção',
-            status: finalized ? 'Finalizada' : latestAction?.status === 'approved' ? 'Pendente' : 'Aguardando',
+            status: latestEvidence ? 'Registradas' : latestAction?.status === 'approved' ? 'Pendente' : 'Aguardando',
             data: latestEvidence?.submitted_at ? dateTime(latestEvidence.submitted_at) : rnc.finalized_at ? dateTime(rnc.finalized_at) : '-',
             responsavel: latestEvidence?.user?.name || rnc.finalized_by?.name || '-',
             detalhe: latestEvidence?.user?.name
@@ -104,6 +106,13 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                   : latestAction?.status === 'approved'
                     ? 'Aguardando envio das evidências da correção'
                     : 'Aguardando aprovação da proposta',
+        },
+        {
+            etapa: 'Assinaturas das partes',
+            status: signatureData?.has_signed_pdf ? 'Concluída' : signatureData?.request ? 'Em andamento' : 'Pendente',
+            data: signatureData?.request?.completed_at ? dateTime(signatureData.request.completed_at) : signatureData?.request?.sent_at ? dateTime(signatureData.request.sent_at) : '-',
+            responsavel: 'Partes selecionadas para assinatura',
+            detalhe: signatureData?.has_signed_pdf ? 'Documento final assinado pelas partes.' : 'Aguardando todas as assinaturas e o recebimento do documento assinado.',
         },
     ];
 
@@ -116,11 +125,14 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                         <ArrowLeft size={16} />Voltar às RNCs
                     </Link>
                     <div className="mt-4 flex flex-wrap items-center gap-3">
-                        <h1 className="text-2xl font-semibold">RNC {rnc.formatted_number}</h1>
+                        <h1 className="break-words text-2xl font-semibold">{rnc.assunto || `RNC ${rnc.formatted_number}`}</h1><p className="mt-1 text-sm text-[var(--ink-500)]">RNC {rnc.formatted_number}</p>
                         <span className={`sig-pill ${finalized ? 'sig-pill-green' : latestAction?.status === 'rejected' ? 'sig-pill-amber' : 'sig-pill-blue'}`}>{statusLabel}</span>
                         <div className="flex flex-wrap gap-2 sm:ml-auto">
+                            {!finalized && !latestEvidence && rnc.notified_at && (!latestAction || latestAction.status === 'rejected') && rnc.user_permissions?.includes('corrective_action_rnc') && <WorkflowButton tenant={tenant} rncId={rnc.id} stage="proposal">{latestAction ? 'Revisar proposta' : 'Ação corretiva'}</WorkflowButton>}
+                            {!finalized && !latestEvidence && rnc.notified_at && latestAction?.status === 'pending' && rnc.user_permissions?.includes('review_rnc') && <WorkflowButton tenant={tenant} rncId={rnc.id} stage="review">Analisar proposta</WorkflowButton>}
+                            {!finalized && !latestEvidence && latestAction?.status === 'approved' && rnc.user_permissions?.includes('evidence_rnc') && <WorkflowButton tenant={tenant} rncId={rnc.id} stage="evidence">Evidenciar correção</WorkflowButton>}
                             {canEditRnc && <Link href={route('tenant.qualidade.rnc.edit', [tenant.slug, rnc.id])} className="sig-btn sig-btn-secondary"><Pencil size={15} />Editar</Link>}
-                            <a href={pdfUrl(tenant, rnc)} className="sig-btn sig-btn-secondary" target="_blank" rel="noreferrer"><Download size={15} />Visualizar PDF</a>
+                            <PdfDownload tenant={tenant} rnc={rnc} />
                         </div>
                     </div>
                     <p className="mt-2 break-words text-sm text-[var(--ink-500)]">{[rnc.obra?.codigo, rnc.obra?.nome].filter(Boolean).join(' — ') || 'Relatório de Não Conformidade'}</p>
@@ -129,8 +141,8 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                 {flash.success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{flash.success}</div>}
 
                 <section className="sig-card p-5" aria-label="Etapas da RNC">
-                    <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        {['Abertura da RNC', 'Proposta de ação corretiva', 'Análise da proposta', 'Evidências e finalização'].map((label, index) => {
+                    <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                        {['Abertura da RNC', 'Proposta de ação corretiva', 'Análise da proposta', 'Evidências da correção', 'Assinaturas das partes'].map((label, index) => {
                             const current = index === activeStage;
                             const complete = index < activeStage || finalized;
                             return <li key={label} aria-current={current && !finalized ? 'step' : undefined}
@@ -156,6 +168,13 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                         <Detail label="Contratante"><CompanyIdentity company={rnc.contratante} /></Detail>
                         <Detail label="Contratada"><CompanyIdentity company={rnc.contratada} /></Detail>
                         <Detail label="Coordenadas">{rnc.latitude != null && rnc.longitude != null ? `${rnc.latitude}, ${rnc.longitude}` : 'Sem coordenadas'}</Detail>
+                        {rnc.instrucao_campo && <div className="sm:col-span-2 lg:col-span-3"><Detail label="IC de referência">
+                            {rnc.instrucao_campo.can_view
+                                ? <Link className="font-semibold text-[var(--primary)] hover:underline" href={route('tenant.qualidade.ic.show', [tenant.slug, rnc.instrucao_campo.id])}>IC {rnc.instrucao_campo.formatted_number}</Link>
+                                : <span className="font-semibold">IC {rnc.instrucao_campo.formatted_number}</span>}
+                            {rnc.instrucao_campo.assunto && <span> — {rnc.instrucao_campo.assunto}</span>}
+                            {rnc.instrucao_campo.notified_at && <p className="mt-1 text-xs font-normal text-[var(--ink-500)]">Comunicada aos envolvidos em {dateTime(rnc.instrucao_campo.notified_at)}.</p>}
+                        </Detail></div>}
                         <div className="sm:col-span-2 lg:col-span-3">
                             <Detail label="Projetos vinculados">{linkedProjects.length ? <ul className="space-y-2">{linkedProjects.map((project) => <li key={project.id}><span className="font-mono text-[var(--primary)]">{projectEap(project, project.latest_version) || 'Sem código'}</span>{project.title && <span> — {project.title}</span>}</li>)}</ul> : 'Sem projeto vinculado'}</Detail>
                         </div>
@@ -205,7 +224,9 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                             <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                                 <Detail label="Enviado por">{evidence.user?.name}</Detail>
                                 <Detail label="Enviado em">{dateTime(evidence.submitted_at)}</Detail>
-                                <Detail label="Situação"><span className="sig-pill sig-pill-green">RNC finalizada</span></Detail>
+                                <Detail label="Situação"><span className="sig-pill sig-pill-blue">Evidências registradas</span></Detail>
+                                <Detail label="O problema foi resolvido?"><span className={`sig-pill ${evidence.resolution_result === 'yes' ? 'sig-pill-green' : evidence.resolution_result === 'partial' ? 'sig-pill-amber' : evidence.resolution_result === 'no' ? 'sig-pill-red' : 'sig-pill-muted'}`}>{evidence.resolution_label || 'Não informado'}</span></Detail>
+                                {evidence.resolution_reason && <div className="sm:col-span-2 lg:col-span-3"><Detail label="Motivo"><p className="whitespace-pre-wrap break-words">{evidence.resolution_reason}</p></Detail></div>}
                             </dl>
                             {evidence.attachment_original_name && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-4">
                                 <p className="min-w-0 flex-1 break-all text-sm font-medium">{evidence.attachment_original_name}</p>
@@ -215,6 +236,8 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc }) {
                         </article>) : <EmptyState>Nenhuma evidência de correção enviada ainda.</EmptyState>}
                     </div>
                 </DetailSection>
+
+                {latestEvidence && signatureData && <SignaturePanel tenant={tenant} rnc={rnc} data={signatureData} />}
 
                 <DetailSection title="Fluxo da RNC">
                     <ol className="divide-y divide-slate-100 px-5">

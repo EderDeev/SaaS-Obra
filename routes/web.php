@@ -423,8 +423,12 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::patch('/qualidade/ic/{ic}', [InstrucaoCampoController::class, 'update'])->name('qualidade.ic.update');
         Route::get('/qualidade/ic/{ic}', [InstrucaoCampoController::class, 'show'])->name('qualidade.ic.show');
         Route::post('/qualidade/ic/{ic}/comunicar', [InstrucaoCampoController::class, 'notify'])->name('qualidade.ic.notify');
-        Route::post('/qualidade/ic/{ic}/correcao', [InstrucaoCampoController::class, 'correction'])->name('qualidade.ic.correction');
-        Route::post('/qualidade/ic/{ic}/encerrar', [InstrucaoCampoController::class, 'close'])->name('qualidade.ic.close');
+        Route::get('/qualidade/ic/{ic}/evidencias', [InstrucaoCampoController::class, 'evidence'])->name('qualidade.ic.evidence.create');
+        Route::post('/qualidade/ic/{ic}/finalizar', [InstrucaoCampoController::class, 'finalize'])->name('qualidade.ic.finalize');
+        Route::post('/qualidade/ic/{ic}/correcao', [InstrucaoCampoController::class, 'finalize'])->name('qualidade.ic.correction');
+        Route::get('/qualidade/ic/{ic}/propor-correcao', [InstrucaoCampoController::class, 'evidence'])->name('qualidade.ic.correction.create');
+        Route::get('/qualidade/ic/{ic}/anexos/{attachment}', [InstrucaoCampoController::class, 'attachment'])->name('qualidade.ic.attachment');
+        Route::post('/qualidade/ic/{ic}/encerrar', [InstrucaoCampoController::class, 'finalize'])->name('qualidade.ic.close');
         Route::get('/qualidade/ic/{ic}/fotos/{photo}', [InstrucaoCampoController::class, 'photo'])->name('qualidade.ic.photo');
         Route::delete('/qualidade/ic/{ic}', [InstrucaoCampoController::class, 'destroy'])->name('qualidade.ic.destroy');
 
@@ -441,6 +445,10 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::patch('/qualidade/rnc/{rnc}', [RelatorioNaoConformidadeController::class, 'update'])->name('qualidade.rnc.update');
         Route::get('/qualidade/rnc/{rnc}', [RelatorioNaoConformidadeController::class, 'show'])->name('qualidade.rnc.show');
         Route::post('/qualidade/rnc/{rnc}/notificar', [RelatorioNaoConformidadeController::class, 'notifyResponsibleUsers'])->name('qualidade.rnc.notify');
+        Route::post('/qualidade/rnc/responsaveis/assinaturas', [\App\Http\Controllers\Tenant\Qualidade\RncResponsavelController::class, 'storeSignatures'])->name('qualidade.rnc.responsaveis.signatures');
+        Route::post('/qualidade/rnc/{rnc}/assinaturas', [\App\Http\Controllers\Tenant\Qualidade\RncSignatureController::class, 'store'])->name('qualidade.rnc.signatures.store');
+        Route::post('/qualidade/rnc/{rnc}/assinaturas/{signature}/atualizar', [\App\Http\Controllers\Tenant\Qualidade\RncSignatureController::class, 'refresh'])->name('qualidade.rnc.signatures.refresh');
+        Route::get('/qualidade/rnc/{rnc}/assinaturas/{signature}/original', [\App\Http\Controllers\Tenant\Qualidade\RncSignatureController::class, 'unsigned'])->name('qualidade.rnc.signatures.unsigned');
         Route::get('/qualidade/rnc/{rnc}/acao-corretiva', [RncAcaoCorretivaController::class, 'create'])->name('qualidade.rnc.acao-corretiva.create');
         Route::post('/qualidade/rnc/{rnc}/acao-corretiva', [RncAcaoCorretivaController::class, 'store'])->name('qualidade.rnc.acao-corretiva.store');
         Route::get('/qualidade/rnc/{rnc}/acao-corretiva/{acaoCorretiva}/download', [RncAcaoCorretivaController::class, 'download'])->name('qualidade.rnc.acao-corretiva.download');
