@@ -1179,6 +1179,15 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                                     </div>
                                 </div>
 
+                                {props.canSwitchTenant && (
+                                    <div className="border-b border-[var(--border)] p-2">
+                                        <Link href={route('tenant-selection.index')} onClick={() => setUserMenuOpen(false)}
+                                            className="flex items-center gap-2 rounded-lg px-2 py-2.5 text-sm text-[var(--ink-700)] hover:bg-[var(--surface-muted)]" role="menuitem">
+                                            <Building2 size={16} />Trocar ambiente
+                                        </Link>
+                                    </div>
+                                )}
+
                                 {tenant && navigationContracts.length > 0 && (
                                     <div className="border-b border-[var(--border)] p-2">
                                         <div className="eyebrow px-2 py-1 text-[10px]">Contratos</div>
