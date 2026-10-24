@@ -361,6 +361,11 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
             ] : []),
             ...(rncCan.responsibles_rnc ? [
                 {
+                    label: 'Parametrização',
+                    href: route('tenant.qualidade.rnc.settings.index', tenant.slug),
+                    active: route().current('tenant.qualidade.rnc.settings.*'),
+                },
+                {
                     label: 'Responsáveis',
                     href: route('tenant.qualidade.rnc.responsaveis.index', tenant.slug),
                     active: route().current('tenant.qualidade.rnc.responsaveis.*') || rncTourScreen === 'responsibles',

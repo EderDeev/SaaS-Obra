@@ -176,6 +176,29 @@ class TenantRncSignatureTest extends TestCase
         $this->assertNotNull($this->rnc->fresh()->finalized_at);
     }
 
+    public function test_inspection_model_is_sent_for_signature_and_later_settings_changes_preserve_the_original(): void
+    {
+        $url = route('tenant.qualidade.rnc.settings.store', $this->tenant);
+        $options = \App\Support\RncPdfTemplates::defaults('inspection_form');
+        $options['title'] = 'Modelo do contrato para assinatura';
+        $this->post($url, ['contract_id' => $this->contract->id, 'layout' => 'inspection_form', 'options' => $options])->assertSessionHasNoErrors();
+        $this->configure();
+        $request = $this->send();
+        $original = Storage::disk('local')->get($request->unsigned_pdf_path);
+        $this->assertSame('inspection_form', $request->request_payload['pdf_template']['layout']);
+        $page = $request->request_payload['signature_page'];
+        $this->assertGreaterThanOrEqual(4, $page);
+        $sent = Http::recorded(fn ($http) => str_ends_with($http->url(), '/createdocument'))->first()[0]->data();
+        foreach ($sent['signers'] as $signer) {
+            $this->assertSame($page, $signer['widgets'][0]['page']);
+            $this->assertSame(710, $signer['widgets'][0]['y']);
+        }
+        $this->post($url, ['contract_id' => $this->contract->id, 'layout' => 'standard', 'options' => \App\Support\RncPdfTemplates::defaults('standard')])->assertSessionHasNoErrors();
+        $this->get(route('tenant.qualidade.rnc.signatures.unsigned', [$this->tenant, $this->rnc, $request]))->assertOk()->assertDownload();
+        $this->assertSame($original, Storage::disk('local')->get($request->fresh()->unsigned_pdf_path));
+        $this->assertSame('inspection_form', $request->fresh()->request_payload['pdf_template']['layout']);
+    }
+
     public function test_pdf_scopes_include_only_the_requested_steps(): void
     {
         $renderer = app(RncPdfRenderer::class);

@@ -45,6 +45,7 @@ use App\Http\Controllers\Tenant\Qualidade\IcResponsavelController;
 use App\Http\Controllers\Tenant\Qualidade\RncAcaoCorretivaController;
 use App\Http\Controllers\Tenant\Qualidade\RncEvidenciaController;
 use App\Http\Controllers\Tenant\Qualidade\RncResponsavelController;
+use App\Http\Controllers\Tenant\Qualidade\RncPdfSettingController;
 use App\Http\Controllers\Tenant\RdaController;
 use App\Http\Controllers\Tenant\RdaResponsavelController;
 use App\Http\Controllers\Tenant\RdoCadastroController;
@@ -432,6 +433,9 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/qualidade/ic/{ic}/fotos/{photo}', [InstrucaoCampoController::class, 'photo'])->name('qualidade.ic.photo');
         Route::delete('/qualidade/ic/{ic}', [InstrucaoCampoController::class, 'destroy'])->name('qualidade.ic.destroy');
 
+        Route::get('/qualidade/rnc/parametrizacao', [RncPdfSettingController::class, 'index'])->name('qualidade.rnc.settings.index');
+        Route::post('/qualidade/rnc/parametrizacao', [RncPdfSettingController::class, 'store'])->name('qualidade.rnc.settings.store');
+        Route::post('/qualidade/rnc/parametrizacao/previa', [RncPdfSettingController::class, 'preview'])->name('qualidade.rnc.settings.preview');
         Route::get('/qualidade/rnc', [RelatorioNaoConformidadeController::class, 'index'])->name('qualidade.rnc.index');
         Route::get('/qualidade/rnc/tour-preview', [RelatorioNaoConformidadeController::class, 'tourPreview'])->name('qualidade.rnc.tour-preview');
         Route::get('/qualidade/rnc/dashboard', [RelatorioNaoConformidadeController::class, 'dashboard'])->name('qualidade.rnc.dashboard');
