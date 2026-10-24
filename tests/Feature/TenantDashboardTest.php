@@ -7,6 +7,11 @@ use App\Models\BoletimMedicao;
 use App\Models\ContractAdditive;
 use App\Models\ContractParticipant;
 use App\Models\OrdemServico;
+use App\Models\InstrucaoCampo;
+use App\Models\InstrucaoCampoResponsavel;
+use App\Models\Orcamento;
+use App\Support\IcPermissions;
+use App\Support\BudgetPermissions;
 use App\Models\OsDnitHighway;
 use App\Models\OsDnitOrder;
 use App\Models\ProjectDocument;
@@ -234,6 +239,10 @@ class TenantDashboardTest extends TestCase
                 'technical_need' => 'Verificar o trecho.', 'justification' => 'Acompanhar os serviços.', 'status' => $index ? 'approved' : 'awaiting_concremat']);
             ProjectDocument::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'created_by_id' => $user->id,
                 'title' => 'Projeto '.$code, 'document_type' => 'projeto', 'status' => $index ? 'em_aprovacao' : 'em_analise']);
+            for ($n = 0; $n < ($index ? 1 : 2); $n++) {
+                ProjectDocument::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'created_by_id' => $user->id,
+                    'title' => 'Projeto aprovado '.$n, 'document_type' => 'projeto', 'status' => 'ativo']);
+            }
             for ($month = 0; $month < 6; $month++) {
                 for ($n = 0; $n < ($index ? 1 : 2); $n++) {
                     $activity = $this->activity($tenant, $contract->id, $user->id, 'Inspeção '.$month.' '.$n.' · '.$code, $month % 2 ? '2026-10-22' : '2026-10-28');
@@ -243,11 +252,11 @@ class TenantDashboardTest extends TestCase
         }
         $all = $this->actingAs($user)->get(route('tenant.dashboard', $tenant))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('contracts', 2)->where('stats.contracts', 2)->where('stats.openActivities', 9)
-                ->where('stats.pendingProjects', 2)->where('osSummary.total', 2)
+                ->where('stats.pendingProjects', 2)->where('stats.activeProjects', 3)->where('stats.totalProjects', 5)->where('osSummary.total', 2)
                 ->where('charts.activityTrend', fn ($rows) => collect($rows)->sum('total') === 18));
         $filtered = $this->get(route('tenant.dashboard', [$tenant, 'contract_id' => $contracts[0]->id]))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('contracts', 2)->where('stats.contracts', 1)->where('stats.openActivities', 6)
-                ->where('stats.pendingProjects', 1)->where('osSummary.total', 1)->where('osSummary.pending', 1)
+                ->where('stats.pendingProjects', 1)->where('stats.activeProjects', 2)->where('stats.totalProjects', 3)->where('osSummary.total', 1)->where('osSummary.pending', 1)
                 ->where('charts.activityTrend', fn ($rows) => collect($rows)->sum('total') === 12)
                 ->where('myActivities', fn ($rows) => collect($rows)->every(fn ($row) => $row['contract_id'] === $contracts[0]->id))
                 ->where('attentionItems', fn ($rows) => collect($rows)->every(fn ($row) => !str_contains($row['subtitle'], '001-DNIT')))
@@ -309,6 +318,57 @@ class TenantDashboardTest extends TestCase
                 ->where('charts.rncsByStatus', fn ($rows) => collect($rows)->firstWhere('key', 'em_assinatura')['value'] === 1
                     && collect($rows)->firstWhere('key', 'finalizada')['value'] === 2)
                 ->where('attentionItems.0.badge', 'Aguardando assinaturas'));
+    }
+
+    public function test_module_cards_scope_ic_counts_and_budget_visibility_without_counting_deleted_records(): void
+    {
+        $tenant = Tenant::create(['slug' => 'overview-modules', 'name' => 'Módulos', 'plan' => 'starter', 'status' => 'active']);
+        $owner = User::factory()->create();
+        $tenant->memberships()->create(['user_id' => $owner->id, 'role' => 'tenant_owner', 'status' => 'active']);
+        $contracts = [];
+        foreach (['A', 'B'] as $code) {
+            $contract = $tenant->contracts()->create(['code' => $code, 'name' => $code, 'status' => 'active']);
+            $contracts[] = $contract;
+            $obra = $contract->obras()->create(['tenant_id' => $tenant->id, 'codigo' => $code, 'nome' => $code, 'tipo' => 'pai']);
+            $company = Empresa::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id,
+                'tipo_empresa_id' => TipoEmpresa::firstOrCreate(['nome' => 'gerenciadora'])->id, 'nome' => $code, 'sigla' => $code, 'cnpj' => '11.111.111/0001-11']);
+            $discipline = $tenant->disciplinas()->create(['contract_id' => $contract->id, 'nome' => 'Qualidade', 'sigla' => 'QUA', 'cor' => '#2563eb']);
+            foreach (['draft', 'notified', 'closed', 'notified'] as $i => $status) {
+                $ic = InstrucaoCampo::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'obra_id' => $obra->id, 'disciplina_id' => $discipline->id,
+                    'contratante_empresa_id' => $company->id, 'contratada_empresa_id' => $company->id, 'created_by_id' => $owner->id,
+                    'sequence_number' => $contract->id * 10 + $i + 1, 'sequence_year' => 2026, 'opened_at' => today(),
+                    'assunto' => 'Instrução '.$i, 'instrucao' => 'Corrigir', 'gravidade' => 'Leve', 'status' => $status]);
+                if ($i === 3) $ic->delete();
+            }
+        }
+        $member = User::factory()->create();
+        $tenant->memberships()->create(['user_id' => $member->id, 'role' => 'engineer', 'status' => 'active', 'budget_permissions' => [BudgetPermissions::VIEW]]);
+        foreach ($contracts as $contract) {
+            $contract->participants()->create(['tenant_id' => $tenant->id, 'user_id' => $member->id, 'side' => 'manager', 'role' => 'team_member', 'status' => 'active']);
+        }
+        InstrucaoCampoResponsavel::create(['tenant_id' => $tenant->id, 'contract_id' => $contracts[0]->id, 'user_id' => $member->id,
+            'status' => 'active', 'responsibility_type' => 'monitoring', 'permissions' => [IcPermissions::VIEW]]);
+        foreach (['draft', 'closed', 'draft'] as $i => $status) {
+            Orcamento::create(['tenant_id' => $tenant->id, 'created_by_id' => $i === 1 ? $member->id : $owner->id,
+                'codigo' => 'ORC-'.$i, 'descricao' => 'Orçamento', 'categoria' => 'Obras', 'status' => $status]);
+        }
+        Orcamento::latest('id')->first()->delete();
+        $foreign = Tenant::create(['slug' => 'overview-module-foreign', 'name' => 'Outro', 'plan' => 'starter', 'status' => 'active']);
+        Orcamento::create(['tenant_id' => $foreign->id, 'created_by_id' => $member->id, 'codigo' => 'FOREIGN', 'descricao' => 'Outro tenant', 'categoria' => 'Obras', 'status' => 'draft']);
+        $url = fn ($id = null) => route('tenant.dashboard', [$tenant, 'contract_id' => $id]);
+        $this->actingAs($owner)->get($url())->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('stats.openIcs', 4)->where('stats.icsAwaitingEvidence', 2)->where('stats.closedIcs', 2)
+            ->where('stats.draftBudgets', 1)->where('stats.closedBudgets', 1)->where('capabilities.ics', true));
+        $this->get($url($contracts[0]->id))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('stats.openIcs', 2)->where('stats.icsAwaitingEvidence', 1)->where('stats.closedIcs', 1)
+            ->where('stats.draftBudgets', 1)->where('stats.closedBudgets', 1));
+        $this->actingAs($member)->get($url())->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('stats.openIcs', 2)->where('stats.closedIcs', 1)->where('stats.draftBudgets', 0)->where('stats.closedBudgets', 1));
+        $this->get($url($contracts[1]->id))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('stats.openIcs', 0)->where('stats.icsAwaitingEvidence', 0)->where('stats.closedIcs', 0)->where('capabilities.ics', false));
+        $tenant->memberships()->where('user_id', $member->id)->update(['budget_permissions' => []]);
+        $this->get($url())->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('capabilities.budgets', false)->where('stats.draftBudgets', 0)->where('stats.closedBudgets', 0));
     }
 
     private function activity(Tenant $tenant, int $contractId, int $userId, string $title, string $dueDate, string $type = Activity::TYPE_ACTIVITY): Activity

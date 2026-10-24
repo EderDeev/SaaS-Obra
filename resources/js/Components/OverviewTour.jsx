@@ -12,25 +12,13 @@ const pageSteps = [
     {
         target: '[data-tour="overview-metrics"]',
         title: 'Indicadores e prazos',
-        content: 'Acompanhe o gráfico de atividades, os prazos, o contrato em foco, as RNCs abertas e os projetos em análise. Os dados seguem o contrato selecionado.',
+        content: 'À esquerda ficam o gráfico e os prazos das atividades. À direita, veja o contrato selecionado e os cards rápidos de Ordens de Serviço, RNCs e RDOs, conforme seu acesso.',
         placement: 'bottom',
     },
     {
-        target: '[data-tour="overview-operation"]',
-        title: 'Operação do contrato',
-        content: 'Estes atalhos mostram pendências de Documentação, Diário de Obra, Medição e Liberação de Serviço. Logo abaixo fica o resumo das Ordens de Serviço.',
-        placement: 'top',
-    },
-    {
-        target: '[data-tour="overview-monitoring"]',
-        title: 'Acompanhamento',
-        content: 'Filtre pontos de atenção, acompanhe suas atividades e consulte o histórico recente do workspace.',
-        placement: 'top',
-    },
-    {
-        target: '[data-tour="overview-indicators"]',
-        title: 'Indicadores do workspace',
-        content: 'Os gráficos mostram como atividades, projetos e RNCs estão distribuídos por etapa e categoria.',
+        target: '[data-tour="overview-modules"]',
+        title: 'Um card por módulo',
+        content: 'Veja projetos ativos e em revisão, OSs e RNCs pendentes, ICs aguardando evidências e os principais números dos outros módulos. Clique no card para acessar os registros. Orçamentos reúne dados do tenant, pois não tem vínculo com contrato.',
         placement: 'top',
     },
 ];

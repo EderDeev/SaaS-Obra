@@ -7,14 +7,18 @@ use App\Models\BoletimMedicao;
 use App\Models\ContractAdditive;
 use App\Models\GedDocument;
 use App\Models\GedEmailProcessedMessage;
+use App\Models\InstrucaoCampo;
+use App\Models\Orcamento;
 use App\Models\OrdemServico;
 use App\Models\RdoDiario;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ActivityPermissions;
+use App\Support\BudgetPermissions;
 use App\Support\ContractPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\DocumentationPermissions;
+use App\Support\IcPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\NavigationPermissions;
 use App\Support\OrdemServicoPermissions;
@@ -51,6 +55,7 @@ class DashboardController extends Controller
         $activityContractIds = $this->permittedContractIds($user, $tenant, $contractIds, ActivityPermissions::class, ActivityPermissions::VIEW);
         $projectContractIds = $this->permittedContractIds($user, $tenant, $contractIds, ProjectPermissions::class, ProjectPermissions::VIEW);
         $rncContractIds = $this->permittedContractIds($user, $tenant, $contractIds, RncPermissions::class, RncPermissions::VIEW);
+        $icContractIds = $this->permittedContractIds($user, $tenant, $contractIds, IcPermissions::class, IcPermissions::VIEW);
         $documentationContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DocumentationPermissions::class, DocumentationPermissions::VIEW);
         $documentationEmailContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DocumentationPermissions::class, DocumentationPermissions::EMAIL);
         $rdoContractIds = $this->permittedContractIds($user, $tenant, $contractIds, DiarioObraPermissions::class, DiarioObraPermissions::VIEW);
@@ -128,6 +133,13 @@ class DashboardController extends Controller
         $rdoAwaitingReview = $rdos->whereIn('status', ['em_analise_gerenciadora', 'em_aprovacao_cliente', 'devolvido_construtora']);
         $openBoletins = $boletins->where('status', 'aberto_lancamento');
         $pendingOrders = $ordens->whereIn('status', ['em_analise', 'em_aprovacao']);
+        $icCounts = InstrucaoCampo::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $icContractIds)
+            ->selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status');
+        // Budgets belong to the tenant and have no contract relationship.
+        $budgetCounts = BudgetPermissions::can($user, $tenant, BudgetPermissions::VIEW)
+            ? BudgetPermissions::scopeVisibleTo(Orcamento::query()->where('tenant_id', $tenant->id), $user, $tenant)
+                ->selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status')
+            : collect();
 
         $myActivities = $tenant->activities()
             ->whereIn('contract_id', $activityContractIds)
@@ -177,12 +189,24 @@ class DashboardController extends Controller
                 'openRncs' => $openRncs->count(),
                 'overdueRncs' => $openRncs->where('status', 'aberta')->filter(fn ($rnc): bool => $rnc->prazo_resposta_acao_corretiva !== null && $rnc->prazo_resposta_acao_corretiva->isBefore($today))->count(),
                 'pendingProjects' => $pendingProjects->count(),
+                'activeProjects' => $projects->where('status', 'ativo')->count(),
+                'totalProjects' => $projects->count(),
+                'rncsAwaitingSignature' => $openRncs->where('status', 'em_assinatura')->count(),
+                'closedRncs' => $rncs->count() - $openRncs->count(),
+                'openIcs' => (int) $icCounts->except('closed')->sum(),
+                'icsAwaitingEvidence' => (int) ($icCounts['notified'] ?? 0),
+                'closedIcs' => (int) ($icCounts['closed'] ?? 0),
                 'documents' => $documents->count(),
                 'documentsInProgress' => $documentsInProgress->count(),
                 'pendingTriage' => $pendingTriage->count(),
                 'rdoAwaitingReview' => $rdoAwaitingReview->count(),
+                'totalRdos' => $rdos->count(),
                 'openBoletins' => $openBoletins->count(),
+                'totalBoletins' => $boletins->count(),
                 'pendingOrders' => $pendingOrders->count(),
+                'totalOrders' => $ordens->count(),
+                'draftBudgets' => (int) ($budgetCounts['draft'] ?? 0),
+                'closedBudgets' => (int) ($budgetCounts['closed'] ?? 0),
                 'additives' => $additives->count(),
                 'users' => $this->canSeeTenantTotals($user, $tenantRole) ? $tenant->memberships()->where('status', 'active')->count() : null,
             ],
@@ -237,6 +261,8 @@ class DashboardController extends Controller
                 'projects' => $canForScope(ProjectPermissions::class, ProjectPermissions::VIEW),
                 'uploadProject' => $canForScope(ProjectPermissions::class, ProjectPermissions::UPLOAD),
                 'rncs' => $canForScope(RncPermissions::class, RncPermissions::VIEW),
+                'ics' => $canForScope(IcPermissions::class, IcPermissions::VIEW),
+                'budgets' => BudgetPermissions::can($user, $tenant, BudgetPermissions::VIEW),
                 'createRnc' => $canForScope(RncPermissions::class, RncPermissions::CREATE),
                 'documentation' => $canForScope(DocumentationPermissions::class, DocumentationPermissions::VIEW),
                 'documentationEmail' => $canForScope(DocumentationPermissions::class, DocumentationPermissions::EMAIL),

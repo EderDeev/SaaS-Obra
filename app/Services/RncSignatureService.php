@@ -7,6 +7,7 @@ use App\Models\RdoSignatureRequest;
 use App\Models\RncSignatureSetting;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\RncPdfTemplates;
 use App\Services\Signatures\OpenSignSignatureProvider;
 use App\Services\Storage\StoredFileMaterializer;
 use Illuminate\Http\Client\ConnectionException;
@@ -84,12 +85,13 @@ class RncSignatureService
         });
         try {
             $signers = $request->request_payload['signers'];
-            $pdf = $this->renderer->render($tenant, $rnc->fresh(), 'evidence', $signers);
+            $template = RncPdfTemplates::forContract($tenant, $rnc->contract_id);
+            $pdf = $this->renderer->render($tenant, $rnc->fresh(), 'evidence', $signers, $template);
             $bytes = $pdf->output();
             $page = $pdf->getDomPDF()->getCanvas()->get_page_count();
             $path = "tenants/{$tenant->id}/rnc/{$rnc->id}/assinaturas/{$request->id}-original.pdf";
             Storage::disk('local')->put($path, $bytes);
-            $request->update(['unsigned_pdf_path' => $path, 'request_payload' => [...$request->request_payload, 'signature_page' => $page, 'unsigned_sha256' => hash('sha256', $bytes)]]);
+            $request->update(['unsigned_pdf_path' => $path, 'request_payload' => [...$request->request_payload, 'signature_page' => $page, 'pdf_template' => $template, 'unsigned_sha256' => hash('sha256', $bytes)]]);
             $response = $this->materializer->withLocalPath('local', $path, fn ($local) => app(OpenSignSignatureProvider::class)->createRequest($request->fresh(['rnc', 'signers']), $local));
             if (empty($response['provider_document_id']) && empty($response['provider_request_id'])) throw new \RuntimeException('OpenSign did not return a document identifier.');
             $request->update(['status' => 'sent', 'provider_request_id' => $response['provider_request_id'] ?? null, 'provider_document_id' => $response['provider_document_id'] ?? null,

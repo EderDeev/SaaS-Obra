@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Empresa;
 use App\Models\RelatorioNaoConformidade;
 use App\Models\Tenant;
+use App\Support\RncPdfTemplates;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -17,10 +18,13 @@ class RncPdfRenderer
     private const PDF_LOGO_WIDTH = 480;
     private const PDF_LOGO_HEIGHT = 180;
 
-    public function render(Tenant $tenant, RelatorioNaoConformidade $rnc, string $scope = 'evidence', array $signatureSigners = [])
+    public function render(Tenant $tenant, RelatorioNaoConformidade $rnc, string $scope = 'evidence', array $signatureSigners = [], ?array $template = null)
     {
         abort_unless((int) $rnc->tenant_id === (int) $tenant->id, 404);
         abort_unless(in_array($scope, ['opening', 'analysis', 'evidence'], true), 422);
+        $template ??= RncPdfTemplates::forContract($tenant, $rnc->contract_id);
+        $configuration = RncPdfTemplates::configuration($template['layout'] ?? 'standard', $template['options'] ?? []);
+        $options = $configuration['options'];
         $rnc->loadMissing(['tenant', 'contract', 'obra', 'disciplina', 'contratante', 'contratada', 'creator', 'finalizedBy', 'instrucaoCampo',
             'projectDocuments.latestVersion', 'projectDocument.latestVersion', 'photos', 'acoesCorretivas.user', 'acoesCorretivas.reviewer', 'evidencias.user', 'evidencias.photos', 'signatureRequests.signers']);
         $latestAction = $rnc->acoesCorretivas->sortByDesc(fn ($action) => sprintf('%s-%020d', $action->submitted_at, $action->id))->first();
@@ -29,19 +33,32 @@ class RncPdfRenderer
         $rows = $this->rncFlowRows($rnc, $latestAction, $latestEvidence);
         $rows = array_slice($rows, 0, $scope === 'opening' ? 2 : ($scope === 'analysis' ? 4 : 6));
         if ($signatureSigners) $rows = array_slice($rows, 0, 5);
-        return Pdf::loadView('pdf.rnc', [
-            'tenant' => $tenant, 'rnc' => $rnc, 'contratanteLogo' => $this->companyLogoDataUri($rnc->contratante),
-            'contratadaLogo' => $this->companyLogoDataUri($rnc->contratada), 'photos' => $this->formatPdfPhotos($rnc->photos, $raster),
+        $company = function (string $source) use ($tenant, $rnc): ?Empresa {
+            $company = match ($source) {
+                'contratante' => $rnc->contratante,
+                'contratada' => $rnc->contratada,
+                'fiscalizadora' => $rnc->contract?->fiscalizadoraEmpresa,
+                default => null,
+            };
+            return $company && (int) $company->tenant_id === (int) $tenant->id ? $company : null;
+        };
+        $leftCompany = $company($options['left_logo']);
+        $rightCompany = $company($options['right_logo']);
+        return Pdf::loadView(RncPdfTemplates::VIEWS[$configuration['layout']], [
+            'tenant' => $tenant, 'rnc' => $rnc, 'contratanteLogo' => $this->companyLogoDataUri($leftCompany),
+            'contratadaLogo' => $this->companyLogoDataUri($rightCompany), 'photos' => $this->formatPdfPhotos($rnc->photos, $raster, $configuration['layout'] === 'inspection_form'),
+            'leftLogoName' => $leftCompany?->nome ?? '', 'rightLogoName' => $rightCompany?->nome ?? '',
+            'pdfOptions' => $options, 'isPreview' => $template['preview'] ?? false,
             'approvedAction' => $latestAction, 'latestAction' => $latestAction,
-            'latestEvidence' => $latestEvidence, 'evidencePhotos' => $latestEvidence ? $this->formatPdfPhotos($latestEvidence->photos, $raster) : collect(),
+            'latestEvidence' => $latestEvidence, 'evidencePhotos' => $latestEvidence ? $this->formatPdfPhotos($latestEvidence->photos, $raster, $configuration['layout'] === 'inspection_form') : collect(),
             'flowRows' => $rows, 'canRasterizePdfImages' => $raster, 'signatureSigners' => $signatureSigners,
             'includeAnalysis' => $scope !== 'opening', 'includeEvidence' => $scope === 'evidence',
         ])->setPaper('a4');
     }
 
-    private function formatPdfPhotos(Collection $photos, bool $canRasterizePdfImages): Collection
+    private function formatPdfPhotos(Collection $photos, bool $canRasterizePdfImages, bool $contain = false): Collection
     {
-        return $photos->map(function ($photo) use ($canRasterizePdfImages): array {
+        return $photos->map(function ($photo) use ($canRasterizePdfImages, $contain): array {
             $dataUri = null;
             $canEmbedImage = false;
             $mime = $photo->mime_type ?: (Storage::disk('public')->exists($photo->path) ? Storage::disk('public')->mimeType($photo->path) : null);
@@ -52,7 +69,7 @@ class RncPdfRenderer
 
             if ($canEmbedImage && Storage::disk('public')->exists($photo->path)) {
                 $absolutePath = Storage::disk('public')->path($photo->path);
-                $dataUri = $this->standardizedPdfPhotoDataUri($absolutePath)
+                $dataUri = ($contain ? $this->containedPdfImageDataUri($absolutePath, self::PDF_PHOTO_WIDTH, self::PDF_PHOTO_HEIGHT) : $this->standardizedPdfPhotoDataUri($absolutePath))
                     ?: 'data:'.$mime.';base64,'.base64_encode(Storage::disk('public')->get($photo->path));
             }
 
