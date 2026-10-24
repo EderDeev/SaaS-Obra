@@ -7,11 +7,19 @@ use App\Models\BoletimMedicao;
 use App\Models\ContractAdditive;
 use App\Models\ContractParticipant;
 use App\Models\OrdemServico;
+use App\Models\OsDnitHighway;
+use App\Models\OsDnitOrder;
+use App\Models\ProjectDocument;
+use App\Models\Empresa;
+use App\Models\TipoEmpresa;
+use App\Models\RelatorioNaoConformidade;
 use App\Models\RdoConfiguracao;
 use App\Models\RdoDiario;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\ContractPermissions;
+use App\Support\ActivityPermissions;
+use App\Support\OsDnitPermissions;
 use App\Support\DiarioObraPermissions;
 use App\Support\MedicaoPermissions;
 use App\Support\OrdemServicoPermissions;
@@ -205,6 +213,102 @@ class TenantDashboardTest extends TestCase
                 ->has('attentionItems', 3)
                 ->has('recentEvents', 4)
             );
+    }
+
+    public function test_contract_filter_updates_metrics_charts_events_personal_activities_and_os_summary(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-24 10:00:00'));
+        $tenant = Tenant::create(['slug' => 'overview-filter', 'name' => 'Concremat Engenharia', 'plan' => 'starter', 'status' => 'active']);
+        $user = User::factory()->create(['name' => 'Ana Martins']);
+        $tenant->memberships()->create(['user_id' => $user->id, 'role' => 'tenant_owner', 'status' => 'active']);
+        $contracts = [];
+        foreach (['011/2021-NGTM', '001-DNIT'] as $index => $code) {
+            $contract = $tenant->contracts()->create(['code' => $code, 'name' => $index ? 'Supervisão de obras rodoviárias' : 'Gestão e fiscalização de obras', 'status' => 'active']);
+            $contracts[] = $contract;
+            ContractParticipant::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'user_id' => $user->id,
+                'side' => 'manager', 'role' => 'manager', 'status' => 'active', 'os_dnit_permissions' => [OsDnitPermissions::VIEW]]);
+            $road = OsDnitHighway::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'name' => 'BR-364', 'active' => true]);
+            OsDnitOrder::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'highway_id' => $road->id,
+                'created_by_id' => $user->id, 'request_number' => '001/2026', 'supervision_lot' => 'Lote 01', 'highway_name' => $road->name,
+                'km_start' => 1, 'km_end' => 2, 'subject' => 'Levantamento de campo', 'desired_deadline' => '2026-11-30',
+                'technical_need' => 'Verificar o trecho.', 'justification' => 'Acompanhar os serviços.', 'status' => $index ? 'approved' : 'awaiting_concremat']);
+            ProjectDocument::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'created_by_id' => $user->id,
+                'title' => 'Projeto '.$code, 'document_type' => 'projeto', 'status' => $index ? 'em_aprovacao' : 'em_analise']);
+            for ($month = 0; $month < 6; $month++) {
+                for ($n = 0; $n < ($index ? 1 : 2); $n++) {
+                    $activity = $this->activity($tenant, $contract->id, $user->id, 'Inspeção '.$month.' '.$n.' · '.$code, $month % 2 ? '2026-10-22' : '2026-10-28');
+                    $activity->forceFill(['created_at' => now()->startOfMonth()->subMonths($month)->addDays(2), 'status' => $month >= 3 ? 'done' : 'todo'])->save();
+                }
+            }
+        }
+        $all = $this->actingAs($user)->get(route('tenant.dashboard', $tenant))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('contracts', 2)->where('stats.contracts', 2)->where('stats.openActivities', 9)
+                ->where('stats.pendingProjects', 2)->where('osSummary.total', 2)
+                ->where('charts.activityTrend', fn ($rows) => collect($rows)->sum('total') === 18));
+        $filtered = $this->get(route('tenant.dashboard', [$tenant, 'contract_id' => $contracts[0]->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('contracts', 2)->where('stats.contracts', 1)->where('stats.openActivities', 6)
+                ->where('stats.pendingProjects', 1)->where('osSummary.total', 1)->where('osSummary.pending', 1)
+                ->where('charts.activityTrend', fn ($rows) => collect($rows)->sum('total') === 12)
+                ->where('myActivities', fn ($rows) => collect($rows)->every(fn ($row) => $row['contract_id'] === $contracts[0]->id))
+                ->where('attentionItems', fn ($rows) => collect($rows)->every(fn ($row) => !str_contains($row['subtitle'], '001-DNIT')))
+                ->where('recentEvents', fn ($rows) => collect($rows)->every(fn ($row) => !str_contains($row['subtitle'], '001-DNIT'))));
+        $this->get(route('tenant.dashboard', $tenant))->assertInertia(fn (Assert $page) => $page->where('stats.contracts', 2)->where('osSummary.total', 2));
+        if ($folder = getenv('OVERVIEW_CAPTURE_DIR')) {
+            if (!is_dir($folder)) mkdir($folder, 0777, true);
+            foreach (['all' => $all, 'filtered' => $filtered] as $name => $response) {
+                file_put_contents($folder.'/'.$name.'.html', $response->getContent());
+                file_put_contents($folder.'/'.$name.'.json', json_encode($response->viewData('page')));
+            }
+        }
+    }
+
+    public function test_contract_filter_rejects_foreign_and_unlinked_contracts_and_preserves_module_permissions(): void
+    {
+        $tenant = Tenant::create(['slug' => 'overview-restricted', 'name' => 'Restrito', 'plan' => 'starter', 'status' => 'active']);
+        $user = User::factory()->create();
+        $tenant->memberships()->create(['user_id' => $user->id, 'role' => 'engineer', 'status' => 'active', 'activity_permissions' => []]);
+        $contracts = [];
+        foreach (['A', 'B', 'C'] as $code) {
+            $contract = $tenant->contracts()->create(['code' => $code, 'name' => $code, 'status' => 'active']);
+            $contracts[$code] = $contract;
+            if ($code !== 'C') ContractParticipant::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'user_id' => $user->id,
+                'side' => 'manager', 'role' => 'team_member', 'status' => 'active', 'activity_permissions' => $code === 'A' ? [ActivityPermissions::VIEW] : []]);
+            $this->activity($tenant, $contract->id, $user->id, 'Atividade '.$code, '2026-11-01');
+        }
+        $url = fn ($id) => route('tenant.dashboard', [$tenant, 'contract_id' => $id]);
+        $this->actingAs($user)->get($url($contracts['A']->id))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('contracts', 2)->where('stats.openActivities', 1)->where('capabilities.activities', true));
+        $this->get($url($contracts['B']->id))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('stats.openActivities', 0)->where('capabilities.activities', false)->where('myActivities', [])->where('recentEvents', []));
+        $this->get($url($contracts['C']->id))->assertSessionHasErrors('contract_id');
+        $other = Tenant::create(['slug' => 'overview-foreign', 'name' => 'Outro', 'plan' => 'starter', 'status' => 'active']);
+        $foreign = $other->contracts()->create(['code' => 'FOREIGN', 'name' => 'Outro', 'status' => 'active']);
+        $this->get($url($foreign->id))->assertSessionHasErrors('contract_id');
+        $this->get($url('invalid'))->assertSessionHasErrors('contract_id');
+        $this->get(route('tenant.dashboard', $other))->assertForbidden();
+    }
+
+    public function test_overview_keeps_rncs_awaiting_signature_open_without_treating_them_as_overdue_responses(): void
+    {
+        $tenant = Tenant::create(['slug' => 'overview-signatures', 'name' => 'Assinaturas', 'plan' => 'starter', 'status' => 'active']);
+        $user = User::factory()->create();
+        $tenant->memberships()->create(['user_id' => $user->id, 'role' => 'tenant_owner', 'status' => 'active']);
+        $contract = $tenant->contracts()->create(['code' => 'SIG', 'name' => 'Contrato', 'status' => 'active']);
+        $obra = $contract->obras()->create(['tenant_id' => $tenant->id, 'codigo' => 'OB', 'nome' => 'Obra', 'tipo' => 'pai']);
+        $company = Empresa::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id,
+            'tipo_empresa_id' => TipoEmpresa::firstOrCreate(['nome' => 'gerenciadora'])->id, 'nome' => 'Empresa', 'sigla' => 'EMP', 'cnpj' => '11.111.111/0001-11']);
+        foreach (['em_assinatura', 'finalizada', 'aberta'] as $i => $status) {
+            RelatorioNaoConformidade::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'obra_id' => $obra->id,
+                'contratante_empresa_id' => $company->id, 'contratada_empresa_id' => $company->id, 'created_by_id' => $user->id,
+                'sequence_number' => $i + 1, 'sequence_year' => 2026, 'opened_at' => today()->subDays(3), 'natureza' => 'Qualidade', 'gravidade' => 'Leve',
+                'descricao_problema' => 'Problema', 'acoes_corretivas_recomendadas' => 'Corrigir', 'status' => $status,
+                'prazo_resposta_acao_corretiva' => today()->subDay(), 'finalized_at' => $status === 'aberta' ? now() : null]);
+        }
+        $this->actingAs($user)->get(route('tenant.dashboard', [$tenant, 'contract_id' => $contract->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('stats.openRncs', 1)->where('stats.overdueRncs', 0)
+                ->where('charts.rncsByStatus', fn ($rows) => collect($rows)->firstWhere('key', 'em_assinatura')['value'] === 1
+                    && collect($rows)->firstWhere('key', 'finalizada')['value'] === 2)
+                ->where('attentionItems.0.badge', 'Aguardando assinaturas'));
     }
 
     private function activity(Tenant $tenant, int $contractId, int $userId, string $title, string $dueDate, string $type = Activity::TYPE_ACTIVITY): Activity

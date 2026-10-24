@@ -1,10 +1,17 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import OverviewTour from '@/Components/OverviewTour';
 import OsDnitManagementCard from '@/Components/OsDnitManagementCard';
-import { Head, Link } from '@inertiajs/react';
-import { useState } from 'react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import ReactECharts from 'echarts-for-react';
+import './Dashboard.css';
+import { useEffect, useRef, useState } from 'react';
 import {
     Activity,
+    ArrowUpRight,
+    Building2,
+    Filter,
+    LayoutDashboard,
+    X,
     AlertTriangle,
     ArrowRight,
     CalendarClock,
@@ -77,7 +84,7 @@ const activityCategories = {
 };
 
 const shortDate = (date) => date
-    ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date))
+    ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(/^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T12:00:00` : date))
     : 'Sem prazo';
 
 const timeAgo = (date) => {
@@ -91,75 +98,52 @@ const timeAgo = (date) => {
     return shortDate(date);
 };
 
-export default function TenantDashboard({
-    tenant,
-    role,
-    stats,
-    charts,
-    myActivities,
-    attentionItems,
-    recentEvents,
-    capabilities,
-    osSummary = null,
-}) {
+export default function TenantDashboard({ tenant, role, stats, charts, myActivities, attentionItems, recentEvents, capabilities, osSummary = null, contracts = [], filters = {} }) {
     const [attentionFilter, setAttentionFilter] = useState('all');
-    const filteredAttentionItems = attentionFilter === 'all'
-        ? attentionItems
-        : attentionItems.filter((item) => item.group === attentionFilter);
-
-    return (
-        <AuthenticatedLayout>
-            <Head title={`Visão geral - ${tenant.name}`} />
-
-            <section className="sig-content fade-in">
-                <header data-tour="overview-header" className="flex flex-wrap items-end gap-5">
-                    <div className="min-w-0 flex-1">
-                        <div className="eyebrow">Workspace · Visão geral</div>
-                        <h1 className="mt-2 text-2xl font-semibold text-[var(--ink-900)]">{tenant.name}</h1>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">{role || 'Participante'} · acompanhamento consolidado</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <OverviewTour />
-                        {capabilities.createActivity && (
-                            <Link href={route('tenant.activities.index', tenant.slug)} className="sig-btn sig-btn-secondary">
-                                <Plus size={15} />
-                                Atividade
-                            </Link>
-                        )}
-                        {capabilities.uploadProject && (
-                            <Link href={route('tenant.projects.index', tenant.slug)} className="sig-btn sig-btn-secondary">
-                                <Send size={15} />
-                                Submeter projeto
-                            </Link>
-                        )}
-                        {capabilities.createRnc && (
-                            <Link href={route('tenant.qualidade.rnc.create', tenant.slug)} className="sig-btn sig-btn-primary">
-                                <FileWarning size={15} />
-                                Nova RNC
-                            </Link>
-                        )}
-                    </div>
-                </header>
-
-                <section data-tour="overview-metrics" className="mt-6">
-                    <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-                        <div>
-                            <h2 className="text-[16px] font-semibold text-[var(--ink-900)]">Resumo das pendências</h2>
-                            <p className="text-sm text-[var(--ink-500)]">O que exige decisão ou acompanhamento primeiro.</p>
-                        </div>
-                        <span className="text-xs text-[var(--ink-500)]">{stats.activeContracts} de {stats.contracts} contrato(s) ativo(s)</span>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <SummaryCard icon={AlertTriangle} label="Atividades vencidas" value={stats.overdueActivities} detail="Fora do prazo" tone="red" href={route('tenant.activities.index', tenant.slug)} />
-                        <SummaryCard icon={CalendarClock} label="Próximas do prazo" value={stats.activitiesDueSoon} detail="Hoje ou nos próximos 7 dias" tone="amber" href={route('tenant.activities.index', tenant.slug)} />
-                        <SummaryCard icon={FolderOpen} label="Projetos em fluxo" value={stats.pendingProjects} detail="Em análise ou aprovação" tone="blue" href={route('tenant.projects.review.index', tenant.slug)} />
-                        <SummaryCard icon={FileWarning} label="RNCs abertas" value={stats.openRncs} detail={`${stats.overdueRncs} com resposta atrasada`} tone={stats.overdueRncs > 0 ? 'red' : 'amber'} href={route('tenant.qualidade.rnc.dashboard', tenant.slug)} />
-                    </div>
+    const [contractId, setContractId] = useState(filters.contract_id || '');
+    const [filtering, setFiltering] = useState(false);
+    const cancel = useRef(null);
+    const { errors } = usePage().props;
+    useEffect(() => { setContractId(filters.contract_id || ''); setAttentionFilter('all'); }, [filters.contract_id]);
+    useEffect(() => () => cancel.current?.cancel(), []);
+    const selectedContract = contracts.find((contract) => String(contract.id) === String(contractId));
+    const changeContract = (value) => {
+        cancel.current?.cancel(); setContractId(value); setFiltering(true);
+        router.get(route('tenant.dashboard', tenant.slug), value ? { contract_id: value } : {}, {
+            preserveState: true, preserveScroll: true, replace: true,
+            onCancelToken: (token) => { cancel.current = token; }, onFinish: () => setFiltering(false),
+        });
+    };
+    const url = (name) => route(name, { tenant: tenant.slug, ...(contractId ? { contract_id: contractId } : {}) });
+    const filteredAttentionItems = attentionFilter === 'all' ? attentionItems : attentionItems.filter((item) => item.group === attentionFilter);
+    const completed = charts.activitiesByStatus.find((item) => item.key === 'done')?.value || 0;
+    const activityTotal = (charts.activityTrend || []).reduce((sum, item) => sum + item.total, 0);
+    return <AuthenticatedLayout><Head title={`Visão geral - ${tenant.name}`} />
+        <section className="overview-page fade-in" aria-busy={filtering}>
+            <header data-tour="overview-header" className="overview-hero">
+                <svg className="overview-hero-network" viewBox="0 0 1200 280" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="currentColor" strokeWidth="1"><path d="M-20 215 140 90 320 195 470 35 650 170 810 55 1010 180 1230 45M-20 215 320 195 650 170 1010 180 1230 240M140 90 230 270 470 35 530 275 810 55 915 280 1010 180M-20 10 140 90 470 35 810 55 1230 45" /></g>{[[140,90],[320,195],[470,35],[650,170],[810,55],[1010,180],[230,270]].map(([cx,cy]) => <circle key={cx} cx={cx} cy={cy} r="4" fill="currentColor" />)}</svg>
+                <div className="overview-hero-top"><span className="flex items-center gap-2 text-xs font-medium text-white/75"><LayoutDashboard size={15} />SigWorks<span className="text-white/35">/</span>Gestão</span><span className="text-xs text-white/70">{new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</span></div>
+                <div className="overview-hero-heading"><div className="min-w-0"><h1 className="text-3xl font-semibold tracking-tight sm:text-[34px]">Visão geral</h1><p className="mt-2 text-sm text-white/80">{tenant.name}<span className="mx-2 text-white/40">·</span>{role || 'Participante'}</p></div>
+                    <div className="flex w-full flex-wrap items-end gap-3 sm:w-auto"><label className="grid min-w-0 flex-1 gap-2 sm:w-80"><span className="flex items-center gap-1.5 text-xs font-medium text-white/85"><Filter size={13} />Filtrar por contrato</span><select aria-label="Filtrar por contrato" className="overview-contract-select" value={contractId} onChange={(event) => changeContract(event.target.value)}><option value="">Todos os contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} · {contract.name}</option>)}</select></label><OverviewTour /></div>
+                </div>
+            </header>
+            <div className="overview-body">
+                {errors?.contract_id && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errors.contract_id}</p>}
+                {contractId && <div className="overview-active-filter"><span className="min-w-0 truncate">Exibindo: <strong>{selectedContract?.code}</strong> · {selectedContract?.name}</span><button type="button" onClick={() => changeContract('')} className="flex shrink-0 items-center gap-1 text-xs font-semibold"><X size={13} />Limpar</button></div>}
+                <section data-tour="overview-metrics" className="overview-bento">
+                    <section className="overview-card overview-trend">
+                        <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-800">Atividades</h2><p className="mt-1 text-xs text-slate-400">Registros dos últimos 6 meses</p></div><span className="overview-soft-icon"><Activity size={18} /></span></div>
+                        <div className="mt-5 flex items-baseline gap-2"><strong className="text-4xl font-semibold tracking-tight text-slate-900">{capabilities.activities ? activityTotal.toLocaleString('pt-BR') : '—'}</strong><span className="text-xs text-slate-400">no seu acesso</span></div>
+                        {capabilities.activities ? <ActivityTrend rows={charts.activityTrend || []} /> : <p className="my-auto py-8 text-sm text-slate-400">Você não tem acesso às atividades neste filtro.</p>}
+                        <div className="mt-auto grid gap-4 border-t border-slate-100 pt-5"><OverviewCount icon={AlertTriangle} label="Vencidas" value={stats.overdueActivities} tone="rose" /><OverviewCount icon={CalendarClock} label="Vencem em até 7 dias" value={stats.activitiesDueSoon} tone="amber" /><OverviewCount icon={CheckCircle2} label="Concluídas" value={completed} tone="green" /></div>
+                    </section>
+                    <section className="overview-card overview-welcome"><div className="min-w-0"><span className="overview-kicker">{selectedContract ? 'Contrato selecionado' : 'Sua operação'}</span><h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-800">{selectedContract?.code || 'Todos os contratos'}</h2><p className="mt-2 text-sm text-slate-500">{selectedContract?.name || `${stats.contracts} contrato(s) disponíveis para acompanhamento.`}</p></div><div className="flex flex-wrap gap-2">{capabilities.createActivity && <Link href={url('tenant.activities.index')} className="overview-action"><Plus size={14} />Atividade</Link>}{capabilities.createRnc && <Link href={url('tenant.qualidade.rnc.create')} className="overview-action overview-action-primary"><Plus size={14} />RNC</Link>}{capabilities.uploadProject && <Link href={url('tenant.projects.index')} className="overview-action"><Send size={14} />Projeto</Link>}</div></section>
+                    <section className="overview-deadlines"><div className="relative z-[1]"><span className="text-xs font-medium text-white/75">Prazos das atividades</span><div className="mt-3 flex items-baseline gap-2"><strong className="text-4xl font-semibold tracking-tight">{capabilities.activities ? stats.overdueActivities : '—'}</strong><span className="text-sm text-white/80">vencidas</span></div><p className="mt-3 text-xs text-white/80">{stats.activitiesDueSoon} próxima(s) do prazo · {stats.openActivities} em aberto</p></div>{capabilities.activities && <Link href={url('tenant.activities.index')} className="relative z-[1] mt-5 inline-flex items-center gap-2 text-xs font-semibold text-white">Acompanhar atividades<ArrowUpRight size={15} /></Link>}</section>
+                    <section className="overview-contract-card"><BuildingArtwork /><div className="relative z-[1]"><div className="flex items-center justify-between gap-3"><span className="text-xs font-medium text-blue-200">{selectedContract ? 'Contrato em foco' : 'Contratos em operação'}</span><Building2 size={20} className="text-blue-300" /></div><strong className="mt-5 block text-5xl font-semibold tracking-tight">{selectedContract ? '1' : stats.activeContracts}</strong><p className="mt-2 text-sm text-white/80">{selectedContract ? selectedContract.code : `ativos de ${stats.contracts} disponíveis`}</p><p className="mt-5 max-w-52 text-xs leading-5 text-blue-200/80">{selectedContract?.name || 'Informações de cada módulo, reunidas por contrato.'}</p></div>{capabilities.contracts && <Link href={selectedContract ? route('tenant.contracts.show', [tenant.slug, selectedContract.id]) : route('tenant.contracts.index', tenant.slug)} className="relative z-[1] mt-auto inline-flex items-center gap-2 pt-8 text-xs font-semibold text-white">{selectedContract ? 'Acessar contrato' : 'Ver contratos'}<ArrowRight size={14} /></Link>}</section>
+                    <MiniFeature icon={FileWarning} label="RNCs abertas" value={stats.openRncs} detail={`${stats.overdueRncs} com prazo vencido`} href={url('tenant.qualidade.rnc.dashboard')} allowed={capabilities.rncs} />
+                    <MiniFeature icon={FolderOpen} label="Projetos em fluxo" value={stats.pendingProjects} detail="Análise e aprovação" href={url('tenant.projects.review.index')} allowed={capabilities.projects} blue />
                 </section>
-
-                {osSummary && <div className="mt-6"><OsDnitManagementCard tenant={tenant} summary={osSummary} /></div>}
-
-                <section data-tour="overview-operation" className="mt-6">
+                <section data-tour="overview-operation" className="mt-7">
                     <div className="mb-3">
                         <h2 className="text-[16px] font-semibold text-[var(--ink-900)]">Operação do contrato</h2>
                         <p className="text-sm text-[var(--ink-500)]">Fluxos que passaram a integrar o workspace.</p>
@@ -172,6 +156,7 @@ export default function TenantDashboard({
                     </div>
                 </section>
 
+                {osSummary && <div className="mt-6"><OsDnitManagementCard tenant={tenant} summary={osSummary} contractId={contractId || undefined} /></div>}
                 <section data-tour="overview-monitoring" className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
                     <section className="sig-card overflow-hidden">
                         <header className="border-b border-[var(--border)] px-5 py-4">
@@ -267,27 +252,33 @@ export default function TenantDashboard({
                         <ChartPanel title="RNCs por status" items={charts.rncsByStatus} />
                     </div>
                 </section>
-
-            </section>
-        </AuthenticatedLayout>
-    );
+            </div>
+        </section>
+    </AuthenticatedLayout>;
 }
 
-function SummaryCard({ icon: Icon, label, value, detail, tone, href }) {
-    return (
-        <Link href={href} className="sig-card group relative overflow-hidden p-[18px] transition hover:border-[var(--ink-300)] hover:shadow-sm">
-            <span className={`absolute inset-x-0 top-0 h-[3px] ${tone === 'red' ? 'bg-[var(--red)]' : tone === 'amber' ? 'bg-[var(--amber)]' : 'bg-[var(--primary)]'}`} />
-            <div className="flex items-start justify-between gap-3">
-                <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${toneClasses[tone] || toneClasses.blue}`}>
-                    <Icon size={16} />
-                </span>
-                <ArrowRight size={15} className="text-[var(--ink-400)] transition group-hover:translate-x-0.5" />
-            </div>
-            <div className="mono mt-3 text-[28px] font-semibold text-[var(--ink-900)]">{value}</div>
-            <div className="mt-0.5 text-sm font-semibold text-[var(--ink-900)]">{label}</div>
-            <p className="mt-0.5 text-[12px] text-[var(--ink-500)]">{detail}</p>
-        </Link>
-    );
+function ActivityTrend({ rows }) {
+    const hasData = rows.some((row) => row.total > 0);
+    if (!hasData) return <div className="flex min-h-40 flex-1 items-center justify-center text-center text-xs text-slate-400">Nenhuma atividade registrada nos últimos 6 meses.</div>;
+    return <ReactECharts option={{ aria: { enabled: true }, grid: { left: 4, right: 4, top: 20, bottom: 25, containLabel: true }, tooltip: { trigger: 'axis', renderMode: 'richText' },
+        xAxis: { type: 'category', data: rows.map((row) => row.label), boundaryGap: false, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 } },
+        yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#f1f5f9' } }, axisLabel: { color: '#94a3b8', fontSize: 10 } },
+        series: [{ name: 'Atividades registradas', type: 'line', smooth: true, symbolSize: 5, data: rows.map((row) => row.total), lineStyle: { width: 2.5, color: '#45bd9d' }, itemStyle: { color: '#45bd9d' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#b8f2dc' }, { offset: 1, color: '#f8fffc' }] } } }],
+    }} style={{ width: '100%', height: 185, minHeight: 185 }} notMerge />;
+}
+
+function OverviewCount({ icon: Icon, label, value, tone }) {
+    const colors = { rose: 'bg-rose-50 text-rose-500', amber: 'bg-amber-50 text-amber-500', green: 'bg-emerald-50 text-emerald-500' };
+    return <div className="flex items-center gap-3"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${colors[tone]}`}><Icon size={17} /></span><span className="min-w-0 flex-1 text-xs text-slate-500">{label}</span><strong className="text-sm font-semibold tabular-nums text-slate-700">{value}</strong></div>;
+}
+
+function MiniFeature({ icon: Icon, label, value, detail, href, allowed, blue }) {
+    const Tag = allowed ? Link : 'section';
+    return <Tag {...(allowed ? { href } : {})} className={`overview-mini ${blue ? 'overview-mini-blue' : 'overview-card'}`}><Icon size={22} className={blue ? 'text-white/80' : 'text-cyan-500'} /><strong className="mt-4 block text-2xl font-semibold tracking-tight">{allowed ? value : '—'}</strong><span className="mt-1 block text-xs font-medium">{label}</span><span className={`mt-1 block text-[11px] ${blue ? 'text-white/65' : 'text-slate-400'}`}>{allowed ? detail : 'Sem acesso neste filtro'}</span></Tag>;
+}
+
+function BuildingArtwork() {
+    return <svg viewBox="0 0 300 300" className="overview-building" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M60 290V90L145 45l100 50v195M60 90l100 45 85-40M160 135v155M85 103v180M110 115v168M135 126v157M185 123v160M210 111v172M235 99v184M60 128l100 45 85-40M60 167l100 45 85-40M60 206l100 45 85-40M60 245l100 45 85-40" /><path d="M15 290h280M30 290V170l30-15M245 155l40 25v110" /></g></svg>;
 }
 
 function ActivitySummaryRow({ activity, tenant }) {
@@ -404,7 +395,7 @@ function ChartPanel({ title, items }) {
                             <span className="mono font-semibold text-[var(--ink-900)]">{item.value}</span>
                         </div>
                         <div className="h-1.5 overflow-hidden rounded bg-[var(--ink-100)]">
-                            <div className="h-full rounded bg-[var(--primary)]" style={{ width: `${total ? Math.max(4, (item.value / total) * 100) : 0}%` }} />
+                            <div className="h-full rounded bg-[var(--primary)]" style={{ width: `${total ? (item.value / total) * 100 : 0}%` }} />
                         </div>
                     </div>
                 ))}
