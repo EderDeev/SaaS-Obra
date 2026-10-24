@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -37,7 +38,16 @@ class DashboardController extends Controller
         $user = $request->user();
         $tenantRole = $user->tenantRole($tenant);
         $contracts = $this->accessibleContracts($user, $tenant);
+        $contractOptions = (clone $contracts)->orderBy('code')->get(['id', 'code', 'name', 'status']);
+        $filters = $request->validate([
+            'contract_id' => ['nullable', 'integer', Rule::in($contractOptions->pluck('id')->all())],
+        ]);
+        $selectedContract = ! empty($filters['contract_id']) ? $contractOptions->firstWhere('id', $filters['contract_id']) : null;
+        $contracts->when($selectedContract, fn ($query) => $query->whereKey($selectedContract->id));
         $contractIds = (clone $contracts)->pluck('id');
+        $canForScope = fn (string $class, string $permission): bool => $selectedContract
+            ? $class::can($user, $tenant, $permission, $selectedContract)
+            : $class::canAny($user, $tenant, $permission);
         $activityContractIds = $this->permittedContractIds($user, $tenant, $contractIds, ActivityPermissions::class, ActivityPermissions::VIEW);
         $projectContractIds = $this->permittedContractIds($user, $tenant, $contractIds, ProjectPermissions::class, ProjectPermissions::VIEW);
         $rncContractIds = $this->permittedContractIds($user, $tenant, $contractIds, RncPermissions::class, RncPermissions::VIEW);
@@ -63,10 +73,10 @@ class DashboardController extends Controller
             ->whereIn('contract_id', $rncContractIds)
             ->with(['contract:id,code,name', 'disciplina:id,nome,sigla'])
             ->latest()
-            ->get(['id', 'tenant_id', 'contract_id', 'disciplina_id', 'sequence_number', 'sequence_year', 'opened_at', 'prazo_resposta_acao_corretiva', 'status', 'created_at']);
+            ->get(['id', 'tenant_id', 'contract_id', 'disciplina_id', 'sequence_number', 'sequence_year', 'opened_at', 'prazo_resposta_acao_corretiva', 'status', 'finalized_at', 'created_at']);
 
         $openActivities = $activities->where('status', '!=', 'done');
-        $openRncs = $rncs->where('status', 'aberta');
+        $openRncs = $rncs->filter(fn ($rnc) => $rnc->status !== 'finalizada' && $rnc->finalized_at === null);
         $pendingProjects = $projects->whereIn('status', ['em_analise', 'em_aprovacao']);
         $today = today();
         $activitiesDueSoon = $openActivities->filter(
@@ -154,6 +164,8 @@ class DashboardController extends Controller
 
         return Inertia::render('Tenant/Dashboard', [
             'tenant' => $tenant,
+            'contracts' => $contractOptions,
+            'filters' => $filters,
             'role' => TenantRoles::label($tenantRole),
             'stats' => [
                 'contracts' => $contractIds->count(),
@@ -163,7 +175,7 @@ class DashboardController extends Controller
                 'activitiesDueToday' => $openActivities->filter(fn ($activity): bool => $activity->due_date?->isSameDay($today) ?? false)->count(),
                 'activitiesDueSoon' => $activitiesDueSoon->count(),
                 'openRncs' => $openRncs->count(),
-                'overdueRncs' => $openRncs->filter(fn ($rnc): bool => $rnc->prazo_resposta_acao_corretiva !== null && $rnc->prazo_resposta_acao_corretiva->isBefore($today))->count(),
+                'overdueRncs' => $openRncs->where('status', 'aberta')->filter(fn ($rnc): bool => $rnc->prazo_resposta_acao_corretiva !== null && $rnc->prazo_resposta_acao_corretiva->isBefore($today))->count(),
                 'pendingProjects' => $pendingProjects->count(),
                 'documents' => $documents->count(),
                 'documentsInProgress' => $documentsInProgress->count(),
@@ -175,6 +187,12 @@ class DashboardController extends Controller
                 'users' => $this->canSeeTenantTotals($user, $tenantRole) ? $tenant->memberships()->where('status', 'active')->count() : null,
             ],
             'charts' => [
+                'activityTrend' => collect(range(5, 0))->map(function ($offset) use ($activities): array {
+                    $month = now()->startOfMonth()->subMonths($offset);
+                    $records = $activities->filter(fn ($activity) => $activity->created_at?->format('Y-m') === $month->format('Y-m'));
+
+                    return ['label' => $month->translatedFormat('M/y'), 'total' => $records->count(), 'completed' => $records->where('status', 'done')->count()];
+                })->all(),
                 'activitiesByStatus' => $this->statusChart($activities->countBy('status'), [
                     'todo' => 'A fazer',
                     'in_progress' => 'Em andamento',
@@ -202,28 +220,30 @@ class DashboardController extends Controller
                     'reprovado' => 'Reprovados',
                     'inativo' => 'Inativos',
                 ]),
-                'rncsByStatus' => $this->statusChart($rncs->countBy('status'), [
+                'rncsByStatus' => $this->statusChart($rncs->countBy(fn ($rnc) => $rnc->finalized_at ? 'finalizada' : $rnc->status), [
                     'aberta' => 'Abertas',
+                    'em_assinatura' => 'Aguardando assinaturas',
                     'finalizada' => 'Finalizadas',
                 ]),
             ],
             'myActivities' => $myActivities,
-            'osSummary' => OsDnitManagementSummary::forUser($user, $tenant),
+            'osSummary' => OsDnitManagementSummary::forUser($user, $tenant, $selectedContract?->id),
             'attentionItems' => $this->attentionItems($tenant, $openActivities, $pendingProjects, $openRncs, $pendingTriage, $documentsInProgress, $rdoAwaitingReview, $openBoletins, $pendingOrders),
             'recentEvents' => $this->recentEvents($tenant, $activities, $projects, $rncs, $documents, $rdos, $boletins, $ordens, $additives),
             'capabilities' => [
-                'activities' => ActivityPermissions::canAny($user, $tenant, ActivityPermissions::VIEW),
-                'createActivity' => ActivityPermissions::canAny($user, $tenant, ActivityPermissions::CREATE),
-                'projects' => ProjectPermissions::canAny($user, $tenant, ProjectPermissions::VIEW),
-                'uploadProject' => ProjectPermissions::canAny($user, $tenant, ProjectPermissions::UPLOAD),
-                'rncs' => RncPermissions::canAny($user, $tenant, RncPermissions::VIEW),
-                'createRnc' => RncPermissions::canAny($user, $tenant, RncPermissions::CREATE),
-                'documentation' => DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::VIEW),
-                'documentationEmail' => DocumentationPermissions::canAny($user, $tenant, DocumentationPermissions::EMAIL),
-                'rdo' => DiarioObraPermissions::canAny($user, $tenant, DiarioObraPermissions::VIEW),
-                'measurements' => MedicaoPermissions::canAny($user, $tenant, MedicaoPermissions::VIEW),
-                'serviceOrders' => OrdemServicoPermissions::canAny($user, $tenant, OrdemServicoPermissions::VIEW),
-                'additives' => ContractPermissions::canAny($user, $tenant, ContractPermissions::VIEW),
+                'contracts' => $canForScope(ContractPermissions::class, ContractPermissions::VIEW),
+                'activities' => $canForScope(ActivityPermissions::class, ActivityPermissions::VIEW),
+                'createActivity' => $canForScope(ActivityPermissions::class, ActivityPermissions::CREATE),
+                'projects' => $canForScope(ProjectPermissions::class, ProjectPermissions::VIEW),
+                'uploadProject' => $canForScope(ProjectPermissions::class, ProjectPermissions::UPLOAD),
+                'rncs' => $canForScope(RncPermissions::class, RncPermissions::VIEW),
+                'createRnc' => $canForScope(RncPermissions::class, RncPermissions::CREATE),
+                'documentation' => $canForScope(DocumentationPermissions::class, DocumentationPermissions::VIEW),
+                'documentationEmail' => $canForScope(DocumentationPermissions::class, DocumentationPermissions::EMAIL),
+                'rdo' => $canForScope(DiarioObraPermissions::class, DiarioObraPermissions::VIEW),
+                'measurements' => $canForScope(MedicaoPermissions::class, MedicaoPermissions::VIEW),
+                'serviceOrders' => $canForScope(OrdemServicoPermissions::class, OrdemServicoPermissions::VIEW),
+                'additives' => $canForScope(ContractPermissions::class, ContractPermissions::VIEW),
             ],
         ]);
     }
@@ -309,13 +329,13 @@ class DashboardController extends Controller
                 'url' => route('tenant.projects.review.index', $tenant, false),
             ]))
             ->merge($rncs->take(4)->map(function ($rnc) use ($tenant, $today): array {
-                $isOverdue = $rnc->prazo_resposta_acao_corretiva?->isBefore($today) ?? false;
+                $isOverdue = $rnc->status === 'aberta' && ($rnc->prazo_resposta_acao_corretiva?->isBefore($today) ?? false);
 
                 return [
                     'type' => 'RNC',
                     'title' => 'RNC '.$rnc->formatted_number,
                     'subtitle' => $rnc->contract?->code.' - '.($rnc->prazo_resposta_acao_corretiva?->format('d/m/Y') ?: 'sem prazo de resposta'),
-                    'badge' => $isOverdue ? 'Resposta atrasada' : 'Acao pendente',
+                    'badge' => $rnc->status === 'em_assinatura' ? 'Aguardando assinaturas' : ($isOverdue ? 'Resposta atrasada' : 'Acao pendente'),
                     'group' => $isOverdue ? 'critical' : 'workflow',
                     'tone' => $isOverdue ? 'red' : 'amber',
                     'priority' => $isOverdue ? 1 : 21,

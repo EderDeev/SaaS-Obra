@@ -6,19 +6,19 @@ const pageSteps = [
     {
         target: '[data-tour="overview-header"]',
         title: 'Visão geral',
-        content: 'Esta tela reúne os principais números, pendências e movimentações do tenant em um único lugar.',
+        content: 'Esta tela reúne os números, pendências e movimentações dos seus contratos. Use o filtro no cabeçalho para acompanhar um contrato ou todos os disponíveis.',
         placement: 'bottom',
     },
     {
         target: '[data-tour="overview-metrics"]',
-        title: 'Resumo das pendências',
-        content: 'Veja primeiro atividades vencidas ou próximas do prazo, projetos em fluxo e RNCs abertas.',
+        title: 'Indicadores e prazos',
+        content: 'Acompanhe o gráfico de atividades, os prazos, o contrato em foco, as RNCs abertas e os projetos em análise. Os dados seguem o contrato selecionado.',
         placement: 'bottom',
     },
     {
         target: '[data-tour="overview-operation"]',
         title: 'Operação do contrato',
-        content: 'Estes atalhos mostram pendências de Documentação, Diário de Obra, Medição e Ordem de Serviço.',
+        content: 'Estes atalhos mostram pendências de Documentação, Diário de Obra, Medição e Liberação de Serviço. Logo abaixo fica o resumo das Ordens de Serviço.',
         placement: 'top',
     },
     {
