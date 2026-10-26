@@ -75,7 +75,6 @@
         .signature-page { position: relative; height: {{ 790 - $pageTop }}pt; }
         .signature-label { position: absolute; top: {{ 680 - $pageTop }}pt; width: 112pt; font-size: 7pt; text-align: center; }
         .signature-widget { position: absolute; top: {{ 710 - $pageTop }}pt; width: 112pt; height: 34pt; border: .5pt dashed #9aa5b3; }
-        .preview { font-size: 6pt; color: #9b1c31; font-weight: bold; padding: 3pt 0; }
     </style>
 </head>
 <body>
@@ -133,7 +132,6 @@
         </div>
     </header>
 
-    @if ($isPreview)<p class="preview">EXEMPLO DE MODELO - DADOS FICTÍCIOS - SEM VALOR DE ASSINATURA</p>@endif
     <div class="bar">Descrição da Ocorrência</div>
     <div class="rail-block opening-observations">
         <div class="rail-label">OBSERVAÇÕES</div>
