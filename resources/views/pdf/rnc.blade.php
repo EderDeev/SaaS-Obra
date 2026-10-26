@@ -324,7 +324,6 @@
         @endif
     </section>
 
-    @if ($isPreview)<p class="muted">EXEMPLO DE MODELO - DADOS FICTÍCIOS - SEM VALOR DE ASSINATURA</p>@endif
     <section class="section">
         <h2 class="section-title">Observa&ccedil;&otilde;es e coment&aacute;rios</h2>
         <div class="text-box">
@@ -362,7 +361,7 @@
                                     @else
                                         <p class="muted">
                                             @if ($isPreview)
-                                                Espaço reservado para a foto de exemplo.
+                                                Registro fotográfico
                                             @elseif ($photo['needs_raster_extension'] && ! $canRasterizePdfImages)
                                                 Imagem cadastrada, mas imagens PNG/WebP precisam da extens&atilde;o GD ou Imagick habilitada no PHP para aparecer no PDF. Envie imagens JPG/JPEG ou habilite a extens&atilde;o.
                                             @elseif ($canRasterizePdfImages)

@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { ChevronLeft, ChevronRight, Download, Eye, LoaderCircle, RotateCcw, X } from 'lucide-react';
+import { Download, Eye, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import PdfPreviewPage from './PdfPreviewPage';
+import PdfPreviewDocument from './PdfPreviewDocument';
 
 export default function PdfModelPreview({ name, endpoint, payload }) {
     const requestKey = JSON.stringify(payload);
@@ -11,11 +12,12 @@ export default function PdfModelPreview({ name, endpoint, payload }) {
     const [retry, setRetry] = useState(0);
     const [hover, setHover] = useState(null);
     const [expanded, setExpanded] = useState(false);
-    const [pageNumber, setPageNumber] = useState(1);
     const firstRequest = useRef(true);
     const closeTimer = useRef(null);
     const eyeButton = useRef(null);
     const hoverPanel = useRef(null);
+    const hoverScroller = useRef(null);
+    const modalScroller = useRef(null);
     const dialog = useRef(null);
     const current = preview?.key === requestKey ? preview : null;
     const url = current?.url;
@@ -28,7 +30,6 @@ export default function PdfModelPreview({ name, endpoint, payload }) {
         firstRequest.current = false;
         setPreview(null);
         setHover(null);
-        setPageNumber(1);
         const timer = setTimeout(async () => {
             try {
                 const response = await axios.post(endpoint, JSON.parse(requestKey), {
@@ -61,12 +62,28 @@ export default function PdfModelPreview({ name, endpoint, payload }) {
     useEffect(() => {
         if (!hover) return;
         const close = () => setHover(null);
+        const scroll = (event) => {
+            if (event.target instanceof Node && hoverPanel.current?.contains(event.target)) return;
+            close();
+        };
+        const wheel = (event) => {
+            const scroller = hoverScroller.current;
+            if (!scroller) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1;
+            scroller.scrollTop += event.deltaY * unit;
+            scroller.scrollLeft += event.deltaX * unit;
+        };
+        const button = eyeButton.current;
         const escape = (event) => { if (event.key === 'Escape') close(); };
-        window.addEventListener('scroll', close, true);
+        button?.addEventListener('wheel', wheel, { passive: false });
+        window.addEventListener('scroll', scroll, true);
         window.addEventListener('resize', close);
         window.addEventListener('keydown', escape);
         return () => {
-            window.removeEventListener('scroll', close, true);
+            button?.removeEventListener('wheel', wheel);
+            window.removeEventListener('scroll', scroll, true);
             window.removeEventListener('resize', close);
             window.removeEventListener('keydown', escape);
         };
@@ -116,28 +133,22 @@ export default function PdfModelPreview({ name, endpoint, payload }) {
                 {current?.error ? <><span role="alert">Não foi possível carregar a prévia deste modelo.</span><button type="button" className="sig-btn sig-btn-secondary !min-h-9 !text-xs" onClick={() => setRetry((value) => value + 1)}><RotateCcw size={14} />Tentar novamente</button></> : <><LoaderCircle size={22} className="animate-spin text-[var(--primary)]" /><span role="status">Gerando prévia...</span></>}
             </div>}
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-[var(--ink-500)]">Prévia com dados de exemplo</span>
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
             <div className="flex items-center gap-1">
                 <button ref={eyeButton} type="button" disabled={!url} className="sig-btn sig-btn-ghost !min-h-9 !px-3 !text-xs disabled:cursor-wait disabled:opacity-50" aria-label={`Ver modelo ${name}`} aria-haspopup="dialog" onClick={openExpanded} onMouseEnter={openHover} onMouseLeave={scheduleClose} onFocus={openHover} onBlur={(event) => { if (!hoverPanel.current?.contains(event.relatedTarget)) scheduleClose(); }}><Eye size={15} />Ver</button>
-                {url && <a href={url} download={`exemplo-rnc-${payload.layout}.pdf`} className="sig-btn sig-btn-ghost !min-h-9 !px-3 !text-xs" aria-label={`Baixar exemplo de ${name}`}><Download size={15} />Baixar</a>}
+                {url && <a href={url} download={`rnc-${payload.layout}.pdf`} className="sig-btn sig-btn-ghost !min-h-9 !px-3 !text-xs" aria-label={`Baixar PDF de ${name}`}><Download size={15} />Baixar</a>}
             </div>
         </div>
         {hover && url && createPortal(<aside ref={hoverPanel} aria-label={`Prévia ampliada de ${name}`} className="fixed z-[9999] flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl" style={hover} onMouseEnter={() => clearTimeout(closeTimer.current)} onMouseLeave={scheduleClose}>
             <div className="shrink-0 border-b border-slate-200 px-3 py-2 text-sm font-semibold">{name}</div>
-            <div className="min-h-0 flex-1 overflow-auto" tabIndex={0}><PdfPreviewPage pdf={current.pdf} name={name} /></div>
+            <div ref={hoverScroller} className="min-h-0 flex-1 overflow-auto overscroll-contain" tabIndex={0} aria-label={`Documento completo de ${name}`}><PdfPreviewDocument pdf={current.pdf} name={name} scrollRoot={hoverScroller} /></div>
         </aside>, document.body)}
-        {expanded && createPortal(<dialog ref={dialog} aria-label={`Modelo ${name}`} className="m-auto w-[calc(100vw-2rem)] max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/45" onClose={() => setExpanded(false)} onClick={(event) => { if (event.target === event.currentTarget) setExpanded(false); }}>
-            <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-                <div><h2 className="text-base font-semibold">{name}</h2><p className="mt-1 text-xs text-slate-500">Prévia com dados de exemplo</p></div>
-                <div className="flex shrink-0 items-center gap-2">{url && <a href={url} download={`exemplo-rnc-${payload.layout}.pdf`} className="sig-btn sig-btn-secondary !min-h-9 !px-3" aria-label={`Baixar PDF de ${name}`}><Download size={16} /><span className="hidden sm:inline">Baixar exemplo</span></a>}<button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar prévia" onClick={() => setExpanded(false)}><X size={20} /></button></div>
+        {expanded && createPortal(<dialog ref={dialog} aria-label={`Modelo ${name}`} className="m-auto h-[90dvh] w-[calc(100vw-2rem)] max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/45 open:flex open:flex-col" onClose={() => setExpanded(false)} onClick={(event) => { if (event.target === event.currentTarget) setExpanded(false); }}>
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                <h2 className="text-base font-semibold">{name}</h2>
+                <div className="flex shrink-0 items-center gap-2">{url && <a href={url} download={`rnc-${payload.layout}.pdf`} className="sig-btn sig-btn-secondary !min-h-9 !px-3" aria-label={`Baixar PDF de ${name}`}><Download size={16} /><span className="hidden sm:inline">Baixar PDF</span></a>}<button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar prévia" onClick={() => setExpanded(false)}><X size={20} /></button></div>
             </header>
-            {current?.pdf && <nav className="flex items-center justify-center gap-3 border-b border-slate-200 py-2" aria-label={`Páginas de ${name}`}>
-                <button type="button" className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-30" disabled={pageNumber === 1} onClick={() => setPageNumber((page) => page - 1)} aria-label="Página anterior"><ChevronLeft size={18} /></button>
-                <span className="text-sm" aria-live="polite">Página {pageNumber} de {current.pdf.numPages}</span>
-                <button type="button" className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-30" disabled={pageNumber >= current.pdf.numPages} onClick={() => setPageNumber((page) => page + 1)} aria-label="Próxima página"><ChevronRight size={18} /></button>
-            </nav>}
-            <div className="h-[70dvh] overflow-auto bg-slate-100 p-2 sm:p-4" tabIndex={0}>{url ? <PdfPreviewPage pdf={current.pdf} pageNumber={pageNumber} name={name} /> : <div className="flex h-full items-center justify-center text-sm text-slate-500">Atualizando prévia...</div>}</div>
+            <div ref={modalScroller} className="min-h-0 flex-1 overflow-auto overscroll-contain bg-slate-100 p-2 sm:p-4" tabIndex={0} aria-label={`Documento completo de ${name}`}>{url ? <PdfPreviewDocument pdf={current.pdf} name={name} scrollRoot={modalScroller} /> : <div className="flex h-full items-center justify-center text-sm text-slate-500">Atualizando prévia...</div>}</div>
         </dialog>, document.body)}
     </div>;
 }

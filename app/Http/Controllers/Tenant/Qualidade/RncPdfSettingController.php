@@ -4,10 +4,11 @@ namespace App\Http\Controllers\Tenant\Qualidade;
 
 use App\Http\Controllers\Controller;
 use App\Models\{Contract, RncPdfSetting, RncSignatureSetting, Tenant};
-use App\Services\{RncPdfPreview, RncPdfRenderer};
+use App\Services\{RncPdfPreview, RncPdfRenderer, RncSignatureService};
 use App\Support\{RncPdfTemplates, RncPermissions};
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class RncPdfSettingController extends Controller
@@ -57,13 +58,16 @@ class RncPdfSettingController extends Controller
         return back()->with('success', 'Modelo de PDF da RNC salvo para este contrato.');
     }
 
-    public function preview(Request $request, Tenant $tenant, RncPdfRenderer $renderer, RncPdfPreview $preview)
+    public function preview(Request $request, Tenant $tenant, RncPdfRenderer $renderer, RncPdfPreview $preview, RncSignatureService $signatures)
     {
         [$contract, $configuration] = $this->validated($request, $tenant);
-        $signers = collect(RncSignatureSetting::ROLES)->map(fn ($label, $role) => [
-            'role' => $role, 'name' => 'Responsável da '.$label, 'email' => $role.'@example.test',
+        $rnc = $preview->make($tenant, $contract, $request->user());
+        try { $signers = $signatures->configuredSigners($tenant, $rnc); }
+        catch (ValidationException) { $signers = []; }
+        $signers = $signers ?: collect(RncSignatureSetting::ROLES)->map(fn ($label, $role) => [
+            'role' => $role, 'name' => 'Responsável pela '.$label, 'email' => '',
         ])->values()->all();
-        $response = $renderer->render($tenant, $preview->make($tenant, $contract), 'evidence', $signers, [...$configuration, 'preview' => true])->stream('exemplo-modelo-rnc.pdf');
+        $response = $renderer->render($tenant, $rnc, 'evidence', $signers, [...$configuration, 'preview' => true])->stream('modelo-rnc.pdf');
         $response->headers->set('Cache-Control', 'private, no-store');
 
         return $response;

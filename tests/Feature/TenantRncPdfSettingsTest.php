@@ -98,6 +98,32 @@ class TenantRncPdfSettingsTest extends TestCase
         }
     }
 
+    public function test_preview_uses_contract_identity_and_has_no_demonstration_notices(): void
+    {
+        $client = new \App\Models\Empresa(['tenant_id' => $this->tenant->id, 'nome' => 'Cliente do contrato']);
+        $contractor = new \App\Models\Empresa(['tenant_id' => $this->tenant->id, 'nome' => 'Construtora vinculada']);
+        $work = new \App\Models\Obra(['tenant_id' => $this->tenant->id, 'nome' => 'Obra do contrato']);
+        $this->contract->setRelations(['clienteEmpresa' => $client, 'construtoraEmpresa' => $contractor, 'obra' => $work]);
+        $preview = app(RncPdfPreview::class);
+        $rnc = $preview->make($this->tenant, $this->contract, $this->owner);
+        $this->assertSame($client, $rnc->contratante);
+        $this->assertSame($contractor, $rnc->contratada);
+        $this->assertSame($work, $rnc->obra);
+        $this->assertSame($this->owner, $rnc->creator);
+        foreach (array_keys(RncPdfTemplates::VIEWS) as $layout) {
+            $pdf = app(RncPdfRenderer::class)->render($this->tenant, $rnc, 'evidence', [], [...RncPdfTemplates::configuration($layout), 'preview' => true]);
+            $text = $pdf->getDomPDF()->getDom()->textContent;
+            foreach (['Cliente do contrato', 'Construtora vinculada', 'Obra do contrato'] as $name) $this->assertStringContainsString($name, $text);
+            foreach (['exemplo', 'EXEMPLO', 'FICTÍCIOS', 'SEM VALOR DE ASSINATURA', 'Este texto demonstra'] as $notice) $this->assertStringNotContainsString($notice, $text);
+        }
+        $client->tenant_id = $this->tenant->id + 100;
+        $work->tenant_id = $this->tenant->id + 100;
+        $isolated = $preview->make($this->tenant, $this->contract);
+        $this->assertNotSame($client, $isolated->contratante);
+        $this->assertNotSame($work, $isolated->obra);
+        $this->assertSame('Contratante', $isolated->contratante->nome);
+    }
+
     public function test_new_model_preserves_scopes_and_keeps_signature_fields_on_the_last_page(): void
     {
         $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), $this->payload())->assertSessionHasNoErrors();
