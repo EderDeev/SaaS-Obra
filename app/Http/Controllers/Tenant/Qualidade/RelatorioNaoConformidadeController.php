@@ -279,6 +279,7 @@ class RelatorioNaoConformidadeController extends Controller
             'tenant' => $tenant,
             'rnc' => $rnc,
             'signatureData' => app(\App\Services\RncSignatureService::class)->statusData($tenant, $rnc),
+            'modelFields' => app(\App\Services\RncDocumentSnapshots::class)->rows($tenant, $rnc),
         ]);
     }
 
@@ -292,6 +293,8 @@ class RelatorioNaoConformidadeController extends Controller
             'tenant' => $tenant,
             'mode' => 'edit',
             'rnc' => $rnc,
+            'documentModel' => app(\App\Services\RncDocumentSnapshots::class)->form($tenant, $rnc),
+            'modelFieldValues' => app(\App\Services\RncDocumentSnapshots::class)->legacyValues($tenant, $rnc),
             ...$this->rncFormOptions($request, $tenant, RncPermissions::EDIT),
         ]);
     }
@@ -421,6 +424,7 @@ class RelatorioNaoConformidadeController extends Controller
                 'acoes_corretivas_recomendadas' => $data['acoes_corretivas_recomendadas'],
                 'prazo_resposta_acao_corretiva' => $data['prazo_resposta_acao_corretiva'],
                 'status' => 'aberta',
+                'model_field_values' => $request->input('model_field_values', []),
             ]);
 
             $rnc->projectDocuments()->sync($projectDocuments->pluck('id')->all());
@@ -493,7 +497,10 @@ class RelatorioNaoConformidadeController extends Controller
             $rnc = RelatorioNaoConformidade::whereKey($rnc->id)->lockForUpdate()->firstOrFail();
             abort_if($rnc->signatureRequests()->whereIn('status', ['draft', 'sent', 'pending', 'completed'])->exists(), 422, 'O documento enviado para assinatura não pode ser alterado.');
             app(\App\Services\RncPdfLogoSnapshots::class)->freezeOne($tenant, $rnc);
+            app(\App\Services\RncDocumentSnapshots::class)->freezeOne($tenant, $rnc);
+            $values = \App\Support\RncModelFields::values($rnc->pdf_template_snapshot['field_definitions'], $request->input('model_field_values', $rnc->model_field_values ?? []));
             $rnc->update([
+                'model_field_values' => $values,
                 'contract_id' => $contract->id,
                 'obra_id' => $obra->id,
                 'instrucao_campo_id' => $data['instrucao_campo_id'],
@@ -558,6 +565,11 @@ class RelatorioNaoConformidadeController extends Controller
 
         return [
             'instrucoesCampo' => $instrucoesCampo,
+            'documentModels' => $contracts->mapWithKeys(function ($contract) use ($tenant) {
+                $configuration = \App\Support\RncPdfTemplates::forContract($tenant, $contract->id);
+                return [$contract->id => ['layout' => $configuration['layout'], 'field_definitions' => $configuration['field_definitions'],
+                    'name' => collect(\App\Support\RncPdfTemplates::catalog())->firstWhere('value', $configuration['layout'])['name']]];
+            }),
             'contracts' => $contracts->map(fn (Contract $contract): array => [
                 'id' => $contract->id,
                 'code' => $contract->code,

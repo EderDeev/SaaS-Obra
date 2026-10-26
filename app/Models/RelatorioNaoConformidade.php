@@ -37,6 +37,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'acoes_corretivas_recomendadas',
     'prazo_resposta_acao_corretiva',
     'status',
+    'model_field_values',
 ])]
 class RelatorioNaoConformidade extends Model
 {
@@ -46,7 +47,7 @@ class RelatorioNaoConformidade extends Model
 
     protected $appends = ['formatted_number'];
 
-    protected $hidden = ['pdf_logo_snapshot'];
+    protected $hidden = ['pdf_logo_snapshot', 'pdf_template_snapshot'];
 
     protected static function booted(): void
     {
@@ -54,6 +55,8 @@ class RelatorioNaoConformidade extends Model
             $tenant = new Tenant;
             $tenant->id = $rnc->tenant_id;
             $rnc->pdf_logo_snapshot ??= app(\App\Services\RncPdfLogoSnapshots::class)->current($tenant, (int) $rnc->contract_id);
+            $rnc->pdf_template_snapshot ??= app(\App\Services\RncDocumentSnapshots::class)->current($tenant, (int) $rnc->contract_id);
+            $rnc->model_field_values = \App\Support\RncModelFields::values($rnc->pdf_template_snapshot['field_definitions'], $rnc->model_field_values ?? []);
         });
     }
 
@@ -69,6 +72,8 @@ class RelatorioNaoConformidade extends Model
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
             'pdf_logo_snapshot' => 'array',
+            'pdf_template_snapshot' => 'array',
+            'model_field_values' => 'array',
         ];
     }
 

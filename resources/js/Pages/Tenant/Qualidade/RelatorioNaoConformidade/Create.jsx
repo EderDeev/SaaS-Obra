@@ -2,6 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { projectEap } from '@/Utils/projectEap';
 import ReferencePicker from './ReferencePicker';
+import ModelFields from './ModelFields';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
@@ -100,6 +101,9 @@ export default function RelatorioNaoConformidadeCreate({
     gravidades,
     mode = 'create',
     rnc = null,
+    documentModels = {},
+    documentModel = null,
+    modelFieldValues = null,
 }) {
     const page = usePage();
     const isEditing = mode === 'edit' && rnc;
@@ -139,9 +143,16 @@ export default function RelatorioNaoConformidadeCreate({
         assunto: rnc?.assunto ?? '',
         descricao_problema: rnc?.descricao_problema ?? '',
         observacao: rnc?.observacao ?? '',
+        model_field_values: modelFieldValues ?? rnc?.model_field_values ?? {},
         acoes_corretivas_recomendadas: rnc?.acoes_corretivas_recomendadas ?? '',
         prazo_resposta_acao_corretiva: dateInput(rnc?.prazo_resposta_acao_corretiva) || addDays(initialOpenedAt, 7),
     });
+
+    const activeDocumentModel = isEditing ? documentModel : documentModels[form.data.contract_id];
+    useEffect(() => {
+        if (isEditing) return;
+        form.setData('model_field_values', {});
+    }, [form.data.contract_id]);
 
     useEffect(() => {
         if (isEditing) {
@@ -553,6 +564,8 @@ export default function RelatorioNaoConformidadeCreate({
                             </Field>
                         </div>
 
+                        <ModelFields fields={activeDocumentModel?.field_definitions} name={activeDocumentModel?.name} values={form.data.model_field_values} errors={form.errors}
+                            onChange={(key, value) => form.setData('model_field_values', { ...form.data.model_field_values, [key]: value })} />
                         <MapPicker form={form} />
 
                         <Field label="Assunto" error={form.errors.assunto}>

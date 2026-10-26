@@ -23,6 +23,7 @@ php artisan storage:link || true
 
 # Run with the persistent volume mounted, before accepting traffic or starting jobs.
 php artisan rnc:freeze-pdf-logos
+php artisan rnc:freeze-document-models
 
 # Mantem o agendador geral ativo; o RDO executa uma unica vez por dia, as 00:05.
 php artisan schedule:work &

@@ -68,6 +68,7 @@ class RncSignatureService
         $request = DB::transaction(function () use ($tenant, $rnc, $actor) {
             $rnc = RelatorioNaoConformidade::where('tenant_id', $tenant->id)->whereKey($rnc->id)->lockForUpdate()->firstOrFail();
             app(RncPdfLogoSnapshots::class)->freezeOne($tenant, $rnc);
+            app(RncDocumentSnapshots::class)->freezeOne($tenant, $rnc);
             $evidence = $rnc->evidencias()->latest('id')->first();
             if (!$evidence) throw ValidationException::withMessages(['signatures' => 'Registre as evidências antes de enviar a RNC para assinatura.']);
             if ($rnc->signatureRequests()->whereIn('status', ['draft', 'sent', 'pending', 'completed'])->exists()) {
@@ -87,7 +88,7 @@ class RncSignatureService
         try {
             $rnc = $request->rnc;
             $signers = $request->request_payload['signers'];
-            $template = RncPdfTemplates::forContract($tenant, $rnc->contract_id);
+            $template = app(RncDocumentSnapshots::class)->forRnc($tenant, $rnc);
             $template = app(RncPdfLogoSnapshots::class)->template($tenant, $rnc, $template);
             $pdf = $this->renderer->render($tenant, $rnc->fresh(), 'evidence', $signers, $template);
             $bytes = $pdf->output();

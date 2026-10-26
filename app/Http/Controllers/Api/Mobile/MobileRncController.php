@@ -41,6 +41,10 @@ class MobileRncController extends Controller
         return response()->json([
             'tenant' => ['id' => $tenant->id, 'slug' => $tenant->slug, 'name' => $tenant->name],
             'contracts' => $contracts->values(),
+            'document_models' => $contracts->mapWithKeys(function ($contract) use ($tenant) {
+                $config = \App\Support\RncPdfTemplates::forContract($tenant, $contract->id);
+                return [$contract->id => ['layout' => $config['layout'], 'field_definitions' => $config['field_definitions']]];
+            }),
             'obras' => $tenant->obras()
                 ->whereIn('contract_id', $contractIds)
                 ->orderBy('codigo')
@@ -171,6 +175,7 @@ class MobileRncController extends Controller
                 'acoes_corretivas_recomendadas' => $data['acoes_corretivas_recomendadas'],
                 'prazo_resposta_acao_corretiva' => $data['prazo_resposta_acao_corretiva'],
                 'status' => 'aberta',
+                'model_field_values' => $request->input('model_field_values', []),
             ]);
 
             $rnc->projectDocuments()->sync($projectDocuments->pluck('id')->all());

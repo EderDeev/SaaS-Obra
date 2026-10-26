@@ -18,7 +18,8 @@ function previewBody(payload) {
     const body = new FormData();
     for (const [key, value] of Object.entries(payload)) {
         if (value === null || value === undefined) continue;
-        if (value instanceof File) body.append(key, value);
+        if (key === 'field_definitions') body.append('fields_json', JSON.stringify(value));
+        else if (value instanceof File) body.append(key, value);
         else if (typeof value === 'object') {
             for (const [name, option] of Object.entries(value)) body.append(`${key}[${name}]`, option ?? '');
         } else body.append(key, typeof value === 'boolean' ? (value ? '1' : '0') : value);

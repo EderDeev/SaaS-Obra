@@ -9,7 +9,7 @@ use Illuminate\Support\Arr;
 class RncPdfTemplates
 {
     public const VIEWS = ['standard' => 'pdf.rnc', 'inspection_form' => 'pdf.rnc-form'];
-    public const EDITABLE_OPTIONS = ['title', 'color', 'contract_notes', 'work_type', 'pavement_type'];
+    public const EDITABLE_OPTIONS = ['title', 'color', 'contract_notes'];
     public const LOGO_OPTIONS = ['left_logo_path', 'right_logo_path', 'left_logo_name', 'right_logo_name'];
 
     public static function catalog(): array
@@ -25,11 +25,11 @@ class RncPdfTemplates
         return [
             'title' => $layout === 'inspection_form' ? 'REGISTRO DE NÃO CONFORMIDADE - RNC' : 'Relatório de Não Conformidade',
             'color' => $layout === 'inspection_form' ? '#354150' : '#182033',
-            'contract_notes' => '', 'work_type' => '', 'pavement_type' => '',
+            'contract_notes' => '',
         ];
     }
 
-    public static function configuration(string $layout = 'standard', array $options = []): array
+    public static function configuration(string $layout = 'standard', array $options = [], ?array $fields = null): array
     {
         $layout = array_key_exists($layout, self::VIEWS) ? $layout : 'standard';
         $defaults = self::defaults($layout);
@@ -39,7 +39,7 @@ class RncPdfTemplates
         }
         $options['title'] = $options['title'] ?: $defaults['title'];
         if (! preg_match('/^#[0-9a-fA-F]{6}$/', $options['color'])) $options['color'] = $defaults['color'];
-        return ['layout' => $layout, 'options' => $options];
+        return ['layout' => $layout, 'options' => $options, 'field_definitions' => RncModelFields::definitions($layout, $fields)];
     }
 
     public static function logoDirectory(Tenant $tenant, int $contractId): string
@@ -57,6 +57,6 @@ class RncPdfTemplates
     {
         $setting = RncPdfSetting::where('tenant_id', $tenant->id)->where('contract_id', $contractId)->first();
 
-        return self::configuration($setting?->layout ?? 'standard', $setting?->options ?? []);
+        return self::configuration($setting?->layout ?? 'standard', $setting?->options ?? [], $setting?->field_definitions);
     }
 }

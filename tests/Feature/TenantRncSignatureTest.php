@@ -177,7 +177,7 @@ class TenantRncSignatureTest extends TestCase
         $this->assertNotNull($this->rnc->fresh()->finalized_at);
     }
 
-    public function test_inspection_model_is_sent_for_signature_and_later_settings_changes_preserve_the_original(): void
+    public function test_creation_model_is_sent_for_signature_and_later_settings_changes_preserve_the_original(): void
     {
         // Existing RNC from before this feature: preserve its company image even before sending.
         $oldLogo = UploadedFile::fake()->image('legacy.png', 300, 100);
@@ -191,12 +191,12 @@ class TenantRncSignatureTest extends TestCase
         $this->configure();
         $request = $this->send();
         $original = Storage::disk('local')->get($request->unsigned_pdf_path);
-        $this->assertSame('inspection_form', $request->request_payload['pdf_template']['layout']);
+        $this->assertSame('standard', $request->request_payload['pdf_template']['layout']);
         $originalLogo = $request->request_payload['pdf_template']['options']['left_logo_path'];
         $this->assertSame($this->rnc->fresh()->pdf_logo_snapshot['left_logo_path'], $originalLogo);
         Storage::disk('local')->assertExists($originalLogo);
         $page = $request->request_payload['signature_page'];
-        $this->assertGreaterThanOrEqual(4, $page);
+        $this->assertGreaterThanOrEqual(1, $page);
         $sent = Http::recorded(fn ($http) => str_ends_with($http->url(), '/createdocument'))->first()[0]->data();
         foreach ($sent['signers'] as $signer) {
             $this->assertSame($page, $signer['widgets'][0]['page']);
@@ -205,7 +205,7 @@ class TenantRncSignatureTest extends TestCase
         $this->post($url, ['contract_id' => $this->contract->id, 'layout' => 'standard', 'options' => \App\Support\RncPdfTemplates::defaults('standard'), 'left_logo' => UploadedFile::fake()->image('replacement.png')])->assertSessionHasNoErrors();
         $this->get(route('tenant.qualidade.rnc.signatures.unsigned', [$this->tenant, $this->rnc, $request]))->assertOk()->assertDownload();
         $this->assertSame($original, Storage::disk('local')->get($request->fresh()->unsigned_pdf_path));
-        $this->assertSame('inspection_form', $request->fresh()->request_payload['pdf_template']['layout']);
+        $this->assertSame('standard', $request->fresh()->request_payload['pdf_template']['layout']);
         $this->assertSame($originalLogo, $request->fresh()->request_payload['pdf_template']['options']['left_logo_path']);
         $this->assertNotSame($originalLogo, \App\Support\RncPdfTemplates::forContract($this->tenant, $this->contract->id)['options']['left_logo_path']);
         Storage::disk('local')->assertExists($originalLogo);
