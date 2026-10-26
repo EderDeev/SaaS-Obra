@@ -113,9 +113,9 @@
                     <td style="width:14%" class="label-right">Coord. N:</td><td style="width:17%"><span class="field-box field-center">{{ $rnc->latitude ?? '-' }}</span></td>
                 </tr><tr><td colspan="4"></td><td class="label-right">Coord. E:</td><td><span class="field-box field-center">{{ $rnc->longitude ?? '-' }}</span></td></tr></table>
                 <table class="identity-table"><tr>
-                    <td style="width:14%" class="label-right">Tipo de Obra:</td><td style="width:41%">
+                    <td style="width:14%" class="label-right">{{ collect($modelFields)->firstWhere('key', 'work_type')['label'] ?? 'Tipo de Obra' }}:</td><td style="width:41%">
                         @foreach (['Pista Nova', 'Pista Existente'] as $type)<span class="choice"><span class="check">{{ $normalize($pdfOptions['work_type']) === $normalize($type) ? 'X' : '' }}</span>{{ $type }}</span>@endforeach
-                    </td><td style="width:21%" class="label-right">Tipo de Pavimento:</td><td style="width:24%">
+                    </td><td style="width:21%" class="label-right">{{ collect($modelFields)->firstWhere('key', 'pavement_type')['label'] ?? 'Tipo de Pavimento' }}:</td><td style="width:24%">
                         @foreach (['Rígido', 'Flexível'] as $type)<span class="choice"><span class="check">{{ $normalize($pdfOptions['pavement_type']) === $normalize($type) ? 'X' : '' }}</span>{{ $type }}</span>@endforeach
                     </td>
                 </tr></table>
@@ -133,6 +133,12 @@
     </header>
 
     <div class="bar">Descrição da Ocorrência</div>
+    @php
+        $additionalFields = array_values(array_filter($modelFields, fn ($field) => !in_array($field['key'], ['work_type', 'pavement_type'], true)));
+    @endphp
+    @if (count($additionalFields))
+        <div style="border:1pt solid #1b1b1b;">@include('pdf.partials.rnc-model-fields', ['fields' => $additionalFields])</div>
+    @endif
     <div class="rail-block opening-observations">
         <div class="rail-label">OBSERVAÇÕES</div>
         <div class="rail-content">

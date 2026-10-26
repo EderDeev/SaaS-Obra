@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Tenant\Qualidade;
 use App\Http\Controllers\Controller;
 use App\Models\{Contract, RncPdfSetting, RncSignatureSetting, Tenant};
 use App\Services\{RncPdfLogoSnapshots, RncPdfPreview, RncPdfRenderer, RncSignatureService};
-use App\Support\{RncPdfTemplates, RncPermissions};
+use App\Support\{RncModelFields, RncPdfTemplates, RncPermissions};
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
@@ -24,7 +24,7 @@ class RncPdfSettingController extends Controller
             ->orderBy('code')->get(['id', 'code', 'name']);
         $records = RncPdfSetting::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))->get();
         $settings = $records->mapWithKeys(function ($setting) {
-            $config = RncPdfTemplates::configuration($setting->layout, $setting->options ?? []);
+            $config = RncPdfTemplates::configuration($setting->layout, $setting->options ?? [], $setting->field_definitions);
             $config['options'] = Arr::only($config['options'], RncPdfTemplates::EDITABLE_OPTIONS);
             return [$setting->contract_id => $config];
         });
@@ -42,6 +42,7 @@ class RncPdfSettingController extends Controller
         return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/PdfSettings', [
             'tenant' => $tenant, 'contracts' => $contracts, 'settings' => $settings, 'logos' => $logos, 'templates' => RncPdfTemplates::catalog(),
             'defaults' => collect(array_keys(RncPdfTemplates::VIEWS))->mapWithKeys(fn ($layout) => [$layout => RncPdfTemplates::defaults($layout)]),
+            'defaultFields' => collect(array_keys(RncPdfTemplates::VIEWS))->mapWithKeys(fn ($layout) => [$layout => RncModelFields::defaults($layout)]),
         ]);
     }
 
@@ -63,6 +64,7 @@ class RncPdfSettingController extends Controller
             'right_logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096', 'dimensions:max_width=4096,max_height=4096'],
             'remove_left_logo' => ['sometimes', 'boolean'],
             'remove_right_logo' => ['sometimes', 'boolean'],
+            'fields_json' => ['sometimes', 'string', 'json', 'max:50000'],
         ]);
         $contract = $tenant->contracts()->findOrFail($data['contract_id']);
         abort_unless(RncPermissions::can($request->user(), $tenant, RncPermissions::RESPONSIBLES, $contract), 403);
@@ -75,7 +77,10 @@ class RncPdfSettingController extends Controller
                 $options[$side.'_logo_name'] = '';
             }
         }
-        return [$contract, RncPdfTemplates::configuration($data['layout'], $options)];
+        $fields = $request->has('fields_json')
+            ? RncModelFields::validateDefinitions($data['layout'], json_decode($data['fields_json'], true))
+            : ($data['layout'] === $existing['layout'] ? $existing['field_definitions'] : RncModelFields::defaults($data['layout']));
+        return [$contract, RncPdfTemplates::configuration($data['layout'], $options, $fields)];
     }
 
     public function store(Request $request, Tenant $tenant)
@@ -97,6 +102,7 @@ class RncPdfSettingController extends Controller
                 // Creation uses the same tenant lock, so every RNC gets one complete logo version.
                 Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
                 app(RncPdfLogoSnapshots::class)->freezeContract($tenant, $contract->id);
+                app(\App\Services\RncDocumentSnapshots::class)->freezeContract($tenant, $contract->id);
                 $current = RncPdfTemplates::forContract($tenant, $contract->id);
                 $options = [...Arr::only($configuration['options'], RncPdfTemplates::EDITABLE_OPTIONS), ...Arr::only($current['options'], RncPdfTemplates::LOGO_OPTIONS)];
                 foreach (['left', 'right'] as $side) {
@@ -107,7 +113,7 @@ class RncPdfSettingController extends Controller
                 }
                 // Old files belong to historical RNCs and must never be replaced or deleted.
                 RncPdfSetting::updateOrCreate(['tenant_id' => $tenant->id, 'contract_id' => $contract->id],
-                    [...RncPdfTemplates::configuration($configuration['layout'], [...$options, ...$uploaded]), 'updated_by_id' => $request->user()->id]);
+                    [...RncPdfTemplates::configuration($configuration['layout'], [...$options, ...$uploaded], $configuration['field_definitions']), 'updated_by_id' => $request->user()->id]);
             });
         } catch (\Throwable $error) {
             Storage::disk('local')->delete($created);

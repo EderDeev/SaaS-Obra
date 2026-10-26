@@ -35,7 +35,7 @@ class TenantRncPdfSettingsTest extends TestCase
         return ['contract_id' => ($contract ?? $this->contract)->id, 'layout' => $layout, 'options' => RncPdfTemplates::defaults($layout)];
     }
 
-    private function createRnc(): RelatorioNaoConformidade
+    private function createRnc(array $values = []): RelatorioNaoConformidade
     {
         $work = $this->tenant->obras()->firstOrCreate(['contract_id' => $this->contract->id, 'codigo' => 'RNC-OB'], ['nome' => 'Obra', 'tipo' => 'pai']);
         $company = $this->tenant->empresas()->firstOrCreate(['contract_id' => $this->contract->id, 'cnpj' => '11.111.111/0001-11'], [
@@ -45,7 +45,7 @@ class TenantRncPdfSettingsTest extends TestCase
             'obra_id' => $work->id, 'contratante_empresa_id' => $company->id, 'contratada_empresa_id' => $company->id,
             'created_by_id' => $this->owner->id, 'opened_at' => '2026-10-20', 'natureza' => 'Qualidade', 'gravidade' => 'Grave',
             'assunto' => 'Preservar a identidade', 'descricao_problema' => 'Problema', 'acoes_corretivas_recomendadas' => 'Corrigir',
-            'prazo_resposta_acao_corretiva' => '2026-10-30', 'status' => 'aberta']);
+            'prazo_resposta_acao_corretiva' => '2026-10-30', 'status' => 'aberta', 'model_field_values' => $values]);
     }
 
     private function headerImages(RelatorioNaoConformidade $rnc, string $layout = 'standard', string $scope = 'opening'): array
@@ -296,7 +296,7 @@ class TenantRncPdfSettingsTest extends TestCase
             new \App\Models\RelatorioNaoConformidadeEvidenciaPhoto(['position' => 1, 'path' => 'test-photo.jpg', 'mime_type' => 'image/jpeg', 'comment' => 'Correção do trecho']),
         ]));
         $options = RncPdfTemplates::defaults('inspection_form');
-        $options['work_type'] = 'Pista Nova'; $options['pavement_type'] = 'Flexível';
+        $rnc->model_field_values = ['work_type' => 'Pista Nova', 'pavement_type' => 'Flexível'];
         $pdf = app(RncPdfRenderer::class)->render($this->tenant, $rnc, 'evidence', [], ['layout' => 'inspection_form', 'options' => $options]);
         $dom = $pdf->getDomPDF()->getDom();
         $this->assertStringContainsString('FIM_DA_DESCRICAO', $dom->textContent);

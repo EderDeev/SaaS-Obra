@@ -23,7 +23,7 @@ const dateTime = (date) => date ? new Intl.DateTimeFormat('pt-BR', {
 const companyLabel = (company) => [company?.sigla, company?.nome].filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(' — ');
 const proposalLabels = { pending: 'Em análise', approved: 'Aprovada', rejected: 'Reprovada' };
 
-export default function RelatorioNaoConformidadeShow({ tenant, rnc, signatureData }) {
+export default function RelatorioNaoConformidadeShow({ tenant, rnc, signatureData, modelFields = [] }) {
     const { flash = {} } = usePage().props;
     const actions = rnc.acoes_corretivas || [];
     const evidences = rnc.evidencias || [];
@@ -168,6 +168,7 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc, signatureDat
                         <Detail label="Contratante"><CompanyIdentity company={rnc.contratante} /></Detail>
                         <Detail label="Contratada"><CompanyIdentity company={rnc.contratada} /></Detail>
                         <Detail label="Coordenadas">{rnc.latitude != null && rnc.longitude != null ? `${rnc.latitude}, ${rnc.longitude}` : 'Sem coordenadas'}</Detail>
+                        {modelFields.map((field) => <Detail key={field.key} label={field.label}>{field.value}</Detail>)}
                         {rnc.instrucao_campo && <div className="sm:col-span-2 lg:col-span-3"><Detail label="IC de referência">
                             {rnc.instrucao_campo.can_view
                                 ? <Link className="font-semibold text-[var(--primary)] hover:underline" href={route('tenant.qualidade.ic.show', [tenant.slug, rnc.instrucao_campo.id])}>IC {rnc.instrucao_campo.formatted_number}</Link>

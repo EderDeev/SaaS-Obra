@@ -23,8 +23,12 @@ class RncPdfRenderer
         abort_unless((int) $rnc->tenant_id === (int) $tenant->id, 404);
         abort_unless(in_array($scope, ['opening', 'analysis', 'evidence'], true), 422);
         $template ??= RncPdfTemplates::forContract($tenant, $rnc->contract_id);
-        $configuration = RncPdfTemplates::configuration($template['layout'] ?? 'standard', $template['options'] ?? []);
+        if ($rnc->exists && ! ($template['preview'] ?? false)) $template = app(RncDocumentSnapshots::class)->forRnc($tenant, $rnc);
+        $configuration = RncPdfTemplates::configuration($template['layout'] ?? 'standard', $template['options'] ?? [], $template['field_definitions'] ?? null);
         $options = $configuration['options'];
+        $values = $rnc->model_field_values ?? ($rnc->exists ? app(RncDocumentSnapshots::class)->legacyValues($tenant, $rnc) : []);
+        $modelFields = \App\Support\RncModelFields::rows($configuration['field_definitions'], $values);
+        foreach (['work_type', 'pavement_type'] as $key) $options[$key] = $values[$key] ?? ($options[$key] ?? '');
         $logoSnapshot = $rnc->exists && ! ($template['preview'] ?? false)
             ? app(RncPdfLogoSnapshots::class)->forRnc($tenant, $rnc) : null;
         if ($logoSnapshot) {
@@ -53,6 +57,7 @@ class RncPdfRenderer
             'contratadaLogo' => $logo('right'), 'photos' => $this->formatPdfPhotos($rnc->photos, $raster, $configuration['layout'] === 'inspection_form'),
             'leftLogoName' => $logoSnapshot['left_logo_label'] ?? '', 'rightLogoName' => $logoSnapshot['right_logo_label'] ?? '',
             'pdfOptions' => $options, 'isPreview' => $template['preview'] ?? false,
+            'modelFields' => $modelFields,
             'approvedAction' => $latestAction, 'latestAction' => $latestAction,
             'latestEvidence' => $latestEvidence, 'evidencePhotos' => $latestEvidence ? $this->formatPdfPhotos($latestEvidence->photos, $raster, $configuration['layout'] === 'inspection_form') : collect(),
             'flowRows' => $rows, 'canRasterizePdfImages' => $raster, 'signatureSigners' => $signatureSigners,

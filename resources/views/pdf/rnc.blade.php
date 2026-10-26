@@ -324,6 +324,9 @@
         @endif
     </section>
 
+    @if (count($modelFields))
+        <section class="section"><h2 class="section-title">Informações do modelo</h2>@include('pdf.partials.rnc-model-fields', ['fields' => $modelFields])</section>
+    @endif
     <section class="section">
         <h2 class="section-title">Observa&ccedil;&otilde;es e coment&aacute;rios</h2>
         <div class="text-box">
