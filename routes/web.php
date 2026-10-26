@@ -436,6 +436,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/qualidade/rnc/parametrizacao', [RncPdfSettingController::class, 'index'])->name('qualidade.rnc.settings.index');
         Route::post('/qualidade/rnc/parametrizacao', [RncPdfSettingController::class, 'store'])->name('qualidade.rnc.settings.store');
         Route::post('/qualidade/rnc/parametrizacao/previa', [RncPdfSettingController::class, 'preview'])->name('qualidade.rnc.settings.preview');
+        Route::get('/qualidade/rnc/parametrizacao/logos/{contract}/{side}', [RncPdfSettingController::class, 'logo'])->whereIn('side', ['left', 'right'])->name('qualidade.rnc.settings.logo');
         Route::get('/qualidade/rnc', [RelatorioNaoConformidadeController::class, 'index'])->name('qualidade.rnc.index');
         Route::get('/qualidade/rnc/tour-preview', [RelatorioNaoConformidadeController::class, 'tourPreview'])->name('qualidade.rnc.tour-preview');
         Route::get('/qualidade/rnc/dashboard', [RelatorioNaoConformidadeController::class, 'dashboard'])->name('qualidade.rnc.dashboard');

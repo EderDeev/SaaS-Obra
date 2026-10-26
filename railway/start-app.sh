@@ -21,6 +21,9 @@ export DB_PROTECT_DESTRUCTIVE="${DB_PROTECT_DESTRUCTIVE:-true}"
 php artisan config:clear
 php artisan storage:link || true
 
+# Run with the persistent volume mounted, before accepting traffic or starting jobs.
+php artisan rnc:freeze-pdf-logos
+
 # Mantem o agendador geral ativo; o RDO executa uma unica vez por dia, as 00:05.
 php artisan schedule:work &
 

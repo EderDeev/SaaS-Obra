@@ -492,6 +492,7 @@ class RelatorioNaoConformidadeController extends Controller
         DB::transaction(function () use ($request, $tenant, $rnc, $contract, $obra, $projectDocument, $projectDocuments, $disciplina, $contratante, $contratada, $data): void {
             $rnc = RelatorioNaoConformidade::whereKey($rnc->id)->lockForUpdate()->firstOrFail();
             abort_if($rnc->signatureRequests()->whereIn('status', ['draft', 'sent', 'pending', 'completed'])->exists(), 422, 'O documento enviado para assinatura não pode ser alterado.');
+            app(\App\Services\RncPdfLogoSnapshots::class)->freezeOne($tenant, $rnc);
             $rnc->update([
                 'contract_id' => $contract->id,
                 'obra_id' => $obra->id,

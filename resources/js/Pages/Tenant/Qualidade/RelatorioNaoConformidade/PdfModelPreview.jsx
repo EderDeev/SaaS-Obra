@@ -6,8 +6,28 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import PdfPreviewPage from './PdfPreviewPage';
 import PdfPreviewDocument from './PdfPreviewDocument';
 
+const fileIds = new WeakMap();
+let nextFileId = 0;
+function fingerprint(_key, value) {
+    if (!(value instanceof File)) return value;
+    if (!fileIds.has(value)) fileIds.set(value, ++nextFileId);
+    return { file: value.name, id: fileIds.get(value) };
+}
+
+function previewBody(payload) {
+    const body = new FormData();
+    for (const [key, value] of Object.entries(payload)) {
+        if (value === null || value === undefined) continue;
+        if (value instanceof File) body.append(key, value);
+        else if (typeof value === 'object') {
+            for (const [name, option] of Object.entries(value)) body.append(`${key}[${name}]`, option ?? '');
+        } else body.append(key, typeof value === 'boolean' ? (value ? '1' : '0') : value);
+    }
+    return body;
+}
+
 export default function PdfModelPreview({ name, endpoint, payload }) {
-    const requestKey = JSON.stringify(payload);
+    const requestKey = JSON.stringify(payload, fingerprint);
     const [preview, setPreview] = useState(null);
     const [retry, setRetry] = useState(0);
     const [hover, setHover] = useState(null);
@@ -32,7 +52,7 @@ export default function PdfModelPreview({ name, endpoint, payload }) {
         setHover(null);
         const timer = setTimeout(async () => {
             try {
-                const response = await axios.post(endpoint, JSON.parse(requestKey), {
+                const response = await axios.post(endpoint, previewBody(payload), {
                     responseType: 'blob', signal: controller.signal, timeout: 60000,
                     headers: { Accept: 'application/json' },
                 });

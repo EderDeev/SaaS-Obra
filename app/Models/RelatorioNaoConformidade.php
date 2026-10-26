@@ -46,6 +46,17 @@ class RelatorioNaoConformidade extends Model
 
     protected $appends = ['formatted_number'];
 
+    protected $hidden = ['pdf_logo_snapshot'];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $rnc) {
+            $tenant = new Tenant;
+            $tenant->id = $rnc->tenant_id;
+            $rnc->pdf_logo_snapshot ??= app(\App\Services\RncPdfLogoSnapshots::class)->current($tenant, (int) $rnc->contract_id);
+        });
+    }
+
     protected function casts(): array
     {
         return [
@@ -57,6 +68,7 @@ class RelatorioNaoConformidade extends Model
             'prazo_resposta_acao_corretiva' => 'date',
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
+            'pdf_logo_snapshot' => 'array',
         ];
     }
 

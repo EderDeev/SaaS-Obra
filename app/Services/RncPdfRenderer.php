@@ -2,13 +2,13 @@
 
 namespace App\Services;
 
-use App\Models\Empresa;
 use App\Models\RelatorioNaoConformidade;
 use App\Models\Tenant;
 use App\Support\RncPdfTemplates;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\UploadedFile;
 
 class RncPdfRenderer
 {
@@ -18,13 +18,20 @@ class RncPdfRenderer
     private const PDF_LOGO_WIDTH = 480;
     private const PDF_LOGO_HEIGHT = 180;
 
-    public function render(Tenant $tenant, RelatorioNaoConformidade $rnc, string $scope = 'evidence', array $signatureSigners = [], ?array $template = null)
+    public function render(Tenant $tenant, RelatorioNaoConformidade $rnc, string $scope = 'evidence', array $signatureSigners = [], ?array $template = null, array $logoUploads = [])
     {
         abort_unless((int) $rnc->tenant_id === (int) $tenant->id, 404);
         abort_unless(in_array($scope, ['opening', 'analysis', 'evidence'], true), 422);
         $template ??= RncPdfTemplates::forContract($tenant, $rnc->contract_id);
         $configuration = RncPdfTemplates::configuration($template['layout'] ?? 'standard', $template['options'] ?? []);
         $options = $configuration['options'];
+        $logoSnapshot = $rnc->exists && ! ($template['preview'] ?? false)
+            ? app(RncPdfLogoSnapshots::class)->forRnc($tenant, $rnc) : null;
+        if ($logoSnapshot) {
+            foreach (RncPdfTemplates::LOGO_OPTIONS as $key) $options[$key] = $logoSnapshot[$key] ?? '';
+            $logoUploads = [];
+        }
+        $logoContractId = (int) ($logoSnapshot['contract_id'] ?? $rnc->contract_id);
         $rnc->loadMissing(['tenant', 'contract', 'obra', 'disciplina', 'contratante', 'contratada', 'creator', 'finalizedBy', 'instrucaoCampo',
             'projectDocuments.latestVersion', 'projectDocument.latestVersion', 'photos', 'acoesCorretivas.user', 'acoesCorretivas.reviewer', 'evidencias.user', 'evidencias.photos', 'signatureRequests.signers']);
         $latestAction = $rnc->acoesCorretivas->sortByDesc(fn ($action) => sprintf('%s-%020d', $action->submitted_at, $action->id))->first();
@@ -33,21 +40,18 @@ class RncPdfRenderer
         $rows = $this->rncFlowRows($rnc, $latestAction, $latestEvidence);
         $rows = array_slice($rows, 0, $scope === 'opening' ? 2 : ($scope === 'analysis' ? 4 : 6));
         if ($signatureSigners) $rows = array_slice($rows, 0, 5);
-        $company = function (string $source) use ($tenant, $rnc): ?Empresa {
-            $company = match ($source) {
-                'contratante' => $rnc->contratante,
-                'contratada' => $rnc->contratada,
-                'fiscalizadora' => $rnc->contract?->fiscalizadoraEmpresa,
-                default => null,
-            };
-            return $company && (int) $company->tenant_id === (int) $tenant->id ? $company : null;
+        $logo = function (string $side) use ($tenant, $logoContractId, $logoSnapshot, $options, $logoUploads): ?string {
+            if ($logoSnapshot && (int) ($logoSnapshot['tenant_id'] ?? 0) !== (int) $tenant->id) return null;
+            $upload = $logoUploads[$side] ?? null;
+            if ($upload instanceof UploadedFile) return $this->containedPdfImageDataUri($upload->getRealPath(), self::PDF_LOGO_WIDTH, self::PDF_LOGO_HEIGHT);
+            $path = $options[$side.'_logo_path'];
+            if (! RncPdfTemplates::validLogoPath($tenant, $logoContractId, $path) || ! Storage::disk('local')->exists($path)) return null;
+            return $this->containedPdfImageDataUri(Storage::disk('local')->path($path), self::PDF_LOGO_WIDTH, self::PDF_LOGO_HEIGHT);
         };
-        $leftCompany = $company($options['left_logo']);
-        $rightCompany = $company($options['right_logo']);
         return Pdf::loadView(RncPdfTemplates::VIEWS[$configuration['layout']], [
-            'tenant' => $tenant, 'rnc' => $rnc, 'contratanteLogo' => $this->companyLogoDataUri($leftCompany),
-            'contratadaLogo' => $this->companyLogoDataUri($rightCompany), 'photos' => $this->formatPdfPhotos($rnc->photos, $raster, $configuration['layout'] === 'inspection_form'),
-            'leftLogoName' => $leftCompany?->nome ?? '', 'rightLogoName' => $rightCompany?->nome ?? '',
+            'tenant' => $tenant, 'rnc' => $rnc, 'contratanteLogo' => $logo('left'),
+            'contratadaLogo' => $logo('right'), 'photos' => $this->formatPdfPhotos($rnc->photos, $raster, $configuration['layout'] === 'inspection_form'),
+            'leftLogoName' => $logoSnapshot['left_logo_label'] ?? '', 'rightLogoName' => $logoSnapshot['right_logo_label'] ?? '',
             'pdfOptions' => $options, 'isPreview' => $template['preview'] ?? false,
             'approvedAction' => $latestAction, 'latestAction' => $latestAction,
             'latestEvidence' => $latestEvidence, 'evidencePhotos' => $latestEvidence ? $this->formatPdfPhotos($latestEvidence->photos, $raster, $configuration['layout'] === 'inspection_form') : collect(),
@@ -225,19 +229,6 @@ class RncPdfRenderer
         }
 
         return 'data:image/jpeg;base64,'.base64_encode($jpeg);
-    }
-
-    private function companyLogoDataUri(?Empresa $empresa): ?string
-    {
-        if (! $empresa?->logo_path || ! Storage::disk('public')->exists($empresa->logo_path)) {
-            return null;
-        }
-
-        return $this->containedPdfImageDataUri(
-            Storage::disk('public')->path($empresa->logo_path),
-            self::PDF_LOGO_WIDTH,
-            self::PDF_LOGO_HEIGHT,
-        );
     }
 
     private function containedPdfImageDataUri(string $sourcePath, int $targetCanvasWidth, int $targetCanvasHeight): ?string

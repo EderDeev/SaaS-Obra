@@ -16,6 +16,7 @@ RUN apt-get update \
         libicu-dev \
         libpng-dev \
         libpq-dev \
+        libwebp-dev \
         libzip-dev \
         ocrmypdf \
         poppler-utils \
@@ -27,7 +28,7 @@ RUN apt-get update \
         unpaper \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j"$(nproc)" gd intl pdo_pgsql zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

@@ -6,6 +6,7 @@ use App\Models\{Contract, RelatorioNaoConformidade, RelatorioNaoConformidadeResp
 use App\Services\{RncPdfPreview, RncPdfRenderer};
 use App\Support\{RncPdfTemplates, RncPermissions};
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\{Http, Notification, Storage};
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -21,7 +22,7 @@ class TenantRncPdfSettingsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Http::preventStrayRequests(); Notification::fake(); Storage::fake('public');
+        Http::preventStrayRequests(); Notification::fake(); Storage::fake('public'); Storage::fake('local');
         $this->tenant = Tenant::create(['name' => 'Modelos RNC', 'slug' => 'rnc-models', 'status' => 'active', 'plan' => 'starter']);
         $this->owner = User::factory()->create();
         $this->tenant->memberships()->create(['user_id' => $this->owner->id, 'role' => 'tenant_owner', 'status' => 'active']);
@@ -32,6 +33,113 @@ class TenantRncPdfSettingsTest extends TestCase
     private function payload(?Contract $contract = null, string $layout = 'inspection_form'): array
     {
         return ['contract_id' => ($contract ?? $this->contract)->id, 'layout' => $layout, 'options' => RncPdfTemplates::defaults($layout)];
+    }
+
+    private function createRnc(): RelatorioNaoConformidade
+    {
+        $work = $this->tenant->obras()->firstOrCreate(['contract_id' => $this->contract->id, 'codigo' => 'RNC-OB'], ['nome' => 'Obra', 'tipo' => 'pai']);
+        $company = $this->tenant->empresas()->firstOrCreate(['contract_id' => $this->contract->id, 'cnpj' => '11.111.111/0001-11'], [
+            'nome' => 'Empresa original', 'sigla' => 'EMP', 'tipo_empresa_id' => \App\Models\TipoEmpresa::firstOrCreate(['nome' => 'gerenciadora'])->id,
+        ]);
+        return RelatorioNaoConformidade::create(['tenant_id' => $this->tenant->id, 'contract_id' => $this->contract->id,
+            'obra_id' => $work->id, 'contratante_empresa_id' => $company->id, 'contratada_empresa_id' => $company->id,
+            'created_by_id' => $this->owner->id, 'opened_at' => '2026-10-20', 'natureza' => 'Qualidade', 'gravidade' => 'Grave',
+            'assunto' => 'Preservar a identidade', 'descricao_problema' => 'Problema', 'acoes_corretivas_recomendadas' => 'Corrigir',
+            'prazo_resposta_acao_corretiva' => '2026-10-30', 'status' => 'aberta']);
+    }
+
+    private function headerImages(RelatorioNaoConformidade $rnc, string $layout = 'standard', string $scope = 'opening'): array
+    {
+        $template = RncPdfTemplates::configuration($layout, RncPdfTemplates::forContract($this->tenant, $this->contract->id)['options']);
+        $images = app(RncPdfRenderer::class)->render($this->tenant, $rnc->fresh(), $scope, [], $template)->getDomPDF()->getDom()->getElementsByTagName('img');
+        return array_map(fn ($image) => $image->getAttribute('src'), iterator_to_array($images));
+    }
+
+    public function test_every_rnc_keeps_its_creation_logos_after_replacement_removal_and_company_changes(): void
+    {
+        $url = route('tenant.qualidade.rnc.settings.store', $this->tenant);
+        $this->post($url, [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('original.png', 300, 100), 'right_logo' => UploadedFile::fake()->image('right.png', 100, 300)])->assertSessionHasNoErrors();
+        $old = $this->createRnc();
+        $snapshot = $old->pdf_logo_snapshot;
+        $images = $this->headerImages($old);
+        $this->assertCount(2, $images);
+        $this->assertFalse($old->signatureRequests()->exists());
+        $this->assertArrayNotHasKey('pdf_logo_snapshot', $old->toArray());
+        $this->post($url, [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('new.png', 100, 300), 'remove_right_logo' => true])->assertSessionHasNoErrors();
+        $new = $this->createRnc();
+        $this->assertNotSame($snapshot['left_logo_path'], $new->pdf_logo_snapshot['left_logo_path']);
+        $this->assertSame('', $new->pdf_logo_snapshot['right_logo_path']);
+        $this->assertCount(1, $this->headerImages($new));
+        $old->contratante->update(['nome' => 'Empresa alterada', 'logo_path' => 'inexistente.png']);
+        $old->update(['status' => 'notificada', 'descricao_problema' => 'Problema editado']);
+        $other = $this->tenant->contracts()->create(['code' => 'NOVO-CONTRATO', 'name' => 'Outro', 'status' => 'active']);
+        $old->update(['contract_id' => $other->id]);
+        foreach (array_keys(RncPdfTemplates::VIEWS) as $layout) {
+            foreach (['opening', 'analysis', 'evidence'] as $scope) $this->assertSame($images, $this->headerImages($old, $layout, $scope));
+        }
+        $this->assertSame($snapshot, $old->fresh()->pdf_logo_snapshot);
+        foreach (['left', 'right'] as $side) Storage::disk('local')->assertExists($snapshot[$side.'_logo_path']);
+        $this->assertDatabaseCount('rdo_signature_requests', 0);
+    }
+
+    public function test_an_rnc_created_without_logos_stays_without_logos_after_an_upload(): void
+    {
+        $old = $this->createRnc();
+        $this->assertSame('', $old->pdf_logo_snapshot['left_logo_path']);
+        $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('first.png')])->assertSessionHasNoErrors();
+        $this->assertSame([], $this->headerImages($old));
+        $new = $this->createRnc();
+        $this->assertCount(1, $this->headerImages($new));
+    }
+
+    public function test_legacy_backfill_preserves_company_files_all_statuses_and_deleted_records_without_workflow_changes(): void
+    {
+        $logo = UploadedFile::fake()->image('company.png', 300, 100);
+        Storage::disk('public')->put('company.png', file_get_contents($logo->getRealPath()));
+        $rncs = collect(['aberta', 'notificada', 'em_analise', 'em_assinatura', 'finalizada'])->map(function ($status) {
+            $rnc = $this->createRnc();
+            $rnc->contratante->update(['logo_path' => 'company.png']);
+            $rnc->forceFill(['pdf_logo_snapshot' => null, 'status' => $status])->saveQuietly();
+            return $rnc;
+        });
+        $rncs->last()->delete();
+        $before = $rncs->mapWithKeys(fn ($rnc) => [$rnc->id => $rnc->fresh()->getRawOriginal()]);
+        $this->artisan('rnc:freeze-pdf-logos')->expectsOutput('Logos preservadas em 5 RNC(s).')->assertSuccessful();
+        foreach ($rncs as $rnc) {
+            $fresh = RelatorioNaoConformidade::withTrashed()->findOrFail($rnc->id);
+            $this->assertNotNull($fresh->pdf_logo_snapshot);
+            foreach (['status', 'created_at', 'updated_at', 'deleted_at'] as $key) $this->assertSame($before[$rnc->id][$key], $fresh->getRawOriginal($key));
+            foreach (['left', 'right'] as $side) Storage::disk('local')->assertExists($fresh->pdf_logo_snapshot[$side.'_logo_path']);
+        }
+        $this->assertCount(1, Storage::disk('local')->allFiles());
+        $this->artisan('rnc:freeze-pdf-logos')->expectsOutput('Logos preservadas em 0 RNC(s).')->assertSuccessful();
+        $images = $this->headerImages($rncs->first());
+        Storage::disk('public')->delete('company.png');
+        $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('replacement.png', 100, 300)])->assertSessionHasNoErrors();
+        $this->assertSame($images, $this->headerImages($rncs->first()));
+        Notification::assertNothingSent(); Http::assertNothingSent();
+    }
+
+    public function test_saving_settings_freezes_legacy_rncs_before_changing_branding(): void
+    {
+        $old = $this->createRnc();
+        $old->forceFill(['pdf_logo_snapshot' => null])->saveQuietly();
+        $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('new.png')])->assertSessionHasNoErrors();
+        $snapshot = $old->fresh()->pdf_logo_snapshot;
+        $this->assertSame('', $snapshot['left_logo_path']);
+        $this->assertSame('Empresa original', $snapshot['left_logo_label']);
+        $this->assertSame([], $this->headerImages($old));
+        $this->assertCount(1, $this->headerImages($this->createRnc()));
+    }
+
+    public function test_webp_logo_upload_is_embedded_in_the_pdf(): void
+    {
+        $image = imagecreatetruecolor(240, 80);
+        imagefill($image, 0, 0, imagecolorallocate($image, 20, 70, 200));
+        ob_start(); imagewebp($image); $bytes = ob_get_clean(); imagedestroy($image);
+        $file = UploadedFile::fake()->createWithContent('logo.webp', $bytes);
+        $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), [...$this->payload(), 'left_logo' => $file])->assertSessionHasNoErrors();
+        $this->assertCount(1, $this->headerImages($this->createRnc()));
     }
 
     public function test_contracts_use_standard_by_default_and_can_choose_independent_models(): void
@@ -220,5 +328,90 @@ class TenantRncPdfSettingsTest extends TestCase
         $this->assertGreaterThan(200, $top['red']); $this->assertLessThan(50, $top['green']);
         $this->assertGreaterThan(170, $bottom['green']); $this->assertLessThan(50, $bottom['red']);
         imagedestroy($embedded);
+    }
+
+    public function test_uploaded_logos_are_private_and_fixed_by_contract_for_both_models(): void
+    {
+        $payload = [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('cliente.png', 300, 100), 'right_logo' => UploadedFile::fake()->image('supervisao.jpg', 100, 300)];
+        $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), $payload)->assertSessionHasNoErrors();
+        $config = RncPdfTemplates::forContract($this->tenant, $this->contract->id);
+        foreach (['left', 'right'] as $side) {
+            $path = $config['options'][$side.'_logo_path'];
+            $this->assertTrue(RncPdfTemplates::validLogoPath($this->tenant, $this->contract->id, $path));
+            Storage::disk('local')->assertExists($path); Storage::disk('public')->assertMissing($path);
+        }
+        $renderer = app(RncPdfRenderer::class);
+        $rnc = app(RncPdfPreview::class)->make($this->tenant, $this->contract);
+        $sources = [];
+        foreach (array_keys(RncPdfTemplates::VIEWS) as $layout) {
+            $pdf = $renderer->render($this->tenant, $rnc, 'opening', [], RncPdfTemplates::configuration($layout, $config['options']));
+            $images = $pdf->getDomPDF()->getDom()->getElementsByTagName('img');
+            $this->assertSame(2, $images->length);
+            $sources[$layout] = [$images->item(0)->getAttribute('src'), $images->item(1)->getAttribute('src')];
+        }
+        $this->assertSame($sources['standard'], $sources['inspection_form']);
+        $rnc->setRelation('contratante', new \App\Models\Empresa(['tenant_id' => $this->tenant->id, 'nome' => 'Outra empresa da RNC', 'logo_path' => 'outra.png']));
+        $pdf = $renderer->render($this->tenant, $rnc, 'opening');
+        $images = $pdf->getDomPDF()->getDom()->getElementsByTagName('img');
+        $this->assertSame($sources['inspection_form'], [$images->item(0)->getAttribute('src'), $images->item(1)->getAttribute('src')]);
+        $other = $this->tenant->contracts()->create(['code' => 'SEM-LOGO', 'name' => 'Outro', 'status' => 'active']);
+        $pdf = $renderer->render($this->tenant, app(RncPdfPreview::class)->make($this->tenant, $other), 'opening');
+        $this->assertSame(0, $pdf->getDomPDF()->getDom()->getElementsByTagName('img')->length);
+        $this->get(route('tenant.qualidade.rnc.settings.index', $this->tenant))->assertInertia(fn (Assert $p) => $p
+            ->has('logos.'.$this->contract->id.'.left.url')->missing('settings.'.$this->contract->id.'.options.left_logo_path'));
+    }
+
+    public function test_logo_preview_does_not_save_files_and_untrusted_paths_and_invalid_images_are_rejected(): void
+    {
+        $payload = [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('left.png', 300, 100), 'right_logo' => UploadedFile::fake()->image('right.png', 100, 300)];
+        $response = $this->post(route('tenant.qualidade.rnc.settings.preview', $this->tenant), $payload)->assertOk();
+        $this->assertGreaterThanOrEqual(2, preg_match_all('~/Subtype\s*/Image\b~', $response->getContent()));
+        $this->assertSame([], Storage::disk('local')->allFiles());
+        $this->assertDatabaseCount('rnc_pdf_settings', 0); $this->assertDatabaseCount('relatorio_nao_conformidades', 0);
+        Notification::assertNothingSent(); Http::assertNothingSent();
+        $payload = $this->payload(); $payload['options']['left_logo_path'] = 'tenants/99/secret.png';
+        $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), $payload)->assertSessionHasErrors('options');
+        foreach ([UploadedFile::fake()->create('logo.svg', 1, 'image/svg+xml'), UploadedFile::fake()->image('large.png')->size(4097), UploadedFile::fake()->image('wide.png', 5000, 10)] as $file) {
+            $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), [...$this->payload(), 'left_logo' => $file])->assertSessionHasErrors('left_logo');
+        }
+        $this->assertDatabaseCount('rnc_pdf_settings', 0);
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_replacing_or_removing_a_logo_preserves_other_logos_and_immutable_versions(): void
+    {
+        $url = route('tenant.qualidade.rnc.settings.store', $this->tenant);
+        $this->post($url, [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('first.png'), 'right_logo' => UploadedFile::fake()->image('right.png')])->assertSessionHasNoErrors();
+        $original = RncPdfTemplates::forContract($this->tenant, $this->contract->id);
+        $this->post($url, $this->payload(layout: 'standard'))->assertSessionHasNoErrors();
+        $this->assertSame($original['options']['left_logo_path'], RncPdfTemplates::forContract($this->tenant, $this->contract->id)['options']['left_logo_path']);
+        $this->post($url, [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('new.png')])->assertSessionHasNoErrors();
+        $updated = RncPdfTemplates::forContract($this->tenant, $this->contract->id);
+        $this->assertNotSame($original['options']['left_logo_path'], $updated['options']['left_logo_path']);
+        $this->assertSame($original['options']['right_logo_path'], $updated['options']['right_logo_path']);
+        Storage::disk('local')->assertExists($original['options']['left_logo_path']);
+        $this->post($url, [...$this->payload(), 'remove_right_logo' => true])->assertSessionHasNoErrors();
+        $this->assertSame('', RncPdfTemplates::forContract($this->tenant, $this->contract->id)['options']['right_logo_path']);
+        Storage::disk('local')->assertExists($original['options']['right_logo_path']);
+        $this->get(route('tenant.qualidade.rnc.settings.logo', [$this->tenant, $this->contract, 'right']))->assertNotFound();
+    }
+
+    public function test_logo_endpoints_require_contract_permission_and_do_not_expose_foreign_paths(): void
+    {
+        $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('private.png')])->assertSessionHasNoErrors();
+        $url = route('tenant.qualidade.rnc.settings.logo', [$this->tenant, $this->contract, 'left']);
+        $this->get($url)->assertOk()->assertHeader('Content-Type', 'image/png')->assertHeader('X-Content-Type-Options', 'nosniff');
+        $member = User::factory()->create();
+        $this->tenant->memberships()->create(['user_id' => $member->id, 'role' => 'engineer', 'status' => 'active']);
+        $this->actingAs($member)->get($url)->assertForbidden();
+        $this->actingAs($member)->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), [...$this->payload(), 'left_logo' => UploadedFile::fake()->image('denied.png')])->assertForbidden();
+        $this->actingAs($this->owner);
+        $other = $this->tenant->contracts()->create(['code' => 'ISOLADO', 'name' => 'Outro', 'status' => 'active']);
+        $config = RncPdfTemplates::forContract($this->tenant, $this->contract->id);
+        RncPdfSetting::create(['tenant_id' => $this->tenant->id, 'contract_id' => $other->id, ...$config]);
+        $this->get(route('tenant.qualidade.rnc.settings.logo', [$this->tenant, $other, 'left']))->assertNotFound();
+        $pdf = app(RncPdfRenderer::class)->render($this->tenant, app(RncPdfPreview::class)->make($this->tenant, $other), 'opening');
+        $this->assertSame(0, $pdf->getDomPDF()->getDom()->getElementsByTagName('img')->length);
+        $this->assertCount(1, Storage::disk('local')->allFiles());
     }
 }
