@@ -194,14 +194,6 @@ export default function RelatorioNaoConformidadeCreate({
         && Boolean(form.data.obra_id)
         && empresasForSelectedContract.length >= 2
         && disciplinasForSelectedContract.length > 0;
-    const selectedContratanteEmpresa = useMemo(
-        () => empresasForSelectedContract.find((empresa) => String(empresa.id) === String(form.data.contratante_empresa_id)),
-        [empresasForSelectedContract, form.data.contratante_empresa_id],
-    );
-    const selectedContratadaEmpresa = useMemo(
-        () => empresasForSelectedContract.find((empresa) => String(empresa.id) === String(form.data.contratada_empresa_id)),
-        [empresasForSelectedContract, form.data.contratada_empresa_id],
-    );
 
     useEffect(() => {
         selectedPhotosRef.current = selectedPhotos;
@@ -509,13 +501,6 @@ export default function RelatorioNaoConformidadeCreate({
                                 </select>
                             </Field>
                         </div>
-
-                        {(selectedContratanteEmpresa || selectedContratadaEmpresa) && (
-                            <div className="grid gap-3 md:grid-cols-2">
-                                <CompanyLogoPreview label="Logo da Contratante" empresa={selectedContratanteEmpresa} />
-                                <CompanyLogoPreview label="Logo da Contratada" empresa={selectedContratadaEmpresa} />
-                            </div>
-                        )}
 
                         <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             <Field label="Data abertura" error={form.errors.opened_at}>
@@ -907,29 +892,6 @@ function isValidLatitude(value) {
 
 function isValidLongitude(value) {
     return value !== null && value >= -180 && value <= 180;
-}
-
-function CompanyLogoPreview({ label, empresa }) {
-    return (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-            <div className="eyebrow">{label}</div>
-            <div className="mt-2 flex items-center gap-3">
-                <div className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-[var(--border)] bg-white px-2">
-                    {empresa?.logo_url ? (
-                        <img src={empresa.logo_url} alt={label} className="max-h-full max-w-full object-contain" />
-                    ) : (
-                        <span className="line-clamp-3 text-center text-[10px] font-bold leading-tight text-[var(--ink-600)]">
-                            {empresa?.nome || 'Empresa sem logo'}
-                        </span>
-                    )}
-                </div>
-                <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-[var(--ink-900)]">{empresa?.sigla || empresa?.nome || '-'}</div>
-                    <div className="truncate text-[12px] text-[var(--ink-500)]">{empresa?.nome || 'Selecione uma empresa'}</div>
-                </div>
-            </div>
-        </div>
-    );
 }
 
 function Field({ label, error, children }) {
