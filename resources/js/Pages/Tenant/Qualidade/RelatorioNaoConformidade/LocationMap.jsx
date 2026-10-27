@@ -48,11 +48,13 @@ function MapViewport({ latitude, longitude }) {
                     container: container.current, accessToken: token,
                     style: 'mapbox://styles/mapbox/standard-satellite',
                     center: [longitude, latitude], zoom: 16, pitch: 35,
+                    locale: { 'FullscreenControl.Enter': 'Ampliar mapa', 'FullscreenControl.Exit': 'Sair da tela cheia' },
                     attributionControl: false,
                 });
                 // The saved location is for consultation; it cannot be moved here.
                 marker = new mapboxgl.Marker({ color: '#d92d20', draggable: false }).setLngLat([longitude, latitude]).addTo(map);
                 map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+                map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
                 map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
                 map.scrollZoom.disable();
                 map.on('load', () => { if (!cancelled) { clearTimeout(timeout); setState('ready'); map.resize(); } });

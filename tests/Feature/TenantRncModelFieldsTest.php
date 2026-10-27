@@ -63,6 +63,14 @@ class TenantRncModelFieldsTest extends TestCase
         return $rnc->fresh();
     }
 
+    public function test_creation_exposes_contract_city_and_state_for_the_map(): void
+    {
+        $this->contract->update(['city' => 'Belém', 'state' => 'PA']);
+        $this->get(route('tenant.qualidade.rnc.create', $this->tenant))->assertOk()
+            ->assertInertia(fn (Assert $p) => $p->where('contracts.0.id', $this->contract->id)
+                ->where('contracts.0.city', 'Belém')->where('contracts.0.state', 'PA'));
+    }
+
     public function test_dashboard_selection_filters_follow_contract_and_preserve_historical_choices(): void
     {
         $field = ['key' => 'lote', 'label' => 'Lote', 'type' => 'select', 'required' => false, 'options' => ['Antigo', '0']];

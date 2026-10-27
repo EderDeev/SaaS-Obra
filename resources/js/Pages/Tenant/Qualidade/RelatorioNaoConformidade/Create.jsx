@@ -3,6 +3,7 @@ import { consumeAssistantDraft } from '@/Utils/assistantDraft';
 import { projectEap } from '@/Utils/projectEap';
 import ReferencePicker from './ReferencePicker';
 import ModelFields from './ModelFields';
+import { brazilMapView, contractMapLocation } from '@/Support/contractMapLocation';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
@@ -566,7 +567,7 @@ export default function RelatorioNaoConformidadeCreate({
 
                         <ModelFields fields={activeDocumentModel?.field_definitions} name={activeDocumentModel?.name} values={form.data.model_field_values} errors={form.errors}
                             onChange={(key, value) => form.setData('model_field_values', { ...form.data.model_field_values, [key]: value })} />
-                        <MapPicker form={form} />
+                        <MapPicker form={form} contract={contracts.find(contract => String(contract.id) === String(form.data.contract_id))} />
 
                         <Field label="Assunto" error={form.errors.assunto}>
                             <input value={form.data.assunto} onChange={(event) => form.setData('assunto', event.target.value)} required maxLength={255} placeholder="Resuma o motivo desta RNC" />
@@ -668,21 +669,24 @@ export default function RelatorioNaoConformidadeCreate({
     );
 }
 
-function MapPicker({ form }) {
+function MapPicker({ form, contract }) {
     const containerRef = useRef(null);
     const mapRef = useRef(null);
     const markerRef = useRef(null);
     const markerAnimationFrameRef = useRef(null);
     const [locationStatus, setLocationStatus] = useState('');
     const [mapError, setMapError] = useState('');
+    const [mapReady, setMapReady] = useState(false);
 
     const hasMapboxToken = Boolean(mapboxToken);
     const currentLatitude = parseCoordinate(form.data.latitude);
     const currentLongitude = parseCoordinate(form.data.longitude);
     const hasValidCoordinates = isValidLatitude(currentLatitude) && isValidLongitude(currentLongitude);
-    const defaultCenter = [-46.633308, -23.55052];
+    const coordinatesSelected = useRef(hasValidCoordinates);
+    coordinatesSelected.current = hasValidCoordinates;
 
     const setCoordinates = (latitude, longitude) => {
+        coordinatesSelected.current = true;
         form.setData('latitude', latitude.toFixed(7));
         form.setData('longitude', longitude.toFixed(7));
     };
@@ -703,21 +707,24 @@ function MapPicker({ form }) {
 
             mapboxgl.accessToken = mapboxToken;
 
-            const initialCenter = hasValidCoordinates ? [currentLongitude, currentLatitude] : defaultCenter;
+            const initialCenter = hasValidCoordinates ? [currentLongitude, currentLatitude] : brazilMapView.center;
             const map = new mapboxgl.Map({
                 container: containerRef.current,
-                style: 'mapbox://styles/mapbox/streets-v12',
+                style: 'mapbox://styles/mapbox/standard-satellite',
                 center: initialCenter,
-                zoom: hasValidCoordinates ? 15 : 12,
+                zoom: hasValidCoordinates ? 16 : brazilMapView.zoom,
+                pitch: 35,
+                locale: { 'FullscreenControl.Enter': 'Ampliar mapa', 'FullscreenControl.Exit': 'Sair da tela cheia' },
                 projection: 'mercator',
                 attributionControl: false,
             });
 
             const marker = new mapboxgl.Marker({ color: '#d92d20', draggable: true })
-                .setLngLat(initialCenter)
-                .addTo(map);
+                .setLngLat(initialCenter);
+            if (hasValidCoordinates) marker.addTo(map);
 
             map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+            map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
             map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
 
             map.on('load', () => {
@@ -742,12 +749,13 @@ function MapPicker({ form }) {
 
             mapRef.current = map;
             markerRef.current = marker;
+            setMapReady(true);
 
             requestAnimationFrame(() => map.resize());
             window.setTimeout(() => map.resize(), 250);
         };
 
-        loadMap();
+        loadMap().catch(() => { if (!cancelled) setMapError('Não foi possível iniciar o mapa.'); });
 
         return () => {
             cancelled = true;
@@ -763,11 +771,33 @@ function MapPicker({ form }) {
     }, []);
 
     useEffect(() => {
+        if (!mapReady || hasValidCoordinates) return;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => {
+            controller.abort();
+            if (!coordinatesSelected.current) setLocationStatus('A busca da região demorou demais. Marque o local no mapa.');
+        }, 15000);
+        mapRef.current?.jumpTo(brazilMapView);
+        setLocationStatus(contract ? 'Localizando a região do contrato...' : 'Selecione um contrato para localizar sua região.');
+        if (!contract) { clearTimeout(timeout); return; }
+        contractMapLocation(contract, mapboxToken, controller.signal).then(view => {
+            if (controller.signal.aborted || coordinatesSelected.current) return;
+            if (view) mapRef.current?.easeTo({ ...view, duration: 700 });
+            setLocationStatus(view ? 'Região do contrato. Clique no mapa para marcar o local exato da ocorrência.' : 'Localização do contrato indisponível. Marque o local da ocorrência no mapa.');
+        }).catch(() => {
+            if (!controller.signal.aborted && !coordinatesSelected.current) setLocationStatus('Não foi possível localizar a região do contrato. Marque o local no mapa.');
+        }).finally(() => clearTimeout(timeout));
+        return () => { clearTimeout(timeout); controller.abort(); };
+    }, [mapReady, contract?.id, contract?.city, contract?.state, hasValidCoordinates]);
+
+    useEffect(() => {
+        if (!hasValidCoordinates) markerRef.current?.remove();
         if (!mapRef.current || !markerRef.current || !hasValidCoordinates) {
             return;
         }
 
         const nextCenter = [currentLongitude, currentLatitude];
+        markerRef.current.addTo(mapRef.current);
         const currentPosition = markerRef.current.getLngLat();
         const startedAt = performance.now();
         const duration = 450;
@@ -798,7 +828,7 @@ function MapPicker({ form }) {
             zoom: Math.max(mapRef.current.getZoom(), 14),
             duration: 550,
         });
-    }, [form.data.latitude, form.data.longitude]);
+    }, [form.data.latitude, form.data.longitude, mapReady]);
 
     const locateUser = () => {
         if (!navigator.geolocation) {
