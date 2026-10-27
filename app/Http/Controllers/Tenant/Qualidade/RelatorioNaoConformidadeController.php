@@ -584,6 +584,8 @@ class RelatorioNaoConformidadeController extends Controller
                 'id' => $contract->id,
                 'code' => $contract->code,
                 'name' => $contract->obra?->nome ?? $contract->name,
+                'city' => $contract->city,
+                'state' => $contract->state,
             ])->values(),
             'obras' => $tenant->obras()
                 ->whereIn('contract_id', $contractIds)
