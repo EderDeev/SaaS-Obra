@@ -57,6 +57,7 @@ class RncPdfTemplates
     {
         $setting = RncPdfSetting::where('tenant_id', $tenant->id)->where('contract_id', $contractId)->first();
 
-        return self::configuration($setting?->layout ?? 'standard', $setting?->options ?? [], $setting?->field_definitions);
+        $layout = $setting?->layout ?? 'standard';
+        return self::configuration($layout, $setting?->options ?? [], RncModelFields::configuredDefinitions($layout, $setting?->field_definitions));
     }
 }

@@ -12,8 +12,10 @@
             + max(0, (int) ceil(mb_strlen($rnc->contratante?->nome ?? '') / 115) - 1)
             + max(0, (int) ceil(mb_strlen($rnc->contratada?->nome ?? '') / 115) - 1)
             + max(0, (int) ceil(mb_strlen($rnc->obra?->nome ?? '') / 115) - 1);
-        $headerHeight = 291 + $extraLines * 9;
-        $pageTop = 9 + $headerHeight;
+        $headerHeight = 291 + $extraLines * 9 + $additionalHeaderHeight;
+        // Large sets of fields flow on the opening pages instead of occupying every page.
+        $flowingHeader = $headerHeight > 400;
+        $pageTop = $flowingHeader ? 9 : 9 + $headerHeight;
     @endphp
     <style>
         @page { margin: {{ $pageTop }}pt 9pt 24pt; }
@@ -22,7 +24,7 @@
         p, h1, h2, h3 { margin: 0; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         td, th { vertical-align: middle; overflow-wrap: break-word; word-wrap: break-word; }
-        .header { position: fixed; top: {{ 9 - $pageTop }}pt; left: 0; right: 0; }
+        .header { position: {{ $flowingHeader ? 'static' : 'fixed' }}; top: {{ 9 - $pageTop }}pt; left: 0; right: 0; }
         .footer { position: fixed; bottom: -15pt; right: 0; color: #637080; font-size: 6pt; }
         .page-number:before { content: counter(page); }
         .logos { border: 1.3pt solid #1b1b1b; }
@@ -41,6 +43,10 @@
         .field-box { display: block; min-height: 12.7pt; padding: 2pt 3pt; border: .65pt solid #111; background: #fff; color: #111827; font-size: 6.8pt; font-weight: normal; line-height: 1.25; }
         .field-center { text-align: center; }
         .label-right { text-align: right; white-space: nowrap; }
+        .model-header-fields tr { page-break-inside: avoid; }
+        .model-field-label { white-space: normal; }
+        .model-field-value { overflow-wrap: anywhere; word-wrap: break-word; }
+        .choice.model-field-choice { white-space: normal; max-width: 100%; }
         .check { display: inline-block; width: 10pt; height: 10pt; border: .65pt solid #111; color: #e60026; font-family: DejaVu Sans, sans-serif; font-size: 7pt; font-weight: bold; text-align: center; line-height: 10pt; vertical-align: middle; margin-right: 3pt; }
         .choice { display: inline-block; margin: 1pt 6pt 1pt 0; white-space: nowrap; font-size: 6.6pt; }
         .rail-block { position: relative; background: {{ $pdfOptions['color'] }}; border: 1.3pt solid #1b1b1b; border-top: 0; }
@@ -90,7 +96,7 @@
             <div class="identity-main">
                 <table class="identity-table"><tr>
                     <td style="width:9%" class="label-right">RNC Nº:</td><td style="width:14%"><span class="field-box field-center">{{ $formNumber }}</span></td>
-                    <td style="width:19%" class="label-right">Contrato:</td><td style="width:20%"><span class="field-box field-center">{{ $rnc->contract?->code }}</span></td>
+                    <td style="width:19%" class="label-right">Contrato:</td><td style="width:20%"><span class="field-box field-center document-contract">{{ $inspectionContract !== '' ? $inspectionContract : '-' }}</span></td>
                     <td style="width:8%" class="label-right">Data:</td>
                     <td style="width:8%"><span class="field-box field-center">{{ $rnc->opened_at?->format('d') ?: '-' }}</span></td>
                     <td style="width:8%"><span class="field-box field-center">{{ $rnc->opened_at?->format('m') ?: '-' }}</span></td>
@@ -108,8 +114,8 @@
                 @endforeach
                 </table>
                 <table class="identity-table"><tr>
-                    <td style="width:24%" class="label-right">Localização da RNC:</td><td style="width:22%"><span class="field-box">{{ $rnc->localizacao ?: ($rnc->obra?->nome ?: '-') }}</span></td>
-                    <td style="width:6%" class="label-right">KM:</td><td style="width:17%"><span class="field-box">{{ $rnc->km ?: '-' }}</span></td>
+                    <td style="width:24%" class="label-right">Localização da RNC:</td><td style="width:22%"><span class="field-box document-location">{{ $inspectionLocation !== '' ? $inspectionLocation : '-' }}</span></td>
+                    <td style="width:6%" class="label-right">KM:</td><td style="width:17%"><span class="field-box document-km">{{ $inspectionKm !== '' ? $inspectionKm : '-' }}</span></td>
                     <td style="width:14%" class="label-right">Coord. N:</td><td style="width:17%"><span class="field-box field-center">{{ $rnc->latitude ?? '-' }}</span></td>
                 </tr><tr><td colspan="4"></td><td class="label-right">Coord. E:</td><td><span class="field-box field-center">{{ $rnc->longitude ?? '-' }}</span></td></tr></table>
                 <table class="identity-table"><tr>
@@ -128,17 +134,12 @@
                 </tr><tr><td class="label-right">Grau:</td>
                     @foreach (['Leve', 'Média', 'Grave', 'Gravíssima'] as $item)<td><span class="choice"><span class="check">{{ $normalize($rnc->gravidade) === $normalize($item) ? 'X' : '' }}</span>{{ $item }}</span></td>@endforeach<td></td>
                 </tr></table>
+                @include('pdf.partials.rnc-model-fields', ['fields' => $inspectionHeaderFields, 'layout' => 'inspection_form'])
             </div>
         </div>
     </header>
 
     <div class="bar">Descrição da Ocorrência</div>
-    @php
-        $additionalFields = array_values(array_filter($modelFields, fn ($field) => !in_array($field['key'], ['work_type', 'pavement_type'], true)));
-    @endphp
-    @if (count($additionalFields))
-        <div style="border:1pt solid #1b1b1b;">@include('pdf.partials.rnc-model-fields', ['fields' => $additionalFields])</div>
-    @endif
     <div class="rail-block opening-observations">
         <div class="rail-label">OBSERVAÇÕES</div>
         <div class="rail-content">

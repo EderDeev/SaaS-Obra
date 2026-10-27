@@ -89,6 +89,8 @@
             padding: 8px 10px 8px 0;
             vertical-align: top;
             width: 25%;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
         }
         .cell-third {
             width: 33.333%;
@@ -314,6 +316,7 @@
                 </div>
             </div>
         </div>
+        @include('pdf.partials.rnc-model-fields', ['fields' => $standardHeaderFields, 'layout' => 'standard'])
         @if ($rnc->instrucaoCampo)
             <div class="text-box">
                 <h3>IC de refer&ecirc;ncia</h3>
@@ -324,9 +327,6 @@
         @endif
     </section>
 
-    @if (count($modelFields))
-        <section class="section"><h2 class="section-title">Informações do modelo</h2>@include('pdf.partials.rnc-model-fields', ['fields' => $modelFields])</section>
-    @endif
     <section class="section">
         <h2 class="section-title">Observa&ccedil;&otilde;es e coment&aacute;rios</h2>
         <div class="text-box">

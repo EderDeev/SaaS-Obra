@@ -28,6 +28,27 @@ class RncPdfRenderer
         $options = $configuration['options'];
         $values = $rnc->model_field_values ?? ($rnc->exists ? app(RncDocumentSnapshots::class)->legacyValues($tenant, $rnc) : []);
         $modelFields = \App\Support\RncModelFields::rows($configuration['field_definitions'], $values);
+        $modelHeaderFields = array_map(function ($field, $row) use ($values) {
+            $choices = match ($field['type']) {
+                'select' => array_map(fn ($value) => ['value' => $value, 'label' => $value], $field['options']),
+                'boolean' => [['value' => 'yes', 'label' => 'Sim'], ['value' => 'no', 'label' => 'Não']],
+                default => [],
+            };
+            return [...$row, 'choices' => array_map(fn ($choice) => [...$choice, 'checked' => ($values[$field['key']] ?? null) === $choice['value']], $choices)];
+        }, $configuration['field_definitions'], $modelFields);
+        $standardHeaderFields = \App\Support\RncPdfHeaderFields::boundedFields($modelHeaderFields, false);
+        $inspectionHeaderFields = \App\Support\RncPdfHeaderFields::boundedFields(array_values(array_filter($modelHeaderFields, fn ($field) => !in_array($field['key'], ['work_type', 'pavement_type', 'document_contract', 'document_km', 'document_location'], true))));
+        $hasDocumentContract = in_array('document_contract', array_column($configuration['field_definitions'], 'key'), true);
+        $inspectionContract = $hasDocumentContract ? ($values['document_contract'] ?? '') : ($rnc->contract?->code ?? '');
+        $hasDocumentKm = in_array('document_km', array_column($configuration['field_definitions'], 'key'), true);
+        $inspectionKm = $hasDocumentKm ? ($values['document_km'] ?? '') : (string) ($rnc->km ?? '');
+        $hasDocumentLocation = in_array('document_location', array_column($configuration['field_definitions'], 'key'), true);
+        $inspectionLocation = $hasDocumentLocation ? ($values['document_location'] ?? '') : ($rnc->localizacao ?: ($rnc->obra?->nome ?? ''));
+        $additionalHeaderHeight = $configuration['layout'] === 'inspection_form'
+            ? \App\Support\RncPdfHeaderFields::inspectionHeight($inspectionHeaderFields, Pdf::getDomPDF()->getFontMetrics())
+                + \App\Support\RncPdfHeaderFields::contractExtraHeight($inspectionContract, Pdf::getDomPDF()->getFontMetrics())
+                + max(\App\Support\RncPdfHeaderFields::contractExtraHeight($inspectionKm, Pdf::getDomPDF()->getFontMetrics(), 78),
+                    \App\Support\RncPdfHeaderFields::contractExtraHeight($inspectionLocation, Pdf::getDomPDF()->getFontMetrics(), 105)) : 0;
         foreach (['work_type', 'pavement_type'] as $key) $options[$key] = $values[$key] ?? ($options[$key] ?? '');
         $logoSnapshot = $rnc->exists && ! ($template['preview'] ?? false)
             ? app(RncPdfLogoSnapshots::class)->forRnc($tenant, $rnc) : null;
@@ -58,6 +79,12 @@ class RncPdfRenderer
             'leftLogoName' => $logoSnapshot['left_logo_label'] ?? '', 'rightLogoName' => $logoSnapshot['right_logo_label'] ?? '',
             'pdfOptions' => $options, 'isPreview' => $template['preview'] ?? false,
             'modelFields' => $modelFields,
+            'modelHeaderFields' => $modelHeaderFields, 'inspectionHeaderFields' => $inspectionHeaderFields,
+            'standardHeaderFields' => $standardHeaderFields,
+            'inspectionContract' => $inspectionContract,
+            'inspectionKm' => $inspectionKm,
+            'inspectionLocation' => $inspectionLocation,
+            'additionalHeaderHeight' => $additionalHeaderHeight,
             'approvedAction' => $latestAction, 'latestAction' => $latestAction,
             'latestEvidence' => $latestEvidence, 'evidencePhotos' => $latestEvidence ? $this->formatPdfPhotos($latestEvidence->photos, $raster, $configuration['layout'] === 'inspection_form') : collect(),
             'flowRows' => $rows, 'canRasterizePdfImages' => $raster, 'signatureSigners' => $signatureSigners,
