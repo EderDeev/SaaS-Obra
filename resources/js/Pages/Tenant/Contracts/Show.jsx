@@ -65,7 +65,7 @@ const currencyLocaleMap = {
     EUR: 'de-DE',
 };
 
-const money = (value, currency = 'BRL') => Number(value || 0).toLocaleString(currencyLocaleMap[currency] || 'pt-BR', {
+const money = (value, currency = 'BRL') => value == null || value === '' ? 'Não informado' : Number(value).toLocaleString(currencyLocaleMap[currency] || 'pt-BR', {
     style: 'currency',
     currency,
     maximumFractionDigits: currency === 'JPY' ? 0 : 2,
@@ -776,7 +776,7 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
         { id: 'obras', label: 'Obras', icon: MapPin },
         { id: 'trechos', label: 'Trechos', icon: MapPinned },
         { id: 'disciplinas', label: 'Disciplinas', icon: Layers },
-        { id: 'vinculos', label: 'Vínculos', icon: Settings },
+        { id: 'vinculos', label: 'Dados e vínculos', icon: Settings },
         { id: 'medicao', label: 'Medição', icon: ClipboardCheck },
     ];
 
@@ -837,6 +837,7 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
     }, [empresas]);
     const form = useForm({
         obra_id: contract.obra_id ? String(contract.obra_id) : '',
+        total_value: contract.total_value ?? '',
         cliente_empresa_id: contract.cliente_empresa_id ? String(contract.cliente_empresa_id) : '',
         construtora_empresa_id: contract.construtora_empresa_id ? String(contract.construtora_empresa_id) : '',
         gerenciadora_empresa_id: contract.fiscalizadora_empresa_id ? String(contract.fiscalizadora_empresa_id) : '',
@@ -865,6 +866,10 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
 
     return (
         <form className="grid gap-5 lg:grid-cols-2" onSubmit={submit}>
+            <label className="grid gap-2 text-sm font-medium">Valor do contrato ({contract.currency || 'BRL'}) — opcional
+                <input className="sig-input w-full" type="number" min="0" step={contract.currency === 'JPY' ? '1' : '0.01'} value={form.data.total_value} onChange={event => updateLink('total_value', event.target.value)} placeholder="Não informado" />
+                {form.errors.total_value && <span role="alert" className="text-xs text-red-600">{form.errors.total_value}</span>}
+            </label>
             <SelectField label="Obra principal" value={form.data.obra_id} onChange={(value) => updateLink('obra_id', value)} error={form.errors.obra_id}>
                 <option value="">Sem obra principal</option>
                 {obrasPrincipais.map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}
@@ -884,12 +889,12 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
             <div className="flex flex-wrap items-center gap-3 lg:col-span-2">
                 <button className="sig-btn sig-btn-primary" disabled={form.processing}>
                     <Save size={14} />
-                    Salvar vínculos
+                    Salvar parametrização
                 </button>
                 {saved && (
                     <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--green)]" role="status">
                         <CheckCircle2 size={16} />
-                        Vínculos salvos com sucesso.
+                        Parametrização salva com sucesso.
                     </span>
                 )}
             </div>
