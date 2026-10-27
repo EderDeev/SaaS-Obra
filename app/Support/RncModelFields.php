@@ -10,11 +10,23 @@ class RncModelFields
 {
     public const TYPES = ['text', 'textarea', 'number', 'date', 'select', 'boolean'];
 
+    public static function configuredDefinitions(string $layout, ?array $fields): array
+    {
+        if ($layout === 'standard') return self::definitions($layout, $fields);
+        $definitions = self::defaults($layout);
+        $contract = collect($fields ?? [])->firstWhere('key', 'document_contract');
+        $options = array_values(array_unique(array_filter(array_map(fn ($value) => is_string($value) ? trim($value) : '', $contract['options'] ?? []), fn ($value) => $value !== '')));
+        return array_map(fn ($field) => $field['key'] === 'document_contract' ? [...$field, 'options' => $options] : $field, $definitions);
+    }
+
     public static function defaults(string $layout): array
     {
         return $layout === 'inspection_form' ? [
             ['key' => 'work_type', 'label' => 'Tipo de obra', 'type' => 'select', 'required' => false, 'options' => ['Pista Nova', 'Pista Existente']],
             ['key' => 'pavement_type', 'label' => 'Tipo de pavimento', 'type' => 'select', 'required' => false, 'options' => ['Rígido', 'Flexível']],
+            ['key' => 'document_contract', 'label' => 'Contrato do documento', 'type' => 'select', 'required' => false, 'options' => []],
+            ['key' => 'document_km', 'label' => 'KM', 'type' => 'text', 'required' => false, 'options' => []],
+            ['key' => 'document_location', 'label' => 'Localização da RNC', 'type' => 'text', 'required' => false, 'options' => []],
         ] : [];
     }
 
@@ -41,21 +53,25 @@ class RncModelFields
             'field_definitions.*.options.*' => ['required', 'string', 'max:120', 'distinct'],
         ])->validate()['field_definitions'];
         foreach ($data as $index => $field) {
-            if ($field['type'] === 'select' && ! count($field['options'])) {
+            if ($field['type'] === 'select' && ! count($field['options']) && !($layout === 'inspection_form' && $field['key'] === 'document_contract')) {
                 throw ValidationException::withMessages(["field_definitions.{$index}.options" => 'Informe pelo menos uma opção.']);
             }
         }
         foreach (self::defaults($layout) as $builtin) {
             $field = collect($data)->firstWhere('key', $builtin['key']);
-            if (! $field || $field['label'] !== $builtin['label'] || $field['type'] !== 'select' || $field['options'] !== $builtin['options']) {
-                throw ValidationException::withMessages(['field_definitions' => 'Mantenha os campos Tipo de obra e Tipo de pavimento e suas opções neste modelo.']);
+            if (! $field || $field['label'] !== $builtin['label'] || $field['type'] !== $builtin['type'] || ($builtin['key'] !== 'document_contract' && $field['options'] !== $builtin['options'])) {
+                throw ValidationException::withMessages(['field_definitions' => 'Mantenha os campos e as opções definidos para este modelo.']);
             }
         }
         // These keys have dedicated positions in the inspection header.
-        if ($layout !== 'inspection_form' && collect($data)->contains(fn ($field) => in_array($field['key'], ['work_type', 'pavement_type'], true))) {
+        if ($layout !== 'inspection_form' && collect($data)->contains(fn ($field) => in_array($field['key'], ['work_type', 'pavement_type', 'document_contract', 'document_km', 'document_location'], true))) {
             throw ValidationException::withMessages(['field_definitions' => 'Esses campos pertencem ao formulário de inspeção.']);
         }
-        return self::definitions($layout, $data);
+        $definitions = self::definitions($layout, $data);
+        if ($layout !== 'standard' && $definitions !== self::configuredDefinitions($layout, $data)) {
+            throw ValidationException::withMessages(['field_definitions' => 'A criação manual de campos está disponível somente no modelo padrão. Este modelo usa os campos definidos no documento.']);
+        }
+        return $definitions;
     }
 
     public static function values(array $fields, mixed $values): array

@@ -1,11 +1,12 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm } from '@inertiajs/react';
 import { Check, RotateCcw, Save, Settings2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Errors } from '../InstrucaoCampo/Ui';
 import PdfModelPreview from './PdfModelPreview';
 import LogoUploadField from './LogoUploadField';
 import ModelFieldsEditor from './ModelFieldsEditor';
+import InspectionFieldsSettings from './InspectionFieldsSettings';
 
 const emptyUploads = { left_logo: null, right_logo: null, remove_left_logo: false, remove_right_logo: false };
 
@@ -14,12 +15,19 @@ export default function PdfSettings({ tenant, contracts, templates, settings, de
     const configuration = (id) => settings[id] || { layout: 'standard', options: { ...defaults.standard }, field_definitions: defaultFields.standard || [] };
     const form = useForm({ contract_id: initial, ...configuration(initial), ...emptyUploads });
     const [saved, setSaved] = useState(false);
+    const layoutDrafts = useRef({});
+    const [contractOptionsDraft, setContractOptionsDraft] = useState(null);
     const setData = (...args) => { setSaved(false); form.setData(...args); };
     const option = (key, value) => setData('options', { ...form.data.options, [key]: value });
-    const fieldsForLayout = (layout) => layout === form.data.layout ? form.data.field_definitions : [...(defaultFields[layout] || []), ...form.data.field_definitions.filter(field => !['work_type', 'pavement_type'].includes(field.key))];
-    const changeLayout = (layout) => setData({ ...form.data, layout, field_definitions: fieldsForLayout(layout), options: {
-        ...form.data.options, title: defaults[layout].title, color: defaults[layout].color,
-    } });
+    const fieldsForLayout = (layout) => layout === form.data.layout ? form.data.field_definitions
+        : layoutDrafts.current[`${form.data.contract_id}:${layout}`]
+            || (configuration(form.data.contract_id).layout === layout ? configuration(form.data.contract_id).field_definitions : defaultFields[layout]) || [];
+    const changeLayout = (layout) => {
+        layoutDrafts.current[`${form.data.contract_id}:${form.data.layout}`] = form.data.field_definitions;
+        setData({ ...form.data, layout, field_definitions: fieldsForLayout(layout), options: {
+            ...form.data.options, title: defaults[layout].title, color: defaults[layout].color,
+        } });
+    };
     function uploadLogo(side, file) {
         const key = `${side}_logo`;
         if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { form.setError(key, 'Envie uma imagem PNG, JPG ou WebP.'); return; }
@@ -36,12 +44,13 @@ export default function PdfSettings({ tenant, contracts, templates, settings, de
                 const id = form.data.contract_id;
                 form.transform(({ field_definitions, ...data }) => ({ ...data, fields_json: JSON.stringify(field_definitions) })).post(route('tenant.qualidade.rnc.settings.store', tenant.slug), { forceFormData: true, preserveScroll: true, onSuccess: (page) => {
                     form.setData({ contract_id: id, ...(page.props.settings[id] || configuration(id)), ...emptyUploads });
+                    setContractOptionsDraft(null);
                     setSaved(true);
                 } });
             }}>
                 <Errors errors={form.errors} />
                 <fieldset disabled={form.processing} className="grid min-w-0 gap-5 disabled:opacity-75">
-                    <section className="sig-card p-5"><label className="grid gap-2 text-sm font-medium">Contrato<select className="sig-input w-full" value={form.data.contract_id} onChange={(event) => { const id = event.target.value; setData({ contract_id: id, ...configuration(id), ...emptyUploads }); form.clearErrors(); }} required>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} · {contract.name}</option>)}</select></label></section>
+                    <section className="sig-card p-5"><label className="grid gap-2 text-sm font-medium">Contrato<select className="sig-input w-full" value={form.data.contract_id} onChange={(event) => { const id = event.target.value; setContractOptionsDraft(null); setData({ contract_id: id, ...configuration(id), ...emptyUploads }); form.clearErrors(); }} required>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} · {contract.name}</option>)}</select></label></section>
                     <section className="sig-card p-5"><h2 className="text-base font-semibold">Modelo do documento</h2><div className="mt-4 grid gap-4 sm:grid-cols-2">{templates.map((template) => {
                         const selected = form.data.layout === template.value;
                         return <article key={template.value} className={`relative min-w-0 rounded-xl border-2 p-4 transition ${selected ? 'border-[var(--primary)] bg-blue-50/40' : 'border-[var(--border)] hover:border-blue-200'}`}>
@@ -54,7 +63,15 @@ export default function PdfSettings({ tenant, contracts, templates, settings, de
                         <div className="grid gap-4 sm:grid-cols-2">{[['left', 'Logo à esquerda'], ['right', 'Logo à direita']].map(([side, label]) => <LogoUploadField key={`${form.data.contract_id}-${side}`} label={label} file={form.data[`${side}_logo`]} current={logos[form.data.contract_id]?.[side]} removed={form.data[`remove_${side}_logo`]} error={form.errors[`${side}_logo`]} onChange={(file) => uploadLogo(side, file)} onRemove={() => setData({ ...form.data, [`${side}_logo`]: null, [`remove_${side}_logo`]: true })} onUndo={() => setData(`remove_${side}_logo`, false)} />)}</div>
                         <p className="-mt-2 text-xs text-[var(--ink-500)]">Cada nova RNC guarda as logos configuradas neste contrato no momento da criação. Alterar ou remover essas imagens não muda as logos das RNCs anteriores, em nenhuma etapa. A prévia mostra as alterações antes de salvar.</p>
                     </section>
-                    <ModelFieldsEditor fields={form.data.field_definitions} errors={form.errors} onChange={(fields) => setData('field_definitions', fields)} />
+                    {form.data.layout === 'standard'
+                        ? <ModelFieldsEditor fields={form.data.field_definitions} errors={form.errors} onChange={(fields) => setData('field_definitions', fields)} />
+                        : <InspectionFieldsSettings fields={form.data.field_definitions} errors={form.errors}
+                            optionsText={contractOptionsDraft ?? (form.data.field_definitions.find(field => field.key === 'document_contract')?.options || []).join('\n')}
+                            onOptionsChange={(text) => {
+                                setContractOptionsDraft(text);
+                                const options = [...new Set(text.split('\n').map(value => value.trim()).filter(Boolean))];
+                                setData('field_definitions', form.data.field_definitions.map(field => field.key === 'document_contract' ? { ...field, options } : field));
+                            }} />}
                     <div className="rounded-xl bg-blue-50 p-4 text-xs leading-5 text-blue-900">Cada RNC preserva o modelo, os campos e as logos da sua criação. Alterações nesta parametrização valem somente para novas RNCs. Os PDFs enviados para assinatura continuam intactos.</div>
                     <div className="flex flex-wrap items-center justify-between gap-3"><button type="button" className="sig-btn sig-btn-secondary" onClick={() => setData({ ...form.data, options: { ...defaults[form.data.layout] } })}><RotateCcw size={15} />Restaurar opções do modelo</button><button type="submit" className="sig-btn sig-btn-primary"><Save size={16} />{form.processing ? 'Salvando...' : 'Salvar para este contrato'}</button></div>
                 </fieldset>

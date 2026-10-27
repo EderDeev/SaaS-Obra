@@ -24,7 +24,7 @@ class RncPdfSettingController extends Controller
             ->orderBy('code')->get(['id', 'code', 'name']);
         $records = RncPdfSetting::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))->get();
         $settings = $records->mapWithKeys(function ($setting) {
-            $config = RncPdfTemplates::configuration($setting->layout, $setting->options ?? [], $setting->field_definitions);
+            $config = RncPdfTemplates::configuration($setting->layout, $setting->options ?? [], RncModelFields::configuredDefinitions($setting->layout, $setting->field_definitions));
             $config['options'] = Arr::only($config['options'], RncPdfTemplates::EDITABLE_OPTIONS);
             return [$setting->contract_id => $config];
         });

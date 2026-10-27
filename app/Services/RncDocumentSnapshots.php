@@ -23,10 +23,20 @@ class RncDocumentSnapshots
     {
         abort_unless((int) $rnc->tenant_id === (int) $tenant->id, 404);
         if ($rnc->pdf_template_snapshot !== null) return $rnc->pdf_template_snapshot;
-        $template = RncPdfTemplates::forContract($tenant, (int) $rnc->contract_id);
+        // Legacy documents keep the complete schema that existed before manual
+        // fields were restricted to the standard model.
+        $setting = RncPdfSetting::where('tenant_id', $tenant->id)->where('contract_id', $rnc->contract_id)->first();
+        $template = $this->legacyTemplate(['layout' => $setting?->layout ?? 'standard', 'options' => $setting?->options ?? [], 'field_definitions' => $setting?->field_definitions]);
         $original = $rnc->signatureRequests()->whereNotNull('unsigned_pdf_path')->orderByDesc('id')->first()?->request_payload['pdf_template'] ?? null;
-        if (is_array($original)) $template = RncPdfTemplates::configuration($original['layout'] ?? 'standard', $original['options'] ?? [], $original['field_definitions'] ?? null);
+        if (is_array($original)) $template = $this->legacyTemplate($original);
         return $this->version(app(RncPdfLogoSnapshots::class)->template($tenant, $rnc, $template));
+    }
+
+    private function legacyTemplate(array $template): array
+    {
+        $layout = $template['layout'] ?? 'standard';
+        $fields = $template['field_definitions'] ?? array_values(array_filter(RncModelFields::defaults($layout), fn ($field) => !in_array($field['key'], ['document_contract', 'document_km', 'document_location'], true)));
+        return RncPdfTemplates::configuration($layout, $template['options'] ?? [], $fields);
     }
 
     public function legacyValues(Tenant $tenant, RelatorioNaoConformidade $rnc): array
