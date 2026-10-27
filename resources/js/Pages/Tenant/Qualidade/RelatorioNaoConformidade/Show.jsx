@@ -1,6 +1,7 @@
 import SignaturePanel from './SignaturePanel';
 import PdfDownload from './PdfDownload';
 import WorkflowButton from './WorkflowButton';
+import LocationMap from './LocationMap';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { rncDisciplinaLabel } from '@/Support/rnc';
 import { projectEap } from '@/Utils/projectEap';
@@ -181,6 +182,8 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc, signatureDat
                         </div>
                     </dl>
                 </DetailSection>
+
+                <LocationMap key={rnc.id} latitude={rnc.latitude} longitude={rnc.longitude} />
 
                 <DetailSection title="Descrição da não conformidade">
                     <dl className="space-y-5 p-5">
