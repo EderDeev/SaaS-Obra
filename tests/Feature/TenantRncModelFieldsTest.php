@@ -63,6 +63,57 @@ class TenantRncModelFieldsTest extends TestCase
         return $rnc->fresh();
     }
 
+    public function test_dashboard_selection_filters_follow_contract_and_preserve_historical_choices(): void
+    {
+        $field = ['key' => 'lote', 'label' => 'Lote', 'type' => 'select', 'required' => false, 'options' => ['Antigo', '0']];
+        $text = ['key' => 'observacao', 'label' => 'Observação', 'type' => 'text', 'required' => false, 'options' => []];
+        $this->saveSettings($this->settings('standard', [$field, $text]));
+        $this->createRnc(['lote' => 'Antigo']);
+        $this->saveSettings($this->settings('standard', [[...$field, 'options' => ['Atual', '0']], $text]));
+        $this->createRnc(['lote' => 'Atual']);
+        $this->createRnc(['lote' => '0']);
+        $other = $this->tenant->contracts()->create(['code' => 'OTHER', 'name' => 'Outro', 'status' => 'active']);
+        $url = route('tenant.qualidade.rnc.dashboard', $this->tenant);
+        $this->get($url)->assertOk()->assertInertia(fn (Assert $p) => $p->has('modelSelectFields', 0)->where('metrics.total', 3));
+        $this->get($url.'?'.http_build_query(['contract_id' => $other->id]))->assertOk()
+            ->assertInertia(fn (Assert $p) => $p->has('modelSelectFields', 0)->where('metrics.total', 0));
+        foreach (['Antigo', 'Atual', '0'] as $value) {
+            $this->get($url.'?'.http_build_query(['contract_id' => $this->contract->id, 'model_fields' => ['lote' => $value]]))->assertOk()
+                ->assertInertia(fn (Assert $p) => $p->has('modelSelectFields', 1)->where('modelSelectFields.0.key', 'lote')
+                    ->where('modelSelectFields.0.options', ['Atual', '0', 'Antigo'])->where('metrics.total', 1)
+                    ->where('filters.model_fields.lote', $value));
+        }
+        $this->get($url.'?'.http_build_query(['contract_id' => $this->contract->id, 'gravidade' => 'Leve', 'model_fields' => ['lote' => 'Atual']]))
+            ->assertOk()->assertInertia(fn (Assert $p) => $p->where('metrics.total', 0));
+    }
+
+    public function test_dashboard_rejects_unknown_nonselection_and_cross_contract_filters(): void
+    {
+        $field = ['key' => 'lote', 'label' => 'Lote', 'type' => 'select', 'required' => false, 'options' => ['A']];
+        $this->saveSettings($this->settings('standard', [$field]));
+        $other = $this->tenant->contracts()->create(['code' => 'OTHER', 'name' => 'Outro', 'status' => 'active']);
+        $url = route('tenant.qualidade.rnc.dashboard', $this->tenant);
+        foreach ([
+            ['model_fields' => ['lote' => 'A']],
+            ['contract_id' => $other->id, 'model_fields' => ['lote' => 'A']],
+            ['contract_id' => $this->contract->id, 'model_fields' => ['texto' => 'A']],
+        ] as $query) $this->get($url.'?'.http_build_query($query))->assertSessionHasErrors('model_fields');
+        $this->get($url.'?'.http_build_query(['contract_id' => $this->contract->id, 'model_fields' => ['lote' => 'Inválido']]))
+            ->assertSessionHasErrors('model_fields.lote');
+    }
+
+    public function test_dashboard_does_not_match_text_answers_against_a_selection_with_the_same_key(): void
+    {
+        $field = ['key' => 'lote', 'label' => 'Lote', 'type' => 'text', 'required' => false, 'options' => []];
+        $this->saveSettings($this->settings('standard', [$field]));
+        $this->createRnc(['lote' => 'A']);
+        $this->saveSettings($this->settings('standard', [[...$field, 'type' => 'select', 'options' => ['A']]]));
+        $this->createRnc(['lote' => 'A']);
+        $this->get(route('tenant.qualidade.rnc.dashboard', $this->tenant).'?'.http_build_query([
+            'contract_id' => $this->contract->id, 'model_fields' => ['lote' => 'A'],
+        ]))->assertOk()->assertInertia(fn (Assert $p) => $p->where('metrics.total', 1));
+    }
+
     public function test_inspection_fields_follow_contract_and_answers_are_visible_editable_and_printed_in_header(): void
     {
         $this->saveSettings($this->settings());

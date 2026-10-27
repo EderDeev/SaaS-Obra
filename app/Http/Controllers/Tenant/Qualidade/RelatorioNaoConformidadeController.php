@@ -175,6 +175,13 @@ class RelatorioNaoConformidadeController extends Controller
             'date_from' => ['nullable', 'date_format:Y-m-d'],
             'date_to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('date_from') ? ['after_or_equal:date_from'] : [])],
         ], ['date_to.after_or_equal' => 'A data final deve ser igual ou posterior à data inicial.']);
+        $modelSelectFields = !empty($filters['contract_id'])
+            ? \App\Support\RncDashboardFields::catalog($tenant, (int) $filters['contract_id']) : [];
+        $fieldRules = ['model_fields' => ['nullable', 'array', function ($attribute, $value, $fail) use ($modelSelectFields) {
+            if (array_diff(array_keys($value), array_column($modelSelectFields, 'key'))) $fail('Selecione campos de seleção do contrato informado.');
+        }]];
+        foreach ($modelSelectFields as $field) $fieldRules['model_fields.'.$field['key']] = ['nullable', 'string', Rule::in($field['options'])];
+        $filters = [...$filters, ...$request->validate($fieldRules)];
         foreach (['obra_id' => $obras, 'disciplina_id' => $disciplinas] as $field => $options) {
             if (! empty($filters['contract_id']) && ! empty($filters[$field])
                 && (int) $options->firstWhere('id', $filters[$field])->contract_id !== (int) $filters['contract_id']) {
@@ -210,6 +217,8 @@ class RelatorioNaoConformidadeController extends Controller
             ->latest()
             ->get();
 
+        $rncs = $rncs->filter(fn ($rnc) => \App\Support\RncDashboardFields::matches($tenant, $rnc, $filters['model_fields'] ?? []))->values();
+
         $today = now()->startOfDay();
         $finalizadas = $rncs->filter(fn (RelatorioNaoConformidade $rnc): bool => $this->isFinalizedRnc($rnc));
         $atrasadasResposta = $rncs->filter(fn (RelatorioNaoConformidade $rnc): bool => $this->isResponseOverdueRnc($rnc, $today));
@@ -235,6 +244,7 @@ class RelatorioNaoConformidadeController extends Controller
         return Inertia::render('Tenant/Qualidade/RelatorioNaoConformidade/Dashboard', [
             'tenant' => $tenant,
             'contracts' => $contracts, 'obras' => $obras, 'disciplinas' => $disciplinas, 'filters' => $filters,
+            'modelSelectFields' => $modelSelectFields,
             'statuses' => RncListing::STATUSES,
             'resolutionCounts' => $resolutionCounts,
             'monthlyRange' => $monthEnd->copy()->subMonths(5)->format('m/Y').' a '.$monthEnd->format('m/Y'),
