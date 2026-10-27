@@ -120,7 +120,7 @@ class ContractController extends Controller
 
         $data = $request->validate([
             'code' => ['required', 'string', 'max:50', Rule::unique('contracts', 'code')->where('tenant_id', $tenant->id)],
-            'total_value' => ['required', 'numeric', 'min:0'],
+            'total_value' => ['nullable', 'numeric', 'min:0'],
             'currency' => ['required', 'string', Rule::in(['BRL', 'USD', 'JPY', 'CNY', 'EUR'])],
             'city' => ['required', 'string', 'max:120'],
             'state' => ['required', 'string', Rule::in(self::BRAZILIAN_STATES)],
@@ -319,6 +319,7 @@ class ContractController extends Controller
                     ->where('contract_id', $contract->id)
                     ->when($gerenciadoraTipoIds->isNotEmpty(), fn ($query) => $query->whereIn('tipo_empresa_id', $gerenciadoraTipoIds))),
             ],
+            'total_value' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'measurement_mode' => ['sometimes', 'required', 'string', Rule::in(['simple', 'controlled'])],
         ], [
             'obra_id.exists' => 'Selecione uma obra pai deste contrato como obra principal.',
@@ -339,6 +340,10 @@ class ContractController extends Controller
         }
 
         $updates = [];
+
+        if (array_key_exists('total_value', $data)) {
+            $updates['total_value'] = $data['total_value'];
+        }
 
         if (array_key_exists('obra_id', $data)) {
             $updates['obra_id'] = $data['obra_id'];

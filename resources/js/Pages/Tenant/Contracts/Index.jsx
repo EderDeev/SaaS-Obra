@@ -398,13 +398,12 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
                                 ))}
                             </select>
                         </Field>
-                        <Field label="Valor" error={form.errors.total_value}>
+                        <Field label="Valor (opcional)" error={form.errors.total_value}>
                             <input
                                 value={totalValueDisplay}
                                 onChange={(event) => updateTotalValue(event.target.value)}
                                 placeholder={formatCurrency(0, form.data.currency)}
                                 inputMode="numeric"
-                                required
                             />
                         </Field>
                         <Field label="Estado" error={form.errors.state}>
@@ -582,13 +581,12 @@ function ContractCreateModal({
                             ))}
                         </select>
                     </Field>
-                    <Field label="Valor" error={form.errors.total_value}>
+                    <Field label="Valor (opcional)" error={form.errors.total_value}>
                         <input
                             value={totalValueDisplay}
                             onChange={(event) => onUpdateTotalValue(event.target.value)}
                             placeholder={formatCurrency(0, form.data.currency)}
                             inputMode="numeric"
-                            required
                         />
                     </Field>
                     <Field label="Estado" error={form.errors.state}>
