@@ -235,7 +235,7 @@
                 <td class="document-title-cell">
                     <h1 class="title">{{ $pdfOptions['title'] }}</h1>
                     <p class="subtitle">
-                        {{ $tenant->name }} &middot; RNC {{ $rnc->formatted_number }}
+                        RNC {{ $rnc->formatted_number }}
                     </p>
                     @if ($linkedProjects->isNotEmpty())
                         <p class="subtitle">

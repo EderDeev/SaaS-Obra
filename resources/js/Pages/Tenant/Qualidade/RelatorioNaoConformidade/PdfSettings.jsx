@@ -42,7 +42,8 @@ export default function PdfSettings({ tenant, contracts, templates, settings, de
             {!contracts.length ? <div className="sig-card p-6 text-sm text-[var(--ink-500)]">Nenhum contrato disponível para parametrização com o seu acesso.</div> : <form className="grid gap-5" onSubmit={(event) => {
                 event.preventDefault();
                 const id = form.data.contract_id;
-                form.transform(({ field_definitions, ...data }) => ({ ...data, fields_json: JSON.stringify(field_definitions) })).post(route('tenant.qualidade.rnc.settings.store', tenant.slug), { forceFormData: true, preserveScroll: true, onSuccess: (page) => {
+                form.transform(({ field_definitions, ...data }) => ({ ...data, fields_json: JSON.stringify(field_definitions) }));
+                form.post(route('tenant.qualidade.rnc.settings.store', tenant.slug), { forceFormData: true, preserveScroll: true, onSuccess: (page) => {
                     form.setData({ contract_id: id, ...(page.props.settings[id] || configuration(id)), ...emptyUploads });
                     setContractOptionsDraft(null);
                     setSaved(true);
