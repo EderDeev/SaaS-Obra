@@ -196,6 +196,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/usuarios', [TenantUserController::class, 'index'])->name('users.index');
         Route::post('/usuarios', [TenantUserController::class, 'store'])->name('users.store');
         Route::patch('/usuarios/{membership}', [TenantUserController::class, 'update'])->name('users.update');
+        Route::patch('/usuarios/{membership}/contratos', [TenantUserController::class, 'updateContracts'])->name('users.contracts.update');
         Route::patch('/usuarios/{membership}/redefinir-senha', [TenantUserController::class, 'resetPassword'])->name('users.reset-password');
         Route::patch('/usuarios/{membership}/desativar', [TenantUserController::class, 'deactivate'])->name('users.deactivate');
         Route::patch('/usuarios/{membership}/reativar', [TenantUserController::class, 'reactivate'])->name('users.reactivate');

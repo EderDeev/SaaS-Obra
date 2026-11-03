@@ -3,7 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { toggleOsDnitPermission } from '@/Support/osDnitPermissions';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { Activity, Calculator, CalendarDays, Check, ChevronRight, ClipboardList, Copy, FileKey2, FileText, FileWarning, FolderOpen, KeyRound, Link2, Pencil, Plus, Ruler, ShieldCheck, SlidersHorizontal, UserCheck, UserCog, UserX, Users, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const contractRoleLabels = {
     manager: 'Gerenciadora',
@@ -111,8 +111,14 @@ export default function TenantUsersIndex({
     const currentUser = page.props.auth.user;
     const defaultEmpresaId = empresas[0]?.id ?? '';
     const [formOpen, setFormOpen] = useState(false);
+    const formHeading = useRef(null);
     const [editingMembership, setEditingMembership] = useState(null);
     const [formMode, setFormMode] = useState('create');
+    useEffect(() => {
+        if (!formOpen) return;
+        formHeading.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        formHeading.current?.focus({ preventScroll: true });
+    }, [formOpen, editingMembership, formMode]);
     const [resetPasswordModal, setResetPasswordModal] = useState(null);
     const [passwordCopied, setPasswordCopied] = useState(false);
     const [openGlobalPermissionGroup, setOpenGlobalPermissionGroup] = useState('activity_permissions');
@@ -393,6 +399,12 @@ export default function TenantUsersIndex({
             onSuccess: clearForm,
         };
 
+        form.transform(data => formMode === 'contracts' ? { contract_accesses: data.contract_accesses } : data);
+        if (formMode === 'contracts' && editingMembership) {
+            form.patch(route('tenant.users.contracts.update', [page.props.currentTenant.slug, editingMembership.id]), options);
+            return;
+        }
+
         if (editingMembership) {
             form.patch(route('tenant.users.update', [page.props.currentTenant.slug, editingMembership.id]), options);
             return;
@@ -502,7 +514,7 @@ export default function TenantUsersIndex({
                                     <Users size={14} />
                                     <span className="eyebrow">Equipe interna</span>
                                 </div>
-                                <h1 className="mt-2 text-xl font-semibold">
+                                <h1 ref={formHeading} tabIndex={-1} className="mt-2 scroll-mt-20 text-xl font-semibold focus:outline-none">
                                     {formMode === 'contracts' ? 'Vincular contratos' : editingMembership ? 'Editar usuario' : 'Adicionar usuario'}
                                 </h1>
                                 <p className="mt-1 text-sm text-[var(--ink-500)]">
@@ -522,6 +534,8 @@ export default function TenantUsersIndex({
                                 {page.props.flash.success}
                             </div>
                         )}
+
+                        {formMode === 'contracts' && Object.keys(form.errors).length > 0 && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{[...new Set(Object.values(form.errors))].map(error => <p key={error}>{error}</p>)}</div>}
 
                         {formMode !== 'contracts' && (
                         <div className="mt-5 grid gap-3 lg:grid-cols-2">
@@ -736,7 +750,7 @@ export default function TenantUsersIndex({
                             </div>
                         )}
 
-                        {formMode !== 'create' && (
+                        {formMode === 'edit' && (
                             <div className="mt-5 space-y-3">
                                 <Field label="Contrato para configurar as permissões">
                                     <select
@@ -774,7 +788,7 @@ export default function TenantUsersIndex({
                         <div className="mt-5 flex flex-wrap gap-2">
                             <button
                                 className="sig-btn sig-btn-primary"
-                                disabled={form.processing || empresas.length === 0 || (!editingMembership && !userPermissionCan?.create_user) || (editingMembership && !userPermissionCan?.edit_user)}
+                                disabled={form.processing || (formMode !== 'contracts' && empresas.length === 0) || (!editingMembership && !userPermissionCan?.create_user) || (editingMembership && !userPermissionCan?.edit_user)}
                             >
                                 {formMode === 'contracts' ? <Link2 size={15} /> : <Plus size={15} />}
                                 {formMode === 'contracts' ? 'Salvar vínculos' : editingMembership ? 'Salvar alteracoes' : 'Adicionar'}
