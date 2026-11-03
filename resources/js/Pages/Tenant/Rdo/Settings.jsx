@@ -2,6 +2,12 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { ArrowLeft, CalendarClock, Copy, Save } from 'lucide-react';
 import { useEffect } from 'react';
+import LogoUploadField from '../Qualidade/RelatorioNaoConformidade/LogoUploadField';
+import PdfModelPreview from '../Qualidade/RelatorioNaoConformidade/PdfModelPreview';
+import WorkflowEditor, { defaultWorkflow, normalizeWorkflow } from './WorkflowEditor';
+
+const emptyLogoUploads = { logo_cliente: null, logo_gerenciadora: null, logo_construtora: null, remove_logo_cliente: false, remove_logo_gerenciadora: false, remove_logo_construtora: false };
+const logoRoles = { cliente: 'Cliente', gerenciadora: 'Gerenciadora', construtora: 'Construtora' };
 
 const weekdays = [
     { value: 0, label: 'Dom' },
@@ -13,10 +19,14 @@ const weekdays = [
     { value: 6, label: 'Sáb' },
 ];
 
-export default function Settings({ contracts, obras, users, filters, configuration }) {
+export default function Settings({ contracts, obras, users, filters, configuration, documentConfiguration, documentTemplates = [], documentLogos = {}, reportCompanies = [] }) {
     const { currentTenant } = usePage().props;
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, setError, clearErrors } = useForm({
+        ...emptyLogoUploads,
         configuration_id: configuration?.id || '',
+        report_company_id: configuration?.report_company_id || '',
+        workflow: normalizeWorkflow(configuration?.workflow || defaultWorkflow),
+        document_configuration: { layout: documentConfiguration?.layout || 'standard', title: documentConfiguration?.title || 'Relatório Diário de Obra', color: documentConfiguration?.color || '#23466b', title_color: documentConfiguration?.title_color || documentConfiguration?.color || '#23466b' },
         contract_id: filters.contract_id || '',
         obra_ids: configuration?.obra_ids || (filters.obra_id ? [Number(filters.obra_id)] : []),
         responsible_user_id: configuration?.responsible_user_id || '',
@@ -24,7 +34,6 @@ export default function Settings({ contracts, obras, users, filters, configurati
         end_date: configuration?.end_date || '',
         timezone: configuration?.timezone || 'America/Sao_Paulo',
         generation_weekdays: configuration?.generation_weekdays || [0, 1, 2, 3, 4, 5, 6],
-        generate_on_holidays: configuration?.generate_on_holidays ?? true,
         copy_previous_day: configuration?.copy_previous_day ?? false,
         copy_workforce: configuration?.copy_workforce ?? true,
         copy_equipment: configuration?.copy_equipment ?? true,
@@ -38,12 +47,17 @@ export default function Settings({ contracts, obras, users, filters, configurati
     useEffect(() => {
         setData((current) => ({
             ...current,
+            ...emptyLogoUploads,
             configuration_id: configuration?.id || '',
+        report_company_id: configuration?.report_company_id || '',
+            workflow: normalizeWorkflow(configuration?.workflow || defaultWorkflow),
+            document_configuration: { layout: documentConfiguration?.layout || 'standard', title: documentConfiguration?.title || 'Relatório Diário de Obra', color: documentConfiguration?.color || '#23466b', title_color: documentConfiguration?.title_color || documentConfiguration?.color || '#23466b' },
             contract_id: filters.contract_id || '',
             obra_ids: configuration?.obra_ids || (filters.obra_id ? [Number(filters.obra_id)] : []),
             responsible_user_id: configuration?.responsible_user_id || '',
             start_date: configuration?.start_date || new Date().toLocaleDateString('en-CA'),
             end_date: configuration?.end_date || '',
+            timezone: configuration?.timezone || 'America/Sao_Paulo',
             generation_weekdays: configuration?.generation_weekdays || [0, 1, 2, 3, 4, 5, 6],
             copy_previous_day: configuration?.copy_previous_day ?? false,
             copy_workforce: configuration?.copy_workforce ?? true,
@@ -54,7 +68,7 @@ export default function Settings({ contracts, obras, users, filters, configurati
             submission_deadline_days: configuration?.submission_deadline_days ?? 7,
             active: configuration?.active ?? true,
         }));
-    }, [configuration]);
+    }, [configuration, documentConfiguration]);
 
     const filter = (key, value) => {
         const next = { ...filters, [key]: value || undefined };
@@ -76,8 +90,17 @@ export default function Settings({ contracts, obras, users, filters, configurati
 
     const submit = (event) => {
         event.preventDefault();
-        post(route('tenant.diario-obra.rdo.settings.store', currentTenant.slug));
+        post(route('tenant.diario-obra.rdo.settings.store', currentTenant.slug), { forceFormData: true, preserveScroll: true });
     };
+
+    const previewPayload = (model = data.workflow.model) => ({
+        contract_id: data.contract_id, obra_id: data.obra_ids[0] || '', model,
+        require_photos: data.require_photos, report_company_id: data.report_company_id,
+        ...Object.fromEntries(Object.keys(emptyLogoUploads).map(key => [key, data[key]])),
+        ...data.document_configuration,
+        ...(data.document_configuration.layout === 'concremat_diary' && model !== 'gerenciadora_cliente'
+            ? { layout: 'standard', title: 'Relatório Diário de Obra', color: '#23466b', title_color: '#23466b' } : {}),
+    });
 
     return (
         <AuthenticatedLayout>
@@ -121,6 +144,7 @@ export default function Settings({ contracts, obras, users, filters, configurati
                                     <span className="text-xs font-semibold text-[var(--ink-500)]">Horário fixo</span>
                                 </div>
                             </Field>
+                            <Field label="Empresa no relatório" error={errors.report_company_id}><select className="sig-input w-full" value={data.report_company_id} onChange={event => setData('report_company_id', event.target.value)}><option value="">Usar empresa da parte responsável</option>{reportCompanies.map(company => <option key={company.id} value={company.id}>{company.sigla ? `${company.sigla} — ` : ''}{company.nome}</option>)}</select></Field>
                             <Field label="Responsável padrão" error={errors.responsible_user_id}>
                                 <select className="sig-input w-full" value={data.responsible_user_id} onChange={(event) => setData('responsible_user_id', event.target.value)}>
                                     <option value="">Definir depois</option>
@@ -174,6 +198,31 @@ export default function Settings({ contracts, obras, users, filters, configurati
                         </div>
                     </section>
 
+                    <WorkflowEditor value={data.workflow} onChange={workflow => setData(current => ({ ...current, workflow, document_configuration: current.document_configuration.layout === 'concremat_diary' && workflow.model !== 'gerenciadora_cliente' ? { ...current.document_configuration, layout: 'standard', title: 'Relatório Diário de Obra', title_color: '#23466b', color: '#23466b' } : current.document_configuration }))} errors={errors} renderPreview={model => data.contract_id ? <PdfModelPreview name={model.name} fileName={`rdo-${model.value}.pdf`} endpoint={route('tenant.diario-obra.rdo.settings.preview', currentTenant.slug)} payload={previewPayload(model.value)} /> : null} />
+                    <section className="sig-card grid gap-4 p-5">
+                        <div><h2 className="text-base font-semibold">Modelo do PDF por contrato</h2></div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <label className="grid gap-2 text-sm">Modelo do documento<select className="sig-input" value={data.document_configuration.layout} onChange={event => setData('document_configuration', { ...data.document_configuration, layout: event.target.value, ...(event.target.value === 'concremat_diary' ? { title: 'Diário de Obra', color: '#2f75b5', title_color: '#ffffff' } : { title: 'Relatório Diário de Obra', color: '#23466b', title_color: '#23466b' }) })}>{documentTemplates.map(template => <option key={template.value} value={template.value} disabled={Boolean(template.workflow_model && template.workflow_model !== data.workflow.model)}>{template.name}</option>)}</select></label>
+                            <label className="grid gap-2 text-sm">Título do documento<input className="sig-input" maxLength={100} value={data.document_configuration.title} onChange={event => setData('document_configuration', { ...data.document_configuration, title: event.target.value })} required /></label>
+
+
+                        </div>
+                        <p className="text-sm text-[var(--ink-500)]">{documentTemplates.find(template => template.value === data.document_configuration.layout)?.description}</p>
+
+                        {data.contract_id && <div><PdfModelPreview name={documentTemplates.find(template => template.value === data.document_configuration.layout)?.name || 'Modelo do documento'} fileName={`rdo-${data.document_configuration.layout}.pdf`} endpoint={route('tenant.diario-obra.rdo.settings.preview', currentTenant.slug)} payload={previewPayload()} /></div>}
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <ReportColorField label="Cor dos títulos" name="title_color" value={data.document_configuration.title_color} description="Título principal e títulos das seções do relatório." error={errors['document_configuration.title_color']} onChange={value => setData('document_configuration', { ...data.document_configuration, title_color: value })} />
+                            <ReportColorField label="Cor do relatório" name="color" value={data.document_configuration.color} description="Faixas, bordas e destaques das tabelas. Os fundos usam tons suaves desta cor." error={errors['document_configuration.color']} onChange={value => setData('document_configuration', { ...data.document_configuration, color: value })} />
+                        </div>
+                        <div className="grid gap-4 lg:grid-cols-3">{Object.entries(logoRoles).map(([role, label]) => <LogoUploadField key={`${data.contract_id}-${role}`} label={`Logo da ${label === 'Cliente' ? 'parte cliente' : label}`} file={data[`logo_${role}`]} current={documentLogos[role]} removed={data[`remove_logo_${role}`]} error={errors[`logo_${role}`]} onChange={file => {
+                            if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024) { setError(`logo_${role}`, 'Envie PNG, JPG ou WebP de até 4 MB.'); return; }
+                            clearErrors(`logo_${role}`); setData(current => ({ ...current, [`logo_${role}`]: file, [`remove_logo_${role}`]: false }));
+                        }} onRemove={() => setData(current => ({ ...current, [`logo_${role}`]: null, [`remove_logo_${role}`]: true }))} onUndo={() => setData(`remove_logo_${role}`, false)} />)}</div>
+                        <p className="text-xs text-[var(--ink-500)]">As logos ficam fixas nos novos RDOs do contrato. Alterações posteriores não modificam as logos dos documentos já criados.</p>
+                        {Object.entries(errors).filter(([key]) => key.startsWith('document_configuration')).map(([key, error]) => <p key={key} role="alert" className="text-sm text-red-600">{error}</p>)}
+                    </section>
+
                     <section className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-sm">
                         <div className="mb-4 flex items-center gap-3">
                             <Copy className="text-[var(--primary)]" size={22} />
@@ -192,8 +241,9 @@ export default function Settings({ contracts, obras, users, filters, configurati
 
                     <section className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-sm">
                         <h2 className="text-lg font-bold">Regras de preenchimento</h2>
+
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
-                            <Toggle compact label="Exigir ao menos uma foto para envio" checked={data.require_photos} onChange={(value) => setData('require_photos', value)} />
+                            <Toggle compact label="Incluir registro fotográfico no PDF" checked={data.require_photos} onChange={(value) => setData('require_photos', value)} />
                             <Toggle compact label="Usar assinatura digital" checked={data.digital_signature_enabled} onChange={(value) => setData('digital_signature_enabled', value)} />
                             <Field label="Prazo para envio (dias)" error={errors.submission_deadline_days}>
                                 <input
@@ -239,4 +289,16 @@ function Toggle({ label, checked, onChange, compact = false }) {
             <input type="checkbox" className="h-5 w-5 rounded border-[var(--border)] text-[var(--primary)]" checked={checked} onChange={(event) => onChange(event.target.checked)} />
         </label>
     );
+}
+
+function ReportColorField({ label, name, value, description, error, onChange }) {
+    return <div className="rounded-xl border border-[var(--border)] p-4">
+        <label htmlFor={`rdo-${name}`} className="text-sm font-semibold">{label}</label>
+        <div className="mt-3 flex items-center gap-3">
+            <input id={`rdo-${name}`} type="color" value={/^#[a-fA-F0-9]{6}$/.test(value) ? value : '#23466b'} onChange={event => onChange(event.target.value)} className="h-11 w-14 cursor-pointer rounded border border-[var(--border)] bg-white p-1" />
+            <input aria-label={`${label} em hexadecimal`} className="sig-input font-mono" value={value} onChange={event => onChange(event.target.value)} pattern="#[a-fA-F0-9]{6}" maxLength={7} placeholder="#23466b" required />
+        </div>
+        <p className="mt-2 text-xs text-[var(--ink-500)]">{description}</p>
+        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>;
 }

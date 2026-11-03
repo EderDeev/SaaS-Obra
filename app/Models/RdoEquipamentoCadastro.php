@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['tenant_id', 'codigo', 'descricao', 'unidade', 'propriedade', 'active'])]
+#[Fillable(['tenant_id', 'contract_id', 'codigo', 'descricao', 'unidade', 'propriedade', 'active'])]
 class RdoEquipamentoCadastro extends Model
 {
     use SoftDeletes;

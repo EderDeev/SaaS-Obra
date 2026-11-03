@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'tenant_id',
+    'workflow',
+    'report_company_id',
     'contract_id',
     'obra_id',
     'responsible_user_id',
@@ -38,6 +40,7 @@ class RdoConfiguracao extends Model
     protected function casts(): array
     {
         return [
+            'workflow' => 'array',
             'start_date' => 'date',
             'end_date' => 'date',
             'generation_weekdays' => 'array',

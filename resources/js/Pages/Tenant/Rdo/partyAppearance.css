@@ -1,0 +1,13 @@
+/* Entity identity only. Workflow status/error colors remain separate. */
+[data-rdo-party="construtora"] { --rdo-party-color: #c2410c; --rdo-party-solid: #c2410c; --rdo-party-soft: #fff7ed; --rdo-party-border: #fed7aa; --rdo-party-ring: #ffedd5; }
+[data-rdo-party="gerenciadora"] { --rdo-party-color: #1d4ed8; --rdo-party-solid: #2563eb; --rdo-party-soft: #eff6ff; --rdo-party-border: #bfdbfe; --rdo-party-ring: #dbeafe; }
+[data-rdo-party="cliente"] { --rdo-party-color: #047857; --rdo-party-solid: #047857; --rdo-party-soft: #ecfdf5; --rdo-party-border: #a7f3d0; --rdo-party-ring: #d1fae5; }
+.rdo-party-panel[data-rdo-party] { border-top: 3px solid var(--rdo-party-solid); }
+.rdo-party-panel[data-rdo-party] > header { background: var(--rdo-party-soft); }
+[data-rdo-party] .rdo-party-accent { color: var(--rdo-party-color); background: var(--rdo-party-ring); }
+[data-rdo-party] .rdo-party-label { color: var(--rdo-party-color); }
+[data-rdo-party] .rdo-party-selected { background: var(--rdo-party-solid) !important; border-color: var(--rdo-party-solid) !important; color: white !important; --tw-ring-color: var(--rdo-party-ring); }
+[data-rdo-party] details > summary { background: var(--rdo-party-soft); }
+.rdo-flow-party[data-rdo-party] { border-top: 3px solid var(--rdo-party-solid); }
+.rdo-flow-party[data-rdo-party] strong { color: var(--rdo-party-color); }
+[data-rdo-party] .rdo-party-activity { border-left-color: var(--rdo-party-solid); background: var(--rdo-party-soft); }

@@ -1,7 +1,17 @@
+import { partyLabels } from './WorkflowEditor';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, ClipboardList, CloudSun, Construction, FileText, History, ImagePlus, MessageSquareText, Plus, RefreshCw, Save, Scale, Send, ShieldCheck, Trash2, Upload, Users, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, ClipboardList, ClipboardPenLine, CloudSun, Construction, Eye, FileText, GitCompareArrows, History, ImagePlus, MessageSquareText, Plus, RefreshCw, Save, Send, Trash2, Upload, Users, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import PdfDownloadModal from './PdfDownloadModal';
+import DocumentWorkspace, { RdoSection, ReadSection } from './DocumentWorkspace';
+import RdoCatalogPicker from '@/Components/RdoCatalogPicker';
+import InspectionEvidenceEditor from './InspectionEvidenceEditor';
+import InspectionDocumentFile from './InspectionDocumentFile';
+import ManagerFlowActions from './ManagerFlowActions';
+import ClientReviewPanel from './ClientReviewPanel';
+import { rdoParty } from './partyAppearance';
+import './partyAppearance.css';
 
 const sections = [
     { key: 'clima', label: 'Condições do tempo', icon: CloudSun, description: 'Manhã, tarde, noite, chuva e condições impeditivas.' },
@@ -30,11 +40,13 @@ const emptySection = {
     comentarios: { construtora: '', gerenciadora: '', cliente: '' },
 };
 
-export default function Show({ rdo, catalogs = {} }) {
+export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
     const { currentTenant, flash = {} } = usePage().props;
+    const [completeRdoOpen, setCompleteRdoOpen] = useState(false);
+    const [pdfDownloadOpen, setPdfDownloadOpen] = useState(false);
     const [activeSection, setActiveSection] = useState(null);
     const [activeObraId, setActiveObraId] = useState(null);
-    const [completeOpen, setCompleteOpen] = useState(false);
+    const [workspaceMode, setWorkspaceMode] = useState(rdo.can_edit && rdo.can_fill ? 'edit' : 'view');
     const [flowProcessing, setFlowProcessing] = useState(false);
     const [signatureProcessing, setSignatureProcessing] = useState(false);
     const [signatureRefreshProcessing, setSignatureRefreshProcessing] = useState(false);
@@ -42,20 +54,32 @@ export default function Show({ rdo, catalogs = {} }) {
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyEvents, setHistoryEvents] = useState([]);
     const [historyError, setHistoryError] = useState('');
-    const [importingRdaId, setImportingRdaId] = useState(null);
-    const [previewRda, setPreviewRda] = useState(null);
     const [deadlineModalOpen, setDeadlineModalOpen] = useState(false);
     const [inspectionOpen, setInspectionOpen] = useState(false);
     const [divergenceOpen, setDivergenceOpen] = useState(false);
+    const [reviewDivergencesOpen, setReviewDivergencesOpen] = useState(false);
     const [divergenceAction, setDivergenceAction] = useState(null);
-    const sectionForm = useForm({ obra_id: '', dados: {}, fotos: [] });
-    const completeForm = useForm({ obra_id: '', secoes: {}, fotos: [] });
-    const flowForm = useForm({ comment: '', comments_by_obra: {}, reservations_by_obra: {}, obra_ids: rdo.flow_obra_ids || [] });
-    const inspectionForm = useForm({ obra_id: rdo.flow_obra_ids?.[0] || '', resumo_fiscalizacao: '', servicos_atestados: '', ocorrencias: '', orientacoes: '', status: 'concluido', evidencias: [] });
+    const sectionForm = useForm({ obra_id: '', filling_party: rdo.fill_party, dados: {}, fotos: [] });
+    const holidayForm = useForm({ is_holiday: rdo.is_holiday == null ? '' : rdo.is_holiday ? '1' : '0' });
+    const completeForm = useForm({ obra_id: '', filling_party: rdo.fill_party, secoes: {}, fotos: [] });
+    const fillDrafts = useRef({});
+    const [fillDraftCount, setFillDraftCount] = useState(0);
+    const photoPreviews = useRef(new Set());
+    (completeForm.data.secoes?.fotos?.novas_fotos || []).forEach(photo => photoPreviews.current.add(photo.preview_url));
+    useEffect(() => () => photoPreviews.current.forEach(url => URL.revokeObjectURL(url)), []);
+    const flowForm = useForm({ comment: '', return_to: '', comments_by_obra: {}, reservations_by_obra: {}, reservation_obra_ids: [], obra_ids: rdo.flow_obra_ids || [] });
+    const [pendingFlow, setPendingFlow] = useState(null);
+    const confirmationLabel = pendingFlow ? ({
+        approve: rdo.active_stage === 'cliente' && rdo.workflow?.client_comment_only ? 'Confirmar comentário' : 'Confirmar aprovação',
+        approve_with_reservations: 'Confirmar aprovação com ressalvas',
+        return: 'Confirmar devolução',
+        submit: rdo.workflow?.model === 'gerenciadora' ? 'Confirmar conclusão' : 'Confirmar envio',
+    }[pendingFlow.action] || 'Confirmar ação') : '';
+    const inspectionForm = useForm(inspectionValues(null, rdo.flow_obra_ids?.[0] || ''));
     const divergenceForm = useForm({ obra_id: rdo.flow_obra_ids?.[0] || '', topico: 'Atividades e ocorrências', titulo: '', versao_construtora: '', versao_gerenciadora: '' });
     const divergenceActionForm = useForm({ action: '', response: '', conclusion: '', outcome: 'resolvida', client_decision: 'aceita_gerenciadora', client_comment: '' });
     const manualSignatureForm = useForm({ signed_pdf: null });
-    const allObras = rdo.obras || [rdo.obra];
+    const allObras = (rdo.obras?.length ? rdo.obras : [rdo.obra]).filter(Boolean);
     const fillLocked = rdo.can_edit && !rdo.can_fill;
     const editableObras = rdo.can_edit
         ? allObras.filter((obra) => rdo.editable_obra_ids?.includes(Number(obra.id)))
@@ -65,6 +89,7 @@ export default function Show({ rdo, catalogs = {} }) {
         sectionForm.clearErrors();
         sectionForm.setData({
             obra_id: obraId,
+            filling_party: rdo.fill_party,
             dados: structuredClone(rdo.sections?.[obraId]?.[key] || emptySection[key]),
             fotos: [],
         });
@@ -82,28 +107,13 @@ export default function Show({ rdo, catalogs = {} }) {
         setActiveSection(key);
     };
 
-    const loadCompleteForObra = (obraId) => {
+    const loadCompleteForObra = (obraId, useDraft = false) => {
         completeForm.clearErrors();
-        completeForm.setData({
-            obra_id: obraId,
-            secoes: Object.fromEntries(sections.map(({ key }) => [
-                key,
-                structuredClone(rdo.sections?.[obraId]?.[key] || emptySection[key]),
-            ])),
-            fotos: [],
-        });
+        const next = { obra_id: obraId, filling_party: rdo.fill_party,
+            secoes: Object.fromEntries(sections.map(({ key }) => [key, structuredClone(rdo.sections?.[obraId]?.[key] || emptySection[key])])), fotos: [] };
+        completeForm.setData(useDraft && fillDrafts.current[obraId] ? fillDrafts.current[obraId] : next);
+        completeForm.setDefaults(next);
         setActiveObraId(obraId);
-    };
-
-    const openComplete = () => {
-        if (fillLocked) {
-            setDeadlineModalOpen(true);
-            return;
-        }
-
-        const firstObraId = editableObras[0]?.id;
-        loadCompleteForObra(firstObraId);
-        setCompleteOpen(true);
     };
 
     const closeSection = () => {
@@ -121,52 +131,54 @@ export default function Show({ rdo, catalogs = {} }) {
 
     const saveComplete = (event) => {
         event.preventDefault();
-        completeForm.post(route('tenant.diario-obra.rdo.sections.store-all', [currentTenant.slug, rdo.id]), {
+        const drafts = { ...fillDrafts.current };
+        if (completeForm.isDirty || !Object.keys(drafts).length) drafts[activeObraId] = completeForm.data;
+        completeForm.transform(() => ({ filling_party: rdo.fill_party, is_holiday: holidayForm.data.is_holiday === '' ? null : holidayForm.data.is_holiday === '1', obras: Object.values(drafts) }));
+        completeForm.post(route('tenant.diario-obra.rdo.sections.store-works', [currentTenant.slug, rdo.id]), {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => setCompleteOpen(false),
+            onSuccess: () => { fillDrafts.current = {}; setFillDraftCount(0); holidayForm.setDefaults({ ...holidayForm.data }); },
         });
     };
 
-    const changeFlow = (action) => {
+    const changeFlow = (action, extras = {}) => setPendingFlow({ action, extras });
+    const executeFlow = () => {
+        if (!pendingFlow || flowProcessing) return;
+        const { action, extras } = pendingFlow;
         flowForm.clearErrors();
         setFlowProcessing(true);
 
         router.post(route('tenant.diario-obra.rdo.flow', [currentTenant.slug, rdo.id]), {
             action,
+            filling_party: rdo.fill_party,
             comment: action === 'submit' && rdo.status === 'rascunho' ? '' : flowForm.data.comment,
-            comments_by_obra: ['em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) ? flowForm.data.comments_by_obra : {},
+            comments_by_obra: ['em_analise_construtora', 'em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) ? flowForm.data.comments_by_obra : {},
             reservations_by_obra: action === 'approve_with_reservations' ? flowForm.data.reservations_by_obra : {},
-            obra_ids: action === 'submit'
-                ? (rdo.flow_obra_ids || [])
-                : (flowForm.data.obra_ids?.length ? flowForm.data.obra_ids : (rdo.flow_obra_ids || [])),
+            ...(action === 'approve_with_reservations' && rdo.active_stage === 'cliente' ? { reservation_obra_ids: flowForm.data.reservation_obra_ids || [] } : {}),
+            obra_ids: rdo.flow_obra_ids || [],
+            ...extras,
         }, {
             preserveScroll: true,
             preserveState: false,
             onError: (errors) => flowForm.setError(errors),
-            onSuccess: () => flowForm.setData({ ...flowForm.data, comment: '', comments_by_obra: {}, reservations_by_obra: {} }),
+            onSuccess: () => { flowForm.setData({ ...flowForm.data, comment: '', return_to: '', comments_by_obra: {}, reservations_by_obra: {}, reservation_obra_ids: [] }); setPendingFlow(null); },
             onFinish: () => setFlowProcessing(false),
         });
     };
 
     const openInspection = (record = null) => {
-        const obraId = Number(record?.obra_id || rdo.flow_obra_ids?.[0] || rdo.obras?.[0]?.id || '');
+        const selected = rdo.flow_obra_ids?.includes(Number(activeObraId)) ? activeObraId : rdo.flow_obra_ids?.[0];
+        if (!record) record = (rdo.inspection_records || []).find(item => item.is_current_version && Number(item.obra_id) === Number(selected));
+        const obraId = Number(record?.obra_id || selected || rdo.obras?.[0]?.id || '');
         inspectionForm.clearErrors();
-        inspectionForm.setData({
-            obra_id: obraId,
-            resumo_fiscalizacao: record?.summary || '',
-            servicos_atestados: record?.services_attested || '',
-            ocorrencias: record?.occurrences || '',
-            orientacoes: record?.guidance || '',
-            status: record?.status || 'concluido',
-            evidencias: [],
-        });
+        inspectionForm.setData(inspectionValues(record, obraId));
         setInspectionOpen(true);
     };
 
-    const saveInspection = (event) => {
+    const saveInspection = (event, drafts = {}) => {
         event.preventDefault();
-        inspectionForm.post(route('tenant.diario-obra.rdo.inspection.store', [currentTenant.slug, rdo.id]), {
+        inspectionForm.transform(data => ({ obras: Object.values({ ...drafts, [data.obra_id]: data }) }));
+        inspectionForm.post(route('tenant.diario-obra.rdo.inspection.store-works', [currentTenant.slug, rdo.id]), {
             forceFormData: true,
             preserveScroll: true,
             preserveState: false,
@@ -252,15 +264,6 @@ export default function Show({ rdo, catalogs = {} }) {
         }
     };
 
-    const importRda = (rda) => {
-        setImportingRdaId(rda.id);
-        router.post(rda.import_url, {}, {
-            preserveScroll: true,
-            preserveState: false,
-            onSuccess: () => setPreviewRda(null),
-            onFinish: () => setImportingRdaId(null),
-        });
-    };
 
     useEffect(() => {
         if (!activeSection) return undefined;
@@ -273,25 +276,56 @@ export default function Show({ rdo, catalogs = {} }) {
         flowForm.setData('obra_ids', rdo.flow_obra_ids || []);
     }, [rdo.status, JSON.stringify(rdo.flow_obra_ids || [])]);
 
+    useEffect(() => {
+        fillDrafts.current = {};
+        setFillDraftCount(0);
+        const id = (rdo.editable_obra_ids || []).includes(Number(activeObraId)) || !rdo.can_edit
+            ? (activeObraId || allObras[0]?.id) : rdo.editable_obra_ids?.[0];
+        if (id) loadCompleteForObra(id);
+        setWorkspaceMode(rdo.can_edit && rdo.can_fill ? 'edit' : 'view');
+    }, [rdo.id, rdo.fill_party, rdo.sections, rdo.can_edit, rdo.can_fill]);
+
+    useEffect(() => {
+        if (!completeForm.isDirty && !fillDraftCount && !holidayForm.isDirty) return;
+        const unload = event => { event.preventDefault(); event.returnValue = ''; };
+        window.addEventListener('beforeunload', unload);
+        const remove = router.on('before', event => {
+            if (event.detail.visit.method === 'get' && !window.confirm('Existem alterações não salvas nesta frente. Deseja sair e descartá-las?')) event.preventDefault();
+        });
+        return () => { window.removeEventListener('beforeunload', unload); remove(); };
+    }, [completeForm.isDirty, fillDraftCount, holidayForm.isDirty]);
+
+    const renderWorkspaceField = key => {
+        const form = scopeRdoForm(completeForm, key);
+        if (key === 'clima') return <WeatherFields form={form} />;
+        if (key === 'mao_obra') return <LaborFields form={form} catalogs={catalogs} historicalCatalogs={record_catalogs} />;
+        if (key === 'equipamentos') return <EquipmentFields form={form} catalogs={catalogs} historicalCatalogs={record_catalogs} />;
+        if (key === 'atividades') return <ActivityFields form={form} subjects={rdo.activity_subjects || []} />;
+        if (key === 'comentarios') return <CommentFields form={form} fillParty={rdo.fill_party} />;
+        return <PhotoFields form={form} preservePreviews />;
+    };
+
     return (
         <AuthenticatedLayout>
             <Head title={`${rdo.code} - RDO`} />
-            <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-                <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+            <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <span className="eyebrow">Diário de Obra · {rdo.reference_date_formatted}</span>
-                        <h1 className="mt-2 text-3xl font-bold">{rdo.code}</h1>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">{rdo.obra?.codigo} - {rdo.obra?.nome}</p>
+                        <h1 className="mt-1 text-2xl font-bold">{rdo.code} <span className="text-sm font-medium text-[var(--ink-500)]">· {rdo.reference_date_formatted}</span></h1>
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">{rdo.contract?.name}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        <a href={route('tenant.diario-obra.rdo.pdf', [currentTenant.slug, rdo.id])}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-4 py-2.5 font-bold">
-                            <FileText size={17} /> Gerar PDF
-                        </a>
+                    <div className="flex flex-wrap gap-2" data-rdo-document-actions>
+                        <button type="button" onClick={() => setCompleteRdoOpen(true)} aria-haspopup="dialog"
+                            className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-200 focus-visible:ring-blue-500">
+                            <Eye size={17} /> Visualizar RDO completo
+                        </button>
+                        <button type="button" onClick={() => setPdfDownloadOpen(true)} aria-haspopup="dialog"
+                            className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 focus-visible:ring-emerald-500">
+                            <FileText size={17} /> Baixar PDF
+                        </button>
                     <Link href={route('tenant.diario-obra.rdo.calendar', { tenant: currentTenant.slug, month: rdo.reference_date.slice(0, 7), contract_id: rdo.contract?.id, obra_id: rdo.obra?.id })}
-                        className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-4 py-2.5 font-bold">
+                        className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 focus-visible:ring-slate-500">
                         <ArrowLeft size={17} /> Voltar ao calendário
                     </Link>
                     </div>
@@ -299,88 +333,30 @@ export default function Show({ rdo, catalogs = {} }) {
 
                 {flash.success && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 font-semibold text-emerald-700">{flash.success}</div>}
 
-                <div className="mb-4 grid gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm md:grid-cols-4">
-                    <Meta label="Contrato" value={`${rdo.contract?.code || ''} - ${rdo.contract?.name || ''}`} />
-                    <Meta label="Status" value={rdo.status_label} />
-                    <Meta label="Responsável" value={rdo.responsible?.name || 'Não definido'} />
-                    <Meta label="Origem" value={rdo.generated_automatically ? 'Geração automática' : 'Criação manual'} />
-                </div>
+                {(rdo.fill_parties?.length || 0) > 1 && <section className="mt-5" aria-label="Preenchimentos por parte">
+                    <div className="flex flex-wrap gap-2">{rdo.fill_parties.map(party => <button key={party} type="button" aria-pressed={party === rdo.fill_party} className={`sig-btn ${party === rdo.fill_party ? 'sig-btn-primary' : ''}`} onClick={() => router.get(route('tenant.diario-obra.rdo.show', [currentTenant.slug, rdo.id]), { filling_party: party }, { preserveScroll: true, preserveState: false })}>{partyLabels[party]}</button>)}</div>
+                </section>}
+                {fillLocked && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><span>Prazo de preenchimento encerrado em {rdo.submission_deadline_formatted}.</span><button type="button" onClick={() => setDeadlineModalOpen(true)} className="sig-btn">Consultar prazo</button></div>}
+                <DocumentWorkspace rdo={rdo} catalogs={catalogs} recordCatalogs={record_catalogs} form={completeForm} mode={workspaceMode}
+                    canEdit={Boolean(rdo.can_edit && rdo.can_fill)} obraId={activeObraId}
+                    onObraChange={id => { if (Number(id) === Number(activeObraId)) return true; if (workspaceMode === 'edit' && completeForm.isDirty) { fillDrafts.current[activeObraId] = completeForm.data; setFillDraftCount(Object.keys(fillDrafts.current).length); } loadCompleteForObra(id, workspaceMode === 'edit'); return true; }}
+                    pendingWorks={fillDraftCount + (holidayForm.isDirty ? 1 : 0)}
+                    renderDayFields={() => <label className="grid max-w-sm gap-2 text-sm font-semibold">O dia do RDO foi feriado?<select aria-label="O dia do RDO foi feriado?" className="sig-input bg-white" value={holidayForm.data.is_holiday} onChange={event => holidayForm.setData('is_holiday', event.target.value)}><option value="">Não informado</option><option value="1">Sim</option><option value="0">Não</option></select></label>}
+                    renderFields={renderWorkspaceField} onSave={saveComplete}
+                    completeOpen={completeRdoOpen} onCompleteOpenChange={setCompleteRdoOpen}
+                    onDownloadPdf={() => setPdfDownloadOpen(true)}
+                    renderInspectionEvidence={files => <InspectionEvidenceList files={files} />}
+                    renderCompleteExtras={() => <div className="space-y-4">{rdo.divergences?.length > 0 && <DivergencePanel rdo={{...rdo,can_create_divergence:false,can_respond_divergence:false,can_conclude_divergence:false,can_decide_divergence:false}} onCreate={() => {}} onAction={() => {}} />}<SignaturePanel rdo={{...rdo,can_manage_signatures:false}} manualForm={manualSignatureForm} /></div>} />
 
-                {rdo.obras?.length > 0 && (
-                    <div className="mb-4 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
-                        <span className="eyebrow">Obras / frentes participantes</span>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                            {rdo.obras.map((obra) => (
-                                <span key={obra.id} className="rounded-full bg-[var(--primary-50)] px-3 py-1.5 text-xs font-bold text-[var(--primary)]">
-                                    {obra.codigo} - {obra.nome}
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                {workspaceMode !== 'edit' && <div className="mt-5">
+                    {((rdo.workflow?.review_parties || ['gerenciadora', 'cliente']).includes('gerenciadora') || rdo.inspection_records?.length > 0) && <InspectionPanel key={rdo.id} rdo={rdo} onOpen={openInspection} filterable />}
+                </div>}
 
-                <RdaReferencePanel
-                    rdas={rdo.published_rdas || []}
-                    canImport={rdo.can_edit && rdo.can_fill}
-                    onPreview={setPreviewRda}
-                />
-
-                {rdo.can_edit && (
-                    <div className="mb-4 flex justify-end">
-                        <button
-                            type="button"
-                            onClick={openComplete}
-                            className={`sig-btn ${fillLocked ? 'border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100' : 'sig-btn-primary'}`}
-                        >
-                            <ClipboardList size={17} /> Preencher RDO completo
-                        </button>
-                    </div>
-                )}
-
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {sections.map(({ key, label, icon: Icon, description }) => {
-                        const totalObras = rdo.obras?.length || 1;
-                        const filledCount = (rdo.obras || [rdo.obra]).filter((obra) => Boolean(rdo.sections?.[obra.id]?.[key])).length;
-                        const filled = filledCount === totalObras;
-                        return (
-                            <button key={key} type="button" onClick={() => openSection(key)}
-                                className={`rounded-xl border p-5 text-left shadow-sm transition ${
-                                    fillLocked
-                                        ? 'border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100'
-                                        : 'border-[var(--border)] bg-white hover:-translate-y-0.5 hover:border-[var(--primary)]'
-                                }`}>
-                                <div className="flex items-start justify-between gap-3">
-                                    <Icon size={24} className={fillLocked ? 'text-slate-400' : 'text-[var(--primary)]'} />
-                                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${fillLocked ? 'bg-slate-200 text-slate-500' : filled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                        {filledCount}/{totalObras} preenchida(s)
-                                    </span>
-                                </div>
-                                <h2 className="mt-4 text-lg font-bold">{label}</h2>
-                                <p className="mt-1 text-sm text-[var(--ink-500)]">{description}</p>
-                                <span className={`mt-4 inline-block text-xs font-bold ${fillLocked ? 'text-slate-500' : 'text-[var(--primary)]'}`}>
-                                    {rdo.can_edit ? (filled ? 'Editar seção →' : 'Abrir seção →') : 'Visualizar seção →'}
-                                </span>
-                                {fillLocked && (
-                                    <span className="mt-2 block rounded-md bg-slate-200 px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide text-slate-600">
-                                        Prazo encerrado
-                                    </span>
-                                )}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                <div className="mt-5 grid gap-4 xl:grid-cols-2">
-                    <InspectionPanel rdo={rdo} onOpen={openInspection} />
-                    <DivergencePanel
-                        rdo={rdo}
-                        onCreate={() => setDivergenceOpen(true)}
-                        onAction={openDivergenceAction}
-                    />
-                </div>
+                {rdo.active_stage === 'cliente' && rdo.status === 'em_aprovacao_cliente' && Object.keys(rdo.flow_actions || {}).length > 0 && <ClientReviewPanel rdo={rdo} form={flowForm} processing={flowProcessing} onAction={changeFlow} obraId={activeObraId} catalogs={record_catalogs || catalogs} renderEvidence={files => <InspectionEvidenceList files={files} />} renderFields={action => <ApprovalCommentFields rdo={rdo} form={flowForm} selectedObraIds={rdo.flow_obra_ids || []} needsComment showPrevious={false} showIntroduction={false} showReservations reservationChoices={Boolean(rdo.flow_actions?.approve_with_reservations)} />} />}
 
                 <div className="mt-5">
-                    <WorkflowPanel rdo={rdo} form={flowForm} processing={flowProcessing} onAction={changeFlow} onOpenHistory={openHistory} />
+                    {rdo.workflow?.model === 'gerenciadora_construtora' && rdo.divergences?.length > 0 && <button type="button" className="sig-btn mb-3" onClick={() => setReviewDivergencesOpen(true)}><MessageSquareText size={16} /> Consultar devoluções</button>}
+                    {rdo.workflow?.model === 'gerenciadora' ? <section className="mb-5 rounded-xl border border-[var(--border)] bg-white p-4"><strong>{rdo.status === 'rascunho' ? 'Preenchimento' : rdo.status_label}</strong><p className="mt-1 text-sm text-[var(--ink-500)]">Registro da gerenciadora, sem fluxo de aprovação.</p></section> : <WorkflowPanel rdo={rdo} obraId={activeObraId} form={flowForm} processing={flowProcessing} onAction={changeFlow} />}
                 </div>
 
                 <SignaturePanel
@@ -394,9 +370,14 @@ export default function Show({ rdo, catalogs = {} }) {
                 />
             </div>
 
+            {pdfDownloadOpen && <PdfDownloadModal rdo={rdo} pdfUrl={route('tenant.diario-obra.rdo.pdf', [currentTenant.slug, rdo.id])} onClose={() => setPdfDownloadOpen(false)} />}
+            {pendingFlow && <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" data-rdo-flow-confirmation aria-label={confirmationLabel} className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"><h2 className="text-lg font-bold">{confirmationLabel} do RDO?</h2><p className="mt-3 text-sm">{rdo.code} · Todas as obras serão movimentadas juntas.{pendingFlow.extras.return_to && ` Destino: ${partyLabels[pendingFlow.extras.return_to]}.`}</p><p className="mt-2 text-sm text-[var(--ink-500)]">Os usuários envolvidos receberão um e-mail e uma notificação no sistema.</p>{Object.values(flowForm.errors).map((error, index) => <p key={index} role="alert" className="mt-2 text-sm text-red-600">{error}</p>)}<div className="mt-5 flex justify-end gap-2"><button type="button" disabled={flowProcessing} className="sig-btn" onClick={() => setPendingFlow(null)}>Cancelar</button><button type="button" disabled={flowProcessing} className="sig-btn sig-btn-primary" data-confirm-rdo-action onClick={executeFlow}>{flowProcessing ? 'Processando…' : confirmationLabel}</button></div></section></div>}
+            {reviewDivergencesOpen && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-label="Devoluções do RDO" className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-4 shadow-xl"><div className="mb-3 flex items-center justify-between"><h2 className="font-bold">Devoluções do RDO</h2><button type="button" className="sig-btn sig-btn-sm" onClick={() => setReviewDivergencesOpen(false)}><X size={17} /> Fechar</button></div><DivergencePanel rdo={rdo} onAction={openDivergenceAction} /></section></div>}
             {activeSection && (
                 <SectionModal
+                    activitySubjects={rdo.activity_subjects || []}
                     section={activeSection}
+                    fillParty={rdo.fill_party}
                     form={sectionForm}
                     catalogs={catalogs}
                     obras={editableObras}
@@ -407,32 +388,12 @@ export default function Show({ rdo, catalogs = {} }) {
                     readOnly={!rdo.can_edit || fillLocked}
                 />
             )}
-            {completeOpen && (
-                <CompleteModal
-                    form={completeForm}
-                    catalogs={catalogs}
-                    obras={editableObras}
-                    activeObraId={activeObraId}
-                    onChangeObra={loadCompleteForObra}
-                    onClose={() => !completeForm.processing && setCompleteOpen(false)}
-                    onSubmit={saveComplete}
-                />
-            )}
             {historyOpen && (
                 <HistoryModal
                     events={historyEvents}
                     loading={historyLoading}
                     error={historyError}
                     onClose={() => setHistoryOpen(false)}
-                />
-            )}
-            {previewRda && (
-                <RdaPreviewModal
-                    rda={previewRda}
-                    canImport={rdo.can_edit && rdo.can_fill}
-                    importing={importingRdaId === previewRda.id}
-                    onImport={() => importRda(previewRda)}
-                    onClose={() => setPreviewRda(null)}
                 />
             )}
             {deadlineModalOpen && (
@@ -469,35 +430,40 @@ export default function Show({ rdo, catalogs = {} }) {
     );
 }
 
-function InspectionPanel({ rdo, onOpen }) {
+function InspectionPanel({ rdo, onOpen, filterable = false }) {
     const currentRecords = (rdo.inspection_records || []).filter((item) => item.is_current_version);
+    const fronts = (rdo.obras?.length ? rdo.obras : [rdo.obra]).filter(Boolean);
+    const [selectedFront, setSelectedFront] = useState(() => String(fronts[0]?.id || ''));
+    const activeFront = selectedFront === 'all' || fronts.some(obra => String(obra.id) === selectedFront) ? selectedFront : String(fronts[0]?.id || '');
+    const visibleRecords = filterable && activeFront !== 'all' ? currentRecords.filter(record => String(record.obra_id) === activeFront) : currentRecords;
 
     return (
-        <section className="overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
-            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-                <div className="flex items-start gap-3">
-                    <span className="rounded-lg bg-emerald-50 p-2 text-emerald-700"><ShieldCheck size={20} /></span>
+        <section data-rdo-party={rdoParty('gerenciadora')} className="rdo-party-panel overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
+            <header className="flex flex-col items-start gap-3 border-b border-[var(--border)] px-5 py-4">
+                <div className="flex min-h-12 items-center gap-3">
+                    <span className="rdo-party-accent rounded-lg bg-blue-50 p-2 text-blue-600"><ClipboardPenLine size={20} aria-hidden="true" /></span>
                     <div>
-                        <span className="eyebrow">Camada da gerenciadora</span>
-                        <h2 className="mt-1 text-lg font-black">Registro da fiscalização</h2>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">Atestação e fatos próprios, sem alterar o relato da construtora.</p>
+                        <h2 className="rdo-party-label text-base font-semibold">Registros da gerenciadora</h2>
                     </div>
                 </div>
                 {rdo.can_manage_inspection && (
-                    <button type="button" onClick={() => onOpen()} className="sig-btn sig-btn-primary">
+                    <button type="button" onClick={() => onOpen(filterable && rdo.flow_obra_ids?.includes(Number(activeFront)) ? currentRecords.find(record => String(record.obra_id) === activeFront) || { obra_id: Number(activeFront) } : undefined)} className="sig-btn sig-btn-primary">
                         <Plus size={16} /> Registrar
                     </button>
                 )}
             </header>
+            {filterable && <div className="flex flex-wrap gap-2 border-b border-[var(--border)] px-4 py-3" aria-label="Filtrar registros da gerenciadora por obra">
+                {fronts.map(obra => <button key={obra.id} type="button" aria-pressed={activeFront === String(obra.id)} onClick={() => setSelectedFront(String(obra.id))} className={`sig-btn sig-btn-sm !whitespace-normal text-left ${activeFront === String(obra.id) ? 'rdo-party-selected sig-btn-primary ring-2 ring-blue-200 ring-offset-2' : 'border border-[var(--border)] bg-white'}`}>{activeFront === String(obra.id) && <CheckCircle2 size={17} className="shrink-0" />}<span>{obra.codigo} · {obra.nome}</span></button>)}
+                {fronts.length > 1 && <button type="button" aria-pressed={activeFront === 'all'} onClick={() => setSelectedFront('all')} className={`sig-btn sig-btn-sm ${activeFront === 'all' ? 'rdo-party-selected sig-btn-primary' : 'border border-[var(--border)] bg-white'}`}>Todas as frentes</button>}
+            </div>}
             <div className="divide-y divide-[var(--border)]">
-                {currentRecords.length ? currentRecords.map((record) => (
+                {visibleRecords.length ? visibleRecords.map((record) => (
                     <article key={record.id} className="p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                                 <p className="font-bold">{record.obra ? `${record.obra.codigo} - ${record.obra.nome}` : 'Frente de serviço'}</p>
-                                <p className="mt-1 text-sm text-[var(--ink-600)]">{record.summary}</p>
                                 <p className="mt-2 text-xs text-[var(--ink-500)]">
-                                    Versão V{String(record.version_number).padStart(2, '0')} · {record.user?.name || 'Fiscalização'}{record.submitted_at ? ` · ${record.submitted_at}` : ''}
+                                    {record.user?.name || 'Fiscalização'}{record.submitted_at ? ` · ${record.submitted_at}` : ''}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -507,10 +473,19 @@ function InspectionPanel({ rdo, onOpen }) {
                                 )}
                             </div>
                         </div>
+                        <div className="mt-3 space-y-2">
+                            <RdoSection section="clima" title="Condições do tempo" collapsed>{record.weather ? <ReadSection section="clima" data={record.weather} catalogs={{}} rdo={rdo} obraId={record.obra_id} /> : <p className="text-sm text-[var(--ink-500)]">Nenhuma condição climática registrada pela gerenciadora nesta obra.</p>}</RdoSection>
+                            <RdoSection section="atividades" title="Atividades" collapsed>
+                                {record.activities?.length > 0 ? <div className="space-y-3">{record.activities.map((activity, index) => <div key={index} className="rounded-r-lg border-l-2 border-blue-500 bg-slate-50 px-4 py-3"><p className="text-xs font-semibold text-blue-600">Atividade {index + 1}</p><h3 className="mt-1 text-sm font-semibold">{activity.titulo}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{activity.ocorrencia}</p></div>)}</div> : <p className="whitespace-pre-wrap break-words text-sm text-[var(--ink-600)]">{record.summary || 'Nenhuma atividade registrada.'}</p>}
+                                {(record.services_attested || record.occurrences || record.guidance) && <dl className="mt-3 grid gap-3 text-sm md:grid-cols-3">{[['Serviços atestados', record.services_attested], ['Ocorrências constatadas', record.occurrences], ['Orientações', record.guidance]].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt className="font-semibold text-[var(--ink-700)]">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-[var(--ink-600)]">{value}</dd></div>)}</dl>}
+                            </RdoSection>
+                            <RdoSection section="comentarios" title="Comentário" collapsed><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{record.comment || 'Nenhum comentário registrado.'}</p></RdoSection>
+                            <RdoSection section="fotos" title="Evidências" collapsed>{record.evidence?.length ? <InspectionEvidenceList files={record.evidence} /> : <p className="text-sm text-[var(--ink-500)]">Nenhuma evidência registrada.</p>}</RdoSection>
+                        </div>
                     </article>
                 )) : (
                     <p className="p-5 text-sm text-[var(--ink-500)]">
-                        {rdo.status === 'rascunho' ? 'O registro será aberto após o envio da construtora.' : 'Nenhum registro da fiscalização foi concluído nesta versão.'}
+                        {rdo.status === 'rascunho' ? 'O registro será aberto na etapa de análise da gerenciadora.' : 'Nenhum registro da fiscalização foi concluído nesta versão.'}
                     </p>
                 )}
             </div>
@@ -523,20 +498,13 @@ function DivergencePanel({ rdo, onCreate, onAction }) {
 
     return (
         <section className="overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
-            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-                <div className="flex items-start gap-3">
-                    <span className="rounded-lg bg-amber-50 p-2 text-amber-700"><Scale size={20} /></span>
+            <header className="flex flex-col items-start gap-3 border-b border-[var(--border)] px-5 py-4">
+                <div className="flex min-h-12 items-center gap-3">
+                    <span className="rounded-lg bg-blue-50 p-2 text-blue-600"><GitCompareArrows size={20} aria-hidden="true" /></span>
                     <div>
-                        <span className="eyebrow">Rastreabilidade</span>
-                        <h2 className="mt-1 text-lg font-black">Divergências registradas</h2>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">Versões das partes, resposta, conclusão e decisão final.</p>
+                        <h2 className="text-base font-semibold">Divergências registradas</h2>
                     </div>
                 </div>
-                {rdo.can_create_divergence && (
-                    <button type="button" onClick={onCreate} className="sig-btn">
-                        <Plus size={16} /> Nova divergência
-                    </button>
-                )}
             </header>
             <div className="max-h-[28rem] divide-y divide-[var(--border)] overflow-y-auto">
                 {items.length ? items.map((item) => (
@@ -568,25 +536,66 @@ function DivergencePanel({ rdo, onCreate, onAction }) {
     );
 }
 
+function InspectionEvidenceList({ files = [] }) {
+    if (!files?.length) return null;
+    return <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{files.map((file, index) => !file.mime_type?.startsWith('image/') ? <div key={file.url || index} className="rounded-lg border border-[var(--border)] bg-white p-3 sm:col-span-2 lg:col-span-3"><div className="flex flex-wrap items-center gap-3"><InspectionDocumentFile file={file} /><a href={file.url} target="_blank" rel="noreferrer" className="sig-btn sig-btn-sm">Abrir arquivo</a></div>{file.comment && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-[var(--ink-500)]">{file.comment}</p>}</div> : <a key={file.url || index} href={file.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50 hover:border-blue-400">
+        {file.mime_type?.startsWith('image/') ? <img src={file.url} alt={file.name} className="h-36 w-full bg-white object-contain" loading="lazy" /> : <div className="flex h-20 items-center justify-center text-slate-500"><FileText size={28} /></div>}
+        <span className="block truncate p-2 text-xs font-medium" title={file.name}>{file.name}</span>{file.comment && <p className="px-2 pb-3 text-xs whitespace-pre-wrap break-words">{file.comment}</p>}
+    </a>)}</div>;
+}
+
+function inspectionValues(record, obraId) {
+    return {
+        obra_id: obraId,
+        atividades: record?.activities?.length ? record.activities : record?.summary ? [{ titulo: 'Registro da gerenciadora', ocorrencia: record.summary }] : [],
+        comentario: record?.comment || '',
+        clima: record?.weather || { ...emptySection.clima },
+        servicos_atestados: record?.services_attested || '',
+        ocorrencias: record?.occurrences || '',
+        orientacoes: record?.guidance || '',
+        status: 'concluido', evidencias: [], evidencias_metadados: [],
+        evidencias_comentarios: Object.fromEntries((record?.evidence || []).map((file, i) => [i, file.comment || ''])),
+        evidencias_ordem: (record?.evidence || []).map((_, i) => `existing:${i}`),
+    };
+}
+
 function InspectionModal({ rdo, form, onClose, onSubmit }) {
+    const drafts = useRef({});
+    const current = (rdo.inspection_records || []).find(record => record.is_current_version && Number(record.obra_id) === Number(form.data.obra_id));
+    const fronts = (rdo.obras || []).filter(obra => rdo.flow_obra_ids?.includes(Number(obra.id)));
+    const selected = fronts.find(obra => Number(obra.id) === Number(form.data.obra_id));
+    const changeFront = obraId => {
+        if (Number(obraId) === Number(form.data.obra_id)) return;
+        if (JSON.stringify(form.data) !== JSON.stringify(inspectionValues(current, form.data.obra_id))) drafts.current[form.data.obra_id] = form.data;
+        const record = (rdo.inspection_records || []).find(item => item.is_current_version && Number(item.obra_id) === obraId);
+        form.clearErrors();
+        form.setData(drafts.current[obraId] || inspectionValues(record, obraId));
+    };
+    const activityForm = {
+        data: { dados: { atividades: form.data.atividades } },
+        setData: (_, value) => form.setData('atividades', value.atividades),
+    };
+    const weatherForm = { data: { dados: form.data.clima }, setData: (_, value) => form.setData('clima', value) };
     return (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-            <form onSubmit={onSubmit} className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+            <form role="dialog" aria-modal="true" aria-label="Registro da gerenciadora" onSubmit={event => onSubmit(event, drafts.current)} className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
                 <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-[var(--border)] bg-white px-5 py-4">
-                    <div><span className="eyebrow">Gerenciadora · versão V{String(rdo.current_version).padStart(2, '0')}</span><h2 className="mt-1 text-xl font-black">Registro da fiscalização</h2></div>
-                    <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar"><X size={20} /></button>
+                    <div><span className="eyebrow">Gerenciadora</span><h2 className="mt-1 text-xl font-black">Registro da gerenciadora</h2></div>
+                    <button type="button" disabled={form.processing} onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar registro"><X size={20} /></button>
                 </header>
-                <div className="grid gap-4 p-5 md:grid-cols-2">
-                    <Field label="Obra / frente"><select className="sig-input" value={form.data.obra_id} onChange={(e) => form.setData('obra_id', Number(e.target.value))}>{(rdo.obras || []).filter((obra) => rdo.flow_obra_ids?.includes(Number(obra.id))).map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}</select></Field>
-                    <Field label="Situação do registro"><select className="sig-input" value={form.data.status} onChange={(e) => form.setData('status', e.target.value)}><option value="rascunho">Salvar rascunho</option><option value="concluido">Concluir fiscalização</option></select></Field>
-                    <div className="md:col-span-2"><Field label="Resumo da fiscalização"><textarea className="sig-input min-h-28" value={form.data.resumo_fiscalizacao} onChange={(e) => form.setData('resumo_fiscalizacao', e.target.value)} required /></Field></div>
-                    <Field label="Serviços atestados"><textarea className="sig-input min-h-24" value={form.data.servicos_atestados} onChange={(e) => form.setData('servicos_atestados', e.target.value)} /></Field>
-                    <Field label="Ocorrências constatadas"><textarea className="sig-input min-h-24" value={form.data.ocorrencias} onChange={(e) => form.setData('ocorrencias', e.target.value)} /></Field>
-                    <div className="md:col-span-2"><Field label="Orientações da fiscalização"><textarea className="sig-input min-h-24" value={form.data.orientacoes} onChange={(e) => form.setData('orientacoes', e.target.value)} /></Field></div>
-                    <div className="md:col-span-2"><Field label="Evidências (imagens ou PDF)"><label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm font-bold text-slate-600 hover:border-[var(--primary)]"><Upload size={18} /> Selecionar arquivos<input type="file" multiple accept="image/*,.pdf" className="hidden" onChange={(e) => form.setData('evidencias', Array.from(e.target.files || []))} /></label>{form.data.evidencias?.length > 0 && <p className="mt-2 text-xs text-[var(--ink-500)]">{form.data.evidencias.length} arquivo(s) selecionado(s)</p>}</Field></div>
-                    {Object.values(form.errors).map((error, index) => <p key={index} className="text-sm font-semibold text-red-600 md:col-span-2">{error}</p>)}
+                <div className="space-y-5 p-5">
+                    <div className="flex flex-wrap gap-2" aria-label="Obras do registro da gerenciadora">{fronts.map(obra => {
+                        const active = Number(obra.id) === Number(form.data.obra_id);
+                        return <button type="button" key={obra.id} disabled={form.processing} aria-pressed={active} onClick={() => changeFront(Number(obra.id))} className={`sig-btn sig-btn-sm !whitespace-normal text-left ${active ? 'sig-btn-primary ring-2 ring-blue-200 ring-offset-2' : 'border border-[var(--border)] bg-white'}`}>{active && <CheckCircle2 size={17} className="shrink-0" />}<span>{obra.codigo} · {obra.nome}</span></button>;
+                    })}</div>
+                    <p className="text-xs text-[var(--ink-500)]">Preenchendo obra: <strong className="text-[var(--primary)]">{selected?.codigo} · {selected?.nome}</strong></p>
+                    <RdoSection section="clima" title="Condições do tempo" collapsed><WeatherFields form={weatherForm} /></RdoSection>
+                    <ActivityFields form={activityForm} />
+                    <Field label="Comentário"><textarea aria-label="Comentário do registro da gerenciadora" className="sig-input min-h-24" value={form.data.comentario} onChange={event => form.setData('comentario', event.target.value)} placeholder="Registre o comentário geral desta obra." maxLength={10000} /></Field>
+                    <InspectionEvidenceEditor key={form.data.obra_id} form={form} existing={current?.evidence || []} />
+                    {Object.entries(form.errors).map(([key, error]) => <p key={key} role="alert" className="text-sm font-semibold text-red-600">{error}</p>)}
                 </div>
-                <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-[var(--border)] bg-white px-5 py-4"><button type="button" onClick={onClose} className="sig-btn">Cancelar</button><button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><Save size={16} /> {form.processing ? 'Salvando...' : 'Salvar registro'}</button></footer>
+                <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] bg-white px-5 py-4"><p className="text-xs text-[var(--ink-500)]">Alterne entre as obras sem perder o preenchimento. Os registros alterados serão salvos juntos.</p><div className="flex gap-2"><button type="button" disabled={form.processing} onClick={onClose} className="sig-btn">Cancelar</button><button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><Save size={16} /> {form.processing ? 'Salvando...' : 'Salvar todas as obras'}</button></div></footer>
             </form>
         </div>
     );
@@ -675,179 +684,14 @@ function DeadlineExpiredModal({ rdo, onClose }) {
     );
 }
 
-function RdaReferencePanel({ rdas = [], canImport = false, onPreview }) {
-    if (!rdas.length) return null;
-
-    return (
-        <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                    <span className="eyebrow">RDA publicado</span>
-                    <h2 className="text-lg font-black text-[var(--ink-900)]">Registros disponíveis para este RDO</h2>
-                    <p className="mt-1 text-sm text-[var(--ink-500)]">
-                        Use os dados publicados no RDA para preencher clima, atividades, mão de obra, equipamentos e fotos da obra correspondente.
-                    </p>
-                </div>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-blue-700">{rdas.length} RDA(s)</span>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-                {rdas.map((rda) => (
-                    <div key={rda.id} className="rounded-xl border border-blue-100 bg-white p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <p className="font-mono text-sm font-black text-[var(--primary)]">{rda.code}</p>
-                                <h3 className="mt-1 font-black text-[var(--ink-900)]">
-                                    {rda.obra ? `${rda.obra.codigo} - ${rda.obra.nome}` : 'Obra não identificada'}
-                                </h3>
-                                <p className="mt-1 text-xs font-semibold text-[var(--ink-500)]">
-                                    Publicado em {rda.published_at || '—'} · {rda.activities_count} atividade(s) · {rda.photos_count} foto(s)
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => onPreview(rda)}
-                                className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-bold text-white"
-                            >
-                                <ClipboardList size={16} />
-                                Visualizar RDA
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-function RdaPreviewModal({ rda, canImport = false, importing = false, onImport, onClose }) {
-    const dados = rda.dados || {};
-    const clima = dados.clima || {};
-    const atividades = dados.atividades || [];
-    const maoObra = dados.mao_obra || [];
-    const equipamentos = dados.equipamentos || [];
-    const subcontratadas = dados.subcontratadas || [];
-    const fotos = dados.fotos || [];
-    const weatherLabels = {
-        ensolarado: 'Ensolarado',
-        nublado: 'Nublado',
-        chuvoso: 'Chuvoso',
-        nao_aplicavel: 'Não aplicável',
-    };
-    const periodLabel = (period) => weatherLabels[Array.isArray(clima[period]) ? clima[period][0] : clima[period]] || 'Não informado';
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-            <div className="flex max-h-[88vh] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl">
-                <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--border)] p-5">
-                    <div>
-                        <span className="eyebrow">RDA publicado</span>
-                        <h2 className="mt-1 text-2xl font-black text-[var(--ink-900)]">{rda.code}</h2>
-                        <p className="mt-1 text-sm font-semibold text-[var(--ink-500)]">
-                            {rda.obra ? `${rda.obra.codigo} - ${rda.obra.nome}` : 'Obra não identificada'} · Publicado em {rda.published_at || '—'}
-                        </p>
-                    </div>
-                    <button type="button" onClick={onClose} className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-bold">
-                        Fechar
-                    </button>
-                </header>
-
-                <div className="overflow-y-auto p-5">
-                    <div className="grid gap-4 lg:grid-cols-3">
-                        <section className="rounded-xl border border-[var(--border)] bg-slate-50 p-4">
-                            <h3 className="font-black text-[var(--ink-900)]">Condições do tempo</h3>
-                            <div className="mt-3 grid gap-2 text-sm">
-                                {['manha', 'tarde', 'noite'].map((period) => (
-                                    <div key={period} className="rounded-lg bg-white px-3 py-2">
-                                        <span className="font-black capitalize">{period}</span>
-                                        <span className="ml-2 text-[var(--ink-600)]">{periodLabel(period)}</span>
-                                        <span className="ml-2 text-xs text-[var(--ink-500)]">
-                                            {clima[`precipitacao_${period}_mm`] ? `${clima[`precipitacao_${period}_mm`]} mm` : 'sem chuva informada'}
-                                        </span>
-                                    </div>
-                                ))}
-                                {clima.dia_impraticavel && (
-                                    <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">Dia impraticável</span>
-                                )}
-                            </div>
-                        </section>
-
-                        <section className="rounded-xl border border-[var(--border)] bg-slate-50 p-4 lg:col-span-2">
-                            <h3 className="font-black text-[var(--ink-900)]">Atividades e ocorrências</h3>
-                            <div className="mt-3 space-y-2">
-                                {atividades.length === 0 && <p className="text-sm font-semibold text-[var(--ink-500)]">Nenhuma atividade registrada.</p>}
-                                {atividades.map((item, index) => (
-                                    <div key={`${item.titulo}-${index}`} className="rounded-lg bg-white p-3">
-                                        <p className="font-black text-[var(--ink-900)]">{item.titulo || 'Sem título'}</p>
-                                        {item.ocorrencia && <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-600)]">{item.ocorrencia}</p>}
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    </div>
-
-                    <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                        <RdaPreviewResource title="Mão de obra" items={maoObra} />
-                        <RdaPreviewResource title="Equipamentos" items={equipamentos} />
-                        <RdaPreviewResource title="Subcontratadas" items={subcontratadas} />
-                    </div>
-
-                    <section className="mt-4 rounded-xl border border-[var(--border)] bg-slate-50 p-4">
-                        <h3 className="font-black text-[var(--ink-900)]">Registros fotográficos</h3>
-                        {fotos.length === 0 && <p className="mt-3 text-sm font-semibold text-[var(--ink-500)]">Nenhuma foto registrada.</p>}
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {fotos.map((foto, index) => (
-                                <a key={`${foto.path}-${index}`} href={`/storage/${foto.path}`} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--border)] bg-white p-2">
-                                    <img src={`/storage/${foto.path}`} alt={foto.nome || `Foto ${index + 1}`} className="h-32 w-full rounded-md object-cover" />
-                                    <p className="mt-2 text-xs font-semibold text-[var(--ink-600)]">{foto.comment || foto.legenda || 'Sem comentário'}</p>
-                                </a>
-                            ))}
-                        </div>
-                    </section>
-                </div>
-
-                <footer className="flex flex-wrap justify-end gap-3 border-t border-[var(--border)] p-5">
-                    <button type="button" onClick={onClose} className="rounded-lg border border-[var(--border)] px-4 py-2.5 font-bold">
-                        Cancelar
-                    </button>
-                    {canImport && (
-                        <button type="button" onClick={onImport} disabled={importing} className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2.5 font-bold text-white disabled:opacity-60">
-                            <ClipboardList size={17} />
-                            {importing ? 'Importando...' : 'Usar no RDO'}
-                        </button>
-                    )}
-                </footer>
-            </div>
-        </div>
-    );
-}
-
-function RdaPreviewResource({ title, items = [] }) {
-    return (
-        <section className="rounded-xl border border-[var(--border)] bg-slate-50 p-4">
-            <h3 className="font-black text-[var(--ink-900)]">{title}</h3>
-            <div className="mt-3 space-y-2">
-                {items.length === 0 && <p className="text-sm font-semibold text-[var(--ink-500)]">Nenhum registro.</p>}
-                {items.map((item, index) => (
-                    <div key={`${item.cadastro_id}-${index}`} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm">
-                        <span className="font-bold text-[var(--ink-700)]">{item.descricao || 'Item sem descrição'}</span>
-                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black">{item.quantidade || 0}</span>
-                    </div>
-                ))}
-            </div>
-        </section>
-    );
-}
-
-function CompleteModal({ form, catalogs, obras, activeObraId, onChangeObra, onClose, onSubmit }) {
-    const activeObra = obras.find((obra) => Number(obra.id) === Number(activeObraId));
-    const visibleError = Object.values(form.errors).find((error) => error && !String(error).startsWith('validation.'));
-    const scoped = (key) => ({
+function scopeRdoForm(form, key) {
+    return ({
         data: {
             dados: form.data.secoes?.[key] || emptySection[key],
             fotos: form.data.fotos,
         },
         errors: form.errors,
+        processing: form.processing,
         setData: (field, value) => {
             if (typeof field === 'function') {
                 const next = field({
@@ -884,51 +728,6 @@ function CompleteModal({ form, catalogs, obras, activeObraId, onChangeObra, onCl
             }
         },
     });
-
-    return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-            <form onSubmit={onSubmit} className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label="Preencher RDO completo">
-                <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
-                    <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]"><ClipboardList size={21} /></span>
-                        <div><span className="eyebrow">Preenchimento unificado</span><h2 className="text-xl font-bold">Preencher RDO completo</h2></div>
-                    </div>
-                    <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar"><X size={21} /></button>
-                </header>
-                <div className="flex min-h-[82px] items-stretch gap-3 overflow-x-auto border-b border-[var(--border)] bg-slate-50 px-5 py-3">
-                    {obras.map((obra) => (
-                        <button key={obra.id} type="button" onClick={() => onChangeObra(obra.id)} disabled={form.processing}
-                            className={`inline-flex min-h-[56px] min-w-[210px] shrink-0 flex-col items-start justify-center rounded-lg border px-4 py-2 text-left leading-tight shadow-sm ${
-                                Number(activeObraId) === Number(obra.id)
-                                    ? 'border-[var(--primary)] bg-[var(--primary)] text-white'
-                                    : 'border-[var(--border)] bg-white text-[var(--ink-700)] hover:border-[var(--primary)]'
-                            }`}>
-                            <span className="mono block text-[10px] font-bold leading-none opacity-75">{obra.codigo}</span>
-                            <span className="mt-1 block max-w-[250px] whitespace-normal text-sm font-bold leading-tight">{obra.nome}</span>
-                        </button>
-                    ))}
-                </div>
-                <div className="overflow-y-auto bg-slate-50/60 p-5">
-                    <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                        Preenchendo todas as seções de: <strong>{activeObra?.codigo} - {activeObra?.nome}</strong>
-                    </div>
-                    <div className="space-y-4">
-                        <FullSection title="Condições do tempo" icon={CloudSun}><WeatherFields form={scoped('clima')} /></FullSection>
-                        <FullSection title="Mão de obra" icon={Users}><LaborFields form={scoped('mao_obra')} catalogs={catalogs} /></FullSection>
-                        <FullSection title="Equipamentos" icon={Construction}><EquipmentFields form={scoped('equipamentos')} catalogs={catalogs} /></FullSection>
-                        <FullSection title="Atividades e ocorrências" icon={FileText}><ActivityFields form={scoped('atividades')} /></FullSection>
-                        <FullSection title="Registro fotográfico" icon={Camera}><PhotoFields form={scoped('fotos')} /></FullSection>
-                        <FullSection title="Comentários" icon={MessageSquareText}><CommentFields form={scoped('comentarios')} /></FullSection>
-                    </div>
-                    {visibleError && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{visibleError}</p>}
-                </div>
-                <footer className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
-                    <button type="button" onClick={onClose} className="sig-btn">Cancelar</button>
-                    <button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><Save size={16} /> Salvar preenchimento completo</button>
-                </footer>
-            </form>
-        </div>
-    );
 }
 
 function SignaturePanel({ rdo, processing = false, refreshProcessing = false, onSend, onRefresh, manualForm, onManualUpload }) {
@@ -952,9 +751,7 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
                     <h2 className="mt-1 text-lg font-bold">
                         {signature?.status_label || (digitalEnabled ? 'Pronto para assinatura' : 'Aguardando upload do documento assinado')}
                     </h2>
-                    <p className={`mt-1 text-sm text-[var(--ink-500)] ${digitalEnabled ? '' : 'hidden'}`}>
-                        Após o RDO ser aprovado, envie o PDF para assinatura da construtora, gerenciadora e cliente.
-                    </p>
+
                     {!digitalEnabled && (
                         <p className="mt-1 text-sm text-[var(--ink-500)]">
                             Este contrato nao utiliza assinatura digital. Faca upload do PDF assinado para arquivar o documento final.
@@ -1058,48 +855,32 @@ function SignaturePanel({ rdo, processing = false, refreshProcessing = false, on
     );
 }
 
-function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory }) {
-    const steps = [
-        ['construtora', 'Construtora', rdo.contract?.construtora?.nome],
-        ['gerenciadora', 'Gerenciadora', rdo.contract?.gerenciadora?.nome],
-        ['cliente', 'Cliente', rdo.contract?.cliente?.nome],
-        ['arquivo', 'Arquivo', 'RDO aprovado'],
-    ];
-    const activeIndex = {
-        rascunho: 0,
-        devolvido_construtora: 0,
-        pendente_comprovacao: 0,
-        em_analise_gerenciadora: 1,
-        em_aprovacao_cliente: 2,
-        arquivado: 3,
-    }[rdo.status] ?? 0;
+function WorkflowPanel({ rdo, obraId, form, processing = false, onAction }) {
+    const fillingParties = rdo.fill_parties || [rdo.fill_party || 'construtora'];
+    const reviews = rdo.workflow?.review_parties || ['gerenciadora', 'cliente'];
+    const steps = [['preenchimento', 'Preenchimento', fillingParties.map(party => partyLabels[party]).join(' + ')], ...reviews.map(party => [party, party === 'cliente' && rdo.workflow?.client_comment_only ? 'Comentário do cliente' : partyLabels[party], rdo.contract?.[party]?.nome]), ['arquivo', 'Arquivo', 'RDO concluído']];
+    const activeIndex = rdo.status === 'arquivado' ? steps.length - 1 : ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'].includes(rdo.status) ? 0 : Math.max(0, reviews.indexOf(rdo.active_stage) + 1);
     const actions = Object.entries(rdo.flow_actions || {});
     const needsComment = actions.some(([, action]) => action.comment_required);
     const isSubmitOnly = actions.length > 0 && actions.every(([key]) => key === 'submit');
     const showCommentField = actions.some(([key]) => key !== 'submit');
     const actionObras = (rdo.obras || []).filter((obra) => rdo.flow_obra_ids?.includes(Number(obra.id)));
-    const selectedFlowObraIds = form.data.obra_ids?.length ? form.data.obra_ids : (rdo.flow_obra_ids || []);
+    const selectedFlowObraIds = rdo.flow_obra_ids || [];
 
     return (
         <section className="mb-5 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
             <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-                <div>
-                    <span className="eyebrow">Fluxo de análise e aprovação</span>
-                    <h2 className="mt-1 text-lg font-bold">{rdo.status_label}</h2>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={onOpenHistory} className="sig-btn">
-                        <History size={16} /> Histórico
-                    </button>
+                <h2 className="font-bold">Fluxo do RDO</h2>
+                {rdo.status !== 'rascunho' && <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${rdo.status === 'arquivado' ? 'bg-emerald-50 text-emerald-700' : rdo.status.includes('devolvido') || rdo.status.includes('pendente') ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
                         {rdo.status_label}
                     </span>
-                </div>
+                </div>}
             </header>
 
             <div className="grid gap-2 border-b border-[var(--border)] bg-slate-50/70 p-4 sm:grid-cols-2 xl:grid-cols-4">
                 {steps.map(([key, label, company], index) => (
-                    <div key={key} className={`rounded-lg border p-3 ${index === activeIndex ? 'border-[var(--primary)] bg-white shadow-sm' : index < activeIndex ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-slate-50'}`}>
+                    <div key={key} data-rdo-party={rdoParty(key === 'preenchimento' ? rdo.fill_party : key)} className={`rdo-flow-party rounded-lg border p-3 ${index === activeIndex ? 'border-[var(--primary)] bg-white shadow-sm' : index < activeIndex ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-slate-50'}`}>
                         <div className="flex items-center gap-2">
                             {index < activeIndex || rdo.status === 'arquivado' ? <CheckCircle2 size={17} className="text-emerald-600" /> : <span className={`h-3 w-3 rounded-full ${index === activeIndex ? 'bg-[var(--primary)]' : 'bg-slate-300'}`} />}
                             <strong className="text-sm">{label}</strong>
@@ -1109,7 +890,8 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                 ))}
             </div>
 
-            {actions.length > 0 && (
+            {rdo.status === 'em_analise_gerenciadora' && actions.length > 0 && <ManagerFlowActions rdo={rdo} obraId={obraId} renderApprovalFields={managerForm => <ApprovalCommentFields rdo={rdo} form={managerForm} selectedObraIds={rdo.flow_obra_ids || []} needsComment showPrevious={false} showIntroduction={false} showReservations reservationChoices />} />}
+            {actions.length > 0 && !['em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) && (
                 <div className="border-b border-[var(--border)] p-5">
                     {isSubmitOnly && (
                         <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
@@ -1118,38 +900,29 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
                     )}
                     {!isSubmitOnly && actionObras.length > 0 && (
                         <div className="mb-4">
-                            <span className="eyebrow">Selecione as frentes desta decisão</span>
+                            <span className="eyebrow">Obras deste RDO — movimentação conjunta</span>
                             <div className="mt-2 flex flex-wrap gap-2">
                                 {actionObras.map((obra) => (
-                                    <label key={obra.id} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">
-                                        <input
-                                            type="checkbox"
-                                            checked={form.data.obra_ids?.includes(Number(obra.id))}
-                                            onChange={(event) => form.setData(
-                                                'obra_ids',
-                                                event.target.checked
-                                                    ? [...(form.data.obra_ids || []), Number(obra.id)]
-                                                    : (form.data.obra_ids || []).filter((id) => Number(id) !== Number(obra.id))
-                                            )}
-                                        />
+                                    <span key={obra.id} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">
+                                        <CheckCircle2 size={14} />
                                         {obra.codigo} - {obra.nome}
-                                    </label>
+                                    </span>
                                 ))}
                             </div>
                             {form.errors.obra_ids && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.obra_ids}</p>}
                         </div>
                     )}
-                    {showCommentField && ['em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) && (
+                    {showCommentField && ['em_analise_construtora', 'em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) && (
                         <ApprovalCommentFields rdo={rdo} form={form} selectedObraIds={selectedFlowObraIds} needsComment={needsComment} />
                     )}
-                    {showCommentField && !['em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) && (
+                    {showCommentField && !['em_analise_construtora', 'em_analise_gerenciadora', 'em_aprovacao_cliente'].includes(rdo.status) && (
                         <>
                     <Field label={needsComment ? 'Parecer / resposta' : 'Comentário'}>
                         <textarea
                             className="sig-input min-h-24"
                             value={form.data.comment}
                             onChange={(event) => form.setData('comment', event.target.value)}
-                            placeholder={needsComment ? 'Descreva as ressalvas, o motivo da devolução ou a resposta da construtora.' : 'Registre uma observação para acompanhar a decisão.'}
+                            placeholder={commentOnly ? `Registre o comentário para a frente ${obra.codigo}.` : needsComment ? 'Descreva as ressalvas, o motivo da devolução ou a resposta da parte responsável pelo preenchimento.' : 'Registre uma observação para acompanhar a decisão.'}
                         />
                     </Field>
                     {form.errors.comment && <p className="mt-2 text-sm font-semibold text-red-600">{form.errors.comment}</p>}
@@ -1207,15 +980,17 @@ function WorkflowPanel({ rdo, form, processing = false, onAction, onOpenHistory 
     );
 }
 
-function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment = false }) {
+function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment = false, showPrevious = true, showIntroduction = true, showReservations = true, reservationChoices = false }) {
     const activeStage = rdo.active_stage;
     const comments = rdo.approval_comments || {};
-    const stageLabel = activeStage === 'cliente' ? 'cliente' : 'gerenciadora';
-    const fieldLabel = activeStage === 'cliente' ? 'Parecer do cliente' : 'Parecer da gerenciadora';
-    const company = activeStage === 'cliente' ? rdo.contract?.cliente?.nome : rdo.contract?.gerenciadora?.nome;
+    const stageLabel = partyLabels[activeStage]?.toLowerCase() || 'parte responsável';
+    const commentOnly = activeStage === 'cliente' && rdo.workflow?.client_comment_only;
+    const fieldLabel = commentOnly ? 'Comentário do cliente' : `Parecer — ${partyLabels[activeStage] || 'Responsável'}`;
+    const company = rdo.contract?.[activeStage]?.nome;
     const selectedObras = (rdo.obras || []).filter((obra) => selectedObraIds.includes(Number(obra.id)));
-    const otherStage = activeStage === 'cliente' ? 'gerenciadora' : 'cliente';
-    const otherStageLabel = otherStage === 'cliente' ? 'Cliente' : 'Gerenciadora';
+    const reviews = rdo.workflow?.review_parties || ['gerenciadora', 'cliente'];
+    const otherStage = reviews[reviews.indexOf(activeStage) - 1];
+    const otherStageLabel = partyLabels[otherStage];
 
     const setObraComment = (obraId, value) => {
         form.setData('comments_by_obra', {
@@ -1235,19 +1010,20 @@ function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment =
 
     return (
         <div>
-            <div className="mb-3">
-                <span className="eyebrow block">Parecer / resposta por frente</span>
+            {showIntroduction && <div className="mb-3">
+                <span className="eyebrow block">{commentOnly ? 'Comentário por frente' : 'Parecer / resposta por frente'}</span>
                 <p className="mt-1 text-sm text-[var(--ink-500)]">
-                    Preencha o parecer da {stageLabel} separadamente para cada frente selecionada.
+                    {commentOnly ? 'Registre o comentário do cliente para cada obra do RDO.' : `Preencha o parecer ${activeStage === 'cliente' ? 'do' : 'da'} ${stageLabel} para cada obra do RDO.`}
                     {company ? ` Empresa: ${company}.` : ''}
                 </p>
-            </div>
+            </div>}
 
             <div className="grid gap-3">
                 {selectedObras.map((obra) => {
                     const obraId = Number(obra.id);
                     const savedFromOtherStage = comments?.[otherStage]?.[obraId];
                     const value = form.data.comments_by_obra?.[obraId] ?? '';
+                    const hasReservation = (form.data.reservation_obra_ids || []).includes(obraId);
 
                     return (
                         <section key={obra.id} className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
@@ -1259,7 +1035,7 @@ function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment =
                                 <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">{fieldLabel}</span>
                             </div>
 
-                            {savedFromOtherStage?.comment && (
+                            {showPrevious && savedFromOtherStage?.comment && (
                                 <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                                     <p className="text-xs font-bold uppercase tracking-wide text-[var(--ink-500)]">Parecer da {otherStageLabel}</p>
                                     <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-700)]">{savedFromOtherStage.comment}</p>
@@ -1271,22 +1047,24 @@ function ApprovalCommentFields({ rdo, form, selectedObraIds = [], needsComment =
 
                             <Field label={fieldLabel}>
                                 <textarea
+                                    aria-label={`${fieldLabel} · ${obra.codigo} · ${obra.nome}`}
                                     className="sig-input min-h-24"
                                     value={value}
                                     onChange={(event) => setObraComment(obraId, event.target.value)}
-                                    placeholder={needsComment
+                                    placeholder={commentOnly ? `Registre o comentário para a frente ${obra.codigo}.` : needsComment
                                         ? `Descreva as ressalvas ou o motivo da devolução para a frente ${obra.codigo}.`
                                         : `Registre uma observação para a frente ${obra.codigo}.`}
                                 />
                             </Field>
-                            <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                            {reservationChoices && !commentOnly && <fieldset className="mt-3 rounded-lg border border-[var(--border)] bg-slate-50 p-3"><legend className="sr-only">Possui ressalvas na obra {obra.codigo}?</legend><p className="mb-2 text-sm font-semibold">Possui ressalvas?</p><div className="flex gap-4">{[[false, 'Não'], [true, 'Sim']].map(([checked, label]) => <label key={label} className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" name={`reservations-${obraId}`} value={String(checked)} checked={hasReservation === checked} onChange={() => form.setData('reservation_obra_ids', checked ? [...new Set([...(form.data.reservation_obra_ids || []), obraId])] : (form.data.reservation_obra_ids || []).filter(id => id !== obraId))} />{label}</label>)}</div></fieldset>}
+                            {!commentOnly && showReservations && (!reservationChoices || hasReservation) && <details open className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
                                 <summary className="cursor-pointer text-xs font-black uppercase text-amber-800">Detalhes da ressalva, quando aplicável</summary>
                                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                                     <div className="md:col-span-2"><Field label="Obrigação a atender"><textarea className="sig-input min-h-20" value={form.data.reservations_by_obra?.[obraId]?.obligation || ''} onChange={(event) => setReservation(obraId, 'obligation', event.target.value)} /></Field></div>
-                                    <Field label="Responsável"><input className="sig-input" value={form.data.reservations_by_obra?.[obraId]?.responsible || ''} onChange={(event) => setReservation(obraId, 'responsible', event.target.value)} /></Field>
+                                    <Field label="Parte responsável"><select aria-label={`Parte responsável pela ressalva · ${obra.codigo}`} className="sig-input" value={form.data.reservations_by_obra?.[obraId]?.responsible || ''} onChange={event => setReservation(obraId, 'responsible', event.target.value)}><option value="">Selecione a parte</option><option value="Construtora">Construtora</option><option value="Gerenciadora">Gerenciadora</option></select></Field>
                                     <Field label="Prazo"><input type="date" className="sig-input" value={form.data.reservations_by_obra?.[obraId]?.due_date || ''} onChange={(event) => setReservation(obraId, 'due_date', event.target.value)} /></Field>
                                 </div>
-                            </details>
+                            </details>}
                         </section>
                     );
                 })}
@@ -1368,7 +1146,7 @@ function FullSection({ title, icon: Icon, children }) {
     );
 }
 
-function SectionModal({ section, form, catalogs, obras, activeObraId, onChangeObra, onClose, onSubmit, readOnly = false }) {
+function SectionModal({ section, form, fillParty, catalogs, obras, activeObraId, onChangeObra, onClose, onSubmit, readOnly = false, activitySubjects = [] }) {
     const definition = sections.find((item) => item.key === section);
     const Icon = definition.icon;
 
@@ -1410,9 +1188,9 @@ function SectionModal({ section, form, catalogs, obras, activeObraId, onChangeOb
                     {section === 'clima' && <WeatherFields form={form} />}
                     {section === 'mao_obra' && <LaborFields form={form} catalogs={catalogs} />}
                     {section === 'equipamentos' && <EquipmentFields form={form} catalogs={catalogs} />}
-                    {section === 'atividades' && <ActivityFields form={form} />}
+                    {section === 'atividades' && <ActivityFields form={form} subjects={activitySubjects} />}
                     {section === 'fotos' && <PhotoFields form={form} />}
-                    {section === 'comentarios' && <CommentFields form={form} />}
+                    {section === 'comentarios' && <CommentFields form={form} fillParty={fillParty} />}
                     {Object.values(form.errors).length > 0 && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{Object.values(form.errors)[0]}</p>}
                 </div>
                 <footer className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
@@ -1437,25 +1215,13 @@ function WeatherFields({ form }) {
     const toggleSituation = (period, option) => {
         set(period, selectedFor(period) === option ? '' : option);
     };
-    return <div className="grid gap-4 md:grid-cols-3">
+    return <div className="grid gap-2 md:grid-cols-3">
         {['manha', 'tarde', 'noite'].map((period) => (
-            <section key={period} className="rounded-lg border border-[var(--border)] bg-slate-50 p-4">
-                <h4 className="mb-3 font-bold">{periodLabels[period]}</h4>
-                <div className="grid gap-3">
+            <section key={period} className="rounded-lg border border-[var(--border)] bg-slate-50 p-3">
+                <h4 className="mb-2 text-sm font-semibold">{periodLabels[period]}</h4>
+                <div className="grid gap-2">
                     <Field label="Condição climática">
-                        <div className="grid gap-2">
-                            {weatherOptions.map(([option, label]) => (
-                                <label key={option} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold">
-                                    <input
-                                        type="checkbox"
-                                        className="h-4 w-4 rounded text-[var(--primary)]"
-                                        checked={selectedFor(period) === option}
-                                        onChange={() => toggleSituation(period, option)}
-                                    />
-                                    {label}
-                                </label>
-                            ))}
-                        </div>
+                        <select className="sig-input !py-1.5" value={selectedFor(period)} onChange={event => set(period, event.target.value)}><option value="">Selecione</option>{weatherOptions.map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select>
                     </Field>
                     <Field label="Pluviosidade (mm)">
                         <input
@@ -1463,7 +1229,7 @@ function WeatherFields({ form }) {
                             min="0"
                             step="0.01"
                             className="sig-input"
-                            value={form.data.dados[`precipitacao_${period}_mm`] || ''}
+                            value={form.data.dados[`precipitacao_${period}_mm`] ?? ''}
                             onChange={(e) => set(`precipitacao_${period}_mm`, e.target.value)}
                         />
                     </Field>
@@ -1475,186 +1241,59 @@ function WeatherFields({ form }) {
                 Registro anterior sem divisão por período: <strong>{form.data.dados.precipitacao_total_anterior_mm} mm</strong>.
             </div>
         )}
-        <label className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-4 py-3"><input type="checkbox" className="h-5 w-5 rounded text-[var(--primary)]" checked={Boolean(form.data.dados.dia_impraticavel)} onChange={(e) => set('dia_impraticavel', e.target.checked)} /><span className="font-semibold">Dia impraticável</span></label>
-        <Field label="Observações" className="md:col-span-3"><textarea className="sig-input min-h-28" value={form.data.dados.observacoes || ''} onChange={(e) => set('observacoes', e.target.value)} /></Field>
+        <label className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-4 py-3"><input type="checkbox" className="h-4 w-4 rounded text-[var(--primary)]" checked={Boolean(form.data.dados.dia_impraticavel)} onChange={(e) => set('dia_impraticavel', e.target.checked)} /><span className="font-semibold">Dia impraticável</span></label>
+        <Field label="Observações" className="md:col-span-3"><textarea className="sig-input min-h-20" value={form.data.dados.observacoes || ''} onChange={(e) => set('observacoes', e.target.value)} /></Field>
     </div>;
 }
 
-function LaborFields({ form, catalogs }) {
-    const [selectedDirectId, setSelectedDirectId] = useState('');
-    const [selectedIndirectId, setSelectedIndirectId] = useState('');
-    const [selectedSubcontractorId, setSelectedSubcontractorId] = useState('');
-    const effectiveEntries = Object.entries(form.data.dados.efetivos || {});
-    const subcontractorEntries = Object.entries(form.data.dados.subcontratadas || {});
-    const availableLabor = (type) => (catalogs.mao_obra || []).filter((item) =>
-        item.tipo === type
-        && !Object.prototype.hasOwnProperty.call(form.data.dados.efetivos || {}, String(item.id)));
-    const availableSubcontractors = (catalogs.subcontratadas || []).filter((item) =>
-        !Object.prototype.hasOwnProperty.call(form.data.dados.subcontratadas || {}, String(item.id)));
-    const addLabor = (selectedId, clear) => {
-        if (!selectedId) return;
-        form.setData('dados', { ...form.data.dados, efetivos: { ...(form.data.dados.efetivos || {}), [selectedId]: '' } });
-        clear('');
-    };
-    const addSubcontractor = () => {
-        if (!selectedSubcontractorId) return;
-        form.setData('dados', {
-            ...form.data.dados,
-            subcontratadas: { ...(form.data.dados.subcontratadas || {}), [selectedSubcontractorId]: '' },
-        });
-        setSelectedSubcontractorId('');
-    };
-    const removeLabor = (id) => {
-        const next = { ...(form.data.dados.efetivos || {}) };
-        delete next[id];
-        form.setData('dados', { ...form.data.dados, efetivos: next });
-    };
-    const removeSubcontractor = (id) => {
-        const next = { ...(form.data.dados.subcontratadas || {}) };
-        delete next[id];
-        form.setData('dados', { ...form.data.dados, subcontratadas: next });
-    };
-    const setQuantity = (id, value) => form.setData('dados', { ...form.data.dados, efetivos: { ...(form.data.dados.efetivos || {}), [id]: value } });
-    const setSubcontractorQuantity = (id, value) => form.setData('dados', {
-        ...form.data.dados,
-        subcontratadas: { ...(form.data.dados.subcontratadas || {}), [id]: value },
+// Keep historical selections visible without offering unused inactive catalog entries.
+function selectedCatalogItems(active, historical, records, fallback) {
+    const result = new Map((active || []).map(item => [String(item.id), item]));
+    Object.keys(records || {}).forEach(id => {
+        if (!result.has(id)) result.set(id, (historical || []).find(item => String(item.id) === id) || fallback(id));
     });
-    const set = (key, value) => form.setData('dados', { ...form.data.dados, [key]: value });
-
-    const laborGroup = (type, title, selectedId, setSelectedId) => {
-        const entries = effectiveEntries.filter(([id]) =>
-            (catalogs.mao_obra || []).find((item) => String(item.id) === String(id))?.tipo === type);
-        return (
-            <LaborGroup
-                title={title}
-                options={availableLabor(type)}
-                selectedId={selectedId}
-                setSelectedId={setSelectedId}
-                onAdd={() => addLabor(selectedId, setSelectedId)}
-                entries={entries}
-                catalogs={catalogs.mao_obra || []}
-                onQuantity={setQuantity}
-                onRemove={removeLabor}
-            />
-        );
-    };
-
-    return <div className="space-y-4">
-        <div className="grid gap-4 xl:grid-cols-3">
-            {laborGroup('direta', 'Mão de obra direta', selectedDirectId, setSelectedDirectId)}
-            {laborGroup('indireta', 'Mão de obra indireta', selectedIndirectId, setSelectedIndirectId)}
-            <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
-                <header className="border-b border-[var(--border)] bg-slate-50 px-4 py-3">
-                    <h4 className="font-bold">Subcontratadas</h4>
-                </header>
-                <div className="flex gap-2 border-b border-[var(--border)] p-3">
-                    <select className="sig-input min-w-0 flex-1" value={selectedSubcontractorId} onChange={(e) => setSelectedSubcontractorId(e.target.value)}>
-                        <option value="">Selecionar empresa</option>
-                        {availableSubcontractors.map((item) => <option key={item.id} value={item.id}>{item.nome_fantasia || item.razao_social}</option>)}
-                    </select>
-                    <button type="button" onClick={addSubcontractor} disabled={!selectedSubcontractorId} className="sig-btn sig-btn-primary !px-3"><Plus size={15} /></button>
-                </div>
-                {subcontractorEntries.map(([id, quantity]) => {
-                    const item = (catalogs.subcontratadas || []).find((candidate) => String(candidate.id) === String(id));
-                    return <div key={id} className="grid grid-cols-[1fr_80px_36px] items-center gap-2 border-b border-[var(--border)] px-3 py-3 last:border-0">
-                        <strong className="min-w-0 truncate text-sm">{item?.nome_fantasia || item?.razao_social || `Empresa ${id}`}</strong>
-                        <input type="number" min="0" step="1" className="sig-input !px-2" placeholder="Qtd." value={quantity} onChange={(e) => setSubcontractorQuantity(id, e.target.value)} />
-                        <button type="button" onClick={() => removeSubcontractor(id)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label="Remover subcontratada"><Trash2 size={15} /></button>
-                    </div>;
-                })}
-                {subcontractorEntries.length === 0 && <p className="p-4 text-center text-xs text-[var(--ink-500)]">Nenhuma subcontratada adicionada.</p>}
-                <footer className="border-t border-[var(--border)] bg-slate-50 px-4 py-2 text-right text-xs font-bold">
-                    Total: {sumQuantities(subcontractorEntries)}
-                </footer>
-            </section>
-        </div>
-        <Field label="Observações"><textarea className="sig-input min-h-24" value={form.data.dados.observacoes || ''} onChange={(e) => set('observacoes', e.target.value)} /></Field>
-    </div>;
+    return [...result.values()];
 }
 
-function LaborGroup({ title, options, selectedId, setSelectedId, onAdd, entries, catalogs, onQuantity, onRemove }) {
-    return (
-        <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
-            <header className="border-b border-[var(--border)] bg-slate-50 px-4 py-3">
-                <h4 className="font-bold">{title}</h4>
-            </header>
-            <div className="flex gap-2 border-b border-[var(--border)] p-3">
-                <select className="sig-input min-w-0 flex-1" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-                    <option value="">Selecionar função</option>
-                    {options.map((item) => <option key={item.id} value={item.id}>{item.descricao}</option>)}
-                </select>
-                <button type="button" onClick={onAdd} disabled={!selectedId} className="sig-btn sig-btn-primary !px-3"><Plus size={15} /></button>
-            </div>
-            {entries.map(([id, quantity]) => {
-                const item = catalogs.find((candidate) => String(candidate.id) === String(id));
-                return <div key={id} className="grid grid-cols-[1fr_80px_36px] items-center gap-2 border-b border-[var(--border)] px-3 py-3 last:border-0">
-                    <div className="min-w-0"><strong className="block truncate text-sm">{item?.descricao || `Item ${id}`}</strong><span className="text-[10px] text-[var(--ink-500)]">{item?.unidade}</span></div>
-                    <input type="number" min="0" step="1" className="sig-input !px-2" placeholder="Qtd." value={quantity} onChange={(e) => onQuantity(id, e.target.value)} />
-                    <button type="button" onClick={() => onRemove(id)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Remover ${title}`}><Trash2 size={15} /></button>
-                </div>;
-            })}
-            {entries.length === 0 && <p className="p-4 text-center text-xs text-[var(--ink-500)]">Nenhum item adicionado.</p>}
-            <footer className="border-t border-[var(--border)] bg-slate-50 px-4 py-2 text-right text-xs font-bold">
-                Total: {sumQuantities(entries)}
-            </footer>
-        </section>
-    );
-}
-
-function sumQuantities(entries) {
-    return entries.reduce((total, [, value]) => total + (Number(value) || 0), 0)
-        .toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-}
-
-function EquipmentFields({ form, catalogs }) {
-    const [selectedId, setSelectedId] = useState('');
-    const recordEntries = Object.entries(form.data.dados.registros || {});
-    const available = (catalogs.equipamentos || []).filter((item) => !Object.prototype.hasOwnProperty.call(form.data.dados.registros || {}, String(item.id)));
-    const add = () => {
-        if (!selectedId) return;
-        form.setData('dados', {
-            ...form.data.dados,
-            registros: { ...(form.data.dados.registros || {}), [selectedId]: { quantidade: '', situacao: '' } },
-        });
-        setSelectedId('');
-    };
-    const remove = (id) => {
-        const next = { ...(form.data.dados.registros || {}) };
-        delete next[id];
-        form.setData('dados', { ...form.data.dados, registros: next });
-    };
-    const setRecord = (id, key, value) => form.setData('dados', {
-        ...form.data.dados, registros: { ...(form.data.dados.registros || {}), [id]: { ...(form.data.dados.registros?.[id] || {}), [key]: value } },
+function LaborFields({ form, catalogs, historicalCatalogs }) {
+    const data = form.data.dados;
+    const set = (key, value) => form.setData('dados', { ...data, [key]: value });
+    const labor = selectedCatalogItems(catalogs.mao_obra, historicalCatalogs?.mao_obra, data.efetivos,
+        id => ({ id, descricao: `Cadastro ${id}` }));
+    const subcontractors = selectedCatalogItems(catalogs.subcontratadas, historicalCatalogs?.subcontratadas, data.subcontratadas,
+        id => ({ id, razao_social: `Empresa ${id}` }));
+    const items = [
+        ...labor.map(item => ({ id: `labor:${item.id}`, name: item.descricao, description: `${item.tipo === 'direta' ? 'Mão de obra direta' : item.tipo === 'indireta' ? 'Mão de obra indireta' : 'Mão de obra'} · Unidade: ${item.unidade || 'pessoa'}` })),
+        ...subcontractors.map(item => ({ id: `sub:${item.id}`, name: item.nome_fantasia || item.razao_social, description: 'Subcontratada · Unidade: pessoa' })),
+    ];
+    const records = Object.fromEntries([
+        ...Object.entries(data.efetivos || {}).map(([id, value]) => [`labor:${id}`, value]),
+        ...Object.entries(data.subcontratadas || {}).map(([id, value]) => [`sub:${id}`, value]),
+    ]);
+    const change = next => form.setData('dados', {
+        ...data,
+        efetivos: Object.fromEntries(Object.entries(next).filter(([id]) => id.startsWith('labor:')).map(([id, value]) => [id.slice(6), value])),
+        subcontratadas: Object.fromEntries(Object.entries(next).filter(([id]) => id.startsWith('sub:')).map(([id, value]) => [id.slice(4), value])),
     });
-    const set = (key, value) => form.setData('dados', { ...form.data.dados, [key]: value });
     return <div className="space-y-4">
-        <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-slate-50 p-3 sm:flex-row">
-            <select className="sig-input min-w-0 flex-1" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-                <option value="">Selecione um equipamento para adicionar</option>
-                {available.map((item) => <option key={item.id} value={item.id}>{item.codigo ? `${item.codigo} - ` : ''}{item.descricao}</option>)}
-            </select>
-            <button type="button" onClick={add} disabled={!selectedId} className="sig-btn sig-btn-primary"><Plus size={15} /> Adicionar</button>
-        </div>
-        <div className="overflow-hidden rounded-lg border border-[var(--border)]">
-            {recordEntries.map(([id, record]) => {
-                const item = (catalogs.equipamentos || []).find((candidate) => String(candidate.id) === String(id));
-                return <div key={id} className="grid gap-3 border-b border-[var(--border)] px-4 py-3 last:border-0 md:grid-cols-[1fr_120px_180px_40px] md:items-center">
-                    <div><strong>{item ? `${item.codigo ? `${item.codigo} - ` : ''}${item.descricao}` : `Item ${id}`}</strong><p className="text-xs text-[var(--ink-500)]">{item?.unidade || 'Cadastro não disponível'}</p></div>
-                    <input type="number" min="0" step="0.01" className="sig-input" placeholder="Horas/Qtd." value={record?.quantidade || ''} onChange={(e) => setRecord(id, 'quantidade', e.target.value)} />
-                    <select className="sig-input" value={record?.situacao || ''} onChange={(e) => setRecord(id, 'situacao', e.target.value)}><option value="">Situação</option><option value="operando">Operando</option><option value="parado">Parado</option><option value="manutencao">Manutenção</option></select>
-                    <button type="button" onClick={() => remove(id)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label="Remover equipamento"><Trash2 size={16} /></button>
-                </div>;
-            })}
-            {recordEntries.length === 0 && <p className="p-5 text-center text-sm text-[var(--ink-500)]">Nenhum equipamento adicionado.</p>}
-            <footer className="border-t border-[var(--border)] bg-slate-50 px-4 py-2 text-right text-xs font-bold">
-                Total equipamentos: {sumQuantities(recordEntries.map(([id, record]) => [id, record?.quantidade]))}
-            </footer>
-        </div>
-        <Field label="Observações"><textarea className="sig-input min-h-24" value={form.data.dados.observacoes || ''} onChange={(e) => set('observacoes', e.target.value)} /></Field>
+        <RdoCatalogPicker title="Mão de obra e subcontratadas" items={items} records={records} onChange={change} disabled={form.processing} />
+        <Field label="Observações"><textarea className="sig-input min-h-24" value={data.observacoes || ''} onChange={event => set('observacoes', event.target.value)} /></Field>
     </div>;
 }
 
-function ActivityFields({ form }) {
+function EquipmentFields({ form, catalogs, historicalCatalogs }) {
+    const data = form.data.dados;
+    const records = data.registros || {};
+    const equipment = selectedCatalogItems(catalogs.equipamentos, historicalCatalogs?.equipamentos, records,
+        id => ({ id, descricao: `Equipamento ${id}` }));
+    const set = (key, value) => form.setData('dados', { ...data, [key]: value });
+    return <div className="space-y-4">
+        <RdoCatalogPicker title="Equipamentos" items={equipment.map(item => ({ id: String(item.id), code: item.codigo, name: item.descricao, description: `Unidade: ${item.unidade || 'unidade'}` }))} records={records} onChange={next => set('registros', next)} equipment disabled={form.processing} />
+        <Field label="Observações"><textarea className="sig-input min-h-24" value={data.observacoes || ''} onChange={event => set('observacoes', event.target.value)} /></Field>
+    </div>;
+}
+
+function ActivityFields({ form, subjects = [] }) {
     const legacyActivity = form.data.dados.atividades_executadas
         ? [{ titulo: 'Atividade executada', ocorrencia: form.data.dados.atividades_executadas }]
         : [];
@@ -1663,6 +1302,7 @@ function ActivityFields({ form }) {
         ? form.data.dados.atividades
         : (legacyOccurrences ? [{ titulo: 'Ocorrências importantes', ocorrencia: legacyOccurrences }] : legacyActivity);
     const normalize = (next) => next.map((activity) => ({
+        ...(subjects.length ? { assunto: activity?.assunto || (/seguran[cç]a|sst/i.test(activity?.titulo || '') ? 'seguranca_trabalho' : /ambiente|ambiental|res[ií]duo/i.test(activity?.titulo || '') ? 'meio_ambiente' : 'engenharia') } : activity?.assunto ? { assunto: activity.assunto } : {}),
         titulo: activity?.titulo || '',
         ocorrencia: activity?.ocorrencia ?? activity?.descricao ?? '',
     }));
@@ -1701,6 +1341,7 @@ function ActivityFields({ form }) {
                                 <Trash2 size={15} />
                             </button>
                         </div>
+                        {subjects.length > 0 && <div className="mt-3 max-w-sm"><Field label="Assunto"><select className="sig-input" aria-label={`Assunto da atividade ${index + 1}`} value={normalize([activity])[0].assunto} onChange={event => setActivity(index, 'assunto', event.target.value)}>{subjects.map(subject => <option key={subject.value} value={subject.value}>{subject.label}</option>)}</select></Field></div>}
                         <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,280px)_1fr]">
                             <Field label="Título da atividade">
                                 <input
@@ -1731,7 +1372,15 @@ function ActivityFields({ form }) {
     </div>;
 }
 
-function PhotoFields({ form }) {
+function PhotoFields({ form, preservePreviews = false }) {
+    const [photoError, setPhotoError] = useState('');
+    const urls = useRef(new Set());
+    useEffect(() => {
+        const active = new Set((form.data.dados.novas_fotos || []).map(photo => photo.preview_url));
+        urls.current.forEach(url => { if (!active.has(url)) URL.revokeObjectURL(url); });
+        urls.current = active;
+    }, [form.data.dados.novas_fotos]);
+    useEffect(() => () => { if (!preservePreviews) urls.current.forEach(url => URL.revokeObjectURL(url)); }, [preservePreviews]);
     const existing = form.data.dados.arquivos || [];
     const newPhotos = form.data.dados.novas_fotos || [];
     const defaultOrder = [
@@ -1743,7 +1392,11 @@ function PhotoFields({ form }) {
 
     const addPhotos = (event) => {
         const files = Array.from(event.target.files || []);
+        event.target.value = '';
         if (files.length === 0) return;
+        if (existing.length + newPhotos.length + files.length > 20) { setPhotoError('Adicione até 20 imagens por frente.'); return; }
+        if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 12 * 1024 * 1024)) { setPhotoError('Envie imagens JPG, PNG ou WebP de até 12 MB por arquivo.'); return; }
+        setPhotoError('');
 
         const metadata = files.map((file, index) => ({
             client_id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
@@ -1839,19 +1492,20 @@ function PhotoFields({ form }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <span className="eyebrow">Registro fotográfico</span>
-                <p className="mt-1 text-xs text-[var(--ink-500)]">Organize a posição, comente ou exclua cada imagem.</p>
+                <p className="mt-1 text-xs text-[var(--ink-500)]">Fotos são opcionais. Adicione até 20 imagens, organize a posição e comente cada foto. JPG, PNG ou WebP de até 12 MB.</p>
             </div>
             <label className="sig-btn sig-btn-secondary sig-btn-sm">
                 <ImagePlus size={14} /> Adicionar fotos
                 <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={addPhotos} />
             </label>
         </div>
+        {photoError && <p role="alert" className="text-sm text-red-600">{photoError}</p>}
         {photos.length > 0 ? (
             <div className="grid gap-3">
                 {photos.map((photo, index) => (
-                    <div key={photo.key} className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-2 sm:grid-cols-[100px_minmax(0,1fr)]">
+                    <div key={photo.key} className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-2 sm:grid-cols-[88px_minmax(0,1fr)]">
                         <a href={photo.previewUrl} target="_blank" rel="noreferrer">
-                            <img src={photo.previewUrl} alt={photo.name} className="h-24 w-24 rounded-md object-cover" />
+                            <img src={photo.previewUrl} alt={photo.name} className="h-20 w-20 rounded-md object-cover" />
                         </a>
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
@@ -1880,13 +1534,13 @@ function PhotoFields({ form }) {
     </div>;
 }
 
-function CommentFields({ form }) {
+function CommentFields({ form, fillParty = 'construtora' }) {
     const set = (key, value) => form.setData('dados', { ...form.data.dados, [key]: value });
     return <div className="grid gap-4">
-        <Field label="Comentário da construtora"><textarea className="sig-input min-h-28" value={form.data.dados.construtora || ''} onChange={(e) => set('construtora', e.target.value)} /></Field>
-        {(form.data.dados.gerenciadora || form.data.dados.cliente) && (
+        <Field label={`Comentário — ${partyLabels[fillParty]}`}><textarea className="sig-input min-h-28" value={form.data.dados[fillParty] || ''} onChange={(e) => set(fillParty, e.target.value)} /></Field>
+        {Object.keys(partyLabels).some(party => party !== fillParty && form.data.dados[party]) && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Comentários antigos da gerenciadora e do cliente foram preservados. Os novos pareceres são registrados no histórico do fluxo de aprovação.
+                Comentários anteriores das demais partes foram preservados. Os novos pareceres são registrados no histórico do fluxo de aprovação.
             </p>
         )}
     </div>;

@@ -9,15 +9,15 @@ const tabs = [
     { key: 'subcontratadas', label: 'Subcontratadas', icon: Building2 },
 ];
 
-export default function Cadastros({ maoObra = [], equipamentos = [], subcontratadas = [] }) {
+export default function Cadastros({ maoObra = [], equipamentos = [], subcontratadas = [], contracts = [], filters = {} }) {
     const { currentTenant, flash = {}, errors = {} } = usePage().props;
     const [activeTab, setActiveTab] = useState('mao-obra');
     const [editing, setEditing] = useState(null);
 
-    const laborForm = useForm({ descricao: '', tipo: 'direta', unidade: 'pessoa', active: true });
-    const equipmentForm = useForm({ codigo: '', descricao: '', unidade: 'unidade', propriedade: 'proprio', active: true });
+    const laborForm = useForm({ contract_id: filters.contract_id !== 'unassigned' ? (filters.contract_id || '') : '', descricao: '', tipo: 'direta', unidade: 'pessoa', active: true });
+    const equipmentForm = useForm({ contract_id: filters.contract_id !== 'unassigned' ? (filters.contract_id || '') : '', codigo: '', descricao: '', unidade: 'unidade', propriedade: 'proprio', active: true });
     const subcontractorForm = useForm({
-        razao_social: '', nome_fantasia: '', cnpj: '', responsavel: '', telefone: '', email: '', active: true,
+        contract_id: filters.contract_id !== 'unassigned' ? (filters.contract_id || '') : '', razao_social: '', nome_fantasia: '', cnpj: '', responsavel: '', telefone: '', email: '', active: true,
     });
 
     const reset = () => {
@@ -38,15 +38,15 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
         setActiveTab(tab);
         setEditing(item);
         if (tab === 'mao-obra') {
-            laborForm.setData({ descricao: item.descricao, tipo: item.tipo, unidade: item.unidade, active: item.active });
+            laborForm.setData({ contract_id: item.contract_id || '', descricao: item.descricao, tipo: item.tipo, unidade: item.unidade, active: item.active });
         } else if (tab === 'equipamentos') {
             equipmentForm.setData({
-                codigo: item.codigo || '', descricao: item.descricao, unidade: item.unidade,
+                contract_id: item.contract_id || '', codigo: item.codigo || '', descricao: item.descricao, unidade: item.unidade,
                 propriedade: item.propriedade, active: item.active,
             });
         } else {
             subcontractorForm.setData({
-                razao_social: item.razao_social, nome_fantasia: item.nome_fantasia || '', cnpj: item.cnpj || '',
+                contract_id: item.contract_id || '', razao_social: item.razao_social, nome_fantasia: item.nome_fantasia || '', cnpj: item.cnpj || '',
                 responsavel: item.responsavel || '', telefone: item.telefone || '', email: item.email || '', active: item.active,
             });
         }
@@ -75,6 +75,7 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
                 {flash.success && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 font-semibold text-emerald-700">{flash.success}</div>}
                 {Object.values(errors).length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-semibold text-red-700">{Object.values(errors)[0]}</div>}
 
+                <div className="sig-card p-5"><Field label="Filtrar por contrato"><select className="sig-input" value={filters.contract_id || ''} onChange={event => router.get(route('tenant.diario-obra.rdo.cadastros.index', currentTenant.slug), { contract_id: event.target.value }, { preserveScroll: true })}><option value="">Todos os contratos</option><option value="unassigned">Sem contrato (cadastros antigos)</option>{contracts.map(contract => <option key={contract.id} value={contract.id}>{contract.code} · {contract.name}</option>)}</select></Field></div>
                 <nav className="flex flex-wrap gap-2 rounded-xl border border-[var(--border)] bg-white p-2 shadow-sm">
                     {tabs.map(({ key, label, icon: Icon }) => (
                         <button key={key} type="button" onClick={() => { setActiveTab(key); reset(); }}
@@ -89,6 +90,7 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
                         <h2 className="text-lg font-bold">{editing ? 'Editar cadastro' : `Cadastrar ${tabs.find((tab) => tab.key === activeTab)?.label.toLowerCase()}`}</h2>
                     </header>
                     <div className="p-5">
+                        <div className="mb-5"><Field label="Contrato" error={currentForm.errors.contract_id}><select className="sig-input" required disabled={Boolean(editing?.contract_id)} value={currentForm.data.contract_id} onChange={event => currentForm.setData('contract_id', event.target.value)}><option value="">Selecione o contrato</option>{contracts.map(contract => <option key={contract.id} value={contract.id}>{contract.code} · {contract.name}</option>)}</select></Field></div>
                         {activeTab === 'mao-obra' && <LaborForm form={laborForm} editing={Boolean(editing)} />}
                         {activeTab === 'equipamentos' && <EquipmentForm form={equipmentForm} editing={Boolean(editing)} />}
                         {activeTab === 'subcontratadas' && <SubcontractorForm form={subcontractorForm} editing={Boolean(editing)} />}
@@ -104,7 +106,7 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
                 {activeTab === 'mao-obra' && (
                     <Catalog title="Mão de obra cadastrada" empty="Nenhuma função cadastrada.">
                         {maoObra.map((item) => (
-                            <Row key={item.id} title={item.descricao} subtitle={`${item.tipo === 'direta' ? 'Direta' : 'Indireta'} · ${item.unidade}`} active={item.active}
+                            <Row key={item.id} title={item.descricao} subtitle={`${item.tipo === 'direta' ? 'Direta' : 'Indireta'} · ${item.unidade}`} contractLabel={item.contract_id ? (contracts.find(contract => contract.id === item.contract_id)?.code || 'Contrato vinculado') : 'Sem contrato — vincule ao editar'} active={item.active}
                                 onEdit={() => startEdit('mao-obra', item)} onDelete={() => remove('mao-obra', item, item.descricao)} />
                         ))}
                     </Catalog>
@@ -113,7 +115,7 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
                     <Catalog title="Equipamentos cadastrados" empty="Nenhum equipamento cadastrado.">
                         {equipamentos.map((item) => (
                             <Row key={item.id} title={`${item.codigo ? `${item.codigo} - ` : ''}${item.descricao}`}
-                                subtitle={`${propertyLabel(item.propriedade)} · ${item.unidade}`} active={item.active}
+                                subtitle={`${propertyLabel(item.propriedade)} · ${item.unidade}`} contractLabel={item.contract_id ? (contracts.find(contract => contract.id === item.contract_id)?.code || 'Contrato vinculado') : 'Sem contrato — vincule ao editar'} active={item.active}
                                 onEdit={() => startEdit('equipamentos', item)} onDelete={() => remove('equipamentos', item, item.descricao)} />
                         ))}
                     </Catalog>
@@ -122,7 +124,7 @@ export default function Cadastros({ maoObra = [], equipamentos = [], subcontrata
                     <Catalog title="Subcontratadas cadastradas" empty="Nenhuma subcontratada cadastrada.">
                         {subcontratadas.map((item) => (
                             <Row key={item.id} title={item.razao_social}
-                                subtitle={[item.nome_fantasia, item.cnpj, item.responsavel].filter(Boolean).join(' · ')} active={item.active}
+                                subtitle={[item.nome_fantasia, item.cnpj, item.responsavel].filter(Boolean).join(' · ')} contractLabel={item.contract_id ? (contracts.find(contract => contract.id === item.contract_id)?.code || 'Contrato vinculado') : 'Sem contrato — vincule ao editar'} active={item.active}
                                 onEdit={() => startEdit('subcontratadas', item)} onDelete={() => remove('subcontratadas', item, item.razao_social)} />
                         ))}
                     </Catalog>
@@ -191,9 +193,9 @@ function Catalog({ title, empty, children }) {
     </section>;
 }
 
-function Row({ title, subtitle, active, onEdit, onDelete }) {
+function Row({ title, subtitle, contractLabel, active, onEdit, onDelete }) {
     return <article className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-        <div><p className="font-bold">{title}</p><p className="mt-0.5 text-sm text-[var(--ink-500)]">{subtitle || 'Sem informações adicionais'}</p></div>
+        <div><p className="mb-1 text-xs font-semibold text-blue-600">{contractLabel}</p><p className="font-bold">{title}</p><p className="mt-0.5 text-sm text-[var(--ink-500)]">{subtitle || 'Sem informações adicionais'}</p></div>
         <div className="flex items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-xs font-bold ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{active ? 'Ativo' : 'Inativo'}</span>
             <button type="button" onClick={onEdit} className="sig-btn"><Pencil size={15} /> Editar</button>

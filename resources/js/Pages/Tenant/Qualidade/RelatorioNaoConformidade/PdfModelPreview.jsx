@@ -27,7 +27,7 @@ function previewBody(payload) {
     return body;
 }
 
-export default function PdfModelPreview({ name, endpoint, payload }) {
+export default function PdfModelPreview({ name, endpoint, payload, fileName = `rnc-${payload.layout}.pdf` }) {
     const requestKey = JSON.stringify(payload, fingerprint);
     const [preview, setPreview] = useState(null);
     const [retry, setRetry] = useState(0);
@@ -157,7 +157,7 @@ export default function PdfModelPreview({ name, endpoint, payload }) {
         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
             <div className="flex items-center gap-1">
                 <button ref={eyeButton} type="button" disabled={!url} className="sig-btn sig-btn-ghost !min-h-9 !px-3 !text-xs disabled:cursor-wait disabled:opacity-50" aria-label={`Ver modelo ${name}`} aria-haspopup="dialog" onClick={openExpanded} onMouseEnter={openHover} onMouseLeave={scheduleClose} onFocus={openHover} onBlur={(event) => { if (!hoverPanel.current?.contains(event.relatedTarget)) scheduleClose(); }}><Eye size={15} />Ver</button>
-                {url && <a href={url} download={`rnc-${payload.layout}.pdf`} className="sig-btn sig-btn-ghost !min-h-9 !px-3 !text-xs" aria-label={`Baixar PDF de ${name}`}><Download size={15} />Baixar</a>}
+                {url && <a href={url} download={fileName} className="sig-btn sig-btn-ghost !min-h-9 !px-3 !text-xs" aria-label={`Baixar PDF de ${name}`}><Download size={15} />Baixar</a>}
             </div>
         </div>
         {hover && url && createPortal(<aside ref={hoverPanel} aria-label={`Prévia ampliada de ${name}`} className="fixed z-[9999] flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl" style={hover} onMouseEnter={() => clearTimeout(closeTimer.current)} onMouseLeave={scheduleClose}>
@@ -167,7 +167,7 @@ export default function PdfModelPreview({ name, endpoint, payload }) {
         {expanded && createPortal(<dialog ref={dialog} aria-label={`Modelo ${name}`} className="m-auto h-[90dvh] w-[calc(100vw-2rem)] max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/45 open:flex open:flex-col" onClose={() => setExpanded(false)} onClick={(event) => { if (event.target === event.currentTarget) setExpanded(false); }}>
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
                 <h2 className="text-base font-semibold">{name}</h2>
-                <div className="flex shrink-0 items-center gap-2">{url && <a href={url} download={`rnc-${payload.layout}.pdf`} className="sig-btn sig-btn-secondary !min-h-9 !px-3" aria-label={`Baixar PDF de ${name}`}><Download size={16} /><span className="hidden sm:inline">Baixar PDF</span></a>}<button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar prévia" onClick={() => setExpanded(false)}><X size={20} /></button></div>
+                <div className="flex shrink-0 items-center gap-2">{url && <a href={url} download={fileName} className="sig-btn sig-btn-secondary !min-h-9 !px-3" aria-label={`Baixar PDF de ${name}`}><Download size={16} /><span className="hidden sm:inline">Baixar PDF</span></a>}<button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar prévia" onClick={() => setExpanded(false)}><X size={20} /></button></div>
             </header>
             <div ref={modalScroller} className="min-h-0 flex-1 overflow-auto overscroll-contain bg-slate-100 p-2 sm:p-4" tabIndex={0} aria-label={`Documento completo de ${name}`}>{url ? <PdfPreviewDocument pdf={current.pdf} name={name} scrollRoot={modalScroller} /> : <div className="flex h-full items-center justify-center text-sm text-slate-500">Atualizando prévia...</div>}</div>
         </dialog>, document.body)}

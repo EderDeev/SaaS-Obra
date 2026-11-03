@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Controllers\Controller;
 use App\Models\MobileApiToken;
-use App\Models\RdoResponsavel;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -35,71 +34,43 @@ class MobileAuthController extends Controller
             return response()->json(['message' => 'Altere a senha no sistema web antes de usar o app mobile.'], 403);
         }
 
-        $membershipTenantIds = $user->tenantMemberships()
-            ->where('status', 'active')
-            ->orderByDesc('joined_at')
-            ->orderByDesc('id')
-            ->pluck('tenant_id')
-            ->unique()
-            ->values();
+        $tenants = self::availableTenants($user);
+        $tenant = $tenants->first();
+        abort_unless($tenant, 403, 'Usuário sem acesso a um ambiente ativo.');
+        return $this->issueSession($user, $tenant, $data['device_name'] ?? 'mobile');
+    }
 
-        $contractTenantIds = $user->contractParticipations()
-            ->where('status', 'active')
-            ->orderByDesc('joined_at')
-            ->orderByDesc('id')
-            ->pluck('tenant_id')
-            ->unique()
-            ->values();
+    public static function availableTenants(User $user): \Illuminate\Support\Collection
+    {
+        $ids = $user->tenantMemberships()->where('status', 'active')->pluck('tenant_id')
+            ->merge($user->contractParticipations()->where('status', 'active')->pluck('tenant_id'))->unique();
+        return Tenant::query()->where('status', 'active')
+            ->when(!$user->is_platform_admin, fn ($query) => $query->whereIn('id', $ids))
+            ->orderBy('name')->get();
+    }
 
-        $rdoResponsibleTenantIds = RdoResponsavel::query()
-            ->where('user_id', $user->id)
-            ->where('status', 'active')
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->pluck('tenant_id')
-            ->unique()
-            ->values();
+    public function switchTenant(Request $request): JsonResponse
+    {
+        $data = $request->validate(['tenant_id' => ['required', 'integer']]);
+        $tenant = self::availableTenants($request->user())->firstWhere('id', (int) $data['tenant_id']);
+        abort_unless($tenant, 403, 'Usuário sem acesso a este ambiente.');
+        return $this->issueSession($request->user(), $tenant, 'SigWorks Mobile');
+    }
 
-        $tenantIds = $membershipTenantIds
-            ->merge($contractTenantIds)
-            ->merge($rdoResponsibleTenantIds)
-            ->unique()
-            ->values();
-
-        if ($tenantIds->isEmpty() && $user->is_platform_admin) {
-            $tenantIds = Tenant::query()
-                ->where('status', 'active')
-                ->orderByDesc('id')
-                ->pluck('id')
-                ->values();
-        }
-
-        if ($tenantIds->isEmpty()) {
-            return response()->json(['message' => 'Usuário sem acesso a um ambiente ativo.'], 403);
-        }
-
-        $tenant = Tenant::query()
-            ->whereIn('id', $tenantIds)
-            ->where('status', 'active')
-            ->get()
-            ->sortBy(fn (Tenant $candidate): int => $tenantIds->search($candidate->id))
-            ->first();
-
-        if (! $tenant) {
-            return response()->json(['message' => 'O ambiente vinculado ao usuário está inativo.'], 403);
-        }
-
+    private function issueSession(User $user, Tenant $tenant, string $deviceName): JsonResponse
+    {
         $plainToken = Str::random(64);
 
         MobileApiToken::create([
             'tenant_id' => $tenant->id,
             'user_id' => $user->id,
-            'name' => $data['device_name'] ?? 'mobile',
+            'name' => $deviceName,
             'token_hash' => hash('sha256', $plainToken),
             'expires_at' => now()->addMonths(6),
         ]);
 
         return response()->json([
+            'tenants' => self::availableTenants($user)->map->only(['id', 'slug', 'name'])->values(),
             'token' => $plainToken,
             'token_type' => 'Bearer',
             'expires_at' => now()->addMonths(6)->toISOString(),

@@ -13,7 +13,6 @@ const sections = [
     'catalogs',
     'responsibles',
     'calendar',
-    'rda',
     'consolidation',
     'approval',
     'signature',
@@ -24,8 +23,7 @@ const finalLabels = {
     settings: 'Continuar para cadastros',
     catalogs: 'Continuar para responsáveis',
     responsibles: 'Continuar para calendário',
-    calendar: 'Continuar para RDA',
-    rda: 'Continuar para consolidação',
+    calendar: 'Continuar para preenchimento',
     consolidation: 'Continuar para aprovação',
     approval: 'Continuar para assinatura',
     signature: 'Continuar para dashboard',
@@ -43,7 +41,7 @@ const stepsBySection = {
         {
             target: '[data-tour="rdo-settings-rules"]',
             title: 'Regras do processo',
-            content: 'Defina continuidade, geração automática e assinatura digital. Essa configuração também orienta o calendário do RDA.',
+            content: 'Defina continuidade, geração automática e assinatura digital. Escolha as partes que preenchem e a ordem das análises.',
             placement: 'top',
         },
     ],
@@ -57,7 +55,7 @@ const stepsBySection = {
         {
             target: '[data-tour="rdo-catalogs-list"]',
             title: 'Catálogos reutilizáveis',
-            content: 'Os itens ficam disponíveis no RDA e no RDO, evitando digitação repetida e mantendo a nomenclatura padronizada.',
+            content: 'Os itens ficam disponíveis no RDO, na web e no aplicativo, evitando digitação repetida e mantendo a nomenclatura padronizada.',
             placement: 'top',
         },
     ],
@@ -65,13 +63,13 @@ const stepsBySection = {
         {
             target: '[data-tour="rdo-responsibles-form"]',
             title: 'Etapa 3: definir responsáveis',
-            content: 'Vincule quem preenche pela construtora, quem aprova pela gerenciadora e pelo cliente e quem assina o documento.',
+            content: 'Vincule quem preenche pela construtora e pela gerenciadora, quem analisa, quem comenta pelo cliente e quem assina o documento.',
             placement: 'bottom',
         },
         {
             target: '[data-tour="rdo-responsibles-flow"]',
-            title: 'Responsável pelo RDA',
-            content: 'Defina também quem pode registrar e publicar o RDA de campo que será usado como apoio ao RDO oficial.',
+            title: 'Responsáveis pelo preenchimento',
+            content: 'Construtora e gerenciadora registram seus próprios dados. O cliente participa com um comentário.',
             placement: 'top',
         },
     ],
@@ -89,31 +87,11 @@ const stepsBySection = {
             placement: 'left',
         },
     ],
-    rda: [
-        {
-            target: '[data-tour="rda-mobile-offline"]',
-            title: 'Etapa 5: apontar pelo aplicativo',
-            content: 'No aplicativo mobile, o responsável pode preencher o RDA offline no campo. Quando a conexão voltar, os dados são sincronizados.',
-            placement: 'bottom',
-        },
-        {
-            target: '[data-tour="rda-fields"]',
-            title: 'Registrar o trabalho de campo',
-            content: 'Informe clima, atividades, ocorrências, mão de obra, equipamentos e fotografias da obra ou frente.',
-            placement: 'center',
-        },
-        {
-            target: '[data-tour="rda-publish"]',
-            title: 'Publicar o RDA',
-            content: 'Salve durante o preenchimento e publique ao concluir. Somente RDAs publicados ficam disponíveis para consolidação no RDO.',
-            placement: 'left',
-        },
-    ],
     consolidation: [
         {
-            target: '[data-tour="rdo-rda-import"]',
-            title: 'Etapa 6: consolidar os apontamentos',
-            content: 'Abra o RDO e importe os dados dos RDAs publicados da mesma data e frente de serviço.',
+            target: '[data-tour="rdo-sections"]',
+            title: 'Preencher o RDO',
+            content: 'Preencha o RDO diretamente, na web ou offline pelo aplicativo. Sincronize quando houver conexão.',
             placement: 'bottom',
         },
         {
@@ -127,7 +105,7 @@ const stepsBySection = {
         {
             target: '[data-tour="rdo-workflow"]',
             title: 'Etapa 7: análise e aprovação',
-            content: 'O RDO segue em etapas: a construtora registra os fatos, a gerenciadora fiscaliza e complementa, e o cliente apresenta a manifestação final.',
+            content: 'O RDO segue em etapas: as partes selecionadas registram os fatos separadamente e o cliente registra seu comentário na etapa configurada.',
             placement: 'bottom',
         },
         {
@@ -147,7 +125,7 @@ const stepsBySection = {
         {
             target: '[data-tour="rdo-digital-signature"]',
             title: 'Assinatura digital',
-            content: 'Envie o PDF para assinatura digital da construtora, gerenciadora e cliente. O sistema acompanha cada assinatura e guarda o arquivo final assinado.',
+            content: 'Envie o PDF para assinatura digital dos participantes configurados. O sistema acompanha cada assinatura e guarda o arquivo final assinado.',
             placement: 'top',
         },
     ],

@@ -1,0 +1,633 @@
+# Inventário de arquivos
+
+Lista gerada do workspace. Inclui arquivos locais ainda não publicados; não é uma lista de rotas ou de recursos habilitados.
+
+## Controllers (73)
+
+- [app/Http/Controllers/Api/Mobile/MobileAuthController.php](../../app/Http/Controllers/Api/Mobile/MobileAuthController.php). Métodos públicos: `login`, `switchTenant`.
+- [app/Http/Controllers/Api/Mobile/MobileRdaController.php](../../app/Http/Controllers/Api/Mobile/MobileRdaController.php). Métodos públicos: `storeOffline`.
+- [app/Http/Controllers/Api/Mobile/MobileRdoController.php](../../app/Http/Controllers/Api/Mobile/MobileRdoController.php). Métodos públicos: `submit`, `storeOffline`.
+- [app/Http/Controllers/Api/Mobile/MobileRncController.php](../../app/Http/Controllers/Api/Mobile/MobileRncController.php). Métodos públicos: `bootstrap`, `storeOffline`.
+- [app/Http/Controllers/Api/OpenSignWebhookController.php](../../app/Http/Controllers/Api/OpenSignWebhookController.php). Métodos públicos: .
+- [app/Http/Controllers/Auth/AuthenticatedSessionController.php](../../app/Http/Controllers/Auth/AuthenticatedSessionController.php). Métodos públicos: `create`, `store`, `destroy`.
+- [app/Http/Controllers/Auth/ConfirmablePasswordController.php](../../app/Http/Controllers/Auth/ConfirmablePasswordController.php). Métodos públicos: `show`, `store`.
+- [app/Http/Controllers/Auth/EmailVerificationNotificationController.php](../../app/Http/Controllers/Auth/EmailVerificationNotificationController.php). Métodos públicos: `store`.
+- [app/Http/Controllers/Auth/EmailVerificationPromptController.php](../../app/Http/Controllers/Auth/EmailVerificationPromptController.php). Métodos públicos: .
+- [app/Http/Controllers/Auth/ForcedPasswordChangeController.php](../../app/Http/Controllers/Auth/ForcedPasswordChangeController.php). Métodos públicos: `edit`, `update`.
+- [app/Http/Controllers/Auth/NewPasswordController.php](../../app/Http/Controllers/Auth/NewPasswordController.php). Métodos públicos: `create`, `store`.
+- [app/Http/Controllers/Auth/PasswordController.php](../../app/Http/Controllers/Auth/PasswordController.php). Métodos públicos: `update`.
+- [app/Http/Controllers/Auth/PasswordResetLinkController.php](../../app/Http/Controllers/Auth/PasswordResetLinkController.php). Métodos públicos: `create`, `store`.
+- [app/Http/Controllers/Auth/RegisteredUserController.php](../../app/Http/Controllers/Auth/RegisteredUserController.php). Métodos públicos: `create`, `store`.
+- [app/Http/Controllers/Auth/VerifyEmailController.php](../../app/Http/Controllers/Auth/VerifyEmailController.php). Métodos públicos: .
+- [app/Http/Controllers/Controller.php](../../app/Http/Controllers/Controller.php).
+- [app/Http/Controllers/NotificationController.php](../../app/Http/Controllers/NotificationController.php). Métodos públicos: `index`, `read`, `readHidden`.
+- [app/Http/Controllers/Platform/ApsUsageController.php](../../app/Http/Controllers/Platform/ApsUsageController.php). Métodos públicos: `index`, `destroyVersion`.
+- [app/Http/Controllers/Platform/DashboardController.php](../../app/Http/Controllers/Platform/DashboardController.php). Métodos públicos: .
+- [app/Http/Controllers/Platform/TenantController.php](../../app/Http/Controllers/Platform/TenantController.php). Métodos públicos: `index`, `store`, `update`, `updateAssistantQuota`.
+- [app/Http/Controllers/ProfileController.php](../../app/Http/Controllers/ProfileController.php). Métodos públicos: `edit`, `update`, `destroy`.
+- [app/Http/Controllers/Tenant/ActivityController.php](../../app/Http/Controllers/Tenant/ActivityController.php). Métodos públicos: `index`, `osDnitOptions`, `metrics`, `tourPreview`, `store`, `update`, `updateChecklistItem`, `destroy`, `storeComment`, `storeFile`.
+- [app/Http/Controllers/Tenant/AssistantController.php](../../app/Http/Controllers/Tenant/AssistantController.php). Métodos públicos: `show`, `store`, `destroy`.
+- [app/Http/Controllers/Tenant/BoletimMedicaoController.php](../../app/Http/Controllers/Tenant/BoletimMedicaoController.php). Métodos públicos: `index`, `store`, `freeze`, `finish`, `reopen`.
+- [app/Http/Controllers/Tenant/ContractAdditiveController.php](../../app/Http/Controllers/Tenant/ContractAdditiveController.php). Métodos públicos: `store`, `download`.
+- [app/Http/Controllers/Tenant/ContractController.php](../../app/Http/Controllers/Tenant/ContractController.php). Métodos públicos: `index`, `tourPreview`, `store`, `downloadBaseDocument`, `show`, `parametrize`.
+- [app/Http/Controllers/Tenant/ContractParticipantController.php](../../app/Http/Controllers/Tenant/ContractParticipantController.php). Métodos públicos: `store`.
+- [app/Http/Controllers/Tenant/DashboardController.php](../../app/Http/Controllers/Tenant/DashboardController.php). Métodos públicos: .
+- [app/Http/Controllers/Tenant/FolhaRostoController.php](../../app/Http/Controllers/Tenant/FolhaRostoController.php). Métodos públicos: `index`, `show`, `showSimple`, `store`, `storeSimple`, `update`, `submitAnalysis`, `analisarPleito`, `analisarPleitoGrupo`, `analisarPleitoFolha`, `responsaveisAnalise`, `storeResponsavelAnalise`, `destroyResponsavelAnalise`, `storeAnalise`, `moveAnalysisFlow`, `downloadMemoria`.
+- [app/Http/Controllers/Tenant/GedController.php](../../app/Http/Controllers/Tenant/GedController.php). Métodos públicos: `tourPreview`, `index`, `trash`, `trashAction`, `triage`, `resolveTriage`, `settings`, `email`, `storeEmailAccount`, `updateEmailAccount`, `destroyEmailAccount`, `processEmailAccount`, `testEmailAccount`, `storeEmailRule`, `updateEmailRule`, `destroyEmailRule`, `details`, `content`, `attachments`, `storeAttachment`, `downloadAttachment`, `previewAttachment`, `queueAttachmentOcr`, `updateAttachment`, `destroyAttachment`, `metadata`, `notes`, `storeNote`, `history`, `permissions`, `updatePermissions`, `queueOcr`, `update`, `destroy`, `store`, `storeType`, `updateType`, `destroyType`, `storeCorrespondent`, `storeTag`, `updateTag`, `destroyTag`, `bulkAction`, `bulkDownload`, `download`, `preview`.
+- [app/Http/Controllers/Tenant/MedicaoBiController.php](../../app/Http/Controllers/Tenant/MedicaoBiController.php). Métodos públicos: .
+- [app/Http/Controllers/Tenant/MedicaoController.php](../../app/Http/Controllers/Tenant/MedicaoController.php). Métodos públicos: `item`, `indiceReajuste`, `storeIndiceReajuste`, `destroyIndiceReajuste`, `storeIndiceReajusteCompetencia`, `destroyIndiceReajusteCompetencia`, `storeItemIndiceReajusteVinculos`, `importItemIndiceReajusteVinculos`, `storeManual`, `storeFromOrcamento`, `importItems`, `storeAdditiveFromOrcamento`, `importAdditiveItems`, `storeAdditiveManual`.
+- [app/Http/Controllers/Tenant/MedicaoRelatorioController.php](../../app/Http/Controllers/Tenant/MedicaoRelatorioController.php). Métodos públicos: `index`, `exportPleitoPreliminarExcel`, `exportPleitoPreliminarPdf`, `exportAnalisePleitoExcel`, `exportAnalisePleitoPdf`, `exportSinteticoExcel`, `exportSinteticoPdf`, `exportPorFrExcel`, `exportPorFrPdf`, `exportResumoExcel`, `exportResumoPdf`, `exportFluxoFrExcel`, `exportFluxoFrPdf`.
+- [app/Http/Controllers/Tenant/OrcamentoController.php](../../app/Http/Controllers/Tenant/OrcamentoController.php). Métodos públicos: `index`, `tourPreview`, `create`, `createImport`, `store`, `storeImport`, `show`, `accesses`, `updateAccesses`, `copyPreview`, `copyFromOrcamento`, `close`, `downloadRelatorioSintetico`, `downloadRelatorioResumo`, `downloadRelatoriosZip`, `storeEtapa`, `updateEtapa`, `toggleEtapaVisibility`, `destroyEtapa`, `orcamentoComposicaoOptions`, `orcamentoInsumoOptions`, `storeOrcamentoComposicaoItem`, `storeOrcamentoInsumoItem`, `toggleOrcamentoItemBdi`, `updateOrcamentoItem`, `destroyOrcamentoItem`, `composicoes`, `createComposicao`, `storeComposicao`, `showComposicao`, `storeComposicaoItem`, `composicaoItemOptions`, `storeComposicaoCreatedInsumo`, `updateComposicaoItem`, `destroyComposicaoItem`, `insumos`, `storeInsumo`, `storeInsumoGrupo`, `updateInsumoGrupo`, `destroyInsumoGrupo`, `importInsumos`, `importComposicoes`, `importComposicoesAnalitico`, `runQueuedComposicoesImport`.
+- [app/Http/Controllers/Tenant/OrdemServicoController.php](../../app/Http/Controllers/Tenant/OrdemServicoController.php). Métodos públicos: `index`, `show`, `items`, `store`, `update`, `submitForAnalysis`, `analise`, `analiseDetalhes`, `analyze`, `approve`, `startExecution`, `complete`, `cancel`, `reject`, `storeComment`, `resolveComment`, `downloadDocument`, `pdf`, `responsaveis`, `settings`, `updateRequirements`, `storeResponsavel`, `destroyResponsavel`.
+- [app/Http/Controllers/Tenant/OrdemServicoMetricsController.php](../../app/Http/Controllers/Tenant/OrdemServicoMetricsController.php). Métodos públicos: .
+- [app/Http/Controllers/Tenant/OsDnitDashboardController.php](../../app/Http/Controllers/Tenant/OsDnitDashboardController.php). Métodos públicos: .
+- [app/Http/Controllers/Tenant/OsDnitOrderController.php](../../app/Http/Controllers/Tenant/OsDnitOrderController.php). Métodos públicos: `index`, `create`, `edit`, `store`, `update`, `destroy`, `pdf`, `show`, `download`.
+- [app/Http/Controllers/Tenant/OsDnitProductController.php](../../app/Http/Controllers/Tenant/OsDnitProductController.php). Métodos públicos: `index`, `store`, `update`, `destroy`.
+- [app/Http/Controllers/Tenant/OsDnitResponsibleController.php](../../app/Http/Controllers/Tenant/OsDnitResponsibleController.php). Métodos públicos: `index`, `store`.
+- [app/Http/Controllers/Tenant/OsDnitSettingsController.php](../../app/Http/Controllers/Tenant/OsDnitSettingsController.php). Métodos públicos: `index`, `store`, `update`, `destroy`, `storeLot`, `updateLot`, `destroyLot`.
+- [app/Http/Controllers/Tenant/OsDnitTourController.php](../../app/Http/Controllers/Tenant/OsDnitTourController.php). Métodos públicos: .
+- [app/Http/Controllers/Tenant/OsDnitWorkflowController.php](../../app/Http/Controllers/Tenant/OsDnitWorkflowController.php). Métodos públicos: `submit`, `review`, `decide`, `finalize`.
+- [app/Http/Controllers/Tenant/Parametrizacao/ContratoController.php](../../app/Http/Controllers/Tenant/Parametrizacao/ContratoController.php). Métodos públicos: `index`, `store`.
+- [app/Http/Controllers/Tenant/Parametrizacao/DisciplinaController.php](../../app/Http/Controllers/Tenant/Parametrizacao/DisciplinaController.php). Métodos públicos: `index`, `store`, `update`, `destroy`.
+- [app/Http/Controllers/Tenant/Parametrizacao/EmpresaController.php](../../app/Http/Controllers/Tenant/Parametrizacao/EmpresaController.php). Métodos públicos: `index`, `store`, `update`, `destroy`.
+- [app/Http/Controllers/Tenant/Parametrizacao/ObraController.php](../../app/Http/Controllers/Tenant/Parametrizacao/ObraController.php). Métodos públicos: `index`, `store`, `update`, `destroy`.
+- [app/Http/Controllers/Tenant/Parametrizacao/TrechoController.php](../../app/Http/Controllers/Tenant/Parametrizacao/TrechoController.php). Métodos públicos: `index`, `store`, `update`, `destroy`.
+- [app/Http/Controllers/Tenant/Parametrizacao/UsuarioContratoController.php](../../app/Http/Controllers/Tenant/Parametrizacao/UsuarioContratoController.php). Métodos públicos: `index`, `store`, `destroy`.
+- [app/Http/Controllers/Tenant/PermissionController.php](../../app/Http/Controllers/Tenant/PermissionController.php). Métodos públicos: `index`, `update`.
+- [app/Http/Controllers/Tenant/ProjectController.php](../../app/Http/Controllers/Tenant/ProjectController.php). Métodos públicos: `index`, `revisions`, `capPdf`, `tree`, `tourPreview`, `masterList`, `masterListPdf`, `masterListExcel`, `store`, `destroy`, `inactivate`, `updateStatus`.
+- [app/Http/Controllers/Tenant/ProjectResponsavelController.php](../../app/Http/Controllers/Tenant/ProjectResponsavelController.php). Métodos públicos: `index`, `store`, `destroy`.
+- [app/Http/Controllers/Tenant/ProjectReviewController.php](../../app/Http/Controllers/Tenant/ProjectReviewController.php). Métodos públicos: `index`, `update`.
+- [app/Http/Controllers/Tenant/ProjectReviewWorkspaceController.php](../../app/Http/Controllers/Tenant/ProjectReviewWorkspaceController.php). Métodos públicos: `storeMarkup`, `updateMarkup`, `storeMarkupReply`, `destroyMarkup`, `updateChecklistItem`.
+- [app/Http/Controllers/Tenant/ProjectSubmissionBatchController.php](../../app/Http/Controllers/Tenant/ProjectSubmissionBatchController.php). Métodos públicos: `store`, `update`, `capPdf`.
+- [app/Http/Controllers/Tenant/ProjectViewerController.php](../../app/Http/Controllers/Tenant/ProjectViewerController.php). Métodos públicos: `download`, `show`, `compare`, `process`, `status`, `token`.
+- [app/Http/Controllers/Tenant/Qualidade/IcResponsavelController.php](../../app/Http/Controllers/Tenant/Qualidade/IcResponsavelController.php). Métodos públicos: `index`, `store`, `destroy`.
+- [app/Http/Controllers/Tenant/Qualidade/InstrucaoCampoController.php](../../app/Http/Controllers/Tenant/Qualidade/InstrucaoCampoController.php). Métodos públicos: `index`, `dashboard`, `create`, `edit`, `store`, `update`, `show`, `notify`, `finalize`, `evidence`, `attachment`, `photo`, `destroy`.
+- [app/Http/Controllers/Tenant/Qualidade/RelatorioNaoConformidadeController.php](../../app/Http/Controllers/Tenant/Qualidade/RelatorioNaoConformidadeController.php). Métodos públicos: `index`, `tourPreview`, `dashboard`, `create`, `show`, `edit`, `store`, `update`, `pdf`, `notifyResponsibleUsers`, `destroy`.
+- [app/Http/Controllers/Tenant/Qualidade/RncAcaoCorretivaController.php](../../app/Http/Controllers/Tenant/Qualidade/RncAcaoCorretivaController.php). Métodos públicos: `create`, `store`, `review`, `submitReview`, `download`.
+- [app/Http/Controllers/Tenant/Qualidade/RncEvidenciaController.php](../../app/Http/Controllers/Tenant/Qualidade/RncEvidenciaController.php). Métodos públicos: `create`, `store`, `download`.
+- [app/Http/Controllers/Tenant/Qualidade/RncPdfSettingController.php](../../app/Http/Controllers/Tenant/Qualidade/RncPdfSettingController.php). Métodos públicos: `index`, `store`, `preview`, `logo`.
+- [app/Http/Controllers/Tenant/Qualidade/RncResponsavelController.php](../../app/Http/Controllers/Tenant/Qualidade/RncResponsavelController.php). Métodos públicos: `index`, `store`, `destroy`, `storeSignatures`.
+- [app/Http/Controllers/Tenant/Qualidade/RncSignatureController.php](../../app/Http/Controllers/Tenant/Qualidade/RncSignatureController.php). Métodos públicos: `store`, `refresh`, `unsigned`.
+- [app/Http/Controllers/Tenant/RdaController.php](../../app/Http/Controllers/Tenant/RdaController.php). Métodos públicos: `index`, `store`, `show`, `update`, `publish`.
+- [app/Http/Controllers/Tenant/RdaResponsavelController.php](../../app/Http/Controllers/Tenant/RdaResponsavelController.php). Métodos públicos: `index`, `store`, `destroy`.
+- [app/Http/Controllers/Tenant/RdoCadastroController.php](../../app/Http/Controllers/Tenant/RdoCadastroController.php). Métodos públicos: `index`, `storeMaoObra`, `updateMaoObra`, `destroyMaoObra`, `storeEquipamento`, `updateEquipamento`, `destroyEquipamento`, `storeSubcontratada`, `updateSubcontratada`, `destroySubcontratada`.
+- [app/Http/Controllers/Tenant/RdoController.php](../../app/Http/Controllers/Tenant/RdoController.php). Métodos públicos: `saveWorksSections`, `saveWorksInspections`, `tourPreview`, `dashboard`, `calendar`, `batchPdf`, `reopen`, `settings`, `previewDocument`, `documentLogo`, `saveSettings`, `generate`, `show`, `pdf`, `history`, `saveSection`, `saveAllSections`, `changeFlow`, `saveInspection`, `inspectionEvidence`, `storeDivergence`, `updateDivergence`, `flowCapabilities`.
+- [app/Http/Controllers/Tenant/RdoResponsavelController.php](../../app/Http/Controllers/Tenant/RdoResponsavelController.php). Métodos públicos: `index`, `store`, `destroy`.
+- [app/Http/Controllers/Tenant/RdoSignatureController.php](../../app/Http/Controllers/Tenant/RdoSignatureController.php). Métodos públicos: `store`, `uploadManual`, `downloadUnsigned`, `refresh`, `downloadSigned`.
+- [app/Http/Controllers/Tenant/TutorialController.php](../../app/Http/Controllers/Tenant/TutorialController.php). Métodos públicos: .
+- [app/Http/Controllers/Tenant/UserController.php](../../app/Http/Controllers/Tenant/UserController.php). Métodos públicos: `index`, `store`, `update`, `deactivate`, `reactivate`, `resetPassword`.
+- [app/Http/Controllers/TenantSelectionController.php](../../app/Http/Controllers/TenantSelectionController.php). Métodos públicos: `dashboard`, `index`, `store`.
+
+## Middleware (14)
+
+- [app/Http/Middleware/EnsureContractPermission.php](../../app/Http/Middleware/EnsureContractPermission.php).
+- [app/Http/Middleware/EnsureDiarioObraPermission.php](../../app/Http/Middleware/EnsureDiarioObraPermission.php).
+- [app/Http/Middleware/EnsureDocumentationPermission.php](../../app/Http/Middleware/EnsureDocumentationPermission.php).
+- [app/Http/Middleware/EnsureMedicaoPermission.php](../../app/Http/Middleware/EnsureMedicaoPermission.php).
+- [app/Http/Middleware/EnsureMobileApiToken.php](../../app/Http/Middleware/EnsureMobileApiToken.php).
+- [app/Http/Middleware/EnsureOrdemServicoPermission.php](../../app/Http/Middleware/EnsureOrdemServicoPermission.php).
+- [app/Http/Middleware/EnsureOsDnitPermission.php](../../app/Http/Middleware/EnsureOsDnitPermission.php).
+- [app/Http/Middleware/EnsureParametrizacaoPermission.php](../../app/Http/Middleware/EnsureParametrizacaoPermission.php).
+- [app/Http/Middleware/EnsurePasswordWasChanged.php](../../app/Http/Middleware/EnsurePasswordWasChanged.php).
+- [app/Http/Middleware/EnsurePlatformAdmin.php](../../app/Http/Middleware/EnsurePlatformAdmin.php).
+- [app/Http/Middleware/EnsureTenantAccess.php](../../app/Http/Middleware/EnsureTenantAccess.php).
+- [app/Http/Middleware/EnsureTenantAdmin.php](../../app/Http/Middleware/EnsureTenantAdmin.php).
+- [app/Http/Middleware/HandleInertiaRequests.php](../../app/Http/Middleware/HandleInertiaRequests.php).
+- [app/Http/Middleware/ResolveTenant.php](../../app/Http/Middleware/ResolveTenant.php).
+
+## Models (107)
+
+- [app/Models/Activity.php](../../app/Models/Activity.php).
+- [app/Models/ActivityChecklistItem.php](../../app/Models/ActivityChecklistItem.php).
+- [app/Models/ActivityComment.php](../../app/Models/ActivityComment.php).
+- [app/Models/ActivityFile.php](../../app/Models/ActivityFile.php).
+- [app/Models/AiConversation.php](../../app/Models/AiConversation.php).
+- [app/Models/AiMessage.php](../../app/Models/AiMessage.php).
+- [app/Models/AiMonthlyUsage.php](../../app/Models/AiMonthlyUsage.php).
+- [app/Models/BoletimMedicao.php](../../app/Models/BoletimMedicao.php).
+- [app/Models/Contract.php](../../app/Models/Contract.php).
+- [app/Models/ContractAdditive.php](../../app/Models/ContractAdditive.php).
+- [app/Models/ContractParticipant.php](../../app/Models/ContractParticipant.php).
+- [app/Models/Disciplina.php](../../app/Models/Disciplina.php).
+- [app/Models/Empresa.php](../../app/Models/Empresa.php).
+- [app/Models/FolhaRosto.php](../../app/Models/FolhaRosto.php).
+- [app/Models/FolhaRostoAnalise.php](../../app/Models/FolhaRostoAnalise.php).
+- [app/Models/FolhaRostoAnaliseResponsavel.php](../../app/Models/FolhaRostoAnaliseResponsavel.php).
+- [app/Models/FolhaRostoFluxoHistorico.php](../../app/Models/FolhaRostoFluxoHistorico.php).
+- [app/Models/FolhaRostoItem.php](../../app/Models/FolhaRostoItem.php).
+- [app/Models/FolhaRostoItemAnalise.php](../../app/Models/FolhaRostoItemAnalise.php).
+- [app/Models/GedCorrespondent.php](../../app/Models/GedCorrespondent.php).
+- [app/Models/GedDocument.php](../../app/Models/GedDocument.php).
+- [app/Models/GedDocumentAttachment.php](../../app/Models/GedDocumentAttachment.php).
+- [app/Models/GedDocumentEvent.php](../../app/Models/GedDocumentEvent.php).
+- [app/Models/GedDocumentNote.php](../../app/Models/GedDocumentNote.php).
+- [app/Models/GedDocumentType.php](../../app/Models/GedDocumentType.php).
+- [app/Models/GedDocumentVersion.php](../../app/Models/GedDocumentVersion.php).
+- [app/Models/GedEmailAccount.php](../../app/Models/GedEmailAccount.php).
+- [app/Models/GedEmailProcessedMessage.php](../../app/Models/GedEmailProcessedMessage.php).
+- [app/Models/GedEmailRule.php](../../app/Models/GedEmailRule.php).
+- [app/Models/GedTag.php](../../app/Models/GedTag.php).
+- [app/Models/InstrucaoCampo.php](../../app/Models/InstrucaoCampo.php).
+- [app/Models/InstrucaoCampoAttachment.php](../../app/Models/InstrucaoCampoAttachment.php).
+- [app/Models/InstrucaoCampoEvent.php](../../app/Models/InstrucaoCampoEvent.php).
+- [app/Models/InstrucaoCampoPhoto.php](../../app/Models/InstrucaoCampoPhoto.php).
+- [app/Models/InstrucaoCampoResponsavel.php](../../app/Models/InstrucaoCampoResponsavel.php).
+- [app/Models/MedicaoIndiceReajuste.php](../../app/Models/MedicaoIndiceReajuste.php).
+- [app/Models/MedicaoIndiceReajusteCompetencia.php](../../app/Models/MedicaoIndiceReajusteCompetencia.php).
+- [app/Models/MedicaoItem.php](../../app/Models/MedicaoItem.php).
+- [app/Models/MedicaoItemAdditive.php](../../app/Models/MedicaoItemAdditive.php).
+- [app/Models/MedicaoItemAdditiveItem.php](../../app/Models/MedicaoItemAdditiveItem.php).
+- [app/Models/MedicaoItemReajusteIndice.php](../../app/Models/MedicaoItemReajusteIndice.php).
+- [app/Models/MedicaoItemVersion.php](../../app/Models/MedicaoItemVersion.php).
+- [app/Models/MobileApiToken.php](../../app/Models/MobileApiToken.php).
+- [app/Models/Obra.php](../../app/Models/Obra.php).
+- [app/Models/Orcamento.php](../../app/Models/Orcamento.php).
+- [app/Models/OrcamentoAcesso.php](../../app/Models/OrcamentoAcesso.php).
+- [app/Models/OrcamentoComposicao.php](../../app/Models/OrcamentoComposicao.php).
+- [app/Models/OrcamentoComposicaoAnaliticoItem.php](../../app/Models/OrcamentoComposicaoAnaliticoItem.php).
+- [app/Models/OrcamentoComposicaoItem.php](../../app/Models/OrcamentoComposicaoItem.php).
+- [app/Models/OrcamentoEtapa.php](../../app/Models/OrcamentoEtapa.php).
+- [app/Models/OrcamentoInsumo.php](../../app/Models/OrcamentoInsumo.php).
+- [app/Models/OrcamentoInsumoGrupo.php](../../app/Models/OrcamentoInsumoGrupo.php).
+- [app/Models/OrcamentoItem.php](../../app/Models/OrcamentoItem.php).
+- [app/Models/OrdemServico.php](../../app/Models/OrdemServico.php).
+- [app/Models/OrdemServicoAnalise.php](../../app/Models/OrdemServicoAnalise.php).
+- [app/Models/OrdemServicoComentario.php](../../app/Models/OrdemServicoComentario.php).
+- [app/Models/OrdemServicoContractSetting.php](../../app/Models/OrdemServicoContractSetting.php).
+- [app/Models/OrdemServicoDocumento.php](../../app/Models/OrdemServicoDocumento.php).
+- [app/Models/OrdemServicoItem.php](../../app/Models/OrdemServicoItem.php).
+- [app/Models/OrdemServicoObraResponsavel.php](../../app/Models/OrdemServicoObraResponsavel.php).
+- [app/Models/OrdemServicoResponsavel.php](../../app/Models/OrdemServicoResponsavel.php).
+- [app/Models/OsDnitHighway.php](../../app/Models/OsDnitHighway.php).
+- [app/Models/OsDnitOrder.php](../../app/Models/OsDnitOrder.php).
+- [app/Models/OsDnitOrderAttachment.php](../../app/Models/OsDnitOrderAttachment.php).
+- [app/Models/OsDnitOrderEvent.php](../../app/Models/OsDnitOrderEvent.php).
+- [app/Models/OsDnitOrderItem.php](../../app/Models/OsDnitOrderItem.php).
+- [app/Models/OsDnitProduct.php](../../app/Models/OsDnitProduct.php).
+- [app/Models/OsDnitResponsible.php](../../app/Models/OsDnitResponsible.php).
+- [app/Models/OsDnitSupervisionLot.php](../../app/Models/OsDnitSupervisionLot.php).
+- [app/Models/ProjectDisciplineResponsavel.php](../../app/Models/ProjectDisciplineResponsavel.php).
+- [app/Models/ProjectDocument.php](../../app/Models/ProjectDocument.php).
+- [app/Models/ProjectDocumentStatusChange.php](../../app/Models/ProjectDocumentStatusChange.php).
+- [app/Models/ProjectDocumentVersion.php](../../app/Models/ProjectDocumentVersion.php).
+- [app/Models/ProjectPhase.php](../../app/Models/ProjectPhase.php).
+- [app/Models/ProjectReviewChecklist.php](../../app/Models/ProjectReviewChecklist.php).
+- [app/Models/ProjectReviewChecklistItem.php](../../app/Models/ProjectReviewChecklistItem.php).
+- [app/Models/ProjectReviewMarkup.php](../../app/Models/ProjectReviewMarkup.php).
+- [app/Models/ProjectReviewMarkupReply.php](../../app/Models/ProjectReviewMarkupReply.php).
+- [app/Models/ProjectSubmissionBatch.php](../../app/Models/ProjectSubmissionBatch.php).
+- [app/Models/RdaApontamento.php](../../app/Models/RdaApontamento.php).
+- [app/Models/RdoAnalise.php](../../app/Models/RdoAnalise.php).
+- [app/Models/RdoConfiguracao.php](../../app/Models/RdoConfiguracao.php).
+- [app/Models/RdoDiario.php](../../app/Models/RdoDiario.php).
+- [app/Models/RdoDivergencia.php](../../app/Models/RdoDivergencia.php).
+- [app/Models/RdoEquipamentoCadastro.php](../../app/Models/RdoEquipamentoCadastro.php).
+- [app/Models/RdoFiscalizacaoRegistro.php](../../app/Models/RdoFiscalizacaoRegistro.php).
+- [app/Models/RdoMaoObraCadastro.php](../../app/Models/RdoMaoObraCadastro.php).
+- [app/Models/RdoPdfSetting.php](../../app/Models/RdoPdfSetting.php).
+- [app/Models/RdoResponsavel.php](../../app/Models/RdoResponsavel.php).
+- [app/Models/RdoSecaoRegistro.php](../../app/Models/RdoSecaoRegistro.php).
+- [app/Models/RdoSignatureRequest.php](../../app/Models/RdoSignatureRequest.php).
+- [app/Models/RdoSignatureSigner.php](../../app/Models/RdoSignatureSigner.php).
+- [app/Models/RdoSubcontratadaCadastro.php](../../app/Models/RdoSubcontratadaCadastro.php).
+- [app/Models/RdoVersao.php](../../app/Models/RdoVersao.php).
+- [app/Models/RelatorioNaoConformidade.php](../../app/Models/RelatorioNaoConformidade.php).
+- [app/Models/RelatorioNaoConformidadeAcaoCorretiva.php](../../app/Models/RelatorioNaoConformidadeAcaoCorretiva.php).
+- [app/Models/RelatorioNaoConformidadeEvidencia.php](../../app/Models/RelatorioNaoConformidadeEvidencia.php).
+- [app/Models/RelatorioNaoConformidadeEvidenciaPhoto.php](../../app/Models/RelatorioNaoConformidadeEvidenciaPhoto.php).
+- [app/Models/RelatorioNaoConformidadePhoto.php](../../app/Models/RelatorioNaoConformidadePhoto.php).
+- [app/Models/RelatorioNaoConformidadeResponsavel.php](../../app/Models/RelatorioNaoConformidadeResponsavel.php).
+- [app/Models/RncPdfSetting.php](../../app/Models/RncPdfSetting.php).
+- [app/Models/RncSignatureSetting.php](../../app/Models/RncSignatureSetting.php).
+- [app/Models/Tenant.php](../../app/Models/Tenant.php).
+- [app/Models/TenantUser.php](../../app/Models/TenantUser.php).
+- [app/Models/TipoEmpresa.php](../../app/Models/TipoEmpresa.php).
+- [app/Models/Trecho.php](../../app/Models/Trecho.php).
+- [app/Models/User.php](../../app/Models/User.php).
+
+## Support (35)
+
+- [app/Support/AccessibleTenants.php](../../app/Support/AccessibleTenants.php).
+- [app/Support/ActivityPermissions.php](../../app/Support/ActivityPermissions.php).
+- [app/Support/BudgetPermissions.php](../../app/Support/BudgetPermissions.php).
+- [app/Support/ContractPermissions.php](../../app/Support/ContractPermissions.php).
+- [app/Support/DiarioObraPermissions.php](../../app/Support/DiarioObraPermissions.php).
+- [app/Support/DocumentationPermissions.php](../../app/Support/DocumentationPermissions.php).
+- [app/Support/IcPermissions.php](../../app/Support/IcPermissions.php).
+- [app/Support/JsonMetadataSanitizer.php](../../app/Support/JsonMetadataSanitizer.php).
+- [app/Support/MedicaoItemValueResolver.php](../../app/Support/MedicaoItemValueResolver.php).
+- [app/Support/MedicaoPermissions.php](../../app/Support/MedicaoPermissions.php).
+- [app/Support/MedicaoReajusteCalculator.php](../../app/Support/MedicaoReajusteCalculator.php).
+- [app/Support/NavigationPermissions.php](../../app/Support/NavigationPermissions.php).
+- [app/Support/NotificationFeed.php](../../app/Support/NotificationFeed.php).
+- [app/Support/OrdemServicoPermissions.php](../../app/Support/OrdemServicoPermissions.php).
+- [app/Support/OsDnitContractAccess.php](../../app/Support/OsDnitContractAccess.php).
+- [app/Support/OsDnitManagementSummary.php](../../app/Support/OsDnitManagementSummary.php).
+- [app/Support/OsDnitPermissions.php](../../app/Support/OsDnitPermissions.php).
+- [app/Support/OsDnitWorkflowAccess.php](../../app/Support/OsDnitWorkflowAccess.php).
+- [app/Support/ParametrizacaoPermissions.php](../../app/Support/ParametrizacaoPermissions.php).
+- [app/Support/PasswordPolicy.php](../../app/Support/PasswordPolicy.php).
+- [app/Support/ProjectCap.php](../../app/Support/ProjectCap.php).
+- [app/Support/ProjectPermissions.php](../../app/Support/ProjectPermissions.php).
+- [app/Support/RdoCatalogs.php](../../app/Support/RdoCatalogs.php).
+- [app/Support/RdoPdfTemplates.php](../../app/Support/RdoPdfTemplates.php).
+- [app/Support/RdoWorkflow.php](../../app/Support/RdoWorkflow.php).
+- [app/Support/RncDashboardFields.php](../../app/Support/RncDashboardFields.php).
+- [app/Support/RncListing.php](../../app/Support/RncListing.php).
+- [app/Support/RncModelFields.php](../../app/Support/RncModelFields.php).
+- [app/Support/RncPdfHeaderFields.php](../../app/Support/RncPdfHeaderFields.php).
+- [app/Support/RncPdfTemplates.php](../../app/Support/RncPdfTemplates.php).
+- [app/Support/RncPermissions.php](../../app/Support/RncPermissions.php).
+- [app/Support/TenantLandingPage.php](../../app/Support/TenantLandingPage.php).
+- [app/Support/TenantRoles.php](../../app/Support/TenantRoles.php).
+- [app/Support/TutorialCatalog.php](../../app/Support/TutorialCatalog.php).
+- [app/Support/UserPermissions.php](../../app/Support/UserPermissions.php).
+
+## Serviços (30)
+
+- [app/Services/Assistant/AssistantAccessScope.php](../../app/Services/Assistant/AssistantAccessScope.php). Métodos públicos: `tenantIds`, `contractIds`, `activityContractIds`, `osDnitContractIds`, `projectContractIds`, `rncContractIds`, `documentationContractIds`, `canReadDocument`, `canReadDocumentWithinScope`, `companyId`, `isTenantAdministrator`.
+- [app/Services/Assistant/AssistantActionResolver.php](../../app/Services/Assistant/AssistantActionResolver.php). Métodos públicos: `resolve`.
+- [app/Services/Assistant/AssistantContextBuilder.php](../../app/Services/Assistant/AssistantContextBuilder.php). Métodos públicos: `sources`.
+- [app/Services/Assistant/AssistantQuotaService.php](../../app/Services/Assistant/AssistantQuotaService.php). Métodos públicos: `status`, `record`.
+- [app/Services/Assistant/AssistantRetriever.php](../../app/Services/Assistant/AssistantRetriever.php). Métodos públicos: `retrieve`.
+- [app/Services/Assistant/OpenAiAssistant.php](../../app/Services/Assistant/OpenAiAssistant.php). Métodos públicos: `isAvailable`, `respond`.
+- [app/Services/Assistant/OsDnitAssistantContext.php](../../app/Services/Assistant/OsDnitAssistantContext.php). Métodos públicos: `sources`.
+- [app/Services/AutodeskApsService.php](../../app/Services/AutodeskApsService.php). Métodos públicos: `isConfigured`, `viewerToken`, `bucketKeyName`, `bucketRegion`, `viewerApi`, `bucketStorageSummary`, `submitVersion`, `deleteVersionFromAps`, `manifest`, `syncManifestStatus`.
+- [app/Services/GedOcrService.php](../../app/Services/GedOcrService.php). Métodos públicos: `process`, `processAttachment`.
+- [app/Services/OsDnitFlowNotifier.php](../../app/Services/OsDnitFlowNotifier.php). Métodos públicos: `enqueue`.
+- [app/Services/OsDnitFlowRecipients.php](../../app/Services/OsDnitFlowRecipients.php). Métodos públicos: `forEvent`.
+- [app/Services/OsDnitOrderHistory.php](../../app/Services/OsDnitOrderHistory.php). Métodos públicos: `record`.
+- [app/Services/OsDnitOrderNumber.php](../../app/Services/OsDnitOrderNumber.php). Métodos públicos: `next`, `previews`.
+- [app/Services/OsDnitPdfRenderer.php](../../app/Services/OsDnitPdfRenderer.php). Métodos públicos: `data`, `compare`, `render`.
+- [app/Services/OsDnitSandbox.php](../../app/Services/OsDnitSandbox.php). Métodos públicos: `create`.
+- [app/Services/ProjectMasterListExportService.php](../../app/Services/ProjectMasterListExportService.php). Métodos públicos: `branding`, `spreadsheet`.
+- [app/Services/RdoDailyGenerator.php](../../app/Services/RdoDailyGenerator.php). Métodos públicos: `generateDue`, `generateForDate`, `generateForConfiguration`.
+- [app/Services/RdoDocumentLogos.php](../../app/Services/RdoDocumentLogos.php). Métodos públicos: `current`, `snapshot`, `bytes`, `dataUri`, `apply`, `freezeContract`.
+- [app/Services/RdoPdfPreview.php](../../app/Services/RdoPdfPreview.php). Métodos públicos: `make`, `reference`, `catalogs`, `photo`.
+- [app/Services/RdoPdfRenderer.php](../../app/Services/RdoPdfRenderer.php). Métodos públicos: `render`, `signaturePlacement`.
+- [app/Services/RdoSignatureService.php](../../app/Services/RdoSignatureService.php). Métodos públicos: `createAndSend`, `applyWebhook`, `refreshFromProvider`, `syncProviderSigners`.
+- [app/Services/RncDocumentSnapshots.php](../../app/Services/RncDocumentSnapshots.php). Métodos públicos: `current`, `forRnc`, `legacyValues`, `freezeOne`, `freezeContract`, `form`, `rows`.
+- [app/Services/RncPdfLogoSnapshots.php](../../app/Services/RncPdfLogoSnapshots.php). Métodos públicos: `current`, `forRnc`, `freezeOne`, `freezeContract`, `template`.
+- [app/Services/RncPdfPreview.php](../../app/Services/RncPdfPreview.php). Métodos públicos: `make`.
+- [app/Services/RncPdfRenderer.php](../../app/Services/RncPdfRenderer.php). Métodos públicos: `render`.
+- [app/Services/RncSignatureService.php](../../app/Services/RncSignatureService.php). Métodos públicos: `configuredSigners`, `statusData`, `createAndSend`.
+- [app/Services/Signatures/LocalSignatureProvider.php](../../app/Services/Signatures/LocalSignatureProvider.php). Métodos públicos: `createRequest`.
+- [app/Services/Signatures/OpenSignSignatureProvider.php](../../app/Services/Signatures/OpenSignSignatureProvider.php). Métodos públicos: `createRequest`, `getSigningLinks`, `getDocument`.
+- [app/Services/Signatures/SignatureProviderInterface.php](../../app/Services/Signatures/SignatureProviderInterface.php). Métodos públicos: `createRequest`.
+- [app/Services/Storage/StoredFileMaterializer.php](../../app/Services/Storage/StoredFileMaterializer.php). Métodos públicos: `withLocalPath`.
+
+## Jobs (6)
+
+- [app/Jobs/DeleteStoredImportFileJob.php](../../app/Jobs/DeleteStoredImportFileJob.php).
+- [app/Jobs/ImportOrcamentoComposicoesJob.php](../../app/Jobs/ImportOrcamentoComposicoesJob.php).
+- [app/Jobs/ProcessGedDocumentAttachmentOcrJob.php](../../app/Jobs/ProcessGedDocumentAttachmentOcrJob.php).
+- [app/Jobs/ProcessGedDocumentOcrJob.php](../../app/Jobs/ProcessGedDocumentOcrJob.php).
+- [app/Jobs/ProcessProjectVersionApsJob.php](../../app/Jobs/ProcessProjectVersionApsJob.php).
+- [app/Jobs/RemoveRejectedProjectVersionFromApsJob.php](../../app/Jobs/RemoveRejectedProjectVersionFromApsJob.php).
+
+## Notificações (29)
+
+- [app/Notifications/ActivityAssignedNotification.php](../../app/Notifications/ActivityAssignedNotification.php).
+- [app/Notifications/ActivityChecklistItemsAddedNotification.php](../../app/Notifications/ActivityChecklistItemsAddedNotification.php).
+- [app/Notifications/ActivityCommentedNotification.php](../../app/Notifications/ActivityCommentedNotification.php).
+- [app/Notifications/ActivityFileUploadedNotification.php](../../app/Notifications/ActivityFileUploadedNotification.php).
+- [app/Notifications/ActivityStatusChangedNotification.php](../../app/Notifications/ActivityStatusChangedNotification.php).
+- [app/Notifications/FolhaRostoFlowChangedNotification.php](../../app/Notifications/FolhaRostoFlowChangedNotification.php).
+- [app/Notifications/FolhaRostoSubmittedForAnalysisNotification.php](../../app/Notifications/FolhaRostoSubmittedForAnalysisNotification.php).
+- [app/Notifications/IcFlowNotification.php](../../app/Notifications/IcFlowNotification.php).
+- [app/Notifications/OrdemServicoApprovalDecisionNotification.php](../../app/Notifications/OrdemServicoApprovalDecisionNotification.php).
+- [app/Notifications/OrdemServicoCommentNotification.php](../../app/Notifications/OrdemServicoCommentNotification.php).
+- [app/Notifications/OrdemServicoLifecycleNotification.php](../../app/Notifications/OrdemServicoLifecycleNotification.php).
+- [app/Notifications/OrdemServicoReadyForApprovalNotification.php](../../app/Notifications/OrdemServicoReadyForApprovalNotification.php).
+- [app/Notifications/OrdemServicoReturnedForCorrectionNotification.php](../../app/Notifications/OrdemServicoReturnedForCorrectionNotification.php).
+- [app/Notifications/OrdemServicoSubmittedForReviewNotification.php](../../app/Notifications/OrdemServicoSubmittedForReviewNotification.php).
+- [app/Notifications/OsDnitFlowChangedNotification.php](../../app/Notifications/OsDnitFlowChangedNotification.php).
+- [app/Notifications/ProjectApprovedNotification.php](../../app/Notifications/ProjectApprovedNotification.php).
+- [app/Notifications/ProjectBatchWorkflowNotification.php](../../app/Notifications/ProjectBatchWorkflowNotification.php).
+- [app/Notifications/ProjectRejectedNotification.php](../../app/Notifications/ProjectRejectedNotification.php).
+- [app/Notifications/ProjectReviewMarkupCreatedNotification.php](../../app/Notifications/ProjectReviewMarkupCreatedNotification.php).
+- [app/Notifications/ProjectSubmittedForReviewNotification.php](../../app/Notifications/ProjectSubmittedForReviewNotification.php).
+- [app/Notifications/ProjectVerifiedForApprovalNotification.php](../../app/Notifications/ProjectVerifiedForApprovalNotification.php).
+- [app/Notifications/RdoFlowChangedNotification.php](../../app/Notifications/RdoFlowChangedNotification.php).
+- [app/Notifications/RdoSignatureRequestedNotification.php](../../app/Notifications/RdoSignatureRequestedNotification.php).
+- [app/Notifications/ResetPasswordNotification.php](../../app/Notifications/ResetPasswordNotification.php).
+- [app/Notifications/RncCorrectiveActionReviewedNotification.php](../../app/Notifications/RncCorrectiveActionReviewedNotification.php).
+- [app/Notifications/RncCorrectiveActionSubmittedNotification.php](../../app/Notifications/RncCorrectiveActionSubmittedNotification.php).
+- [app/Notifications/RncEvidenceSubmittedNotification.php](../../app/Notifications/RncEvidenceSubmittedNotification.php).
+- [app/Notifications/RncResponsibleNotification.php](../../app/Notifications/RncResponsibleNotification.php).
+- [app/Notifications/UserTemporaryPasswordNotification.php](../../app/Notifications/UserTemporaryPasswordNotification.php).
+
+## Comandos (7)
+
+- [app/Console/Commands/FreezeRncDocumentModels.php](../../app/Console/Commands/FreezeRncDocumentModels.php). Métodos públicos: `handle`.
+- [app/Console/Commands/FreezeRncPdfLogos.php](../../app/Console/Commands/FreezeRncPdfLogos.php). Métodos públicos: `handle`.
+- [app/Console/Commands/GenerateDailyRdos.php](../../app/Console/Commands/GenerateDailyRdos.php). Métodos públicos: `handle`.
+- [app/Console/Commands/SeedOsDnitSandbox.php](../../app/Console/Commands/SeedOsDnitSandbox.php). Métodos públicos: `handle`.
+- [app/Console/Commands/SeedProjectValidationScenario.php](../../app/Console/Commands/SeedProjectValidationScenario.php). Métodos públicos: `handle`.
+- [app/Console/Commands/SimulateAdditionalLocalRdos.php](../../app/Console/Commands/SimulateAdditionalLocalRdos.php). Métodos públicos: `handle`.
+- [app/Console/Commands/SimulateLocalRdos.php](../../app/Console/Commands/SimulateLocalRdos.php). Métodos públicos: `handle`.
+
+## Páginas web (137)
+
+- [resources/js/Pages/Auth/ConfirmPassword.jsx](../../resources/js/Pages/Auth/ConfirmPassword.jsx).
+- [resources/js/Pages/Auth/ForcePasswordChange.jsx](../../resources/js/Pages/Auth/ForcePasswordChange.jsx).
+- [resources/js/Pages/Auth/ForgotPassword.jsx](../../resources/js/Pages/Auth/ForgotPassword.jsx).
+- [resources/js/Pages/Auth/Login.jsx](../../resources/js/Pages/Auth/Login.jsx).
+- [resources/js/Pages/Auth/Register.jsx](../../resources/js/Pages/Auth/Register.jsx).
+- [resources/js/Pages/Auth/ResetPassword.jsx](../../resources/js/Pages/Auth/ResetPassword.jsx).
+- [resources/js/Pages/Auth/SelectTenant.jsx](../../resources/js/Pages/Auth/SelectTenant.jsx).
+- [resources/js/Pages/Auth/VerifyEmail.jsx](../../resources/js/Pages/Auth/VerifyEmail.jsx).
+- [resources/js/Pages/Dashboard.jsx](../../resources/js/Pages/Dashboard.jsx).
+- [resources/js/Pages/Platform/Aps/Index.jsx](../../resources/js/Pages/Platform/Aps/Index.jsx).
+- [resources/js/Pages/Platform/Dashboard.jsx](../../resources/js/Pages/Platform/Dashboard.jsx).
+- [resources/js/Pages/Platform/Tenants/Index.jsx](../../resources/js/Pages/Platform/Tenants/Index.jsx).
+- [resources/js/Pages/Profile/Edit.jsx](../../resources/js/Pages/Profile/Edit.jsx).
+- [resources/js/Pages/Tenant/Activities/Index.jsx](../../resources/js/Pages/Tenant/Activities/Index.jsx).
+- [resources/js/Pages/Tenant/Activities/Metrics.jsx](../../resources/js/Pages/Tenant/Activities/Metrics.jsx).
+- [resources/js/Pages/Tenant/Contracts/Index.jsx](../../resources/js/Pages/Tenant/Contracts/Index.jsx).
+- [resources/js/Pages/Tenant/Contracts/Show.jsx](../../resources/js/Pages/Tenant/Contracts/Show.jsx).
+- [resources/js/Pages/Tenant/Contracts/TourPreview.jsx](../../resources/js/Pages/Tenant/Contracts/TourPreview.jsx).
+- [resources/js/Pages/Tenant/Dashboard.jsx](../../resources/js/Pages/Tenant/Dashboard.jsx).
+- [resources/js/Pages/Tenant/Ged/Email.jsx](../../resources/js/Pages/Tenant/Ged/Email.jsx).
+- [resources/js/Pages/Tenant/Ged/Index.jsx](../../resources/js/Pages/Tenant/Ged/Index.jsx).
+- [resources/js/Pages/Tenant/Ged/Settings.jsx](../../resources/js/Pages/Tenant/Ged/Settings.jsx).
+- [resources/js/Pages/Tenant/Ged/Show.jsx](../../resources/js/Pages/Tenant/Ged/Show.jsx).
+- [resources/js/Pages/Tenant/Ged/TourPreview.jsx](../../resources/js/Pages/Tenant/Ged/TourPreview.jsx).
+- [resources/js/Pages/Tenant/Ged/Trash.jsx](../../resources/js/Pages/Tenant/Ged/Trash.jsx).
+- [resources/js/Pages/Tenant/Ged/Triage.jsx](../../resources/js/Pages/Tenant/Ged/Triage.jsx).
+- [resources/js/Pages/Tenant/Medicao/AnalisarPleito/Index.jsx](../../resources/js/Pages/Tenant/Medicao/AnalisarPleito/Index.jsx).
+- [resources/js/Pages/Tenant/Medicao/AnalisarPleito/Responsaveis.jsx](../../resources/js/Pages/Tenant/Medicao/AnalisarPleito/Responsaveis.jsx).
+- [resources/js/Pages/Tenant/Medicao/BI/Index.jsx](../../resources/js/Pages/Tenant/Medicao/BI/Index.jsx).
+- [resources/js/Pages/Tenant/Medicao/BoletimMedicao/Index.jsx](../../resources/js/Pages/Tenant/Medicao/BoletimMedicao/Index.jsx).
+- [resources/js/Pages/Tenant/Medicao/FolhaRosto/Index.jsx](../../resources/js/Pages/Tenant/Medicao/FolhaRosto/Index.jsx).
+- [resources/js/Pages/Tenant/Medicao/FolhaRosto/Show.jsx](../../resources/js/Pages/Tenant/Medicao/FolhaRosto/Show.jsx).
+- [resources/js/Pages/Tenant/Medicao/IndicesReajuste.jsx](../../resources/js/Pages/Tenant/Medicao/IndicesReajuste.jsx).
+- [resources/js/Pages/Tenant/Medicao/Itens.jsx](../../resources/js/Pages/Tenant/Medicao/Itens.jsx).
+- [resources/js/Pages/Tenant/Medicao/Relatorios/Index.jsx](../../resources/js/Pages/Tenant/Medicao/Relatorios/Index.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Composicoes/Create.jsx](../../resources/js/Pages/Tenant/Orcamentos/Composicoes/Create.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Composicoes/Show.jsx](../../resources/js/Pages/Tenant/Orcamentos/Composicoes/Show.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Composicoes.jsx](../../resources/js/Pages/Tenant/Orcamentos/Composicoes.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Create.jsx](../../resources/js/Pages/Tenant/Orcamentos/Create.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Import.jsx](../../resources/js/Pages/Tenant/Orcamentos/Import.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Index.jsx](../../resources/js/Pages/Tenant/Orcamentos/Index.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Insumos.jsx](../../resources/js/Pages/Tenant/Orcamentos/Insumos.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Partials/BudgetAccessDialog.jsx](../../resources/js/Pages/Tenant/Orcamentos/Partials/BudgetAccessDialog.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Partials/OrcamentoShell.jsx](../../resources/js/Pages/Tenant/Orcamentos/Partials/OrcamentoShell.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/Show.jsx](../../resources/js/Pages/Tenant/Orcamentos/Show.jsx).
+- [resources/js/Pages/Tenant/Orcamentos/TourPreview.jsx](../../resources/js/Pages/Tenant/Orcamentos/TourPreview.jsx).
+- [resources/js/Pages/Tenant/OrdemServico/Analise.jsx](../../resources/js/Pages/Tenant/OrdemServico/Analise.jsx).
+- [resources/js/Pages/Tenant/OrdemServico/Index.jsx](../../resources/js/Pages/Tenant/OrdemServico/Index.jsx).
+- [resources/js/Pages/Tenant/OrdemServico/Metrics.jsx](../../resources/js/Pages/Tenant/OrdemServico/Metrics.jsx).
+- [resources/js/Pages/Tenant/OrdemServico/Responsaveis.jsx](../../resources/js/Pages/Tenant/OrdemServico/Responsaveis.jsx).
+- [resources/js/Pages/Tenant/OrdemServico/Settings.jsx](../../resources/js/Pages/Tenant/OrdemServico/Settings.jsx).
+- [resources/js/Pages/Tenant/OrdemServico/Show.jsx](../../resources/js/Pages/Tenant/OrdemServico/Show.jsx).
+- [resources/js/Pages/Tenant/OsDnit/CreateOrder.jsx](../../resources/js/Pages/Tenant/OsDnit/CreateOrder.jsx).
+- [resources/js/Pages/Tenant/OsDnit/Dashboard.jsx](../../resources/js/Pages/Tenant/OsDnit/Dashboard.jsx).
+- [resources/js/Pages/Tenant/OsDnit/Index.jsx](../../resources/js/Pages/Tenant/OsDnit/Index.jsx).
+- [resources/js/Pages/Tenant/OsDnit/Orders.jsx](../../resources/js/Pages/Tenant/OsDnit/Orders.jsx).
+- [resources/js/Pages/Tenant/OsDnit/Products.jsx](../../resources/js/Pages/Tenant/OsDnit/Products.jsx).
+- [resources/js/Pages/Tenant/OsDnit/Responsibles.jsx](../../resources/js/Pages/Tenant/OsDnit/Responsibles.jsx).
+- [resources/js/Pages/Tenant/OsDnit/Settings.jsx](../../resources/js/Pages/Tenant/OsDnit/Settings.jsx).
+- [resources/js/Pages/Tenant/OsDnit/ShowOrder.jsx](../../resources/js/Pages/Tenant/OsDnit/ShowOrder.jsx).
+- [resources/js/Pages/Tenant/OsDnit/TourPreview.jsx](../../resources/js/Pages/Tenant/OsDnit/TourPreview.jsx).
+- [resources/js/Pages/Tenant/Parametrizacao/Contratos/Index.jsx](../../resources/js/Pages/Tenant/Parametrizacao/Contratos/Index.jsx).
+- [resources/js/Pages/Tenant/Parametrizacao/Disciplinas/Index.jsx](../../resources/js/Pages/Tenant/Parametrizacao/Disciplinas/Index.jsx).
+- [resources/js/Pages/Tenant/Parametrizacao/Empresas/Index.jsx](../../resources/js/Pages/Tenant/Parametrizacao/Empresas/Index.jsx).
+- [resources/js/Pages/Tenant/Parametrizacao/Obras/Index.jsx](../../resources/js/Pages/Tenant/Parametrizacao/Obras/Index.jsx).
+- [resources/js/Pages/Tenant/Parametrizacao/Trechos/Index.jsx](../../resources/js/Pages/Tenant/Parametrizacao/Trechos/Index.jsx).
+- [resources/js/Pages/Tenant/Parametrizacao/UsuariosContratos/Index.jsx](../../resources/js/Pages/Tenant/Parametrizacao/UsuariosContratos/Index.jsx).
+- [resources/js/Pages/Tenant/Permissions/Index.jsx](../../resources/js/Pages/Tenant/Permissions/Index.jsx).
+- [resources/js/Pages/Tenant/Projects/Comparison.jsx](../../resources/js/Pages/Tenant/Projects/Comparison.jsx).
+- [resources/js/Pages/Tenant/Projects/Index.jsx](../../resources/js/Pages/Tenant/Projects/Index.jsx).
+- [resources/js/Pages/Tenant/Projects/MasterList.jsx](../../resources/js/Pages/Tenant/Projects/MasterList.jsx).
+- [resources/js/Pages/Tenant/Projects/Responsaveis.jsx](../../resources/js/Pages/Tenant/Projects/Responsaveis.jsx).
+- [resources/js/Pages/Tenant/Projects/Review.jsx](../../resources/js/Pages/Tenant/Projects/Review.jsx).
+- [resources/js/Pages/Tenant/Projects/Revisions.jsx](../../resources/js/Pages/Tenant/Projects/Revisions.jsx).
+- [resources/js/Pages/Tenant/Projects/TourPreview.jsx](../../resources/js/Pages/Tenant/Projects/TourPreview.jsx).
+- [resources/js/Pages/Tenant/Projects/Tree.jsx](../../resources/js/Pages/Tenant/Projects/Tree.jsx).
+- [resources/js/Pages/Tenant/Projects/Viewer.jsx](../../resources/js/Pages/Tenant/Projects/Viewer.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Create.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Create.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Dashboard.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Dashboard.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Evidence.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Evidence.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/EvidenceButton.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/EvidenceButton.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/EvidenceForm.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/EvidenceForm.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Index.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Index.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/PhotoRegister.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/PhotoRegister.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Responsaveis.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Responsaveis.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Show.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Show.jsx).
+- [resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Ui.jsx](../../resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Ui.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/AcaoCorretiva.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/AcaoCorretiva.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/AnalisarProposta.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/AnalisarProposta.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Create.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Create.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Dashboard.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Dashboard.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Evidenciar.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Evidenciar.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Index.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Index.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/InspectionFieldsSettings.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/InspectionFieldsSettings.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/LocationMap.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/LocationMap.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/LogoUploadField.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/LogoUploadField.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ModelFields.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ModelFields.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ModelFieldsEditor.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ModelFieldsEditor.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfDownload.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfDownload.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfModelPreview.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfModelPreview.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfPreviewDocument.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfPreviewDocument.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfPreviewPage.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfPreviewPage.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfSettings.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfSettings.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ReferencePicker.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ReferencePicker.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Responsaveis.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Responsaveis.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Show.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Show.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/SignaturePanel.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/SignaturePanel.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/SignatureSettings.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/SignatureSettings.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/TourPreview.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/TourPreview.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowButton.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowButton.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowForm.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowForm.jsx).
+- [resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowPage.jsx](../../resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowPage.jsx).
+- [resources/js/Pages/Tenant/Rda/Index.jsx](../../resources/js/Pages/Tenant/Rda/Index.jsx).
+- [resources/js/Pages/Tenant/Rda/Show.jsx](../../resources/js/Pages/Tenant/Rda/Show.jsx).
+- [resources/js/Pages/Tenant/Rdo/Cadastros.jsx](../../resources/js/Pages/Tenant/Rdo/Cadastros.jsx).
+- [resources/js/Pages/Tenant/Rdo/Calendar.jsx](../../resources/js/Pages/Tenant/Rdo/Calendar.jsx).
+- [resources/js/Pages/Tenant/Rdo/ClientReviewPanel.jsx](../../resources/js/Pages/Tenant/Rdo/ClientReviewPanel.jsx).
+- [resources/js/Pages/Tenant/Rdo/Dashboard.jsx](../../resources/js/Pages/Tenant/Rdo/Dashboard.jsx).
+- [resources/js/Pages/Tenant/Rdo/DocumentWorkspace.jsx](../../resources/js/Pages/Tenant/Rdo/DocumentWorkspace.jsx).
+- [resources/js/Pages/Tenant/Rdo/InspectionDocumentFile.jsx](../../resources/js/Pages/Tenant/Rdo/InspectionDocumentFile.jsx).
+- [resources/js/Pages/Tenant/Rdo/InspectionEvidenceEditor.jsx](../../resources/js/Pages/Tenant/Rdo/InspectionEvidenceEditor.jsx).
+- [resources/js/Pages/Tenant/Rdo/ManagerFlowActions.jsx](../../resources/js/Pages/Tenant/Rdo/ManagerFlowActions.jsx).
+- [resources/js/Pages/Tenant/Rdo/PdfDownloadModal.jsx](../../resources/js/Pages/Tenant/Rdo/PdfDownloadModal.jsx).
+- [resources/js/Pages/Tenant/Rdo/Responsaveis.jsx](../../resources/js/Pages/Tenant/Rdo/Responsaveis.jsx).
+- [resources/js/Pages/Tenant/Rdo/Settings.jsx](../../resources/js/Pages/Tenant/Rdo/Settings.jsx).
+- [resources/js/Pages/Tenant/Rdo/Show.jsx](../../resources/js/Pages/Tenant/Rdo/Show.jsx).
+- [resources/js/Pages/Tenant/Rdo/TourPreview.jsx](../../resources/js/Pages/Tenant/Rdo/TourPreview.jsx).
+- [resources/js/Pages/Tenant/Rdo/WorkflowEditor.jsx](../../resources/js/Pages/Tenant/Rdo/WorkflowEditor.jsx).
+- [resources/js/Pages/Tenant/Tutorials/Index.jsx](../../resources/js/Pages/Tenant/Tutorials/Index.jsx).
+- [resources/js/Pages/Tenant/Tutorials/OsDemandPreview.jsx](../../resources/js/Pages/Tenant/Tutorials/OsDemandPreview.jsx).
+- [resources/js/Pages/Tenant/Tutorials/OsStagePreview.jsx](../../resources/js/Pages/Tenant/Tutorials/OsStagePreview.jsx).
+- [resources/js/Pages/Tenant/Tutorials/OsWorkflowTutorial.jsx](../../resources/js/Pages/Tenant/Tutorials/OsWorkflowTutorial.jsx).
+- [resources/js/Pages/Tenant/Tutorials/TutorialStageModal.jsx](../../resources/js/Pages/Tenant/Tutorials/TutorialStageModal.jsx).
+- [resources/js/Pages/Tenant/Tutorials/TutorialWalkthrough.jsx](../../resources/js/Pages/Tenant/Tutorials/TutorialWalkthrough.jsx).
+- [resources/js/Pages/Tenant/Tutorials/TutorialWorkspace.jsx](../../resources/js/Pages/Tenant/Tutorials/TutorialWorkspace.jsx).
+- [resources/js/Pages/Tenant/Tutorials/VisualTutorial.jsx](../../resources/js/Pages/Tenant/Tutorials/VisualTutorial.jsx).
+- [resources/js/Pages/Tenant/Users/Index.jsx](../../resources/js/Pages/Tenant/Users/Index.jsx).
+
+## Componentes (32)
+
+- [resources/js/Components/ActivityOsDnitSelect.jsx](../../resources/js/Components/ActivityOsDnitSelect.jsx).
+- [resources/js/Components/ActivityTour.jsx](../../resources/js/Components/ActivityTour.jsx).
+- [resources/js/Components/AiAssistantChat.jsx](../../resources/js/Components/AiAssistantChat.jsx).
+- [resources/js/Components/BudgetTour.jsx](../../resources/js/Components/BudgetTour.jsx).
+- [resources/js/Components/ConfirmActionButton.jsx](../../resources/js/Components/ConfirmActionButton.jsx).
+- [resources/js/Components/ContractAccessCard.jsx](../../resources/js/Components/ContractAccessCard.jsx).
+- [resources/js/Components/ContractTour.jsx](../../resources/js/Components/ContractTour.jsx).
+- [resources/js/Components/GedTour.jsx](../../resources/js/Components/GedTour.jsx).
+- [resources/js/Components/GuidedModuleTour.jsx](../../resources/js/Components/GuidedModuleTour.jsx).
+- [resources/js/Components/OsDnitAnalysisModal.jsx](../../resources/js/Components/OsDnitAnalysisModal.jsx).
+- [resources/js/Components/OsDnitConfirmDialog.jsx](../../resources/js/Components/OsDnitConfirmDialog.jsx).
+- [resources/js/Components/OsDnitDeleteButton.jsx](../../resources/js/Components/OsDnitDeleteButton.jsx).
+- [resources/js/Components/OsDnitDemandFields.jsx](../../resources/js/Components/OsDnitDemandFields.jsx).
+- [resources/js/Components/OsDnitKilometerInput.jsx](../../resources/js/Components/OsDnitKilometerInput.jsx).
+- [resources/js/Components/OsDnitManagementCard.jsx](../../resources/js/Components/OsDnitManagementCard.jsx).
+- [resources/js/Components/OsDnitOrderUi.jsx](../../resources/js/Components/OsDnitOrderUi.jsx).
+- [resources/js/Components/OsDnitPdfDownload.jsx](../../resources/js/Components/OsDnitPdfDownload.jsx).
+- [resources/js/Components/OsDnitProductPicker.jsx](../../resources/js/Components/OsDnitProductPicker.jsx).
+- [resources/js/Components/OsDnitTour.jsx](../../resources/js/Components/OsDnitTour.jsx).
+- [resources/js/Components/OsDnitTourButton.jsx](../../resources/js/Components/OsDnitTourButton.jsx).
+- [resources/js/Components/OsDnitWorkflow.jsx](../../resources/js/Components/OsDnitWorkflow.jsx).
+- [resources/js/Components/OverviewTour.jsx](../../resources/js/Components/OverviewTour.jsx).
+- [resources/js/Components/PasswordStrengthMeter.jsx](../../resources/js/Components/PasswordStrengthMeter.jsx).
+- [resources/js/Components/ProjectBatchSubmissionModal.jsx](../../resources/js/Components/ProjectBatchSubmissionModal.jsx).
+- [resources/js/Components/ProjectCapModal.jsx](../../resources/js/Components/ProjectCapModal.jsx).
+- [resources/js/Components/ProjectIdentity.jsx](../../resources/js/Components/ProjectIdentity.jsx).
+- [resources/js/Components/ProjectModuleTourPreview.jsx](../../resources/js/Components/ProjectModuleTourPreview.jsx).
+- [resources/js/Components/ProjectTour.jsx](../../resources/js/Components/ProjectTour.jsx).
+- [resources/js/Components/RdoCatalogPicker.jsx](../../resources/js/Components/RdoCatalogPicker.jsx).
+- [resources/js/Components/RdoTour.jsx](../../resources/js/Components/RdoTour.jsx).
+- [resources/js/Components/RncTour.jsx](../../resources/js/Components/RncTour.jsx).
+- [resources/js/Components/SigLogo.jsx](../../resources/js/Components/SigLogo.jsx).
+
+## Templates PDF (20)
+
+- [resources/views/pdf/medicao-fluxo-fr.blade.php](../../resources/views/pdf/medicao-fluxo-fr.blade.php).
+- [resources/views/pdf/medicao-pleito-preliminar.blade.php](../../resources/views/pdf/medicao-pleito-preliminar.blade.php).
+- [resources/views/pdf/medicao-resumo.blade.php](../../resources/views/pdf/medicao-resumo.blade.php).
+- [resources/views/pdf/ordem-servico.blade.php](../../resources/views/pdf/ordem-servico.blade.php).
+- [resources/views/pdf/os-dnit-comparison.blade.php](../../resources/views/pdf/os-dnit-comparison.blade.php).
+- [resources/views/pdf/os-dnit-products.blade.php](../../resources/views/pdf/os-dnit-products.blade.php).
+- [resources/views/pdf/os-dnit-stage-header.blade.php](../../resources/views/pdf/os-dnit-stage-header.blade.php).
+- [resources/views/pdf/os-dnit.blade.php](../../resources/views/pdf/os-dnit.blade.php).
+- [resources/views/pdf/partials/rnc-model-fields.blade.php](../../resources/views/pdf/partials/rnc-model-fields.blade.php).
+- [resources/views/pdf/project-batch-cap.blade.php](../../resources/views/pdf/project-batch-cap.blade.php).
+- [resources/views/pdf/project-cap.blade.php](../../resources/views/pdf/project-cap.blade.php).
+- [resources/views/pdf/project-master-list.blade.php](../../resources/views/pdf/project-master-list.blade.php).
+- [resources/views/pdf/rdo-analysis-row.blade.php](../../resources/views/pdf/rdo-analysis-row.blade.php).
+- [resources/views/pdf/rdo-concremat.blade.php](../../resources/views/pdf/rdo-concremat.blade.php).
+- [resources/views/pdf/rdo-heading-row.blade.php](../../resources/views/pdf/rdo-heading-row.blade.php).
+- [resources/views/pdf/rdo.blade.php](../../resources/views/pdf/rdo.blade.php).
+- [resources/views/pdf/rnc-form-photos.blade.php](../../resources/views/pdf/rnc-form-photos.blade.php).
+- [resources/views/pdf/rnc-form.blade.php](../../resources/views/pdf/rnc-form.blade.php).
+- [resources/views/pdf/rnc.blade.php](../../resources/views/pdf/rnc.blade.php).
+- [resources/views/pdf/viewer.blade.php](../../resources/views/pdf/viewer.blade.php).
+
+## Testes backend (79)
+
+- [tests/bootstrap.php](../../tests/bootstrap.php).
+- [tests/Feature/Auth/AuthenticationTest.php](../../tests/Feature/Auth/AuthenticationTest.php).
+- [tests/Feature/Auth/EmailVerificationTest.php](../../tests/Feature/Auth/EmailVerificationTest.php).
+- [tests/Feature/Auth/PasswordConfirmationTest.php](../../tests/Feature/Auth/PasswordConfirmationTest.php).
+- [tests/Feature/Auth/PasswordResetTest.php](../../tests/Feature/Auth/PasswordResetTest.php).
+- [tests/Feature/Auth/PasswordUpdateTest.php](../../tests/Feature/Auth/PasswordUpdateTest.php).
+- [tests/Feature/Auth/RegistrationTest.php](../../tests/Feature/Auth/RegistrationTest.php).
+- [tests/Feature/ExampleTest.php](../../tests/Feature/ExampleTest.php).
+- [tests/Feature/GedMetadataSanitizationTest.php](../../tests/Feature/GedMetadataSanitizationTest.php).
+- [tests/Feature/GedOcrIntegrationTest.php](../../tests/Feature/GedOcrIntegrationTest.php).
+- [tests/Feature/MobileTenantSelectionTest.php](../../tests/Feature/MobileTenantSelectionTest.php).
+- [tests/Feature/NotificationReadTest.php](../../tests/Feature/NotificationReadTest.php).
+- [tests/Feature/OrcamentoImportTest.php](../../tests/Feature/OrcamentoImportTest.php).
+- [tests/Feature/OsDnitAdminExemptionTest.php](../../tests/Feature/OsDnitAdminExemptionTest.php).
+- [tests/Feature/OsDnitContractIsolationTest.php](../../tests/Feature/OsDnitContractIsolationTest.php).
+- [tests/Feature/OsDnitContractMigrationTest.php](../../tests/Feature/OsDnitContractMigrationTest.php).
+- [tests/Feature/OsDnitDashboardTest.php](../../tests/Feature/OsDnitDashboardTest.php).
+- [tests/Feature/OsDnitEmptyTenantTest.php](../../tests/Feature/OsDnitEmptyTenantTest.php).
+- [tests/Feature/OsDnitHighwaysTest.php](../../tests/Feature/OsDnitHighwaysTest.php).
+- [tests/Feature/OsDnitManagementSummaryTest.php](../../tests/Feature/OsDnitManagementSummaryTest.php).
+- [tests/Feature/OsDnitOrdersTest.php](../../tests/Feature/OsDnitOrdersTest.php).
+- [tests/Feature/OsDnitPdfTest.php](../../tests/Feature/OsDnitPdfTest.php).
+- [tests/Feature/OsDnitPermissionsTest.php](../../tests/Feature/OsDnitPermissionsTest.php).
+- [tests/Feature/OsDnitProductsTest.php](../../tests/Feature/OsDnitProductsTest.php).
+- [tests/Feature/OsDnitSandboxTest.php](../../tests/Feature/OsDnitSandboxTest.php).
+- [tests/Feature/OsDnitSupervisionLotMigrationTest.php](../../tests/Feature/OsDnitSupervisionLotMigrationTest.php).
+- [tests/Feature/OsDnitWorkflowTest.php](../../tests/Feature/OsDnitWorkflowTest.php).
+- [tests/Feature/PlatformApsUsageTest.php](../../tests/Feature/PlatformApsUsageTest.php).
+- [tests/Feature/PlatformDashboardTest.php](../../tests/Feature/PlatformDashboardTest.php).
+- [tests/Feature/PrivateStorageServingTest.php](../../tests/Feature/PrivateStorageServingTest.php).
+- [tests/Feature/ProductionDatabaseProtectionTest.php](../../tests/Feature/ProductionDatabaseProtectionTest.php).
+- [tests/Feature/ProfileTest.php](../../tests/Feature/ProfileTest.php).
+- [tests/Feature/TenantAccessTest.php](../../tests/Feature/TenantAccessTest.php).
+- [tests/Feature/TenantActivityAuthorizationMatrixTest.php](../../tests/Feature/TenantActivityAuthorizationMatrixTest.php).
+- [tests/Feature/TenantActivityOsDnitTest.php](../../tests/Feature/TenantActivityOsDnitTest.php).
+- [tests/Feature/TenantActivityTest.php](../../tests/Feature/TenantActivityTest.php).
+- [tests/Feature/TenantAssistantOsDnitTest.php](../../tests/Feature/TenantAssistantOsDnitTest.php).
+- [tests/Feature/TenantAssistantTest.php](../../tests/Feature/TenantAssistantTest.php).
+- [tests/Feature/TenantBudgetAuthorizationTest.php](../../tests/Feature/TenantBudgetAuthorizationTest.php).
+- [tests/Feature/TenantBudgetWorkflowTest.php](../../tests/Feature/TenantBudgetWorkflowTest.php).
+- [tests/Feature/TenantCompositionConfigurationTest.php](../../tests/Feature/TenantCompositionConfigurationTest.php).
+- [tests/Feature/TenantContractPermissionsTest.php](../../tests/Feature/TenantContractPermissionsTest.php).
+- [tests/Feature/TenantContractValueTest.php](../../tests/Feature/TenantContractValueTest.php).
+- [tests/Feature/TenantDashboardTest.php](../../tests/Feature/TenantDashboardTest.php).
+- [tests/Feature/TenantDiarioObraPermissionsTest.php](../../tests/Feature/TenantDiarioObraPermissionsTest.php).
+- [tests/Feature/TenantDocumentationTest.php](../../tests/Feature/TenantDocumentationTest.php).
+- [tests/Feature/TenantFolhaRostoTest.php](../../tests/Feature/TenantFolhaRostoTest.php).
+- [tests/Feature/TenantIcTest.php](../../tests/Feature/TenantIcTest.php).
+- [tests/Feature/TenantMeasurementModeTest.php](../../tests/Feature/TenantMeasurementModeTest.php).
+- [tests/Feature/TenantMedicaoFinancialIntegrityTest.php](../../tests/Feature/TenantMedicaoFinancialIntegrityTest.php).
+- [tests/Feature/TenantMedicaoFlowReportTest.php](../../tests/Feature/TenantMedicaoFlowReportTest.php).
+- [tests/Feature/TenantMedicaoPermissionsTest.php](../../tests/Feature/TenantMedicaoPermissionsTest.php).
+- [tests/Feature/TenantNavigationPermissionsTest.php](../../tests/Feature/TenantNavigationPermissionsTest.php).
+- [tests/Feature/TenantOrdemServicoExecutionFlowTest.php](../../tests/Feature/TenantOrdemServicoExecutionFlowTest.php).
+- [tests/Feature/TenantOrdemServicoMeasurementProgressTest.php](../../tests/Feature/TenantOrdemServicoMeasurementProgressTest.php).
+- [tests/Feature/TenantOrdemServicoPermissionsTest.php](../../tests/Feature/TenantOrdemServicoPermissionsTest.php).
+- [tests/Feature/TenantOrdemServicoRejectionTest.php](../../tests/Feature/TenantOrdemServicoRejectionTest.php).
+- [tests/Feature/TenantParametrizacaoTest.php](../../tests/Feature/TenantParametrizacaoTest.php).
+- [tests/Feature/TenantProjectTest.php](../../tests/Feature/TenantProjectTest.php).
+- [tests/Feature/TenantRdoTest.php](../../tests/Feature/TenantRdoTest.php).
+- [tests/Feature/TenantRdoWorkflowTest.php](../../tests/Feature/TenantRdoWorkflowTest.php).
+- [tests/Feature/TenantRncListingTest.php](../../tests/Feature/TenantRncListingTest.php).
+- [tests/Feature/TenantRncModelFieldsTest.php](../../tests/Feature/TenantRncModelFieldsTest.php).
+- [tests/Feature/TenantRncPdfSettingsTest.php](../../tests/Feature/TenantRncPdfSettingsTest.php).
+- [tests/Feature/TenantRncSignatureTest.php](../../tests/Feature/TenantRncSignatureTest.php).
+- [tests/Feature/TenantRncTest.php](../../tests/Feature/TenantRncTest.php).
+- [tests/Feature/TenantSelectionTest.php](../../tests/Feature/TenantSelectionTest.php).
+- [tests/Feature/TenantUserCreationPermissionsTest.php](../../tests/Feature/TenantUserCreationPermissionsTest.php).
+- [tests/Feature/TenantUserOsDnitPermissionsTest.php](../../tests/Feature/TenantUserOsDnitPermissionsTest.php).
+- [tests/TestCase.php](../../tests/TestCase.php).
+- [tests/Unit/AutodeskApsServiceTest.php](../../tests/Unit/AutodeskApsServiceTest.php).
+- [tests/Unit/ExampleTest.php](../../tests/Unit/ExampleTest.php).
+- [tests/Unit/JsonMetadataSanitizerTest.php](../../tests/Unit/JsonMetadataSanitizerTest.php).
+- [tests/Unit/OpenSignSignatureProviderTest.php](../../tests/Unit/OpenSignSignatureProviderTest.php).
+- [tests/Unit/OrdemServicoApprovalDecisionNotificationTest.php](../../tests/Unit/OrdemServicoApprovalDecisionNotificationTest.php).
+- [tests/Unit/OrdemServicoWorkflowNotificationTest.php](../../tests/Unit/OrdemServicoWorkflowNotificationTest.php).
+- [tests/Unit/ProjectEapTest.php](../../tests/Unit/ProjectEapTest.php).
+- [tests/Unit/StoredFileMaterializerTest.php](../../tests/Unit/StoredFileMaterializerTest.php).
+- [tests/Unit/TutorialCatalogTest.php](../../tests/Unit/TutorialCatalogTest.php).
+
+## Testes frontend (9)
+
+- [tests/Frontend/activityTour.test.mjs](../../tests/Frontend/activityTour.test.mjs).
+- [tests/Frontend/contractMapLocation.test.mjs](../../tests/Frontend/contractMapLocation.test.mjs).
+- [tests/Frontend/notificationFeed.test.mjs](../../tests/Frontend/notificationFeed.test.mjs).
+- [tests/Frontend/notificationSound.test.mjs](../../tests/Frontend/notificationSound.test.mjs).
+- [tests/Frontend/os-dnit-permissions.test.mjs](../../tests/Frontend/os-dnit-permissions.test.mjs).
+- [tests/Frontend/osDnitAnalysisForm.test.mjs](../../tests/Frontend/osDnitAnalysisForm.test.mjs).
+- [tests/Frontend/osDnitKilometers.test.mjs](../../tests/Frontend/osDnitKilometers.test.mjs).
+- [tests/Frontend/rdo-show-client.test.mjs](../../tests/Frontend/rdo-show-client.test.mjs).
+- [tests/Frontend/tutorials-visual.test.mjs](../../tests/Frontend/tutorials-visual.test.mjs).
+
+## Mobile
+
+- [../mobile-rnc/App.tsx](../../../mobile-rnc/App.tsx).
+- [../mobile-rnc/app.json](../../../mobile-rnc/app.json).
+- [../mobile-rnc/eas.json](../../../mobile-rnc/eas.json).
+- [../mobile-rnc/package.json](../../../mobile-rnc/package.json).
+- [../mobile-rnc/src/types.ts](../../../mobile-rnc/src/types.ts).
+- [../mobile-rnc/src/config.ts](../../../mobile-rnc/src/config.ts).
+- [../mobile-rnc/src/services/context.ts](../../../mobile-rnc/src/services/context.ts).
+- [../mobile-rnc/src/services/sync.ts](../../../mobile-rnc/src/services/sync.ts).
+- [../mobile-rnc/src/storage/database.ts](../../../mobile-rnc/src/storage/database.ts).
+- [../mobile-rnc/scripts/test-mobile-sync.cjs](../../../mobile-rnc/scripts/test-mobile-sync.cjs).

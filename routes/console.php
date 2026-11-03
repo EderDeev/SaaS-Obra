@@ -10,6 +10,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('rdo:generate-daily')
-    ->dailyAt(RdoConfiguracao::GENERATION_TIME)
-    ->timezone(config('app.timezone'))
+    ->everyMinute()
     ->withoutOverlapping();

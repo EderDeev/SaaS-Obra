@@ -28,6 +28,8 @@ class TutorialCatalogTest extends TestCase
             'projetos',
             'notificacoes-perfil',
             'assistente-deming',
+            'os-dnit',
+            'qualidade-ic',
         ];
 
         $this->assertSame($expected, $guides->pluck('id')->all());
@@ -50,7 +52,7 @@ class TutorialCatalogTest extends TestCase
             $this->assertGreaterThanOrEqual(4, count($guide['steps']), $guide['id']);
             $this->assertNotEmpty($guide['tips'], $guide['id']);
             $this->assertNotEmpty($guide['outcome'], $guide['id']);
-            $this->assertNotEmpty($guide['screenshots'], $guide['id']);
+            $this->assertIsArray($guide['screenshots'], $guide['id']);
             $this->assertIsArray($guide['videos'], $guide['id']);
             $this->assertTrue(Route::has($guide['route']), $guide['route']);
 

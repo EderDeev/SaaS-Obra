@@ -12,7 +12,6 @@ use App\Models\RdoDivergencia;
 use App\Models\RdoEquipamentoCadastro;
 use App\Models\RdoFiscalizacaoRegistro;
 use App\Models\RdoMaoObraCadastro;
-use App\Models\RdaApontamento;
 use App\Models\RdoResponsavel;
 use App\Models\RdoSecaoRegistro;
 use App\Models\RdoSubcontratadaCadastro;
@@ -24,6 +23,7 @@ use App\Notifications\RdoFlowChangedNotification;
 use App\Services\RdoDailyGenerator;
 use App\Services\RdoPdfRenderer;
 use App\Support\DiarioObraPermissions;
+use App\Support\RdoWorkflow;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,6 +38,55 @@ use Inertia\Response;
 
 class RdoController extends Controller
 {
+    private bool $savingWorksBatch = false;
+    private array $batchFiles = [];
+
+    public function saveWorksSections(Request $request, Tenant $tenant, RdoDiario $rdo): RedirectResponse
+    {
+        return $this->saveWorksBatch($request, $tenant, $rdo, false);
+    }
+
+    public function saveWorksInspections(Request $request, Tenant $tenant, RdoDiario $rdo): RedirectResponse
+    {
+        return $this->saveWorksBatch($request, $tenant, $rdo, true);
+    }
+
+    private function saveWorksBatch(Request $request, Tenant $tenant, RdoDiario $rdo, bool $inspection): RedirectResponse
+    {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
+        $validated = $request->validate(['obras' => ['required', 'array', 'min:1', 'max:200'], 'obras.*' => ['required', 'array'], 'obras.*.obra_id' => ['required', 'integer', 'distinct']]);
+        $this->savingWorksBatch = true;
+        $this->batchFiles = [];
+        try {
+            DB::transaction(function () use ($request, $tenant, $rdo, $inspection, $validated) {
+                $this->lockCurrentDiary($rdo, !$inspection);
+                foreach ($request->input('obras', []) as $index => $data) {
+                    $child = Request::createFrom($request);
+                    $day = !$inspection && $request->exists('is_holiday') ? ['is_holiday' => $request->input('is_holiday')] : [];
+                    $child->request->replace([...$data, ...$day, 'filling_party' => $request->input('filling_party')]);
+                    $child->files->replace($request->file("obras.{$index}", []));
+                    $child->setJson(new \Symfony\Component\HttpFoundation\InputBag([...$data, ...$day, 'filling_party' => $request->input('filling_party')]));
+                    $rdo->unsetRelation('secoes');
+                    try {
+                        if ($inspection) $this->saveInspection($child, $tenant, $rdo);
+                        else $this->saveAllSections($child, $tenant, $rdo);
+                    } catch (ValidationException $error) {
+                        $name = $rdo->configuracao->obras->firstWhere('id', (int) $data['obra_id'])?->codigo ?? $data['obra_id'];
+                        throw ValidationException::withMessages(collect($error->errors())->mapWithKeys(fn ($messages, $key) => ["obras.{$data['obra_id']}.{$key}" => array_map(fn ($message) => "Obra {$name}: {$message}", $messages)])->all());
+                    }
+                }
+                if (!$inspection) $this->completeSoloRdo($tenant, $rdo, $request->user());
+            });
+        } catch (\Throwable $error) {
+            foreach ($this->batchFiles as [$disk, $path]) Storage::disk($disk)->delete($path);
+            throw $error;
+        } finally {
+            $this->savingWorksBatch = false;
+            $this->batchFiles = [];
+        }
+        return back()->with('success', 'Todos os preenchimentos alterados foram salvos.');
+    }
+
     public function tourPreview(Request $request, Tenant $tenant): Response
     {
         $screen = $request->string('screen')->toString();
@@ -46,7 +95,6 @@ class RdoController extends Controller
             'catalogs',
             'responsibles',
             'calendar',
-            'rda',
             'consolidation',
             'approval',
             'signature',
@@ -71,7 +119,7 @@ class RdoController extends Controller
         $month = CarbonImmutable::createFromFormat('Y-m', $filters['month'] ?? now()->format('Y-m'))->startOfMonth();
 
         $rdos = RdoDiario::query()
-            ->with(['configuracao.obras:id,codigo,nome', 'secoes:id,rdo_diario_id,obra_id,secao', 'signatureRequests:id,rdo_diario_id,status,completed_at,signed_pdf_path'])
+            ->with(['configuracao.obras:id,codigo,nome', 'secoes:id,rdo_diario_id,obra_id,secao,filling_party', 'signatureRequests:id,rdo_diario_id,status,completed_at,signed_pdf_path'])
             ->where('tenant_id', $tenant->id)
             ->where('contract_id', $selectedContractId)
             ->whereBetween('reference_date', [$month->startOfMonth(), $month->endOfMonth()])
@@ -80,6 +128,7 @@ class RdoController extends Controller
 
         $statusLabels = [
             'rascunho' => 'Rascunho',
+            'em_analise_construtora' => 'Na construtora',
             'em_analise_gerenciadora' => 'Na gerenciadora',
             'em_aprovacao_cliente' => 'No cliente',
             'devolvido_construtora' => 'Retornado',
@@ -142,7 +191,7 @@ class RdoController extends Controller
 
                 $obraStats[$key]['total']++;
                 $obraStats[$key]['progress_sum'] += $progress;
-                if (in_array($rdo->status, ['em_analise_gerenciadora', 'em_aprovacao_cliente'], true)) {
+                if (RdoWorkflow::isReview($rdo->status)) {
                     $obraStats[$key]['em_analise']++;
                 }
                 if ($rdo->status === 'arquivado') {
@@ -233,7 +282,7 @@ class RdoController extends Controller
             ->first();
 
         $rdos = RdoDiario::query()
-            ->with(['configuracao.obras:id,nome,codigo', 'secoes', 'signatureRequests'])
+            ->with(['configuracao.obras:id,nome,codigo', 'secoes', 'signatureRequests', 'analises' => fn ($query) => $query->where('decisao', 'approve_with_reservations')->select(['id', 'rdo_diario_id', 'obra_id', 'decisao', 'detalhes'])])
             ->where('tenant_id', $tenant->id)
             ->where('contract_id', $selectedContractId)
             ->when($configuration, fn ($query) => $query->where('rdo_configuracao_id', $configuration->id))
@@ -254,6 +303,8 @@ class RdoController extends Controller
             ],
             'configuration' => $configuration ? [
                 'id' => $configuration->id,
+                'workflow' => $configuration->workflow ?? RdoWorkflow::DEFAULT,
+                'pdf_model_name' => collect(\App\Support\RdoPdfTemplates::catalog())->firstWhere('value', \App\Support\RdoPdfTemplates::forContract($tenant, $selectedContractId)['layout'])['name'],
                 'active' => $configuration->active,
                 'start_date' => $configuration->start_date?->format('Y-m-d'),
                 'end_date' => $configuration->end_date?->format('Y-m-d'),
@@ -376,15 +427,22 @@ class RdoController extends Controller
             ->get(['users.id', 'users.name', 'users.email']);
 
         return Inertia::render('Tenant/Rdo/Settings', [
+            'documentConfiguration' => \App\Support\RdoPdfTemplates::forContract($tenant, $selectedContractId),
+            'documentLogos' => $selectedContractId ? collect(app(\App\Services\RdoDocumentLogos::class)->current($tenant, $tenant->contracts()->findOrFail($selectedContractId)))->map(fn ($logo, $role) => $logo ? ['name' => $logo['name'] ?? '', 'url' => route('tenant.diario-obra.rdo.settings.logo', [$tenant->slug, $selectedContractId, $role])] : null) : [],
+            'documentStyles' => \App\Support\RdoPdfTemplates::styles(),
+            'documentTemplates' => \App\Support\RdoPdfTemplates::catalog(),
             'contracts' => $contracts,
             'obras' => $obras,
             'users' => $users,
+            'reportCompanies' => $tenant->empresas()->where('contract_id', $selectedContractId)->orderBy('nome')->get(['id', 'nome', 'sigla']),
             'filters' => [
                 'contract_id' => $selectedContractId ?: null,
                 'obra_id' => $selectedObraId ?: null,
             ],
             'configuration' => $configuration ? [
                 'id' => $configuration->id,
+                'report_company_id' => $configuration->report_company_id,
+                'workflow' => $configuration->workflow ?? RdoWorkflow::DEFAULT,
                 'obra_ids' => $configuration->obras()->pluck('obras.id')->map(fn ($id) => (int) $id)->values(),
                 'responsible_user_id' => $configuration->responsible_user_id,
                 'start_date' => $configuration->start_date?->format('Y-m-d'),
@@ -405,9 +463,65 @@ class RdoController extends Controller
         ]);
     }
 
+    public function previewDocument(Request $request, Tenant $tenant, \App\Services\RdoPdfPreview $preview, RdoPdfRenderer $renderer): HttpResponse
+    {
+        $data = $request->validate([
+            ...\App\Services\RdoDocumentLogos::rules(),
+            'contract_id' => ['required', 'integer'],
+            'obra_id' => ['nullable', 'integer'],
+            'model' => ['required', Rule::in(array_keys(RdoWorkflow::MODELS))],
+            'layout' => ['required', Rule::in(array_keys(\App\Support\RdoPdfTemplates::VIEWS))],
+            'title' => ['required', 'string', 'max:100'],
+            'title_color' => ['sometimes', 'required', 'regex:/^#[a-fA-F0-9]{6}$/'],
+            'theme' => ['sometimes', 'required', Rule::in(array_keys(\App\Support\RdoPdfTemplates::STYLES))],
+            'color' => [Rule::requiredIf(!$request->has('theme')), 'nullable', 'regex:/^#[a-fA-F0-9]{6}$/'],
+            'report_company_id' => ['nullable', 'integer', Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)->where('contract_id', $request->integer('contract_id')))],
+            'require_photos' => ['sometimes', 'boolean'],
+            'company_name' => ['nullable', 'string', 'max:200'],
+        ]);
+        $contract = $tenant->contracts()->with(['clienteEmpresa', 'gerenciadoraEmpresa', 'construtoraEmpresa'])->findOrFail($data['contract_id']);
+        abort_unless(DiarioObraPermissions::can($request->user(), $tenant, DiarioObraPermissions::SETTINGS, $contract), 403);
+        $obras = $tenant->obras()->where('contract_id', $contract->id);
+        $obra = !empty($data['obra_id']) ? $obras->findOrFail($data['obra_id']) : $obras->first();
+        if (!empty($data['report_company_id'])) $data['company_name'] = $tenant->empresas()->where('contract_id', $contract->id)->findOrFail($data['report_company_id'])->nome;
+        if (!\App\Support\RdoPdfTemplates::supportsWorkflow($data['layout'], RdoWorkflow::forModel($data['model']))) throw ValidationException::withMessages(['layout' => 'Este layout utiliza o fluxo Gerenciadora + Cliente.']);
+        $rdo = $preview->make($tenant, $contract, $data['model'], [...$data, 'logos' => app(\App\Services\RdoDocumentLogos::class)->apply($request, $tenant, $contract, false)], $obra, $request->user());
+        $response = $renderer->render($tenant, $rdo, $preview)->stream('rdo-'.$data['model'].'.pdf');
+        $response->headers->set('Cache-Control', 'private, no-store');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        return $response;
+    }
+
+    public function documentLogo(Request $request, Tenant $tenant, Contract $contract, string $role): HttpResponse
+    {
+        abort_unless((int) $contract->tenant_id === (int) $tenant->id, 404);
+        abort_unless(DiarioObraPermissions::can($request->user(), $tenant, DiarioObraPermissions::SETTINGS, $contract), 403);
+        abort_unless(array_key_exists($role, RdoWorkflow::PARTIES), 404);
+        $service = app(\App\Services\RdoDocumentLogos::class);
+        $bytes = $service->bytes($service->current($tenant, $contract)[$role] ?? null);
+        abort_unless($bytes, 404);
+        return response($bytes, 200, ['Content-Type' => getimagesizefromstring($bytes)['mime'], 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
+    }
+
     public function saveSettings(Request $request, Tenant $tenant, RdoDailyGenerator $generator): RedirectResponse
     {
         $validated = $request->validate([
+            ...\App\Services\RdoDocumentLogos::rules(),
+            'workflow' => ['sometimes', 'required', 'array:model,fill_party,fill_parties,review_parties,client_comment_only'],
+            'workflow.model' => ['sometimes', 'required', Rule::in(array_keys(RdoWorkflow::MODELS))],
+            'document_configuration' => ['sometimes', 'required', 'array:layout,title,color,title_color,company_name,theme'],
+            'document_configuration.layout' => ['required_with:document_configuration', Rule::in(array_keys(\App\Support\RdoPdfTemplates::VIEWS))],
+            'document_configuration.company_name' => ['nullable', 'string', 'max:200'],
+            'document_configuration.title' => ['required_with:document_configuration', 'string', 'max:100'],
+            'document_configuration.title_color' => ['sometimes', 'required', 'regex:/^#[a-fA-F0-9]{6}$/'],
+            'document_configuration.theme' => ['sometimes', 'required', Rule::in(array_keys(\App\Support\RdoPdfTemplates::STYLES))],
+            'document_configuration.color' => [Rule::requiredIf($request->has('document_configuration') && !$request->has('document_configuration.theme')), 'nullable', 'regex:/^#[a-fA-F0-9]{6}$/'],
+            'workflow.fill_party' => [Rule::requiredIf($request->has('workflow') && !$request->has('workflow.fill_parties') && !$request->has('workflow.model')), Rule::in(RdoWorkflow::FILLING_PARTIES)],
+            'workflow.fill_parties' => ['sometimes', 'required', 'array', 'min:1', 'max:2'],
+            'workflow.fill_parties.*' => ['required', 'string', 'distinct', Rule::in(RdoWorkflow::FILLING_PARTIES)],
+            'workflow.client_comment_only' => ['sometimes', 'boolean'],
+            'workflow.review_parties' => [$request->has('workflow') && !$request->has('workflow.model') ? 'present' : 'sometimes', 'array', 'max:2'],
+            'workflow.review_parties.*' => ['required', 'string', 'distinct', Rule::in(array_keys(RdoWorkflow::PARTIES)), Rule::notIn($request->has('workflow.fill_parties') ? [] : [$request->input('workflow.fill_party')])],
             'contract_id' => [
                 'required',
                 'integer',
@@ -425,6 +539,7 @@ class RdoController extends Controller
                 'distinct',
                 Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
             ],
+            'report_company_id' => ['nullable', 'integer', Rule::exists('empresas', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)->where('contract_id', $request->integer('contract_id')))],
             'responsible_user_id' => [
                 'nullable',
                 'integer',
@@ -437,7 +552,7 @@ class RdoController extends Controller
             'timezone' => ['required', 'timezone'],
             'generation_weekdays' => ['required', 'array', 'min:1'],
             'generation_weekdays.*' => ['required', 'integer', 'between:0,6', 'distinct'],
-            'generate_on_holidays' => ['required', 'boolean'],
+            'generate_on_holidays' => ['sometimes', 'boolean'],
             'copy_previous_day' => ['required', 'boolean'],
             'copy_workforce' => ['required', 'boolean'],
             'copy_equipment' => ['required', 'boolean'],
@@ -447,6 +562,17 @@ class RdoController extends Controller
             'submission_deadline_days' => ['required', 'integer', 'min:1', 'max:365'],
             'active' => ['required', 'boolean'],
         ]);
+
+        $validated['generation_weekdays'] = array_map('intval', $validated['generation_weekdays']);
+
+        if (isset($validated['workflow']['model'])) {
+            $validated['workflow'] = RdoWorkflow::forModel($validated['workflow']['model']);
+        } elseif (isset($validated['workflow']['fill_parties'])) {
+            $validated['workflow']['client_comment_only'] = true;
+        }
+
+        $layout = $validated['document_configuration']['layout'] ?? \App\Support\RdoPdfTemplates::forContract($tenant, $validated['contract_id'])['layout'];
+        if (!\App\Support\RdoPdfTemplates::supportsWorkflow($layout, $validated['workflow'] ?? RdoWorkflow::DEFAULT)) throw ValidationException::withMessages(['document_configuration.layout' => 'Este layout utiliza o fluxo Gerenciadora + Cliente.']);
 
         $validObrasCount = Obra::query()
             ->where('tenant_id', $tenant->id)
@@ -465,7 +591,7 @@ class RdoController extends Controller
             : (int) $validated['obra_ids'][0];
 
         $configurationData = collect($validated)
-            ->except(['configuration_id', 'obra_ids'])
+            ->except(['configuration_id', 'obra_ids', 'document_configuration', ...collect(array_keys(RdoWorkflow::PARTIES))->flatMap(fn ($role) => ['logo_'.$role, 'remove_logo_'.$role])->all()])
             ->merge([
                 'obra_id' => $primaryObraId,
                 'created_by_id' => $request->user()?->id,
@@ -473,21 +599,35 @@ class RdoController extends Controller
             ])
             ->all();
 
-        if ($configuration) {
-            $configuration->update($configurationData);
-        } else {
-            $configuration = RdoConfiguracao::create([
-                'tenant_id' => $tenant->id,
-                ...$configurationData,
-            ]);
-        }
+        DB::transaction(function () use (&$configuration, $configurationData, $validated, $tenant, $request, $generator): void {
+            $tenant->contracts()->whereKey($validated['contract_id'])->lockForUpdate()->firstOrFail();
+            if ($configuration) {
+                $configuration->update($configurationData);
+            } else {
+                $configuration = RdoConfiguracao::create([
+                    'tenant_id' => $tenant->id,
+                    ...$configurationData,
+                ]);
+            }
 
-        $configuration->obras()->sync($validated['obra_ids']);
+            if (isset($validated['document_configuration'])) {
+                $contract = $tenant->contracts()->findOrFail($validated['contract_id']);
+                $logoService = app(\App\Services\RdoDocumentLogos::class);
+                $logoService->freezeContract($tenant, $contract);
+                $validated['document_configuration']['logos'] = $logoService->apply($request, $tenant, $contract, true);
+                \App\Models\RdoPdfSetting::updateOrCreate(
+                    ['tenant_id' => $tenant->id, 'contract_id' => $validated['contract_id']],
+                    ['configuration' => \App\Support\RdoPdfTemplates::configuration($validated['document_configuration'])],
+                );
+            }
+            $configuration->obras()->sync($validated['obra_ids']);
 
-        $today = CarbonImmutable::now($configuration->timezone)->startOfDay();
-        if ($configuration->active && $today->betweenIncluded($configuration->start_date, $configuration->end_date ?? $today)) {
-            $generator->generateForConfiguration($configuration, $today, false, $request->user()?->id);
-        }
+            $today = CarbonImmutable::now($configuration->timezone)->startOfDay();
+            if ($configuration->active && $today->betweenIncluded($configuration->start_date, $configuration->end_date ?? $today)) {
+                $generator->generateForConfiguration($configuration, $today, false, $request->user()?->id);
+            }
+
+        });
 
         return redirect()
             ->route('tenant.diario-obra.rdo.settings', [
@@ -535,14 +675,10 @@ class RdoController extends Controller
                 ->findOrFail($validated['copy_from_rdo_id']);
 
             foreach ($source->secoes as $section) {
-                RdoSecaoRegistro::create([
-                    'tenant_id' => $tenant->id,
-                    'rdo_diario_id' => $rdo->id,
-                    'obra_id' => $section->obra_id,
-                    'updated_by_id' => $request->user()?->id,
-                    'secao' => $section->secao,
-                    'dados' => $section->dados,
-                ]);
+                RdoSecaoRegistro::updateOrCreate(
+                    ['rdo_diario_id' => $rdo->id, 'obra_id' => $section->obra_id, 'secao' => $section->secao, 'filling_party' => $section->filling_party ?? 'construtora'],
+                    ['tenant_id' => $tenant->id, 'updated_by_id' => $request->user()?->id, 'dados' => $section->dados],
+                );
             }
 
             $rdo->update(['copied_from_rdo_id' => $source->id]);
@@ -579,10 +715,18 @@ class RdoController extends Controller
             'signatureRequests.signers',
         ]);
         $capabilities = $this->flowCapabilities($tenant, $rdo, request()->user());
-        $publishedRdas = $this->publishedRdasForRdo($tenant, $rdo);
+
+        $referencedIds = function (string $section, string $key) use ($rdo) {
+            return $rdo->secoes->where('secao', $section)->flatMap(fn ($row) => array_keys($row->dados[$key] ?? []))->unique()->values()->all();
+        };
+        $historical = function (string $model, array $ids, array $columns) use ($tenant, $rdo) {
+            return $model::withTrashed()->where('tenant_id', $tenant->id)
+                ->where(fn ($q) => $q->where('contract_id', $rdo->contract_id)->orWhereNull('contract_id'))
+                ->whereIn('id', $ids)->get($columns);
+        };
 
         return Inertia::render('Tenant/Rdo/Show', [
-            'rdo' => $this->rdoPayload($tenant, $rdo, request()->user()) + [
+            'rdo' => $this->rdoPayload($tenant, $rdo, request()->user(), $capabilities['filling_party']) + [
                 'contract' => [
                     ...$rdo->contract->only(['id', 'code', 'name']),
                     'cliente' => $rdo->contract->clienteEmpresa,
@@ -597,6 +741,7 @@ class RdoController extends Controller
                 'editable_obra_ids' => $capabilities['editable_obra_ids'],
                 'flow_actions' => $capabilities['actions'],
                 'flow_obra_ids' => $capabilities['flow_obra_ids'],
+                'manager_forward_ready' => $capabilities['manager_forward_ready'] ?? false,
                 'active_stage' => $capabilities['active_stage'],
                 'can_manage_inspection' => $capabilities['can_manage_inspection'],
                 'can_create_divergence' => $capabilities['can_create_divergence'],
@@ -604,7 +749,7 @@ class RdoController extends Controller
                 'can_conclude_divergence' => $capabilities['can_conclude_divergence'],
                 'can_decide_divergence' => $capabilities['can_decide_divergence'],
                 'approval_comments' => $this->approvalCommentsByStage($rdo),
-                'inspection_records' => $this->inspectionPayload($rdo),
+                'inspection_records' => $this->inspectionPayload($tenant, $rdo),
                 'divergences' => $this->divergencePayload($rdo),
                 'versions' => $this->versionPayload($rdo),
                 'digital_signature_enabled' => (bool) ($rdo->configuracao?->digital_signature_enabled ?? true),
@@ -615,27 +760,35 @@ class RdoController extends Controller
                     $rdo->contract
                 ),
                 'signature' => $this->signaturePayload($tenant, $rdo),
-                'published_rdas' => $publishedRdas,
-                'sections' => $rdo->secoes
+                'sections_by_party' => $rdo->secoes->groupBy('filling_party')->map(fn ($records) => $records->groupBy('obra_id')->map(fn ($items) => $items->mapWithKeys(fn ($row) => [$row->secao => $row->dados]))),
+                'sections' => RdoWorkflow::sections($rdo, $capabilities['filling_party'])
                     ->groupBy('obra_id')
                     ->map(fn ($sections) => $sections->mapWithKeys(fn (RdoSecaoRegistro $section) => [
                         $section->secao => $section->dados,
                     ])),
             ],
+            'record_catalogs' => [
+                'mao_obra' => $historical(RdoMaoObraCadastro::class, $referencedIds('mao_obra', 'efetivos'), ['id', 'descricao', 'tipo', 'unidade']),
+                'equipamentos' => $historical(RdoEquipamentoCadastro::class, $referencedIds('equipamentos', 'registros'), ['id', 'descricao', 'codigo', 'unidade']),
+                'subcontratadas' => $historical(RdoSubcontratadaCadastro::class, $referencedIds('mao_obra', 'subcontratadas'), ['id', 'razao_social', 'nome_fantasia']),
+            ],
             'catalogs' => [
                 'mao_obra' => RdoMaoObraCadastro::query()
                     ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $rdo->contract_id)
                     ->where('active', true)
                     ->orderBy('tipo')
                     ->orderBy('descricao')
                     ->get(['id', 'descricao', 'tipo', 'unidade']),
                 'equipamentos' => RdoEquipamentoCadastro::query()
                     ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $rdo->contract_id)
                     ->where('active', true)
                     ->orderBy('descricao')
                     ->get(['id', 'codigo', 'descricao', 'unidade', 'propriedade']),
                 'subcontratadas' => RdoSubcontratadaCadastro::query()
                     ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $rdo->contract_id)
                     ->where('active', true)
                     ->orderBy('razao_social')
                     ->get(['id', 'razao_social', 'nome_fantasia']),
@@ -643,48 +796,28 @@ class RdoController extends Controller
         ]);
     }
 
-    public function importRda(Request $request, Tenant $tenant, RdoDiario $rdo, RdaApontamento $rda): RedirectResponse
-    {
-        abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
-        abort_unless((int) $rda->tenant_id === (int) $tenant->id, 404);
-        abort_unless($rda->status === 'publicado', 422, 'Somente RDAs publicados podem ser usados no RDO.');
-        abort_unless((int) $rda->contract_id === (int) $rdo->contract_id, 422, 'Este RDA pertence a outro contrato.');
-        abort_unless((int) $rda->rdo_configuracao_id === (int) $rdo->rdo_configuracao_id, 422, 'Este RDA pertence a outra configuração de RDO.');
-        abort_unless($rda->reference_date?->isSameDay($rdo->reference_date), 422, 'Este RDA pertence a outra data.');
-
-        $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
-        abort_unless($capabilities['can_edit'] && in_array((int) $rda->obra_id, $capabilities['editable_obra_ids'], true), 403);
-
-        $obraPermitida = $rdo->configuracao()
-            ->whereHas('obras', fn ($query) => $query->whereKey($rda->obra_id))
-            ->exists();
-        abort_unless($obraPermitida, 422, 'A obra do RDA não faz parte deste RDO.');
-
-        $sections = $this->sectionsFromRda($rda);
-
-        DB::transaction(function () use ($tenant, $rdo, $rda, $request, $sections): void {
-            foreach ($sections as $section => $data) {
-                RdoSecaoRegistro::updateOrCreate(
-                    ['rdo_diario_id' => $rdo->id, 'obra_id' => $rda->obra_id, 'secao' => $section],
-                    [
-                        'tenant_id' => $tenant->id,
-                        'updated_by_id' => $request->user()?->id,
-                        'dados' => $data,
-                    ],
-                );
-            }
-        });
-
-        return back()->with('success', 'Dados do RDA importados para o RDO com sucesso.');
-    }
-
-    public function pdf(Tenant $tenant, RdoDiario $rdo, RdoPdfRenderer $pdfRenderer): HttpResponse
+    public function pdf(Request $request, Tenant $tenant, RdoDiario $rdo, RdoPdfRenderer $pdfRenderer): HttpResponse
     {
         abort_unless((int) $rdo->tenant_id === (int) $tenant->id, 404);
 
-        $fileName = sprintf('rdo-%s-%s.pdf', $rdo->code, $rdo->reference_date?->format('Ymd'));
+        $rdo->loadMissing('configuracao.obras');
+        $parties = RdoWorkflow::parties($rdo);
+        $obras = $rdo->configuracao?->obras ?? collect([$rdo->obra])->filter();
+        $export = $request->validate([
+            'stage' => ['sometimes', 'required', Rule::in($parties)],
+            'obra_ids' => ['sometimes', 'required', 'array', 'min:1'],
+            'obra_ids.*' => ['required', 'integer', 'distinct', Rule::in($obras->pluck('id')->all())],
+        ]);
+        $fileName = sprintf('rdo-%s-%s%s.pdf', $rdo->code, $rdo->reference_date?->format('Ymd'), isset($export['stage']) ? '-ate-'.$export['stage'] : '');
 
-        return $pdfRenderer->render($tenant, $rdo)->stream($fileName);
+        if ($request->boolean('viewer')) {
+            $pdfUrl = route('tenant.diario-obra.rdo.pdf', [$tenant->slug, $rdo->id]);
+            if ($export) $pdfUrl .= '?'.http_build_query($export);
+            return response()->view('pdf.viewer', ['title' => $rdo->code.' · RDO', 'pdfUrl' => $pdfUrl])
+                ->header('Cache-Control', 'private, no-store');
+        }
+
+        return $pdfRenderer->render($tenant, $rdo, null, $export)->stream($fileName);
     }
 
     public function history(Request $request, Tenant $tenant, RdoDiario $rdo): JsonResponse
@@ -727,9 +860,9 @@ class RdoController extends Controller
                     'return' => 'danger',
                     default => 'primary',
                 },
-                'title' => $this->stageLabel($analysis->etapa).' · '.$this->decisionLabel($analysis->decisao),
+                'title' => $this->stageLabel($analysis->etapa).' · '.$this->decisionLabel($analysis->decisao, $analysis->etapa === 'cliente' && RdoWorkflow::clientCommentOnly($rdo)),
                 'description' => $analysis->status_anterior !== $analysis->status_novo
-                    ? $this->statusLabel($analysis->status_anterior).' → '.$this->statusLabel($analysis->status_novo)
+                    ? RdoWorkflow::statusLabel($rdo, $analysis->status_anterior).' → '.RdoWorkflow::statusLabel($rdo, $analysis->status_novo)
                     : null,
                 'actor' => $analysis->user?->name,
                 'company' => $analysis->empresa?->nome,
@@ -808,7 +941,7 @@ class RdoController extends Controller
                 'type' => 'version',
                 'tone' => 'primary',
                 'title' => 'Versão V'.str_pad((string) $version->version_number, 2, '0', STR_PAD_LEFT).' apresentada',
-                'description' => $version->trigger === 'initial_submission' ? 'Envio inicial da construtora' : 'Reenvio após ajustes ou comprovações',
+                'description' => $version->trigger === 'initial_submission' ? 'Envio inicial — '.RdoWorkflow::PARTIES[RdoWorkflow::fillParty($rdo)] : 'Reenvio após ajustes ou comprovações',
                 'actor' => $version->createdBy?->name,
                 'company' => null,
                 'obra' => null,
@@ -909,6 +1042,8 @@ class RdoController extends Controller
         abort_unless($obraPermitida, 422, 'A obra selecionada não faz parte deste RDO.');
 
         $dados = $validated['dados'];
+        if ($secao === 'atividades') \Illuminate\Support\Facades\Validator::make(['dados' => $dados], ['dados.atividades.*.assunto' => ['sometimes', 'string', Rule::in(array_keys(\App\Support\RdoPdfTemplates::ACTIVITY_SUBJECTS))]])->validate();
+        \App\Support\RdoCatalogs::validate($rdo, [$secao => $dados]);
         if ($secao === 'fotos') {
             $dados = $this->preparePhotoSectionData(
                 $dados,
@@ -916,17 +1051,22 @@ class RdoController extends Controller
                 $tenant,
                 $rdo,
                 (int) $validated['obra_id'],
+                $capabilities['filling_party'],
             );
         }
 
-        RdoSecaoRegistro::updateOrCreate(
-            ['rdo_diario_id' => $rdo->id, 'obra_id' => $validated['obra_id'], 'secao' => $secao],
-            [
-                'tenant_id' => $tenant->id,
-                'updated_by_id' => $request->user()?->id,
-                'dados' => $dados,
-            ],
-        );
+        DB::transaction(function () use ($rdo, $validated, $secao, $dados, $capabilities, $tenant, $request) {
+            $this->lockCurrentDiary($rdo, true);
+            RdoSecaoRegistro::updateOrCreate(
+                ['rdo_diario_id' => $rdo->id, 'obra_id' => $validated['obra_id'], 'secao' => $secao, 'filling_party' => $capabilities['filling_party']],
+                [
+                    'tenant_id' => $tenant->id,
+                    'updated_by_id' => $request->user()?->id,
+                    'dados' => $dados,
+                ],
+            );
+            if (!$this->savingWorksBatch) $this->completeSoloRdo($tenant, $rdo, $request->user());
+        });
 
         return back()->with('success', 'Seção do RDO salva com sucesso.');
     }
@@ -940,6 +1080,7 @@ class RdoController extends Controller
 
         $validated = $request->validate([
             'obra_id' => ['required', 'integer'],
+            'is_holiday' => ['sometimes', 'nullable', 'boolean'],
             'secoes' => ['required', 'array'],
             'secoes.clima' => ['nullable', 'array'],
             'secoes.mao_obra' => ['nullable', 'array'],
@@ -964,18 +1105,23 @@ class RdoController extends Controller
             'fotos' => [],
             'comentarios' => [],
         ], $validated['secoes']);
+        \Illuminate\Support\Facades\Validator::make(['secoes' => $sections], ['secoes.atividades.atividades.*.assunto' => ['sometimes', 'string', Rule::in(array_keys(\App\Support\RdoPdfTemplates::ACTIVITY_SUBJECTS))]])->validate();
+        \App\Support\RdoCatalogs::validate($rdo, $sections);
         $sections['fotos'] = $this->preparePhotoSectionData(
             $sections['fotos'],
             $request->file('fotos', []),
             $tenant,
             $rdo,
             (int) $validated['obra_id'],
+            $capabilities['filling_party'],
         );
 
-        DB::transaction(function () use ($tenant, $rdo, $request, $validated, $sections): void {
+        DB::transaction(function () use ($tenant, $rdo, $request, $validated, $sections, $capabilities): void {
+            $this->lockCurrentDiary($rdo, true);
+            if (array_key_exists('is_holiday', $validated)) $rdo->update(['is_holiday' => $validated['is_holiday']]);
             foreach ($sections as $section => $data) {
                 RdoSecaoRegistro::updateOrCreate(
-                    ['rdo_diario_id' => $rdo->id, 'obra_id' => $validated['obra_id'], 'secao' => $section],
+                    ['rdo_diario_id' => $rdo->id, 'obra_id' => $validated['obra_id'], 'secao' => $section, 'filling_party' => $capabilities['filling_party']],
                     [
                         'tenant_id' => $tenant->id,
                         'updated_by_id' => $request->user()?->id,
@@ -983,9 +1129,10 @@ class RdoController extends Controller
                     ],
                 );
             }
+            if (!$this->savingWorksBatch) $this->completeSoloRdo($tenant, $rdo, $request->user());
         });
 
-        return back()->with('success', 'Preenchimento completo da obra salvo com sucesso.');
+        return back()->with('success', RdoWorkflow::savesWithoutApproval($rdo) && $rdo->status === 'arquivado' ? 'RDO salvo sem fluxo de aprovação.' : 'Preenchimento completo da obra salvo com sucesso.');
     }
 
     public function changeFlow(Request $request, Tenant $tenant, RdoDiario $rdo): RedirectResponse
@@ -1010,17 +1157,27 @@ class RdoController extends Controller
 
         $validated = $request->validate([
             'action' => ['required', Rule::in(array_keys($capabilities['actions']))],
+            'return_to' => [Rule::requiredIf(fn () => $capabilities['active_stage'] === 'cliente' && $request->input('action') === 'return'), 'nullable', Rule::in(array_values(array_unique([...RdoWorkflow::fillParties($rdo), ...array_intersect(['gerenciadora'], RdoWorkflow::reviews($rdo))])))],
             'comment' => ['nullable', 'string', 'max:5000'],
             'comments_by_obra' => ['nullable', 'array'],
             'comments_by_obra.*' => ['nullable', 'string', 'max:5000'],
             'reservations_by_obra' => ['nullable', 'array'],
+            'reservation_obra_ids' => ['sometimes', 'array'],
+            'reservation_obra_ids.*' => ['integer', 'distinct', Rule::in($capabilities['flow_obra_ids'])],
             'reservations_by_obra.*.obligation' => ['nullable', 'string', 'max:5000'],
             'reservations_by_obra.*.responsible' => ['nullable', 'string', 'max:180'],
             'reservations_by_obra.*.due_date' => ['nullable', 'date'],
             'obra_ids' => ['nullable', 'array', 'min:1'],
             'obra_ids.*' => ['integer', Rule::in($capabilities['flow_obra_ids'])],
+            'divergencia' => ['nullable', 'array'],
+            'divergencia.obra_id' => ['nullable', 'integer', Rule::in($capabilities['flow_obra_ids'])],
+            'divergencia.topico' => ['required_with:divergencia', 'string', 'max:80'],
+            'divergencia.titulo' => ['required_with:divergencia', 'string', 'max:180'],
+            'divergencia.versao_construtora' => ['required_with:divergencia', 'string', 'max:10000'],
+            'divergencia.versao_gerenciadora' => ['required_with:divergencia', 'string', 'max:5000'],
         ]);
         $action = $validated['action'];
+        $returnTo = $validated['return_to'] ?? null;
         $comment = trim((string) ($validated['comment'] ?? ''));
         $commentsByObra = collect($validated['comments_by_obra'] ?? [])
             ->mapWithKeys(fn ($value, $key) => [(int) $key => trim((string) $value)])
@@ -1037,8 +1194,22 @@ class RdoController extends Controller
         $stage = $capabilities['active_stage'];
         $oldStatus = $rdo->status;
         $obraIds = array_values(array_map('intval', $validated['obra_ids'] ?? $capabilities['flow_obra_ids']));
+        $divergence = $validated['divergencia'] ?? null;
+        if ($divergence && ($action !== 'return' || !$capabilities['can_create_divergence'])) {
+            throw ValidationException::withMessages(['divergencia' => 'A divergência deve acompanhar a devolução do RDO pela gerenciadora.']);
+        }
+        if ($divergence && ((!isset($divergence['obra_id']) && count($obraIds) > 1) || (isset($divergence['obra_id']) && !in_array((int) $divergence['obra_id'], $obraIds, true)))) {
+            throw ValidationException::withMessages(['divergencia.obra_id' => 'Informe a obra relacionada à divergência. Todas as obras do RDO serão devolvidas juntas.']);
+        }
         if ($action === 'submit') {
             $obraIds = array_values(array_map('intval', $capabilities['flow_obra_ids']));
+        }
+        if (RdoWorkflow::isReview($rdo->status) && in_array($action, ['approve', 'approve_with_reservations', 'return'], true)) {
+            $allPending = $this->pendingObraIds($rdo, $stage, $rdo->configuracao->obras->pluck('id')->map(fn ($id) => (int) $id)->all());
+            if (array_diff($allPending, $obraIds) || array_diff($obraIds, $allPending)) {
+                throw ValidationException::withMessages(['obra_ids' => 'Encaminhe ou devolva todas as obras do RDO juntas. Não é permitido movimentar apenas parte das obras.']);
+            }
+            if ($stage === 'gerenciadora' && $action !== 'return') $this->ensureInspectionCompleted($rdo, $allPending);
         }
         if (empty($obraIds)) {
             if (! $request->headers->has('X-Inertia')) {
@@ -1052,7 +1223,7 @@ class RdoController extends Controller
         if ($action === 'submit') {
             $this->ensureReadyForSubmission($rdo, $obraIds, $request->headers->has('X-Inertia'));
         }
-        $isReviewStage = in_array($rdo->status, ['em_analise_gerenciadora', 'em_aprovacao_cliente'], true);
+        $isReviewStage = RdoWorkflow::isReview($rdo->status);
         $requiresComment = $isReviewStage
             || in_array($action, ['approve_with_reservations', 'return'], true)
             || ($action === 'submit' && $rdo->status !== 'rascunho');
@@ -1071,8 +1242,10 @@ class RdoController extends Controller
 
             abort_if($isReviewStage ? ! empty($missingCommentObraIds) : $comment === '', 422, 'Informe o comentário ou a resposta para continuar.');
         }
+        $reservationObraIds = $action === 'approve_with_reservations' ? array_map('intval', $validated['reservation_obra_ids'] ?? $obraIds) : [];
         if ($action === 'approve_with_reservations') {
-            $missingReservationObraIds = array_values(array_filter($obraIds, function (int $obraId) use ($reservationsByObra): bool {
+            if (!$reservationObraIds || array_diff($reservationObraIds, $obraIds)) throw ValidationException::withMessages(['reservation_obra_ids' => 'Selecione as obras que possuem ressalvas.']);
+            $missingReservationObraIds = array_values(array_filter($reservationObraIds, function (int $obraId) use ($reservationsByObra): bool {
                 $reservation = $reservationsByObra[$obraId] ?? [];
 
                 return empty($reservation['obligation']) || empty($reservation['responsible']) || empty($reservation['due_date']);
@@ -1087,7 +1260,7 @@ class RdoController extends Controller
             $this->ensureInspectionCompleted($rdo, $obraIds);
             $this->ensureManagerDivergencesResolved($rdo);
         }
-        if ($stage === 'cliente' && in_array($action, ['approve', 'approve_with_reservations'], true)) {
+        if ($stage === 'cliente' && !RdoWorkflow::clientCommentOnly($rdo) && in_array($action, ['approve', 'approve_with_reservations'], true)) {
             $this->ensureClientDivergencesDecided($rdo);
         }
         abort_if(empty($obraIds), 422, 'Não há frentes pendentes atribuídas a este usuário nesta etapa.');
@@ -1096,7 +1269,27 @@ class RdoController extends Controller
             ->where('user_id', $request->user()->id)
             ->first();
 
-        [$newStatus, $message] = DB::transaction(function () use ($tenant, $rdo, $request, $membership, $stage, $action, $comment, $commentsByObra, $reservationsByObra, $oldStatus, $obraIds): array {
+        [$newStatus, $message] = DB::transaction(function () use ($tenant, $rdo, $request, $membership, $stage, $action, $comment, $commentsByObra, $reservationsByObra, $oldStatus, $obraIds, $divergence, $returnTo, $reservationObraIds): array {
+            $this->lockCurrentDiary($rdo);
+            if ($stage === 'gerenciadora' && in_array($action, ['approve', 'approve_with_reservations'], true)) {
+                $this->ensureInspectionCompleted($rdo, $obraIds);
+                $this->ensureManagerDivergencesResolved($rdo);
+            }
+            if ($divergence) {
+                $currentCapabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
+                abort_unless($rdo->status === $oldStatus && $currentCapabilities['can_create_divergence'] && in_array($obraIds[0], $currentCapabilities['flow_obra_ids'], true), 422, 'Esta frente não está mais disponível para devolução. Atualize a página.');
+                RdoDivergencia::create([
+                    'topico' => $divergence['topico'], 'titulo' => $divergence['titulo'],
+                    'versao_construtora' => $divergence['versao_construtora'], 'versao_gerenciadora' => $divergence['versao_gerenciadora'],
+                    'tenant_id' => $tenant->id, 'rdo_diario_id' => $rdo->id,
+                    'obra_id' => $divergence['obra_id'] ?? $obraIds[0], 'created_by_id' => $request->user()->id,
+                    'version_number' => max(1, (int) $rdo->current_version), 'status' => 'aberta',
+                ]);
+            }
+            if ($action === 'submit') {
+                $rdo->unsetRelation('secoes')->load('secoes');
+                $this->ensureReadyForSubmission($rdo, $obraIds, $request->headers->has('X-Inertia'));
+            }
             if ($action === 'submit') {
                 $nextVersion = (int) $rdo->current_version + 1;
                 $rdo->update(['current_version' => $nextVersion]);
@@ -1105,7 +1298,7 @@ class RdoController extends Controller
             $rdoVersion = max(1, (int) $rdo->current_version);
             $analysisIds = [];
             foreach ($obraIds as $obraId) {
-                $obraComment = in_array($rdo->status, ['em_analise_gerenciadora', 'em_aprovacao_cliente'], true)
+                $obraComment = RdoWorkflow::isReview($rdo->status)
                     ? ($commentsByObra[$obraId] ?? '')
                     : $comment;
 
@@ -1116,11 +1309,12 @@ class RdoController extends Controller
                     'user_id' => $request->user()->id,
                     'empresa_id' => $membership?->empresa_id,
                     'etapa' => $stage,
-                    'decisao' => $action,
+                    'decisao' => $action === 'approve_with_reservations' && !in_array($obraId, $reservationObraIds, true) ? 'approve' : $action,
                     'comentario' => $obraComment !== '' ? $obraComment : null,
                     'detalhes' => [
                         'rdo_version' => $rdoVersion,
-                        'reservation' => $action === 'approve_with_reservations'
+                        'return_to' => $action === 'return' ? $returnTo : null,
+                        'reservation' => $action === 'approve_with_reservations' && in_array($obraId, $reservationObraIds, true)
                             ? ($reservationsByObra[$obraId] ?? null)
                             : null,
                     ],
@@ -1129,7 +1323,9 @@ class RdoController extends Controller
                 ])->id;
             }
 
-            [$nextStatus, $flowMessage] = $this->resolveStatusAfterDecisions($rdo, $stage, $action);
+            [$nextStatus, $flowMessage] = $stage === 'cliente' && $action === 'return' && $returnTo === 'gerenciadora' && in_array('gerenciadora', RdoWorkflow::reviews($rdo), true)
+                ? ['em_analise_gerenciadora', 'RDO devolvido integralmente para revisão da gerenciadora.']
+                : $this->resolveStatusAfterDecisions($rdo, $stage, $action);
             if ($nextStatus !== $oldStatus) {
                 RdoAnalise::query()
                     ->whereIn('id', $analysisIds)
@@ -1137,7 +1333,7 @@ class RdoController extends Controller
             }
             $rdo->update([
                 'status' => $nextStatus,
-                'submitted_at' => $action === 'submit' && $nextStatus === 'em_analise_gerenciadora' ? now() : $rdo->submitted_at,
+                'submitted_at' => $action === 'submit' ? now() : $rdo->submitted_at,
                 'approved_at' => $nextStatus === 'arquivado' ? now() : null,
             ]);
 
@@ -1155,56 +1351,91 @@ class RdoController extends Controller
         $rdo->loadMissing(['contract', 'configuracao.obras']);
         $capabilities = $this->flowCapabilities($tenant, $rdo, $request->user());
         abort_unless($capabilities['can_manage_inspection'], 403);
-
         $validated = $request->validate([
             'obra_id' => ['required', 'integer', Rule::in($capabilities['flow_obra_ids'])],
-            'resumo_fiscalizacao' => ['required', 'string', 'max:10000'],
+            'resumo_fiscalizacao' => ['required_without:atividades', 'nullable', 'string', 'max:10000'],
+            'atividades' => ['sometimes', 'array', 'min:1', 'max:50'],
+            'atividades.*.titulo' => ['required', 'string', 'max:255'],
+            'atividades.*.ocorrencia' => ['required', 'string', 'max:10000'],
+            'comentario' => ['nullable', 'string', 'max:10000'],
+            'clima' => ['nullable', 'array:manha,tarde,noite,precipitacao_manha_mm,precipitacao_tarde_mm,precipitacao_noite_mm,observacoes,dia_impraticavel'],
+            'clima.manha' => ['nullable', Rule::in(['ensolarado', 'nublado', 'chuvoso', 'nao_aplicavel'])],
+            'clima.tarde' => ['nullable', Rule::in(['ensolarado', 'nublado', 'chuvoso', 'nao_aplicavel'])],
+            'clima.noite' => ['nullable', Rule::in(['ensolarado', 'nublado', 'chuvoso', 'nao_aplicavel'])],
+            'clima.precipitacao_manha_mm' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'clima.precipitacao_tarde_mm' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'clima.precipitacao_noite_mm' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'clima.observacoes' => ['nullable', 'string', 'max:10000'],
+            'clima.dia_impraticavel' => ['nullable', 'boolean'],
             'servicos_atestados' => ['nullable', 'string', 'max:10000'],
             'ocorrencias' => ['nullable', 'string', 'max:10000'],
             'orientacoes' => ['nullable', 'string', 'max:10000'],
             'status' => ['required', Rule::in(['rascunho', 'concluido'])],
             'evidencias' => ['nullable', 'array', 'max:10'],
-            'evidencias.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:15360'],
+            'evidencias.*' => ['file', 'mimes:jpg,jpeg,png,webp,pdf,doc,docx,xls,xlsx,zip,txt', 'max:15360'],
+            'evidencias_metadados' => ['nullable', 'array', 'max:10'],
+            'evidencias_metadados.*.comment' => ['nullable', 'string', 'max:2000'],
+            'evidencias_comentarios' => ['nullable', 'array', 'max:10'],
+            'evidencias_comentarios.*' => ['nullable', 'string', 'max:2000'],
+            'evidencias_ordem' => ['sometimes', 'array', 'max:10'],
+            'evidencias_ordem.*' => ['string', 'distinct', 'regex:/^(existing|new):[0-9]+$/'],
         ]);
-
-        $membership = TenantUser::query()
-            ->where('tenant_id', $tenant->id)
-            ->where('user_id', $request->user()->id)
-            ->first();
-        $record = RdoFiscalizacaoRegistro::query()->firstOrNew([
-            'tenant_id' => $tenant->id,
-            'rdo_diario_id' => $rdo->id,
-            'obra_id' => (int) $validated['obra_id'],
-            'version_number' => max(1, (int) $rdo->current_version),
-        ]);
-        $evidence = collect($record->evidencias ?? []);
-
-        foreach ($request->file('evidencias', []) as $upload) {
-            $path = $upload->store("rdo/{$tenant->id}/{$rdo->id}/fiscalizacao", 'public');
-            $evidence->push([
-                'name' => $upload->getClientOriginalName(),
-                'path' => $path,
-                'mime_type' => $upload->getMimeType(),
-                'size' => $upload->getSize(),
-                'uploaded_at' => now()->toIso8601String(),
-            ]);
+        $createdFiles = [];
+        try {
+            DB::transaction(function () use ($tenant, $rdo, $request, $validated, &$createdFiles) {
+                $this->lockCurrentDiary($rdo);
+                $current = $this->flowCapabilities($tenant, $rdo, $request->user());
+                abort_unless($current['can_manage_inspection'] && in_array((int) $validated['obra_id'], $current['flow_obra_ids'], true), 422, 'Esta frente não está mais disponível para análise. Atualize a página.');
+                $record = RdoFiscalizacaoRegistro::query()->firstOrNew([
+                    'tenant_id' => $tenant->id, 'rdo_diario_id' => $rdo->id, 'obra_id' => (int) $validated['obra_id'], 'version_number' => max(1, (int) $rdo->current_version),
+                ]);
+                $evidence = collect($record->evidencias ?? [])->mapWithKeys(fn ($item, $index) => ["existing:{$index}" => [
+                    ...$item, 'comment' => $validated['evidencias_comentarios'][$index] ?? ($item['comment'] ?? ''),
+                ]]);
+                $uploads = $request->file('evidencias', []);
+                $order = $validated['evidencias_ordem'] ?? [...$evidence->keys()->all(), ...array_map(fn ($index) => "new:{$index}", array_keys($uploads))];
+                $allowedKeys = [...$evidence->keys()->all(), ...array_map(fn ($index) => "new:{$index}", array_keys($uploads))];
+                if (array_diff($order, $allowedKeys) || array_diff(array_map(fn ($index) => "new:{$index}", array_keys($uploads)), $order)) {
+                    throw ValidationException::withMessages(['evidencias_ordem' => 'A lista de evidências mudou. Atualize a página e tente novamente.']);
+                }
+                $evidence = $evidence->only($order);
+                if ($evidence->count() + count($uploads) > 10 || $evidence->sum('size') + collect($uploads)->sum(fn ($file) => $file->getSize()) > 50 * 1024 * 1024) {
+                    throw ValidationException::withMessages(['evidencias' => 'Cada frente aceita até 10 evidências e 50 MB no total por versão.']);
+                }
+                foreach ($uploads as $index => $upload) {
+                    $path = $upload->store("rdo/{$tenant->id}/{$rdo->id}/frente-{$validated['obra_id']}/fiscalizacao/v{$record->version_number}", 'local');
+                    $createdFiles[] = $path;
+                    if ($this->savingWorksBatch) $this->batchFiles[] = ['local', $path];
+                    $evidence->put("new:{$index}", ['disk' => 'local', 'name' => $upload->getClientOriginalName(), 'path' => $path,
+                        'mime_type' => $upload->getMimeType(), 'size' => $upload->getSize(), 'uploaded_at' => now()->toIso8601String(),
+                        'comment' => $validated['evidencias_metadados'][$index]['comment'] ?? '']);
+                }
+                $membership = TenantUser::where('tenant_id', $tenant->id)->where('user_id', $request->user()->id)->first();
+                $record->fill(['user_id' => $request->user()->id, 'empresa_id' => $membership?->empresa_id,
+                    'atividades' => $validated['atividades'] ?? $record->atividades,
+                    'clima' => $validated['clima'] ?? $record->clima,
+                    'comentario' => $validated['comentario'] ?? (array_key_exists('comentario', $validated) ? null : $record->comentario),
+                    'resumo_fiscalizacao' => isset($validated['atividades']) ? collect($validated['atividades'])->map(fn ($item) => $item['titulo']."\n".$item['ocorrencia'])->push(!empty($validated['comentario']) ? "Comentário\n".$validated['comentario'] : null)->filter()->implode("\n\n") : $validated['resumo_fiscalizacao'], 'servicos_atestados' => $validated['servicos_atestados'] ?? null,
+                    'ocorrencias' => $validated['ocorrencias'] ?? null, 'orientacoes' => $validated['orientacoes'] ?? null,
+                    'evidencias' => collect($order)->map(fn ($key) => $evidence->get($key))->values()->all(), 'status' => $validated['status'], 'submitted_at' => $validated['status'] === 'concluido' ? now() : null])->save();
+            });
+        } catch (\Throwable $exception) {
+            foreach ($createdFiles as $path) Storage::disk('local')->delete($path);
+            throw $exception;
         }
+        return back()->with('success', $validated['status'] === 'concluido' ? 'Observações e evidências da frente registradas.' : 'Rascunho das observações da frente salvo.');
+    }
 
-        $record->fill([
-            'user_id' => $request->user()->id,
-            'empresa_id' => $membership?->empresa_id,
-            'resumo_fiscalizacao' => $validated['resumo_fiscalizacao'],
-            'servicos_atestados' => $validated['servicos_atestados'] ?? null,
-            'ocorrencias' => $validated['ocorrencias'] ?? null,
-            'orientacoes' => $validated['orientacoes'] ?? null,
-            'evidencias' => $evidence->values()->all(),
-            'status' => $validated['status'],
-            'submitted_at' => $validated['status'] === 'concluido' ? now() : null,
-        ])->save();
-
-        return back()->with('success', $validated['status'] === 'concluido'
-            ? 'Registro da fiscalização concluído com sucesso.'
-            : 'Rascunho da fiscalização salvo com sucesso.');
+    public function inspectionEvidence(Request $request, Tenant $tenant, RdoDiario $rdo, RdoFiscalizacaoRegistro $inspection, int $index)
+    {
+        abort_unless((int) $rdo->tenant_id === (int) $tenant->id && (int) $inspection->tenant_id === (int) $tenant->id && (int) $inspection->rdo_diario_id === (int) $rdo->id, 404);
+        abort_unless(DiarioObraPermissions::can($request->user(), $tenant, DiarioObraPermissions::VIEW, $rdo->contract), 403);
+        $file = $inspection->evidencias[$index] ?? null;
+        $disk = $file['disk'] ?? 'public';
+        abort_unless($file && in_array($disk, ['local', 'public'], true) && str_starts_with($file['path'] ?? '', "rdo/{$tenant->id}/{$rdo->id}/") && Storage::disk($disk)->exists($file['path']), 404);
+        $inline = !$request->boolean('download') && in_array($file['mime_type'] ?? '', ['image/jpeg', 'image/png', 'image/webp'], true);
+        $headers = ['Content-Type' => $file['mime_type'] ?? 'application/octet-stream', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
+        return $inline ? Storage::disk($disk)->response($file['path'], $file['name'], $headers, 'inline') : Storage::disk($disk)->download($file['path'], $file['name'], $headers);
     }
 
     public function storeDivergence(Request $request, Tenant $tenant, RdoDiario $rdo): RedirectResponse
@@ -1306,7 +1537,7 @@ class RdoController extends Controller
         int $versionNumber,
     ): void {
         $rdo->loadMissing(['configuracao.obras', 'secoes']);
-        $sections = $rdo->secoes
+        $sections = RdoWorkflow::sections($rdo, RdoWorkflow::fillParty($rdo))
             ->groupBy('obra_id')
             ->map(fn ($items, $obraId) => [
                 'obra_id' => (int) $obraId,
@@ -1325,9 +1556,12 @@ class RdoController extends Controller
             'trigger' => $statusBeforeSubmission === 'rascunho' ? 'initial_submission' : 'resubmission',
             'status' => $statusBeforeSubmission,
             'sections_snapshot' => [
+                'is_holiday' => $rdo->is_holiday,
                 'reference_date' => $rdo->reference_date?->format('Y-m-d'),
                 'obra_ids' => $rdo->configuracao?->obras->pluck('id')->map(fn ($id) => (int) $id)->all() ?? [],
                 'sections_by_obra' => $sections,
+                'workflow' => RdoWorkflow::definition($rdo),
+                'sections_by_party' => $rdo->secoes->groupBy('filling_party')->map(fn ($records) => $records->groupBy('obra_id')->map(fn ($items) => $items->mapWithKeys(fn ($section) => [$section->secao => $section->dados])))->all(),
             ],
             'submitted_at' => now(),
         ]);
@@ -1375,7 +1609,7 @@ class RdoController extends Controller
         }
     }
 
-    private function inspectionPayload(RdoDiario $rdo): array
+    private function inspectionPayload(Tenant $tenant, RdoDiario $rdo): array
     {
         return $rdo->fiscalizacaoRegistros
             ->sortByDesc('version_number')
@@ -1386,6 +1620,9 @@ class RdoController extends Controller
                 'version_number' => (int) $record->version_number,
                 'is_current_version' => (int) $record->version_number === max(1, (int) $rdo->current_version),
                 'summary' => $record->resumo_fiscalizacao,
+                'activities' => $record->atividades ?? [],
+                'weather' => $record->clima,
+                'comment' => $record->comentario,
                 'services_attested' => $record->servicos_atestados,
                 'occurrences' => $record->ocorrencias,
                 'guidance' => $record->orientacoes,
@@ -1394,9 +1631,9 @@ class RdoController extends Controller
                 'user' => $record->user?->only(['id', 'name', 'email']),
                 'company' => $record->empresa?->only(['id', 'nome', 'sigla']),
                 'submitted_at' => $record->submitted_at?->format('d/m/Y H:i'),
-                'evidence' => collect($record->evidencias ?? [])->map(fn (array $item) => [
-                    ...$item,
-                    'url' => ! empty($item['path']) ? Storage::disk('public')->url($item['path']) : null,
+                'evidence' => collect($record->evidencias ?? [])->map(fn (array $item, int $index) => [
+                    'name' => $item['name'], 'mime_type' => $item['mime_type'] ?? '', 'size' => $item['size'] ?? 0, 'comment' => $item['comment'] ?? '',
+                    'url' => route('tenant.diario-obra.rdo.inspection.evidence', [$tenant->slug, $rdo->id, $record->id, $index]),
                 ])->values()->all(),
             ])
             ->values()
@@ -1463,7 +1700,10 @@ class RdoController extends Controller
         Tenant $tenant,
         RdoDiario $rdo,
         int $obraId,
+        string $fillingParty,
     ): array {
+        $known = $rdo->secoes()->where('obra_id', $obraId)->where('filling_party', $fillingParty)->where('secao', 'fotos')->first()?->dados['arquivos'] ?? [];
+        $knownPaths = array_column($known, 'path');
         $photosByKey = [];
 
         foreach ($data['arquivos'] ?? [] as $photo) {
@@ -1471,6 +1711,7 @@ class RdoController extends Controller
                 continue;
             }
 
+            if (!in_array($photo['path'], $knownPaths, true)) throw ValidationException::withMessages(['fotos' => 'Uma imagem não pertence ao preenchimento desta parte.']);
             $photo['comment'] = $photo['comment'] ?? $photo['legenda'] ?? null;
             $photo['legenda'] = $photo['comment'];
             $photosByKey['existing:'.$photo['path']] = $photo;
@@ -1481,9 +1722,11 @@ class RdoController extends Controller
             $metadata = $newMetadata[$index] ?? [];
             $clientId = $metadata['client_id'] ?? "upload-{$index}";
             $comment = $metadata['comment'] ?? null;
+            $path = $upload->store("tenant-{$tenant->id}/rdo/{$rdo->id}/obra-{$obraId}/parte-{$fillingParty}/fotos", 'public');
+            if ($this->savingWorksBatch) $this->batchFiles[] = ['public', $path];
             $photosByKey['new:'.$clientId] = [
                 'nome' => $upload->getClientOriginalName(),
-                'path' => $upload->store("tenant-{$tenant->id}/rdo/{$rdo->id}/obra-{$obraId}/fotos", 'public'),
+                'path' => $path,
                 'comment' => $comment,
                 'legenda' => $comment,
             ];
@@ -1508,101 +1751,6 @@ class RdoController extends Controller
         unset($data['novas_fotos'], $data['ordem_fotos'], $data['legenda']);
 
         return $data;
-    }
-
-    private function publishedRdasForRdo(Tenant $tenant, RdoDiario $rdo)
-    {
-        return RdaApontamento::query()
-            ->with('obra:id,codigo,nome')
-            ->where('tenant_id', $tenant->id)
-            ->where('contract_id', $rdo->contract_id)
-            ->where('rdo_configuracao_id', $rdo->rdo_configuracao_id)
-            ->whereDate('reference_date', $rdo->reference_date)
-            ->where('status', 'publicado')
-            ->orderBy('obra_id')
-            ->get()
-            ->map(fn (RdaApontamento $rda) => [
-                'id' => $rda->id,
-                'code' => $rda->id ? 'RDA-'.$rda->id : 'RDA',
-                'obra_id' => $rda->obra_id,
-                'obra' => $rda->obra ? [
-                    'id' => $rda->obra->id,
-                    'codigo' => $rda->obra->codigo,
-                    'nome' => $rda->obra->nome,
-                ] : null,
-                'published_at' => $rda->published_at?->format('d/m/Y H:i'),
-                'activities_count' => count(data_get($rda->dados, 'atividades', [])),
-                'photos_count' => count(data_get($rda->dados, 'fotos.arquivos', [])),
-                'dados' => [
-                    'clima' => data_get($rda->dados, 'clima', []),
-                    'atividades' => data_get($rda->dados, 'atividades', []),
-                    'mao_obra' => data_get($rda->dados, 'mao_obra', []),
-                    'equipamentos' => data_get($rda->dados, 'equipamentos', []),
-                    'subcontratadas' => data_get($rda->dados, 'subcontratadas', []),
-                    'fotos' => data_get($rda->dados, 'fotos.arquivos', []),
-                ],
-                'import_url' => route('tenant.diario-obra.rdo.import-rda', [$tenant->slug, $rdo->id, $rda->id]),
-            ])
-            ->values();
-    }
-
-    private function sectionsFromRda(RdaApontamento $rda): array
-    {
-        $data = $rda->dados ?? [];
-
-        return [
-            'clima' => [
-                ...($data['clima'] ?? []),
-                'observacoes' => data_get($data, 'clima.observacoes', ''),
-            ],
-            'atividades' => [
-                'atividades' => collect($data['atividades'] ?? [])
-                    ->map(fn (array $activity) => [
-                        'titulo' => $activity['titulo'] ?? '',
-                        'ocorrencia' => $activity['ocorrencia'] ?? '',
-                    ])
-                    ->filter(fn (array $activity) => trim($activity['titulo'].$activity['ocorrencia']) !== '')
-                    ->values()
-                    ->all(),
-            ],
-            'mao_obra' => [
-                'efetivos' => collect($data['mao_obra'] ?? [])
-                    ->filter(fn (array $item) => ! empty($item['cadastro_id']))
-                    ->mapWithKeys(fn (array $item) => [(string) $item['cadastro_id'] => $item['quantidade'] ?? 0])
-                    ->all(),
-                'subcontratadas' => collect($data['subcontratadas'] ?? [])
-                    ->filter(fn (array $item) => ! empty($item['cadastro_id']))
-                    ->mapWithKeys(fn (array $item) => [(string) $item['cadastro_id'] => $item['quantidade'] ?? 0])
-                    ->all(),
-                'observacoes' => '',
-            ],
-            'equipamentos' => [
-                'registros' => collect($data['equipamentos'] ?? [])
-                    ->filter(fn (array $item) => ! empty($item['cadastro_id']))
-                    ->mapWithKeys(fn (array $item) => [
-                        (string) $item['cadastro_id'] => [
-                            'quantidade' => $item['quantidade'] ?? 0,
-                            'situacao' => 'operando',
-                        ],
-                    ])
-                    ->all(),
-                'observacoes' => '',
-            ],
-            'fotos' => [
-                'arquivos' => collect(data_get($data, 'fotos.arquivos', []))
-                    ->map(fn (array $photo, int $index) => [
-                        ...$photo,
-                        'comment' => $photo['comment'] ?? $photo['legenda'] ?? null,
-                        'legenda' => $photo['comment'] ?? $photo['legenda'] ?? null,
-                        'position' => $index + 1,
-                        'origem' => 'rda',
-                        'rda_id' => $rda->id,
-                    ])
-                    ->values()
-                    ->all(),
-                'ordem_fotos' => [],
-            ],
-        ];
     }
 
     private function contracts(Tenant $tenant, ?User $user = null, string $permission = DiarioObraPermissions::VIEW)
@@ -1632,9 +1780,6 @@ class RdoController extends Controller
     private function rdoCompletionPercent(RdoDiario $rdo): int
     {
         $requiredSections = ['clima', 'mao_obra', 'equipamentos', 'atividades', 'comentarios'];
-        if ($rdo->configuracao?->require_photos) {
-            $requiredSections[] = 'fotos';
-        }
 
         $obras = $rdo->configuracao?->obras ?? collect([$rdo->obra])->filter();
         $obraIds = $obras->pluck('id')->map(fn ($id) => (int) $id)->all();
@@ -1643,18 +1788,20 @@ class RdoController extends Controller
         }
 
         $filled = $rdo->secoes
-            ->filter(fn (RdoSecaoRegistro $section) => in_array((int) $section->obra_id, $obraIds, true) && in_array($section->secao, $requiredSections, true))
-            ->map(fn (RdoSecaoRegistro $section) => $section->obra_id.'-'.$section->secao)
+            ->filter(fn (RdoSecaoRegistro $section) => in_array((int) $section->obra_id, $obraIds, true) && in_array($section->filling_party ?? 'construtora', RdoWorkflow::fillParties($rdo), true) && in_array($section->secao, $requiredSections, true))
+            ->map(fn (RdoSecaoRegistro $section) => ($section->filling_party ?? 'construtora').'-'.$section->obra_id.'-'.$section->secao)
             ->unique()
             ->count();
 
-        $expected = count($obraIds) * count($requiredSections);
+        $expected = count($obraIds) * count($requiredSections) * count(RdoWorkflow::fillParties($rdo));
 
         return $expected > 0 ? min(100, (int) round(($filled / $expected) * 100)) : 0;
     }
 
-    private function rdoPayload(Tenant $tenant, RdoDiario $rdo, ?User $user = null): array
+    private function rdoPayload(Tenant $tenant, RdoDiario $rdo, ?User $user = null, ?string $fillingParty = null): array
     {
+        $rdo->loadMissing(['analises' => fn ($query) => $query->where('decisao', 'approve_with_reservations')->select(['id', 'rdo_diario_id', 'obra_id', 'decisao', 'detalhes'])]);
+        $reservationCount = $rdo->analises->filter(fn ($analysis) => $analysis->decisao === 'approve_with_reservations' && ((int) $rdo->current_version === 0 || (int) data_get($analysis->detalhes, 'rdo_version') === (int) $rdo->current_version))->pluck('obra_id')->unique()->count();
         $missingSubmissionObraIds = $this->missingSubmissionObraIds($rdo);
         $submissionReady = empty($missingSubmissionObraIds);
         $signatureStatus = $this->calendarSignatureStatus($rdo);
@@ -1665,16 +1812,17 @@ class RdoController extends Controller
             'code' => $rdo->code,
             'reference_date' => $rdo->reference_date?->format('Y-m-d'),
             'reference_date_formatted' => $rdo->reference_date?->format('d/m/Y'),
+            'is_holiday' => $rdo->is_holiday,
             'status' => $rdo->status,
             'current_version' => (int) $rdo->current_version,
-            'status_label' => match ($rdo->status) {
-                'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
-                'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
-                'devolvido_construtora' => 'Devolvido à construtora',
-                'pendente_comprovacao' => 'Pendente de comprovação',
-                'arquivado' => 'Aprovado e arquivado',
-                default => 'Rascunho',
-            },
+            'workflow' => RdoWorkflow::definition($rdo),
+            'fill_party' => $fillingParty ?? RdoWorkflow::fillParty($rdo),
+            'activity_subjects' => \App\Support\RdoPdfTemplates::activitySubjects($rdo),
+            'fill_parties' => RdoWorkflow::fillParties($rdo),
+            'participating_parties' => RdoWorkflow::parties($rdo),
+            'status_label' => RdoWorkflow::statusLabel($rdo),
+            'has_reservations' => $reservationCount > 0,
+            'reservation_obra_count' => $reservationCount,
             'generated_automatically' => $rdo->generated_automatically,
             'copied_from_rdo_id' => $rdo->copied_from_rdo_id,
             'submission_ready' => $submissionReady,
@@ -1872,13 +2020,7 @@ class RdoController extends Controller
             };
         }
 
-        return match ($rdo->status) {
-            'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
-            'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
-            'devolvido_construtora' => 'Devolvido à construtora',
-            'pendente_comprovacao' => 'Pendente de comprovação',
-            default => 'Rascunho',
-        };
+        return RdoWorkflow::statusLabel($rdo);
     }
 
     private function calendarActionLabel(RdoDiario $rdo, bool $submissionReady): string
@@ -1887,13 +2029,14 @@ class RdoController extends Controller
             'rascunho' => $submissionReady ? 'Enviar análise' : 'Preencher',
             'devolvido_construtora', 'pendente_comprovacao' => 'Corrigir',
             'em_analise_gerenciadora' => 'Fiscalizar',
+            'em_analise_construtora' => 'Analisar',
             'em_aprovacao_cliente' => 'Manifestar',
             'arquivado' => 'Visualizar',
             default => 'Visualizar',
         };
     }
 
-    private function flowCapabilities(Tenant $tenant, RdoDiario $rdo, ?User $user): array
+    public function flowCapabilities(Tenant $tenant, RdoDiario $rdo, ?User $user, ?string $party = null): array
     {
         if (! $user) {
             return [
@@ -1920,7 +2063,13 @@ class RdoController extends Controller
         $canFill = DiarioObraPermissions::can($user, $tenant, DiarioObraPermissions::FILL_RDO, $rdo->contract);
         $canReview = DiarioObraPermissions::can($user, $tenant, DiarioObraPermissions::REVIEW_RDO, $rdo->contract);
         $allObraIds = $rdo->configuracao?->obras->pluck('id')->map(fn ($id) => (int) $id)->all() ?? [];
-        $stage = $this->stageForUserAndStatus($tenant, $rdo, $user, $isAdmin, $membership);
+        $fillParties = RdoWorkflow::fillParties($rdo);
+        $requestedParty = $party ?? request()->input('filling_party');
+        if ($requestedParty !== null && (!is_string($requestedParty) || !in_array($requestedParty, $fillParties, true))) abort(422, 'Parte de preenchimento inválida para este RDO.');
+        $availableParties = array_values(array_filter($fillParties, fn ($party) => $this->responsibleObraIds($tenant, $rdo, $user, $party, $isAdmin, $membership)));
+        $fillingParty = $requestedParty ?? ($availableParties[0] ?? $fillParties[0]);
+        $isFilling = in_array($rdo->status, RdoWorkflow::FILL_STATUSES, true);
+        $stage = $isFilling ? $fillingParty : RdoWorkflow::activeParty($rdo);
         $assignedObraIds = $stage
             ? $this->responsibleObraIds($tenant, $rdo, $user, $stage, $isAdmin, $membership)
             : [];
@@ -1929,39 +2078,52 @@ class RdoController extends Controller
             : [];
         $editableObraIds = in_array($rdo->status, ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'], true)
             && $canFill
-            ? $this->responsibleObraIds($tenant, $rdo, $user, 'construtora', $isAdmin, $membership)
+            ? $this->responsibleObraIds($tenant, $rdo, $user, $fillingParty, $isAdmin, $membership)
             : [];
         $editableStatuses = ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'];
         $actions = [];
 
-        if ($stage === 'construtora' && in_array($rdo->status, $editableStatuses, true)) {
-            $pendingObraIds = empty($this->missingSubmissionObraIds($rdo))
+        $managerForwardReady = false;
+        if ($stage === 'gerenciadora' && !$isFilling) {
+            $allPending = $this->pendingObraIds($rdo, $stage, $allObraIds);
+            $completed = RdoFiscalizacaoRegistro::query()->where('rdo_diario_id', $rdo->id)
+                ->where('version_number', max(1, (int) $rdo->current_version))->where('status', 'concluido')
+                ->pluck('obra_id')->map(fn ($id) => (int) $id)->all();
+            $managerForwardReady = $canReview && !empty($allPending) && !array_diff($allPending, $pendingObraIds) && !array_diff($allPending, $completed);
+        }
+
+        if ($isFilling && in_array($rdo->status, $editableStatuses, true)) {
+            $pendingObraIds = $assignedObraIds && empty($this->missingSubmissionObraIds($rdo))
                 ? $allObraIds
                 : [];
         }
 
-        if ($canFill && $stage === 'construtora' && $pendingObraIds && in_array($rdo->status, $editableStatuses, true)) {
+        if ($canFill && $isFilling && $pendingObraIds && in_array($rdo->status, $editableStatuses, true)) {
             $actions['submit'] = [
-                'label' => $rdo->status === 'pendente_comprovacao' ? 'Enviar comprovação das frentes' : 'Enviar frentes para análise',
+                'label' => $rdo->status === 'pendente_comprovacao' ? 'Enviar comprovação das frentes' : (RdoWorkflow::reviews($rdo) ? 'Enviar frentes para análise' : 'Concluir RDO'),
                 'tone' => 'primary',
                 'comment_required' => false,
             ];
         }
-        if ($canReview && in_array($stage, ['gerenciadora', 'cliente'], true) && $pendingObraIds) {
-            $actions += $this->reviewActions();
+        if ($canReview && $stage !== null && !$isFilling && $pendingObraIds) {
+            $actions += $stage === 'cliente' && RdoWorkflow::clientCommentOnly($rdo)
+                ? ['approve' => ['label' => 'Enviar comentário', 'tone' => 'primary', 'comment_required' => true]]
+                : $this->reviewActions();
         }
 
         return [
             'can_edit' => ! empty($editableObraIds),
             'editable_obra_ids' => array_values(array_intersect($allObraIds, $editableObraIds)),
             'flow_obra_ids' => array_values($pendingObraIds),
+            'manager_forward_ready' => $managerForwardReady,
+            'filling_party' => $fillingParty,
             'active_stage' => $stage,
             'actions' => $actions,
-            'can_manage_inspection' => $canReview && $stage === 'gerenciadora' && ! empty($pendingObraIds),
-            'can_create_divergence' => $canReview && $stage === 'gerenciadora' && ! empty($pendingObraIds),
-            'can_respond_divergence' => $canFill && $stage === 'construtora' && in_array($rdo->status, ['devolvido_construtora', 'pendente_comprovacao'], true),
+            'can_manage_inspection' => $canReview && $stage === 'gerenciadora' && RdoWorkflow::isReview($rdo->status) && ! empty($pendingObraIds),
+            'can_create_divergence' => !RdoWorkflow::clientCommentOnly($rdo) && $canReview && $stage === 'gerenciadora' && RdoWorkflow::fillParty($rdo) === 'construtora' && ((RdoWorkflow::definition($rdo)['model'] ?? null) === 'gerenciadora_construtora' || (in_array('cliente', RdoWorkflow::reviews($rdo), true) && array_search('gerenciadora', RdoWorkflow::reviews($rdo), true) < array_search('cliente', RdoWorkflow::reviews($rdo), true))) && ! empty($pendingObraIds),
+            'can_respond_divergence' => $canFill && $isFilling && in_array($rdo->status, ['devolvido_construtora', 'pendente_comprovacao'], true),
             'can_conclude_divergence' => $canReview && $stage === 'gerenciadora',
-            'can_decide_divergence' => $canReview && $stage === 'cliente',
+            'can_decide_divergence' => !RdoWorkflow::clientCommentOnly($rdo) && $canReview && $stage === 'cliente',
         ];
     }
 
@@ -1972,22 +2134,6 @@ class RdoController extends Controller
             'approve_with_reservations' => ['label' => 'Aprovar com ressalvas', 'tone' => 'warning', 'comment_required' => true],
             'return' => ['label' => 'Rejeitar e devolver', 'tone' => 'danger', 'comment_required' => true],
         ];
-    }
-
-    private function stageForUserAndStatus(
-        Tenant $tenant,
-        RdoDiario $rdo,
-        User $user,
-        bool $isAdmin,
-        ?TenantUser $membership,
-    ): ?string
-    {
-        return match ($rdo->status) {
-            'rascunho', 'devolvido_construtora', 'pendente_comprovacao' => 'construtora',
-            'em_analise_gerenciadora' => 'gerenciadora',
-            'em_aprovacao_cliente' => 'cliente',
-            default => null,
-        };
     }
 
     private function responsibleObraIds(
@@ -2047,7 +2193,7 @@ class RdoController extends Controller
         $query = RdoAnalise::query()
             ->with(['user:id,name'])
             ->where('rdo_diario_id', $rdo->id)
-            ->whereIn('etapa', ['gerenciadora', 'cliente'])
+            ->whereIn('etapa', RdoWorkflow::reviews($rdo))
             ->latest('created_at');
         $comments = $this->analysesForCurrentVersion($rdo, $query)
             ->groupBy('etapa')
@@ -2058,7 +2204,7 @@ class RdoController extends Controller
                     (int) $analysis->obra_id => [
                         'comment' => $analysis->comentario,
                         'user' => $analysis->user?->name,
-                        'decision' => $this->decisionLabel($analysis->decisao),
+                        'decision' => $this->decisionLabel($analysis->decisao, $analysis->etapa === 'cliente' && RdoWorkflow::clientCommentOnly($rdo)),
                         'created_at' => $analysis->created_at?->format('d/m/Y H:i'),
                     ],
                 ])
@@ -2066,6 +2212,7 @@ class RdoController extends Controller
             ->all();
 
         return [
+            'construtora' => $comments['construtora'] ?? [],
             'gerenciadora' => $comments['gerenciadora'] ?? [],
             'cliente' => $comments['cliente'] ?? [],
         ];
@@ -2073,7 +2220,7 @@ class RdoController extends Controller
 
     private function decidedObraIds(RdoDiario $rdo, string $stage): array
     {
-        $decisions = $stage === 'construtora'
+        $decisions = in_array($rdo->status, RdoWorkflow::FILL_STATUSES, true)
             ? ['submit']
             : ['approve', 'approve_with_reservations'];
 
@@ -2082,6 +2229,13 @@ class RdoController extends Controller
             ->where('etapa', $stage)
             ->whereIn('decisao', $decisions)
             ->whereNotNull('obra_id');
+
+        // Returning to supervision starts a new review round without deleting earlier decisions.
+        if (in_array($stage, ['gerenciadora', 'cliente'], true)) {
+            $reset = RdoAnalise::where('rdo_diario_id', $rdo->id)->where('etapa', 'cliente')->where('decisao', 'return')->get()
+                ->filter(fn ($row) => (int) data_get($row->detalhes, 'rdo_version') === (int) $rdo->current_version && data_get($row->detalhes, 'return_to') === 'gerenciadora')->max('id');
+            if ($reset) $query->where('id', '>', $reset);
+        }
 
         return $this->analysesForCurrentVersion($rdo, $query)
             ->pluck('obra_id')
@@ -2114,87 +2268,66 @@ class RdoController extends Controller
         return $query->where('created_at', '>=', $this->stageStartedAt($rdo))->get();
     }
 
+    private function lockCurrentDiary(RdoDiario $rdo, bool $filling = false): void
+    {
+        $current = RdoDiario::where('tenant_id', $rdo->tenant_id)->whereKey($rdo->id)->lockForUpdate()->firstOrFail();
+        if ($current->status !== $rdo->status || (int) $current->current_version !== (int) $rdo->current_version
+            || ($filling && !in_array($current->status, RdoWorkflow::FILL_STATUSES, true))) {
+            throw ValidationException::withMessages(['action' => 'O RDO foi atualizado. Recarregue a página antes de continuar.']);
+        }
+    }
+
+    private function completeSoloRdo(Tenant $tenant, RdoDiario $rdo, User $user): void
+    {
+        if (!RdoWorkflow::savesWithoutApproval($rdo) || !in_array($rdo->status, RdoWorkflow::FILL_STATUSES, true)) return;
+        $rdo->unsetRelation('secoes')->load('secoes');
+        if ($this->missingSubmissionObraIds($rdo)) return;
+        $this->ensureReadyForSubmission($rdo, $rdo->configuracao->obras->pluck('id')->all());
+        $oldStatus = $rdo->status;
+        $version = (int) $rdo->current_version + 1;
+        $rdo->update(['current_version' => $version]);
+        $this->createSubmissionSnapshot($tenant, $rdo, $user, $oldStatus, $version);
+        foreach ($rdo->configuracao->obras as $obra) {
+            RdoAnalise::create(['tenant_id' => $tenant->id, 'rdo_diario_id' => $rdo->id, 'obra_id' => $obra->id, 'user_id' => $user->id,
+                'etapa' => 'gerenciadora', 'decisao' => 'save', 'comentario' => 'RDO salvo sem aprovação.',
+                'detalhes' => ['rdo_version' => $version], 'status_anterior' => $oldStatus, 'status_novo' => 'arquivado']);
+        }
+        $rdo->update(['status' => 'arquivado', 'submitted_at' => now(), 'approved_at' => now()]);
+    }
+
     private function requiredSubmissionSections(): array
     {
-        return ['clima', 'mao_obra', 'equipamentos', 'atividades', 'fotos', 'comentarios'];
+        return ['clima', 'mao_obra', 'equipamentos', 'atividades', 'comentarios'];
     }
 
     private function missingSubmissionObraIds(RdoDiario $rdo): array
     {
         $rdo->loadMissing(['configuracao.obras', 'secoes']);
-        $requiredSections = $this->requiredSubmissionSections();
+        return $rdo->configuracao?->obras->pluck('id')->map(fn ($id) => (int) $id)
+            ->filter(function ($obraId) use ($rdo) {
+                foreach (RdoWorkflow::fillParties($rdo) as $party) if (!$this->partySubmissionReady($rdo, $obraId, $party)) return true;
+                return false;
+            })->values()->all() ?? [];
+    }
 
-        return $rdo->configuracao?->obras
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(function (int $obraId) use ($rdo, $requiredSections): bool {
-                $filled = $rdo->secoes->where('obra_id', $obraId)->pluck('secao')->all();
-                if (array_diff($requiredSections, $filled)) {
-                    return true;
-                }
-
-                if ($rdo->configuracao?->require_photos) {
-                    $photos = $rdo->secoes->first(fn ($section) => (int) $section->obra_id === $obraId && $section->secao === 'fotos');
-
-                    return empty($photos?->dados['arquivos']);
-                }
-
-                return ! $this->constructorGeneralCommentFilled($rdo, $obraId);
-            })
-            ->values()
-            ->all() ?? [];
+    private function partySubmissionReady(RdoDiario $rdo, int $obraId, string $party): bool
+    {
+        $sections = RdoWorkflow::sections($rdo, $party)->where('obra_id', $obraId);
+        if (array_diff($this->requiredSubmissionSections(), $sections->pluck('secao')->all())) return false;
+        return trim((string) data_get($sections->firstWhere('secao', 'comentarios')?->dados, $party, '')) !== '';
     }
 
     private function ensureReadyForSubmission(RdoDiario $rdo, array $obraIds, bool $asValidation = false): void
     {
         $this->ensureSubmissionDeadline($rdo, $asValidation);
-
-        $requiredSections = $this->requiredSubmissionSections();
-
         foreach ($obraIds as $obraId) {
-            $filled = $rdo->secoes->where('obra_id', $obraId)->pluck('secao')->all();
-            if (array_diff($requiredSections, $filled)) {
-                if (! $asValidation) {
-                    abort(422, 'Preencha todas as seções das frentes selecionadas antes de enviar.');
-                }
-
-                throw ValidationException::withMessages([
-                    'action' => 'Preencha todas as seções das frentes selecionadas antes de enviar.',
-                ]);
-            }
-            abort_if(array_diff($requiredSections, $filled), 422, 'Preencha todas as seções das frentes sob sua responsabilidade antes de enviar.');
-
-            if ($rdo->configuracao?->require_photos) {
-                $photos = $rdo->secoes->first(fn ($section) => (int) $section->obra_id === $obraId && $section->secao === 'fotos');
-                if (empty($photos?->dados['arquivos'])) {
-                    if (! $asValidation) {
-                        abort(422, 'Inclua ao menos uma foto em cada frente selecionada antes de enviar.');
-                    }
-
-                    throw ValidationException::withMessages([
-                        'action' => 'Inclua ao menos uma foto em cada frente selecionada antes de enviar.',
-                    ]);
-                }
-                abort_if(empty($photos?->dados['arquivos']), 422, 'Inclua ao menos uma foto em cada obra antes de enviar.');
-            }
-
-            if (! $this->constructorGeneralCommentFilled($rdo, $obraId)) {
-                if (! $asValidation) {
-                    abort(422, 'Preencha o comentário geral da construtora nas frentes selecionadas antes de enviar.');
-                }
-
-                throw ValidationException::withMessages([
-                    'action' => 'Preencha o comentário geral da construtora nas frentes selecionadas antes de enviar.',
-                ]);
+            foreach (RdoWorkflow::fillParties($rdo) as $party) {
+                if ($this->partySubmissionReady($rdo, $obraId, $party)) continue;
+                $message = 'Conclua as etapas de preenchimento de '.RdoWorkflow::PARTIES[$party].' em todas as frentes, incluindo o comentário geral. Fotos são opcionais.';
+                if ($asValidation) throw ValidationException::withMessages(['action' => $message]);
+                abort(422, $message);
             }
         }
-    }
-
-    private function constructorGeneralCommentFilled(RdoDiario $rdo, int $obraId): bool
-    {
-        $comments = $rdo->secoes->first(fn ($section) => (int) $section->obra_id === $obraId && $section->secao === 'comentarios');
-
-        return trim((string) data_get($comments?->dados, 'construtora', '')) !== '';
     }
 
     private function ensureSubmissionDeadline(RdoDiario $rdo, bool $asValidation = false): void
@@ -2270,7 +2403,7 @@ class RdoController extends Controller
             return;
         }
 
-        $message = 'O prazo para preenchimento deste RDO expirou. Use o botão Reabrir RDO no calendário para liberar o RDO e o RDA.';
+        $message = 'O prazo para preenchimento deste RDO expirou. Use o botão Reabrir RDO no calendário para liberar o RDO.';
 
         if (! $asValidation) {
             abort(422, $message);
@@ -2318,74 +2451,47 @@ class RdoController extends Controller
 
     private function resolveStatusAfterDecisions(RdoDiario $rdo, string $stage, string $action): array
     {
+        $fillingLabels = implode(' e ', array_map(fn ($party) => RdoWorkflow::PARTIES[$party], RdoWorkflow::fillParties($rdo)));
         if ($action === 'return') {
-            return ['devolvido_construtora', 'RDO devolvido à construtora para ajustes em uma ou mais frentes.'];
+            return ['devolvido_construtora', 'RDO devolvido para ajustes nos preenchimentos de '.$fillingLabels.'.'];
         }
-
         $allObraIds = $rdo->configuracao->obras->pluck('id')->map(fn ($id) => (int) $id)->all();
-        $decidedObraIds = $this->decidedObraIds($rdo, $stage);
-        if (array_diff($allObraIds, $decidedObraIds)) {
-            return [$rdo->status, 'Decisão registrada. O RDO aguarda as demais frentes desta etapa.'];
+        if (array_diff($allObraIds, $this->decidedObraIds($rdo, $stage))) {
+            return [$rdo->status, ($stage === 'cliente' && RdoWorkflow::clientCommentOnly($rdo) ? 'Comentário registrado.' : 'Decisão registrada.').' O RDO aguarda as demais frentes desta etapa.'];
         }
-
-        if ($stage === 'construtora') {
-            return ['em_analise_gerenciadora', $rdo->status === 'pendente_comprovacao'
-                ? 'Comprovações enviadas para nova verificação da gerenciadora.'
-                : 'Todas as frentes foram enviadas para análise da gerenciadora.'];
+        $reviews = RdoWorkflow::reviews($rdo);
+        $nextIndex = $action === 'submit' ? 0 : array_search($stage, $reviews, true) + 1;
+        if (isset($reviews[$nextIndex])) {
+            $next = $reviews[$nextIndex];
+            return [RdoWorkflow::REVIEW_STATUSES[$next], ($next === 'cliente' && RdoWorkflow::clientCommentOnly($rdo) ? 'RDO encaminhado para comentário: ' : 'RDO encaminhado para análise: ').RdoWorkflow::PARTIES[$next].'.'];
         }
-
-        if ($stage === 'gerenciadora') {
-            return ['em_aprovacao_cliente', 'A gerenciadora concluiu a fiscalização e encaminhou o RDO para manifestação do cliente.'];
-        }
-
-        $reservationQuery = RdoAnalise::query()
-            ->where('rdo_diario_id', $rdo->id)
-            ->whereIn('etapa', ['gerenciadora', 'cliente'])
-            ->where('decisao', 'approve_with_reservations');
+        $reservationQuery = RdoAnalise::query()->where('rdo_diario_id', $rdo->id)
+            ->whereIn('etapa', $reviews)->where('decisao', 'approve_with_reservations');
         $hasReservations = $this->analysesForCurrentVersion($rdo, $reservationQuery)->isNotEmpty();
-
         return $hasReservations
-            ? ['pendente_comprovacao', 'O cliente aceitou o RDO com ressalvas; a construtora deve atender as obrigações e enviar comprovações.']
-            : ['arquivado', 'O cliente concluiu a manifestação e o RDO foi aprovado e arquivado.'];
+            ? ['pendente_comprovacao', 'RDO com ressalvas. As partes responsáveis pelo preenchimento devem atender as obrigações e enviar comprovações.']
+            : ['arquivado', 'Etapas configuradas concluídas. O RDO foi concluído e arquivado.'];
     }
 
     private function notifyFlowRecipients(Tenant $tenant, RdoDiario $rdo, User $actor, string $newStatus, string $message): void
     {
-        $stage = match ($newStatus) {
-            'em_analise_gerenciadora' => 'gerenciadora',
-            'em_aprovacao_cliente' => 'cliente',
-            'devolvido_construtora', 'pendente_comprovacao' => 'construtora',
-            default => null,
-        };
-        $users = $stage
-            ? User::query()
-                ->whereHas('rdoResponsabilidades', fn ($query) => $query
-                    ->where('rdo_responsaveis.tenant_id', $tenant->id)
-                    ->where('rdo_responsaveis.modulo', 'rdo')
-                    ->where('rdo_responsaveis.contract_id', $rdo->contract_id)
-                    ->where('rdo_responsaveis.etapa', $stage)
-                    ->where('rdo_responsaveis.status', 'active'))
-                ->get()
-            : collect();
-
-        if ($users->isEmpty()) {
-            $companyIds = match ($newStatus) {
-                'em_analise_gerenciadora' => [$rdo->contract?->fiscalizadora_empresa_id],
-                'em_aprovacao_cliente' => [$rdo->contract?->cliente_empresa_id],
-                'devolvido_construtora', 'pendente_comprovacao' => [$rdo->contract?->construtora_empresa_id],
-                'arquivado' => [$rdo->contract?->construtora_empresa_id, $rdo->contract?->fiscalizadora_empresa_id],
-                default => [],
-            };
-            $users = User::query()
-                ->whereHas('tenantMemberships', fn ($query) => $query
-                    ->where('tenant_id', $tenant->id)
-                    ->where('status', 'active')
-                    ->whereIn('empresa_id', array_filter($companyIds)))
-                ->get();
-        }
-
-        $users->where('id', '!=', $actor->id)
-            ->each(fn (User $user) => $user->notify(new RdoFlowChangedNotification($rdo, $tenant, $actor, $message)));
+        $parties = RdoWorkflow::parties($rdo);
+        $rdo->loadMissing(['contract', 'configuracao.obras']);
+        $obraIds = $rdo->configuracao->obras->pluck('id')->all();
+        $companyIds = array_filter(array_intersect_key([
+            'construtora' => $rdo->contract?->construtora_empresa_id,
+            'gerenciadora' => $rdo->contract?->fiscalizadora_empresa_id,
+            'cliente' => $rdo->contract?->cliente_empresa_id,
+        ], array_flip($parties)));
+        $users = User::query()->whereHas('tenantMemberships', fn ($query) => $query->where('tenant_id', $tenant->id)->where('status', 'active'))
+            ->where(function ($query) use ($tenant, $rdo, $parties, $obraIds, $companyIds, $actor) {
+                $query->where('id', $actor->id)
+                    ->orWhereHas('rdoResponsabilidades', fn ($roles) => $roles->where('tenant_id', $tenant->id)->where('contract_id', $rdo->contract_id)
+                        ->where('modulo', 'rdo')->where('status', 'active')->whereIn('etapa', $parties)
+                        ->where(fn ($front) => $front->whereNull('obra_id')->orWhereIn('obra_id', $obraIds)))
+                    ->orWhereHas('tenantMemberships', fn ($members) => $members->where('tenant_id', $tenant->id)->where('status', 'active')->whereIn('empresa_id', $companyIds));
+            })->get();
+        foreach ($users->unique('id') as $user) $user->notify(new RdoFlowChangedNotification($rdo, $tenant, $actor, $message));
     }
 
     private function companyLogoDataUri(?object $empresa): ?string
@@ -2444,26 +2550,14 @@ class RdoController extends Controller
         };
     }
 
-    private function decisionLabel(string $decision): string
+    private function decisionLabel(string $decision, bool $commentOnly = false): string
     {
         return match ($decision) {
-            'approve' => 'Aprovado',
+            'approve' => $commentOnly ? 'Comentário registrado' : 'Aprovado',
+            'save' => 'Salvo sem aprovação',
             'approve_with_reservations' => 'Aprovado com ressalvas',
             'return' => 'Devolvido',
             default => 'Enviado para análise',
-        };
-    }
-
-    private function statusLabel(?string $status): string
-    {
-        return match ($status) {
-            'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
-            'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
-            'devolvido_construtora' => 'Devolvido à construtora',
-            'pendente_comprovacao' => 'Pendente de comprovação',
-            'arquivado' => 'Arquivado',
-            'rascunho' => 'Rascunho',
-            default => $status ?: '-',
         };
     }
 

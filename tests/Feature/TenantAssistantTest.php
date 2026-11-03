@@ -253,9 +253,9 @@ class TenantAssistantTest extends TestCase
         ]);
 
         $cases = [
-            ['Como abrir e conduzir uma RNC?', 'Fluxo de Qualidade / RNC', ['Nova RNC', 'Notificar', 'evidências']],
+            ['Como abrir e conduzir uma RNC?', 'Fluxo de Qualidade / RNC', ['Abra a RNC', 'Comunique os envolvidos', 'Solicite as assinaturas']],
             ['Como fazer um orcamento usando SINAPI e SICRO?', 'Fluxo de Orçamentos', ['SINAPI', 'SICRO', 'Novo orçamento']],
-            ['Explique o passo a passo do RDA e do RDO offline.', 'Fluxo de Diário de Obra', ['RDA', 'offline', 'assinatura digital']],
+            ['Explique o passo a passo do RDA e do RDO offline.', 'Fluxo de Diário de Obra', ['RDO', 'obras', 'signatários']],
             ['Como funciona a medicao simples e controlada?', 'Fluxo de Medição', ['Controlada', 'Simples', 'Folha de Rosto']],
             ['Como funciona uma revisao de projeto?', 'Fluxo de Projetos', ['Submeter projeto', 'Em revisão', 'Lista Mestra']],
             ['Como configurar a triagem de documentos?', 'Fluxo de Documentação', ['Anexos', 'Triagem', 'Lixeira']],

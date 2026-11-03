@@ -243,16 +243,19 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc, signatureDat
 
                 {latestEvidence && signatureData && <SignaturePanel tenant={tenant} rnc={rnc} data={signatureData} />}
 
-                <DetailSection title="Fluxo da RNC">
-                    <ol className="divide-y divide-slate-100 px-5">
-                        {flowRows.map((row) => <li key={row.etapa} className="space-y-2 py-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <strong className="text-sm">{row.etapa}</strong>
-                                <span className={`sig-pill ${statusPillClass(row.status)}`}>{row.status}</span>
-                            </div>
-                            <p className="text-xs text-[var(--ink-500)]">{row.responsavel} · {row.data}</p>
-                            <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm">{row.detalhe}</p>
-                        </li>)}
+                <DetailSection title="Fluxo da RNC" compact>
+                    <ol className="divide-y divide-slate-100 px-4 sm:px-5">
+                        {flowRows.map((row) => {
+                            const metadata = [row.responsavel, row.data].filter(value => value && value !== '-').join(' · ');
+                            return <li key={row.etapa} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto]">
+                                <div className="min-w-0">
+                                    <strong className="block text-sm leading-5">{row.etapa}</strong>
+                                    {metadata && <p className="mt-0.5 break-words text-xs leading-4 text-[var(--ink-500)]">{metadata}</p>}
+                                </div>
+                                <p className="col-span-2 whitespace-pre-wrap break-words text-xs leading-5 text-[var(--ink-500)] lg:col-span-1">{row.detalhe}</p>
+                                <span className={`sig-pill col-start-2 row-start-1 justify-self-end lg:col-start-3 ${statusPillClass(row.status)}`}>{row.status}</span>
+                            </li>;
+                        })}
                     </ol>
                 </DetailSection>
             </div>
@@ -260,9 +263,9 @@ export default function RelatorioNaoConformidadeShow({ tenant, rnc, signatureDat
     );
 }
 
-function DetailSection({ title, icon: Icon, count, children }) {
+function DetailSection({ title, icon: Icon, count, children, compact = false }) {
     return <section className="sig-card min-w-0" aria-label={title}>
-        <h2 className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-5 py-4 text-lg font-semibold">{Icon && <Icon size={18} />}{title}{count != null && <span className="sig-pill">{count}</span>}</h2>
+        <h2 className={`flex flex-wrap items-center gap-2 border-b border-slate-200 px-5 font-semibold ${compact ? 'py-3 text-base' : 'py-4 text-lg'}`}>{Icon && <Icon size={18} />}{title}{count != null && <span className="sig-pill">{count}</span>}</h2>
         {children}
     </section>;
 }

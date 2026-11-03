@@ -1,0 +1,142 @@
+{
+  "description": "GERENCIAMENTO E CONSULTORIA TÉCNICA DE CONTROLE DE OBRAS DE ENGENHARIA RELACIONADOS AOS SERVIÇOS DE ALARGAMENTO DAS RAMPAS DO TERMINAL DELEGADO DE FERRY-BOAT DA PONTA DA ESPERA COM DUPLICAÇÃO DE PASSARELAS, LOCALIZADO EM SÃO LUÍS – MA.",
+  "work_label": "GERENCIAMENTO E FISCALIZAÇÃO, ASSISTÊNCIA TÉCNICA",
+  "activity_heading": "ACOMPANHAMENTO DO ALARGAMENTO DAS RAMPAS E DUPLICAÇÃO DAS PASSARELAS",
+  "team_summary": "1 COORDENADOR, 1 ENGENHEIRO CIVIL, 1 TÉCNICO PLANEJAMENTO, 1 TÉCNICO ADMINISTRATIVO, 1 TÉCNICO MEIO AMBIENTE, 1 TÉCNICO SEGURANÇA, 1 TOPÓGRAFO E 1 AUXILIARES DE TOPOGRAFIA",
+  "catalogs": {
+    "mao_obra": {
+      "101": {
+        "descricao": "COORDENADOR",
+        "tipo": "indireta"
+      },
+      "102": {
+        "descricao": "TECNICO MEIO AMBIENTE",
+        "tipo": "indireta"
+      },
+      "103": {
+        "descricao": "AUX. TOPOGRAFIA",
+        "tipo": "indireta"
+      },
+      "104": {
+        "descricao": "ENGENHEIRO CIVIL",
+        "tipo": "indireta"
+      },
+      "105": {
+        "descricao": "TECNICO SEGURANÇA",
+        "tipo": "indireta"
+      },
+      "106": {
+        "descricao": "AUXILIAR. ADM",
+        "tipo": "indireta"
+      },
+      "107": {
+        "descricao": "TECNICO DE PLANEJAMENTO",
+        "tipo": "indireta"
+      },
+      "108": {
+        "descricao": "TOPOGRAFO",
+        "tipo": "indireta"
+      },
+      "109": {
+        "descricao": "MOTORISTA",
+        "tipo": "indireta"
+      }
+    },
+    "equipamentos": {
+      "201": {
+        "descricao": "Veiculo 4 x 4"
+      },
+      "202": {
+        "descricao": "Mini Van"
+      },
+      "203": {
+        "descricao": "Container"
+      }
+    },
+    "subcontratadas": {}
+  },
+  "sections": {
+    "clima": {
+      "manha": "ensolarado",
+      "tarde": "ensolarado",
+      "noite": "nao_aplicavel",
+      "precipitacao_manha_mm": 0,
+      "precipitacao_tarde_mm": 0
+    },
+    "mao_obra": {
+      "efetivos": {
+        "101": 1,
+        "102": 1,
+        "103": 1,
+        "104": 1,
+        "105": 1,
+        "106": 1,
+        "107": 2,
+        "108": 1,
+        "109": 1
+      }
+    },
+    "equipamentos": {
+      "registros": {
+        "201": {
+          "quantidade": 1,
+          "situacao": "operando"
+        },
+        "202": {
+          "quantidade": 1,
+          "situacao": "operando"
+        },
+        "203": {
+          "quantidade": 3,
+          "situacao": "operando"
+        }
+      }
+    },
+    "atividades": {
+      "atividades": [
+        {
+          "titulo": "Engenharia",
+          "ocorrencia": "Foi realizado o acompanhamento das atividades: contemplando a continuidade da confecção das formas das armaduras dos blocos das estacas da Passarela Sul. Também foi verificado o içamento da peça pré-moldada e sua fixação com cálcio, bem como o travamento da viga pré-moldada na base da estaca. Durante a verificação, constatou-se que o lado esquerdo da viga permaneceu fora do eixo de travamento da estaca, devendo ser avaliada e corrigida a condição antes da continuidade dos serviços. Na Passarela Norte, foram realizadas as preparações das formas para concretagem da boca da gárgula, sendo observado que o guindaste provocou o amassamento de parte da armadura da estrutura.",
+          "assunto": "engenharia"
+        },
+        {
+          "titulo": "Segurança do trabalho",
+          "ocorrencia": "Inspeção de segurança nas atividades: condições de segurança durante as atividades de içamento e posicionamento das peças pré- moldadas, com atenção ao isolamento da área de movimentação da carga, circulação dos trabalhadores e operação do guindaste. Também foram observadas as condições de segurança nas áreas de montagem das formas e armaduras, devendo ser mantido o controle de acesso durante as atividades com equipamentos de movimentação de cargas.",
+          "assunto": "seguranca_trabalho"
+        },
+        {
+          "titulo": "Meio ambiente",
+          "ocorrencia": "Inspeção ambiental nas atividades: condições ambientais das frentes de serviço, com atenção à organização e limpeza das áreas durante as atividades de montagem de formas, armaduras e movimentação das peças pré-moldadas. Também foram observadas as condições de acondicionamento dos resíduos e materiais provenientes das atividades, mantendo as frentes organizadas e sem acúmulo de materiais descartados.",
+          "assunto": "meio_ambiente"
+        }
+      ]
+    },
+    "fotos": {
+      "arquivos": [
+        {
+          "path": "__rdo_preview__/registro",
+          "comment": "",
+          "position": 1
+        },
+        {
+          "path": "__rdo_preview__/registro",
+          "comment": "",
+          "position": 2
+        },
+        {
+          "path": "__rdo_preview__/registro",
+          "comment": "",
+          "position": 3
+        },
+        {
+          "path": "__rdo_preview__/registro",
+          "comment": "",
+          "position": 4
+        }
+      ]
+    },
+    "comentarios": {
+      "gerenciadora": ""
+    }
+  }
+}

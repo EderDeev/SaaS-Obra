@@ -1,3 +1,11 @@
+@php
+    $accent = $documentConfiguration['color'];
+    $titleColor = $documentConfiguration['title_color'] ?? $accent;
+    $customColors = isset($documentConfiguration['title_color']);
+    $rgb = array_map('hexdec', str_split(ltrim($accent, '#'), 2));
+    $tint = fn ($amount) => sprintf('#%02x%02x%02x', ...array_map(fn ($channel) => (int) round($channel + (255 - $channel) * $amount), $rgb));
+    $onAccent = ($rgb[0] * .2126 + $rgb[1] * .7152 + $rgb[2] * .0722) > 155 ? '#0f172a' : '#ffffff';
+@endphp
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -11,9 +19,9 @@
             font-size: 8px;
             line-height: 1.18;
         }
-        table { border-collapse: collapse; table-layout: fixed; width: 100%; }
-        th, td { border: .75px solid #111; padding: 2.5px 3px; vertical-align: top; }
-        th { background: #d9d9d9; font-weight: 700; text-align: center; text-transform: uppercase; }
+        table { border-collapse: collapse; table-layout: fixed; width: 100%; font-family: DejaVu Sans, sans-serif; font-size: 7px; line-height: 1.25; }
+        th, td { border: .55px solid {{ $customColors ? $tint(.65) : '#cbd5e1' }}; padding: 3px 4px; vertical-align: top; font-family: DejaVu Sans, sans-serif; }
+        th { background: {{ $customColors ? $tint(.93) : '#f3f5f7' }}; color: #334155; font-weight: 700; text-align: center; text-transform: uppercase; }
         .page { page-break-after: always; }
         .page:last-child { page-break-after: auto; }
         .footer {
@@ -27,8 +35,17 @@
         }
         .footer:after { content: "P\00E1gina " counter(page); }
         .header td { vertical-align: middle; }
+        .report-masthead { padding: 12px 10px; }
+        .masthead-layout, .masthead-layout td { border: 0; }
+        .report-logos { width: 46%; vertical-align: middle; }
+        .report-logos img { max-width: 125px; max-height: 54px; margin-right: 4px; vertical-align: middle; }
+        .report-heading { text-align: right; vertical-align: middle; }
+        .report-title { font-family: DejaVu Sans, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.3; color: {{ $titleColor }}; }
+        .report-meta { margin-top: 6px; font-family: DejaVu Sans, sans-serif; font-size: 8px; color: #64748b; }
+        .report-party { margin-top: 4px; font-family: DejaVu Sans, sans-serif; font-size: 7px; color: #64748b; }
+
         .logo-cell { height: 52px; text-align: center; width: 24%; }
-        .logo-cell img { max-height: 42px; max-width: 145px; }
+        .logo-cell img { max-height: 50px; max-width: 160px; }
         .logo-fallback {
             border: .8px dashed #98a2b3;
             color: #344054;
@@ -42,8 +59,8 @@
             text-transform: uppercase;
         }
         .document-title {
-            color: #0b5fff;
-            font-size: 13px;
+            color: {{ $titleColor }};
+            font-size: 12px;
             font-weight: 800;
             letter-spacing: .03em;
             text-align: center;
@@ -56,8 +73,8 @@
             text-align: center;
         }
         .system-mark {
-            border-top: 2px solid #0b5fff;
-            color: #0b5fff;
+            border-top: 2px solid {{ $accent }};
+            color: {{ $accent }};
             display: inline-block;
             font-size: 7px;
             font-weight: 800;
@@ -65,22 +82,45 @@
             padding-top: 2px;
             text-transform: uppercase;
         }
-        .section { margin-top: 5px; }
+        .section { margin-top: 6px; }
+        .daily-summary { border: 0; }
+        .daily-summary > tbody > tr > td { border: 0; padding: 0; }
+        .daily-summary td.summary-left { width: 55%; padding-right: 6px; }
+        .daily-summary td.summary-right { width: 45%; }
+        .deadline-table th, .climate-table th { font-size: 6.1px; line-height: 1.3; vertical-align: middle; }
+        .deadline-table td, .climate-table td { vertical-align: middle; padding: 4px 3px; }
+        .deadline-number { color: #0f172a; font-size: 8px; font-weight: 700; text-align: center; }
+        .summary-highlight { background: {{ $tint(.91) }}; color: {{ $accent }}; font-weight: 700; }
+        .climate-table .climate-heading { background: {{ $accent }}; color: {{ $onAccent }}; }
+        .climate-table .weather-mark { color: {{ $accent }}; font-size: 8px; font-weight: 700; text-align: center; }
+        .contract-milestones td { font-size: 8.5px; font-weight: 700; color: #0f172a; text-align: center; background: #f8fafc; }
+        .contract-milestones th { font-size: 6.8px; }
+        .contract-progress th { font-size: 7px; color: {{ $accent }}; background: {{ $tint(.91) }}; }
+        .contract-progress td { font-size: 10px; font-weight: 700; color: {{ $accent }}; background: {{ $tint(.91) }}; text-align: center; }
+        .flow-signoff { page-break-inside: avoid; margin-top: 18px; }
+        .signoff-title { font-size: 11px; color: {{ $titleColor }}; margin: 0 0 4px; }
+        .final-signatures { width: 100%; margin-top: 8px; }
+        .final-signatures td { border: 0; padding: 0 8px; text-align: center; vertical-align: top; }
+        .signature-slot { height: 60px; }
+        .signer-label { border-top: .6px solid #64748b; padding-top: 7px; font-size: 8px; line-height: 1.4; }
+        .summary-note { color: #64748b; font-size: 6.3px; line-height: 1.35; }
+
         .bar {
-            background: #c7d7f8;
-            color: #07111f;
+            background: {{ $tint(.88) }};
+            color: {{ $customColors ? $titleColor : '#07111f' }};
             font-weight: 800;
             text-align: center;
             text-transform: uppercase;
         }
         .bar-dark {
-            background: #475467;
-            color: #fff;
+            background: {{ $customColors ? $accent : '#475467' }};
+            color: {{ $customColors ? $onAccent : '#fff' }};
             font-weight: 800;
             text-align: center;
             text-transform: uppercase;
         }
         .label {
+            color: #64748b;
             display: block;
             font-size: 6.4px;
             font-weight: 800;
@@ -96,17 +136,17 @@
         .center { text-align: center; }
         .right { text-align: right; }
         .strong { font-weight: 800; }
-        .blue { color: #0b5fff; font-weight: 800; }
+        .blue { color: {{ $accent }}; font-weight: 800; }
         .green { color: #008000; font-weight: 800; }
         .small { font-size: 6.8px; }
         .tiny { font-size: 6.2px; }
         .day-active {
-            background: #0b5fff;
+            background: {{ $accent }};
             color: #fff;
             font-weight: 800;
         }
         .vertical {
-            background: #d0d5dd;
+            background: {{ $tint(.92) }};
             font-size: 7px;
             font-weight: 800;
             text-align: center;
@@ -118,8 +158,8 @@
             display: block;
             line-height: 1.05;
         }
-        .blank-row td { height: 16px; }
-        .activity td { height: 20px; }
+        .blank-row td { height: 13px; }
+        .activity td { height: 17px; }
         .comment-box { height: 42px; }
         .signature td {
             border-top: 0;
@@ -134,8 +174,7 @@
             padding-top: 4px;
         }
         .photo-title {
-            color: #0b5fff;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 800;
             text-align: center;
             text-transform: uppercase;
@@ -179,14 +218,15 @@
             return '<img src="'.$logo.'" alt="Logo">';
         }
 
-        return '<span class="logo-fallback">'.e($empresaCurta($empresa, $fallback)).'</span>';
+        return '';
     };
     $statusLabel = fn ($value) => match ($value) {
+        'em_analise_construtora' => 'Em análise pela construtora',
         'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
         'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
         'devolvido_construtora' => 'Devolvido',
         'pendente_comprovacao' => 'Pendente de comprovação',
-        'arquivado' => 'Arquivado',
+        'arquivado' => \App\Support\RdoWorkflow::savesWithoutApproval($rdo) ? 'Salvo' : 'Arquivado',
         default => 'Rascunho',
     };
     $weather = fn ($value) => match ($value) {
@@ -198,6 +238,7 @@
     };
     $weatherMark = fn ($value, $expected) => in_array($expected, is_array($value) ? $value : ($value ? [$value] : []), true) ? 'X' : '';
     $decisionText = fn ($value) => match ($value) {
+        'save' => 'Salvo sem aprovação',
         'approve' => 'Aprovado',
         'approve_with_reservations' => 'Aprovado com ressalvas',
         'return' => 'Devolvido',
@@ -253,6 +294,10 @@
     $rowsFixed = 10;
 @endphp
 
+@foreach ($fillingParties as $fillingParty)
+    @php
+        $sectionOf = fn ($obraId, $key) => data_get($sectionsByParty, "{$fillingParty}.{$obraId}.{$key}", []);
+    @endphp
 @foreach ($obras as $obra)
     @php
         $clima = $sectionOf($obra->id, 'clima');
@@ -306,16 +351,7 @@
 
     <section class="page">
         <table class="header">
-            <tr>
-                <td class="logo-cell">{!! $logoBox('cliente', $contract->clienteEmpresa, 'Logo do cliente') !!}</td>
-                <td class="logo-cell">{!! $logoBox('gerenciadora', $contract->gerenciadoraEmpresa, $tenant->name ?: 'Gerenciadora') !!}</td>
-                <td colspan="2">
-                    <div class="document-title">Relatório Diário de Obra</div>
-                    <div class="document-subtitle">{{ $tenant->name }} · {{ $rdo->code }} · {{ $statusLabel($rdo->status) }}</div>
-                    <div class="center"><span class="system-mark">SigWorks</span></div>
-                </td>
-                <td class="logo-cell">{!! $logoBox('construtora', $contract->construtoraEmpresa, 'Logo da empresa') !!}</td>
-            </tr>
+            @include('pdf.rdo-heading-row', ['heading' => $documentConfiguration['title'], 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate).' · '.$statusLabel($rdo->status), 'fillingLabel' => count($fillingParties) > 1 || $fillingParty !== 'construtora' ? 'Preenchimento: '.\App\Support\RdoWorkflow::PARTIES[$fillingParty] : ''])
             <tr>
                 <td colspan="4">
                     <span class="label">Nome do projeto</span>
@@ -327,79 +363,43 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2"><span class="label">Empresa</span><span class="value">{{ $empresaNome($contract->construtoraEmpresa, $contract->contractor_company_name ?: '-') }}</span></td>
+                <td colspan="2"><span class="label">Empresa</span><span class="value">{{ $documentConfiguration['company_name'] ?: $empresaNome($fillingParty === 'gerenciadora' ? $contract->gerenciadoraEmpresa : $contract->construtoraEmpresa, $fillingParty === 'construtora' ? ($contract->contractor_company_name ?: '-') : 'Gerenciadora') }}</span></td>
                 <td colspan="3"><span class="label">Serviço / Frente</span><span class="value">{{ $obra->codigo }} - {{ $obra->nome }}</span></td>
             </tr>
             <tr>
                 <td><span class="label">Contrato nº</span><span class="value">{{ $contract->code ?: '-' }}</span></td>
                 <td><span class="label">Data OS</span><span class="value">{{ $fmtDate($contractStart) }}</span></td>
                 <td><span class="label">Responsável técnico</span><span class="value">{{ $rdo->responsible?->name ?: '-' }}</span></td>
-                <td><span class="label">RDO nº</span><span class="value">{{ $rdo->code }}</span></td>
-                <td><span class="label">Prazo de envio</span><span class="value">{{ $fmtDate($submissionDueDate) }} · {{ $submissionDueDate ? data_get($weekdays, $submissionDueDate->dayOfWeek, '-') : '-' }}</span></td>
+                <td colspan="2"><span class="label">RDO nº</span><span class="value">{{ $rdo->code }}</span></td>
             </tr>
         </table>
 
+        @php
+            $fullWeekdays = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+            $periods = ['manha' => 'Manhã', 'tarde' => 'Tarde', 'noite' => 'Noite'];
+            $dailyRain = collect(array_keys($periods))->sum(fn ($period) => is_numeric(data_get($clima, 'precipitacao_'.$period.'_mm')) ? (float) data_get($clima, 'precipitacao_'.$period.'_mm') : 0);
+            $hasRain = collect(array_keys($periods))->contains(fn ($period) => is_numeric(data_get($clima, 'precipitacao_'.$period.'_mm')));
+        @endphp
         <div class="section">
-            <table>
-                <tr>
-                    <th colspan="3">Data</th>
-                    <th colspan="5">Condições do tempo</th>
-                    <th colspan="4">Prazos</th>
-                </tr>
-                <tr>
-                    <td colspan="3" rowspan="2" class="center">
-                        <div class="strong" style="font-size: 12px;">{{ $fmtDate($referenceDate) }}</div>
-                        <div class="small muted">Dia da semana</div>
-                        <table style="margin-top: 3px;">
-                            <tr>
-                                @foreach ($weekdays as $idx => $label)
-                                    <td class="center {{ $referenceWeekday === $idx ? 'day-active' : '' }}">{{ $label }}</td>
-                                @endforeach
-                            </tr>
-                        </table>
-                    </td>
-                    <th>Condição</th>
-                    <th>Manhã</th>
-                    <th>Tarde</th>
-                    <th>Noite</th>
-                    <th>Observações</th>
-                    <th>Total</th>
-                    <th>Decorridos</th>
-                    <th>% Decorrido</th>
-                    <th>Restantes</th>
-                </tr>
-                <tr>
-                    <td>
-                        <div>Sol</div>
-                        <div>Nublado</div>
-                        <div>Chuva</div>
-                        <div>Pluviosidade (mm)</div>
-                    </td>
-                    <td class="center">
-                        <div>{{ $weatherMark(data_get($clima, 'manha'), 'ensolarado') }}</div>
-                        <div>{{ $weatherMark(data_get($clima, 'manha'), 'nublado') }}</div>
-                        <div>{{ $weatherMark(data_get($clima, 'manha'), 'chuvoso') }}</div>
-                        <div>{{ $fmtQty(data_get($clima, 'precipitacao_manha_mm')) }}</div>
-                    </td>
-                    <td class="center">
-                        <div>{{ $weatherMark(data_get($clima, 'tarde'), 'ensolarado') }}</div>
-                        <div>{{ $weatherMark(data_get($clima, 'tarde'), 'nublado') }}</div>
-                        <div>{{ $weatherMark(data_get($clima, 'tarde'), 'chuvoso') }}</div>
-                        <div>{{ $fmtQty(data_get($clima, 'precipitacao_tarde_mm')) }}</div>
-                    </td>
-                    <td class="center">
-                        <div>{{ $weatherMark(data_get($clima, 'noite'), 'ensolarado') }}</div>
-                        <div>{{ $weatherMark(data_get($clima, 'noite'), 'nublado') }}</div>
-                        <div>{{ $weatherMark(data_get($clima, 'noite'), 'chuvoso') }}</div>
-                        <div>{{ $fmtQty(data_get($clima, 'precipitacao_noite_mm')) }}</div>
-                    </td>
-                    <td>{{ data_get($clima, 'observacoes') ?: '-' }}</td>
-                    <td class="center">{{ $totalDays ?? '-' }}</td>
-                    <td class="center">{{ $elapsedDays ?? '-' }}</td>
-                    <td class="center">{{ $elapsedPercent !== null ? $fmtQty($elapsedPercent).'%' : '-' }}</td>
-                    <td class="center">{{ $remainingDays ?? '-' }}<br><span class="tiny">Impraticável: {{ $impraticavel }}</span></td>
-                </tr>
-            </table>
+            <table class="daily-summary"><tr>
+                <td class="summary-left">
+                    <table class="deadline-table">
+                        <tr><th>Prazo contratual</th><td class="deadline-number">{{ $totalDays !== null ? (int) $totalDays.' dias' : '—' }}</td><th>Tempo decorrido</th><td class="deadline-number">{{ $elapsedDays !== null ? (int) $elapsedDays.' dias' : '—' }}</td><th>Saldo de prazo</th><td class="deadline-number">{{ $remainingDays !== null ? (int) $remainingDays.' dias' : '—' }}</td></tr>
+                        <tr><th>Data do RDO</th><td colspan="2" class="center strong">{{ $fmtDate($referenceDate) }}</td><td colspan="3" class="center summary-highlight">{{ $fullWeekdays[$referenceWeekday] }}</td></tr>
+                        <tr><th>Responsável</th><td colspan="5" class="strong">{{ $rdo->responsible?->name ?: '—' }}</td></tr>
+                        <tr class="contract-milestones"><th>Início</th><td colspan="2">{{ $fmtDate($contractStart) }}</td><th>Término previsto</th><td colspan="2">{{ $fmtDate($contractEnd) }}</td></tr>
+                        <tr class="contract-progress"><th colspan="2">Prazo decorrido</th><td colspan="4">{{ $elapsedPercent !== null ? $fmtQty($elapsedPercent, 1).'%' : '—' }}</td></tr>
+                    </table>
+                </td>
+                <td class="summary-right">
+                    <table class="climate-table">
+                        <tr><th class="climate-heading" style="width:24%">Condições climáticas</th><th style="width:15%">Bom</th><th style="width:15%">Estável</th><th style="width:17%">Chuvoso</th><th style="width:29%">Índice pluviométrico</th></tr>
+                        @foreach ($periods as $period => $label)<tr><th>{{ $label }}</th><td class="weather-mark">{{ $weatherMark(data_get($clima, $period), 'ensolarado') }}</td><td class="weather-mark">{{ $weatherMark(data_get($clima, $period), 'nublado') }}</td><td class="weather-mark">{{ $weatherMark(data_get($clima, $period), 'chuvoso') }}</td><td class="center strong">{{ is_numeric(data_get($clima, 'precipitacao_'.$period.'_mm')) ? $fmtQty(data_get($clima, 'precipitacao_'.$period.'_mm')).' mm' : '—' }}</td></tr>@endforeach
+                        <tr><td colspan="3" class="summary-note">{{ $impraticavel ? 'Dia impraticável' : 'Registro por período' }}</td><td colspan="2" class="center summary-highlight">Total: {{ $hasRain ? $fmtQty($dailyRain).' mm' : '—' }}</td></tr>
+                    </table>
+                </td>
+            </tr></table>
+            @if (filled(data_get($clima, 'observacoes')))<table style="margin-top:4px"><tr><td class="summary-note"><strong>Observações do clima:</strong> {{ data_get($clima, 'observacoes') }}</td></tr></table>@endif
         </div>
 
         <div class="section">
@@ -458,41 +458,27 @@
             </table>
         </div>
 
+        @if ($rdo->is_holiday !== null)<table style="margin-top:4px"><tr><td><span class="label">Feriado</span>{{ $rdo->is_holiday ? 'Sim' : 'Não' }}</td></tr></table>@endif
         <div class="section">
             <table>
-                <tr><td class="bar" colspan="3">Comentários gerais</td></tr>
-                <tr><th>Construtora</th><th>Gerenciadora / Fiscalização</th><th>Cliente</th></tr>
+                <tr><td class="bar" colspan="{{ count($signatureParties) }}">Comentários gerais</td></tr>
+                <tr>@foreach ($signatureParties as $party)<th>{{ $party === 'gerenciadora' ? 'Gerenciadora / Fiscalização' : \App\Support\RdoWorkflow::PARTIES[$party] }}</th>@endforeach</tr>
                 <tr>
-                    <td class="comment-box">{{ data_get($comentarios, 'construtora') ?: '-' }}</td>
-                    <td class="comment-box">{!! nl2br(e($joinComments(data_get($comentarios, 'gerenciadora'), $gerenciadoraFlowComments))) !!}</td>
-                    <td class="comment-box">{!! nl2br(e($joinComments(data_get($comentarios, 'cliente'), $clienteFlowComments))) !!}</td>
+                    @foreach ($signatureParties as $party)
+                    <td class="comment-box">{!! nl2br(e($joinComments(data_get($comentarios, $party), $party === 'gerenciadora' ? $gerenciadoraFlowComments : ($party === 'cliente' ? $clienteFlowComments : '')))) !!}</td>
+                    @endforeach
                 </tr>
             </table>
         </div>
 
-        <div class="section">
-            <table class="signature">
-                <tr>
-                    <td><span class="line">{{ $empresaCurta($contract->construtoraEmpresa, 'Construtora') }}<br>(CONTRATADA)</span></td>
-                    <td><span class="line">{{ $empresaCurta($contract->gerenciadoraEmpresa, 'Gerenciadora') }}<br>(GERENCIADORA / FISCALIZAÇÃO)</span></td>
-                    <td><span class="line">{{ $empresaCurta($contract->clienteEmpresa, 'Cliente') }}<br>(CONTRATANTE)</span></td>
-                </tr>
-            </table>
-        </div>
     </section>
 
-    @foreach ($photos->chunk(6) as $photoPage)
+    @php $photoPages = $rdo->configuracao?->require_photos ? ($photos->isEmpty() ? collect([collect()]) : $photos->chunk(6)) : collect(); @endphp
+    @foreach ($photoPages as $photoPage)
         <section class="page">
             <table class="header">
-                <tr>
-                    <td class="logo-cell">{!! $logoBox('cliente', $contract->clienteEmpresa, 'Logo do cliente') !!}</td>
-                    <td colspan="3">
-                        <div class="photo-title">Registro Fotográfico</div>
-                        <div class="document-subtitle">{{ $rdo->code }} · {{ $obra->codigo }} - {{ $obra->nome }} · {{ $fmtDate($referenceDate) }}</div>
-                    </td>
-                    <td class="logo-cell">{!! $logoBox('construtora', $contract->construtoraEmpresa, 'Logo da empresa') !!}</td>
-                </tr>
-                <tr>
+            @include('pdf.rdo-heading-row', ['heading' => 'Registro Fotográfico', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
+<tr>
                     <td colspan="4"><span class="label">Nome do projeto</span><span class="value">{{ $projectName }}</span></td>
                     <td><span class="label">Local</span><span class="value">{{ $local }}</span></td>
                 </tr>
@@ -500,6 +486,7 @@
 
             <div class="section">
                 <table>
+                    @if ($photoPage->isEmpty())<tr><td class="muted" style="padding:18px">Nenhuma fotografia registrada nesta frente.</td></tr>@endif
                     @foreach ($photoPage->chunk(2) as $row)
                         <tr>
                             @foreach ($row as $photo)
@@ -531,34 +518,62 @@
     @endforeach
 @endforeach
 
+@endforeach
+
 @if ($inspections->isNotEmpty())
     <section class="page">
         <table class="header">
-            <tr>
-                <td class="logo-cell">{!! $logoBox('cliente', $contract->clienteEmpresa, 'Logo do cliente') !!}</td>
-                <td colspan="3">
-                    <div class="document-title">Registro independente da fiscalização</div>
-                    <div class="document-subtitle">{{ $rdo->code }} · Atestações e constatações da gerenciadora</div>
-                </td>
-                <td class="logo-cell">{!! $logoBox('gerenciadora', $contract->gerenciadoraEmpresa, 'Logo da gerenciadora') !!}</td>
-            </tr>
-        </table>
+            @include('pdf.rdo-heading-row', ['heading' => 'Observações e evidências da gerenciadora', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
+</table>
         @foreach ($inspections as $inspection)
             <div class="section">
                 <table>
-                    <tr><td class="bar" colspan="4">Versão V{{ str_pad((string) $inspection->version_number, 2, '0', STR_PAD_LEFT) }} · {{ $inspection->obra ? "{$inspection->obra->codigo} - {$inspection->obra->nome}" : 'Frente de serviço' }}</td></tr>
+                    <tr><td class="bar" colspan="4">{{ $inspection->obra ? "{$inspection->obra->codigo} - {$inspection->obra->nome}" : 'Frente de serviço' }}</td></tr>
                     <tr>
-                        <td colspan="2"><span class="label">Fiscal responsável</span>{{ $inspection->user?->name ?: '-' }}</td>
-                        <td><span class="label">Situação</span>{{ $inspection->status === 'concluido' ? 'Concluído' : 'Rascunho' }}</td>
-                        <td><span class="label">Concluído em</span>{{ $fmtDateTime($inspection->submitted_at) }}</td>
+                        <td colspan="2"><span class="label">Registrado por</span>{{ $inspection->user?->name ?: '-' }}</td>
+                        <td colspan="2"><span class="label">Registrado em</span>{{ $fmtDateTime($inspection->submitted_at) }}</td>
                     </tr>
-                    <tr><td colspan="4"><span class="label">Resumo da fiscalização</span>{!! nl2br(e($inspection->resumo_fiscalizacao ?: '-')) !!}</td></tr>
-                    <tr>
-                        <td colspan="2"><span class="label">Serviços atestados</span>{!! nl2br(e($inspection->servicos_atestados ?: '-')) !!}</td>
-                        <td colspan="2"><span class="label">Ocorrências constatadas</span>{!! nl2br(e($inspection->ocorrencias ?: '-')) !!}</td>
-                    </tr>
-                    <tr><td colspan="3"><span class="label">Orientações</span>{!! nl2br(e($inspection->orientacoes ?: '-')) !!}</td><td><span class="label">Evidências</span>{{ count($inspection->evidencias ?? []) }} arquivo(s)</td></tr>
                 </table>
+                @if (!empty($inspection->clima))
+                    @php $inspectionWeather = $inspection->clima; @endphp
+                    <table style="margin-top:6px">
+                        <tr><td class="bar" colspan="5">Condições do tempo — Gerenciadora</td></tr>
+                        <tr><th>Período</th><th>Sol</th><th>Nublado</th><th>Chuva</th><th>Índice pluviométrico</th></tr>
+                        @foreach (['manha' => 'Manhã', 'tarde' => 'Tarde', 'noite' => 'Noite'] as $period => $label)
+                            <tr><th>{{ $label }}{{ data_get($inspectionWeather, $period) === 'nao_aplicavel' ? ' (N/A)' : '' }}</th><td class="weather-mark">{{ $weatherMark(data_get($inspectionWeather, $period), 'ensolarado') }}</td><td class="weather-mark">{{ $weatherMark(data_get($inspectionWeather, $period), 'nublado') }}</td><td class="weather-mark">{{ $weatherMark(data_get($inspectionWeather, $period), 'chuvoso') }}</td><td class="center strong">{{ is_numeric(data_get($inspectionWeather, 'precipitacao_'.$period.'_mm')) ? $fmtQty(data_get($inspectionWeather, 'precipitacao_'.$period.'_mm')).' mm' : '—' }}</td></tr>
+                        @endforeach
+                        @if (data_get($inspectionWeather, 'observacoes'))<tr><td colspan="5"><span class="label">Observações do clima</span>{!! nl2br(e(data_get($inspectionWeather, 'observacoes'))) !!}</td></tr>@endif
+                        <tr><td colspan="5"><span class="label">Dia impraticável</span>{{ data_get($inspectionWeather, 'dia_impraticavel') ? 'Sim' : 'Não' }}</td></tr>
+                    </table>
+                @endif
+                @php
+                    $inspectionActivities = collect($inspection->atividades ?? []);
+                    if ($inspection->atividades === null && filled($inspection->resumo_fiscalizacao)) {
+                        $inspectionActivities = collect([['titulo' => 'Registro da gerenciadora', 'ocorrencia' => $inspection->resumo_fiscalizacao]]);
+                    }
+                @endphp
+                <table style="margin-top:6px">
+                    <tr><td class="bar" colspan="2">Atividades da gerenciadora</td></tr>
+                    @forelse ($inspectionActivities as $activity)
+                        <tr><td colspan="2"><span class="label">{{ $activity['titulo'] ?? 'Atividade' }}</span>{!! nl2br(e($activity['ocorrencia'] ?? '')) !!}</td></tr>
+                    @empty
+                        <tr><td colspan="2" class="muted">Nenhuma atividade registrada.</td></tr>
+                    @endforelse
+                    <tr><td class="bar" colspan="2">Comentário da gerenciadora</td></tr>
+                    <tr><td colspan="2">{!! nl2br(e($inspection->comentario ?: 'Nenhum comentário registrado.')) !!}</td></tr>
+                </table>
+                @if (!empty($inspection->evidencias))
+                    <table style="margin-top:6px"><tr><td class="bar" colspan="2">Evidências da frente</td></tr>
+                    @foreach (collect($inspection->evidencias)->chunk(2) as $files)<tr>@foreach ($files as $file)<td style="width:50%; padding:8px; text-align:center">@php $image = $inspectionImage($file); @endphp
+                        @if ($image)<img src="{{ $image }}" style="max-width:245px; max-height:155px"><br>@endif
+                        @if (!$image)<span class="label">Documento anexado</span>@endif
+                        <span class="tiny">{{ $file['name'] ?? 'Evidência' }}</span>
+                        @if (!empty($file['comment']))<div class="photo-caption">{!! nl2br(e($file['comment'])) !!}</div>@endif
+                    </td>@endforeach @if ($files->count() === 1)<td></td>@endif</tr>@endforeach
+                    </table>
+                @else
+                    <table style="margin-top:6px"><tr><td class="bar">Evidências da frente</td></tr><tr><td class="muted" style="padding:12px">Nenhuma evidência anexada.</td></tr></table>
+                @endif
             </div>
         @endforeach
     </section>
@@ -567,52 +582,37 @@
 @if ($divergences->isNotEmpty())
     <section class="page">
         <table class="header">
-            <tr>
-                <td class="logo-cell">{!! $logoBox('cliente', $contract->clienteEmpresa, 'Logo do cliente') !!}</td>
-                <td colspan="3">
-                    <div class="document-title">Matriz de divergências</div>
-                    <div class="document-subtitle">{{ $rdo->code }} · Registros preservados por parte</div>
-                </td>
-                <td class="logo-cell">{!! $logoBox('construtora', $contract->construtoraEmpresa, 'Logo da construtora') !!}</td>
-            </tr>
-        </table>
+            @include('pdf.rdo-heading-row', ['heading' => 'Matriz de divergências', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
+</table>
         @foreach ($divergences as $item)
             <div class="section">
                 <table>
-                    <tr><td class="bar" colspan="4">{{ $item->titulo }} · {{ $item->topico }} · V{{ str_pad((string) $item->version_number, 2, '0', STR_PAD_LEFT) }}</td></tr>
+                    <tr><td class="bar" colspan="4">{{ $item->titulo }} · {{ $item->topico }}</td></tr>
                     <tr><td colspan="2"><span class="label">Relato da construtora</span>{!! nl2br(e($item->versao_construtora)) !!}</td><td colspan="2"><span class="label">Constatação da gerenciadora</span>{!! nl2br(e($item->versao_gerenciadora)) !!}</td></tr>
                     <tr><td colspan="4"><span class="label">Resposta da construtora</span>{!! nl2br(e($item->resposta_construtora ?: '-')) !!}</td></tr>
                     <tr><td colspan="4"><span class="label">Conclusão da gerenciadora</span>{!! nl2br(e($item->conclusao_gerenciadora ?: '-')) !!}</td></tr>
-                    <tr>
+                    @if (in_array('cliente', $signatureParties, true))<tr>
                         <td colspan="2"><span class="label">Decisão do cliente</span>{{ $item->decisao_cliente ? ucfirst(str_replace('_', ' ', $item->decisao_cliente)) : '-' }}</td>
                         <td colspan="2"><span class="label">Manifestação final</span>{!! nl2br(e($item->comentario_cliente ?: '-')) !!}</td>
-                    </tr>
+                    </tr>@endif
                 </table>
             </div>
         @endforeach
     </section>
 @endif
 
-@if ($analyses->isNotEmpty())
-    <section class="page">
+@if ($includeWorkflowAppendix ?? true)
+<section class="page">
         <table class="header">
-            <tr>
-                <td class="logo-cell">{!! $logoBox('cliente', $contract->clienteEmpresa, 'Logo do cliente') !!}</td>
-                <td colspan="3">
-                    <div class="document-title">Histórico de análise e aprovação</div>
-                    <div class="document-subtitle">{{ $rdo->code }} · {{ $fmtDate($referenceDate) }}</div>
-                </td>
-                <td class="logo-cell">{!! $logoBox('construtora', $contract->construtoraEmpresa, 'Logo da empresa') !!}</td>
-            </tr>
-        </table>
+            @include('pdf.rdo-heading-row', ['heading' => 'Histórico de análise e aprovação', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
+</table>
         @if ($versions->isNotEmpty())
             <div class="section">
                 <table>
-                    <tr><td class="bar" colspan="4">Versões apresentadas pela construtora</td></tr>
-                    <tr><th>Versão</th><th>Tipo</th><th>Responsável</th><th>Data do envio</th></tr>
+                    <tr><td class="bar" colspan="3">Histórico de envios</td></tr>
+                    <tr><th>Tipo</th><th>Responsável</th><th>Data do envio</th></tr>
                     @foreach ($versions as $version)
                         <tr>
-                            <td class="center strong">V{{ str_pad((string) $version->version_number, 2, '0', STR_PAD_LEFT) }}</td>
                             <td>{{ $version->trigger === 'initial_submission' ? 'Envio inicial' : 'Reenvio após ajustes' }}</td>
                             <td>{{ $version->createdBy?->name ?: '-' }}</td>
                             <td>{{ $fmtDateTime($version->submitted_at) }}</td>
@@ -621,6 +621,7 @@
                 </table>
             </div>
         @endif
+        @if ($analyses->count() > 1)
         <div class="section">
             <table>
                 <tr>
@@ -631,26 +632,23 @@
                     <th>Frente</th>
                     <th>Comentário</th>
                 </tr>
-                @foreach ($analyses as $analysis)
-                    <tr>
-                        <td>{{ $fmtDateTime($analysis->created_at) }}</td>
-                        <td>{{ match ($analysis->etapa) { 'gerenciadora' => 'Gerenciadora', 'cliente' => 'Cliente', default => 'Construtora' } }}</td>
-                        <td>{{ match ($analysis->decisao) { 'approve' => 'Aprovado', 'approve_with_reservations' => 'Aprovado com ressalvas', 'return' => 'Devolvido', default => 'Enviado para análise' } }}</td>
-                        <td>{{ $analysis->user?->name ?: '-' }}</td>
-                        <td>{{ $analysis->obra ? "{$analysis->obra->codigo} - {$analysis->obra->nome}" : '-' }}</td>
-                        <td>
-                            {{ $analysis->comentario ?: '-' }}
-                            @if (data_get($analysis->detalhes, 'reservation.obligation'))
-                                <br><strong>Ressalva:</strong> {{ data_get($analysis->detalhes, 'reservation.obligation') }}
-                                <br><strong>Responsável:</strong> {{ data_get($analysis->detalhes, 'reservation.responsible') ?: '-' }}
-                                <br><strong>Prazo:</strong> {{ data_get($analysis->detalhes, 'reservation.due_date') ?: '-' }}
-                            @endif
-                        </td>
-                    </tr>
+                @foreach ($analyses->slice(0, -1) as $analysis)
+                    @include('pdf.rdo-analysis-row', ['analysis' => $analysis])
                 @endforeach
             </table>
         </div>
-    </section>
+        @endif
+    <div class="flow-signoff">
+    @if ($analyses->isNotEmpty())<table><tr><th>Data</th><th>Etapa</th><th>Decisão</th><th>Responsável</th><th>Frente</th><th>Comentário</th></tr>@include('pdf.rdo-analysis-row', ['analysis' => $analyses->last()])</table>@endif
+    <h2 class="signoff-title">Assinaturas das partes</h2>
+    <p class="summary-note">As assinaturas abrangem os registros das frentes incluídas neste documento e suas evidências.</p>
+    <table id="rdo-final-signature-table" class="final-signatures"><tr>
+        @foreach ($signatureParties as $role)
+        <td style="width:{{ 100 / count($signatureParties) }}%"><div class="signature-slot"></div><div class="signer-label">{{ $empresaCurta($contract->{$role.'Empresa'}, \App\Support\RdoWorkflow::PARTIES[$role]) }}<br><span class="small">{{ \App\Support\RdoWorkflow::PARTIES[$role] }}</span></div></td>
+        @endforeach
+    </tr></table>
+    </div>
+</section>
 @endif
 </body>
 </html>

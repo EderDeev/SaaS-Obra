@@ -10,7 +10,6 @@ use App\Models\GedDocument;
 use App\Models\Orcamento;
 use App\Models\OrdemServico;
 use App\Models\ProjectDocument;
-use App\Models\RdaApontamento;
 use App\Models\RdoDiario;
 use App\Models\RelatorioNaoConformidade;
 use App\Models\Tenant;
@@ -329,15 +328,7 @@ class AssistantRetriever
             return $this->source('Diário de Obra', $rdo->code, route('tenant.diario-obra.rdo.show', [$tenant->slug, $rdo]), $content);
         });
 
-        $rdaQuery = RdaApontamento::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds)->with('contract:id,code,name');
-        $this->applySearch($rdaQuery, ['rda_apontamentos.status'], $terms);
-        $rdas = $rdaQuery->latest('reference_date')->limit(4)->get()->map(function (RdaApontamento $rda) use ($tenant): array {
-            $content = "RDA nº {$rda->id}\nContrato: {$rda->contract?->code} - {$rda->contract?->name}\nData: {$rda->reference_date?->format('d/m/Y')}\nStatus: {$rda->status}";
-
-            return $this->source('Diário de Obra', "RDA {$rda->reference_date?->format('d/m/Y')}", route('tenant.diario-obra.rda.show', [$tenant->slug, $rda]), $content);
-        });
-
-        return collect($rdos->all())->concat($rdas->all());
+        return $rdos;
     }
 
     /** @param Collection<int, int> $contractIds */

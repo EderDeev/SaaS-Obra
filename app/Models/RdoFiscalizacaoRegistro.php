@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'ocorrencias',
     'orientacoes',
     'evidencias',
+    'atividades',
+    'comentario',
+    'clima',
     'status',
     'submitted_at',
 ])]
@@ -29,6 +32,8 @@ class RdoFiscalizacaoRegistro extends Model
     {
         return [
             'evidencias' => 'array',
+            'atividades' => 'array',
+            'clima' => 'array',
             'submitted_at' => 'datetime',
         ];
     }

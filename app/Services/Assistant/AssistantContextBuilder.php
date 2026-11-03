@@ -11,7 +11,6 @@ use App\Models\Orcamento;
 use App\Models\OrdemServico;
 use App\Models\OsDnitOrder;
 use App\Models\ProjectDocument;
-use App\Models\RdaApontamento;
 use App\Models\RdoDiario;
 use App\Models\RelatorioNaoConformidade;
 use App\Models\Tenant;
@@ -166,7 +165,6 @@ class AssistantContextBuilder
 
         if ($contractIds->isNotEmpty()) {
             $lines[] = $this->summaryLine('RDOs', RdoDiario::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
-            $lines[] = $this->summaryLine('RDAs', RdaApontamento::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
             $lines[] = $this->summaryLine('Liberações de Serviço', OrdemServico::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
             $lines[] = $this->summaryLine('Boletins de medição', BoletimMedicao::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
             $lines[] = $this->summaryLine('Folhas de rosto', FolhaRosto::query()->where('tenant_id', $tenant->id)->whereIn('contract_id', $contractIds), 'status');
@@ -326,7 +324,7 @@ class AssistantContextBuilder
             'os_dnit' => $this->capability('OS DNIT', OsDnitPermissions::canAny($user, $tenant, OsDnitPermissions::VIEW),
                 $this->allowedLabels(OsDnitPermissions::labels(), fn ($permission) => OsDnitPermissions::canAny($user, $tenant, $permission))),
             'field' => $this->capability(
-                'Diário de Obra (RDO e RDA)',
+                'Diário de Obra (RDO)',
                 DiarioObraPermissions::canAny($user, $tenant, DiarioObraPermissions::VIEW),
                 $this->allowedLabels(DiarioObraPermissions::labels(), fn (string $permission): bool => DiarioObraPermissions::canAny($user, $tenant, $permission))
             ),
@@ -553,21 +551,18 @@ TEXT,
             ],
             'field' => [
                 'label' => 'Diário de Obra',
-                'aliases' => ['diário de obra', 'diario de obra', 'rdo', 'rda', 'assinatura digital', 'offline'],
+                'aliases' => ['diário de obra', 'diario de obra', 'rdo', 'assinatura digital', 'offline'],
                 'route' => 'tenant.diario-obra.rdo.calendar',
                 'enabled' => true,
-                'summary' => 'registra RDA de campo, consolida RDO, aprovações, assinatura digital e PDF diário.',
-                'workflow' => 'Fluxo: configure responsáveis, cadastros reutilizáveis e parâmetros do RDO. O RDA é o apontamento de apoio preenchido no campo, inclusive pelo aplicativo mobile offline. Os apontamentos são consolidados no RDO, que segue pelas etapas de conferência e aprovação, recebe assinaturas digitais e gera o documento final.',
+                'summary' => 'registra o RDO diretamente na web ou no aplicativo offline, com análises, comentários, assinatura digital e PDF diário.',
+                'workflow' => 'Configure as partes que preenchem e o fluxo por contrato. Construtora e gerenciadora preenchem seus próprios registros no RDO; o cliente registra um comentário. O preenchimento também pode ser feito offline no aplicativo e sincronizado diretamente no RDO. Depois seguem as etapas configuradas e as assinaturas.',
                 'tutorial' => <<<'TEXT'
-Tutorial de Diário de Obra, RDA e RDO:
-Pré-requisito: em Diário de Obra, parametrize o contrato, obras ou frentes, dias de geração, prazos, continuidade, geração automática e assinatura digital. Cadastre mão de obra, equipamentos e subcontratadas e defina os responsáveis.
-1. O RDA é o apontamento de campo que apoia o RDO oficial. O responsável registra clima, atividades, ocorrências, equipes, equipamentos e fotografias.
-2. No aplicativo mobile, o RDA pode ser preenchido offline. Quando a conexão voltar, sincronize os dados e publique o apontamento. Somente RDAs publicados ficam disponíveis para consolidação.
-3. No Calendário do RDO, escolha a data habilitada. Gere um RDO vazio ou copie o anterior, conforme a configuração do contrato.
-4. Abra o RDO e importe os RDAs publicados da mesma data e frente. Revise as seções, elimine duplicidades e complete as informações necessárias.
-5. Envie o RDO para análise. Gerenciadora e cliente registram aprovação, ressalva ou devolução com parecer, preservando o histórico.
-6. Após a aprovação, gere o PDF e envie para assinatura digital dos participantes configurados. O sistema acompanha as assinaturas e guarda o PDF final e a trilha de auditoria.
-7. Use o Dashboard do RDO para acompanhar geração, envio, aprovação, devoluções e preenchimento no período.
+Tutorial de Diário de Obra e RDO:
+1. Configure o contrato, as frentes, o calendário e as partes que preenchem o RDO.
+2. Construtora e gerenciadora registram clima, mão de obra, equipamentos, atividades, fotos e comentários separadamente, sem sobrescrever outra parte.
+3. No aplicativo, preencha o próprio RDO offline e sincronize quando houver conexão. Não há publicação ou importação de RDA.
+4. Envie o RDO quando todas as partes selecionadas concluírem os registros. Ele segue o fluxo parametrizado; o cliente registra somente um comentário.
+5. Envie para as assinaturas configuradas e acompanhe o PDF final e o dashboard.
 TEXT,
             ],
             'service_orders' => [

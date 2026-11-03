@@ -6,12 +6,14 @@ use App\Models\RdoDiario;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class RdoFlowChangedNotification extends Notification
+class RdoFlowChangedNotification extends Notification implements ShouldQueue
 {
     use Queueable;
+    public int $tries = 3;
 
     public function __construct(
         public RdoDiario $rdo,
@@ -19,6 +21,7 @@ class RdoFlowChangedNotification extends Notification
         public User $actor,
         public string $message,
     ) {
+        $this->afterCommit();
     }
 
     public function via(object $notifiable): array
@@ -60,14 +63,6 @@ class RdoFlowChangedNotification extends Notification
 
     private function statusLabel(): string
     {
-        return match ($this->rdo->status) {
-            'rascunho' => 'Rascunho',
-            'em_analise_gerenciadora' => 'Em análise pela gerenciadora',
-            'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
-            'devolvido_construtora' => 'Devolvido à construtora',
-            'pendente_comprovacao' => 'Pendente de comprovação',
-            'arquivado' => 'Aprovado e arquivado',
-            default => ucfirst(str_replace('_', ' ', (string) $this->rdo->status)),
-        };
+        return \App\Support\RdoWorkflow::statusLabel($this->rdo);
     }
 }

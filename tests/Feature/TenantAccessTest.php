@@ -324,10 +324,28 @@ class TenantAccessTest extends TestCase
             ->assertSee('Tenant\/Tutorials\/Index', false)
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Tenant/Tutorials/Index')
-                ->has('tutorials', 16)
+                ->has('tutorials', 18)
                 ->where('tutorials.6.id', 'atividades')
                 ->where('tutorials.12.id', 'documentacao')
-                ->where('tutorials.13.id', 'projetos'));
+                ->where('tutorials.13.id', 'projetos')
+                ->where('tutorials.16.id', 'os-dnit')
+                ->where('tutorials.16.route', 'tenant.os-dnit.orders.index')
+                ->where('tutorials.17.id', 'qualidade-ic')
+                ->where('tutorials.17.route', 'tenant.qualidade.ic.index'));
+    }
+
+    public function test_tutorials_describe_current_contract_rdo_rnc_and_ic_rules(): void
+    {
+        $guides = collect(\App\Support\TutorialCatalog::all())->keyBy('id');
+        $this->assertStringContainsString('opcional', $guides['contratos']['steps'][0][1]);
+        $this->assertStringContainsString('somente Gerenciadora', $guides['diario-obra']['steps'][0][1]);
+        $this->assertStringContainsString('RDO completo', $guides['diario-obra']['steps'][4][1]);
+        $this->assertStringContainsString('Fotos são opcionais', implode(' ', $guides['diario-obra']['tips']));
+        $this->assertStringContainsString('assinaturas', $guides['qualidade-rnc']['steps'][6][1]);
+        $this->assertStringContainsString('Não é obrigatório enviar ZIP e imagem juntos', $guides['qualidade-rnc']['steps'][4][1]);
+        $this->assertStringContainsString('supervisão', $guides['qualidade-ic']['steps'][2][1]);
+        $this->assertStringContainsString('não tem proposta', implode(' ', $guides['qualidade-ic']['tips']));
+        foreach ($guides as $guide) foreach ($guide['related'] as $id) $this->assertTrue($guides->has($id), 'Tutorial relacionado ausente: '.$id);
     }
 
     public function test_tenant_user_can_access_orcamentos_pages(): void

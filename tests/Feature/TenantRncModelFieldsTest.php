@@ -42,6 +42,29 @@ class TenantRncModelFieldsTest extends TestCase
             'fields_json' => json_encode($fields ?? RncModelFields::defaults($layout))];
     }
 
+    public function test_mobile_rnc_uses_contract_fields_subject_and_rejects_stale_or_foreign_data(): void
+    {
+        $this->saveSettings($this->settings('standard', [['key' => 'lote', 'label' => 'Lote', 'type' => 'select', 'required' => true, 'options' => ['Lote 01', 'Lote 02']]]));
+        $user = auth()->user();
+        \App\Models\MobileApiToken::create(['tenant_id' => $this->tenant->id, 'user_id' => $user->id, 'token_hash' => hash('sha256', 'rnc-new-model'), 'expires_at' => now()->addDay(), 'name' => 'SigWorks']);
+        $headers = ['Authorization' => 'Bearer rnc-new-model'];
+        $model = $this->getJson(route('api.mobile.bootstrap'), $headers)->assertOk()->json('document_models.'.$this->contract->id);
+        $this->assertSame('select', $model['field_definitions'][0]['type']);
+        $payload = [...$this->payload, 'local_uuid' => 'rnc-model-1', 'document_model_revision' => $model['revision'], 'model_field_values' => ['lote' => 'Lote 02']];
+        $this->postJson(route('api.mobile.rnc.offline.store'), [...$payload, 'model_field_values' => ['lote' => 'Inválido']], $headers)->assertUnprocessable();
+        $this->postJson(route('api.mobile.rnc.offline.store'), [...$payload, 'instrucao_campo_id' => 99999], $headers)->assertUnprocessable();
+        $this->postJson(route('api.mobile.rnc.offline.store'), $payload, $headers)->assertCreated();
+        $created = RelatorioNaoConformidade::firstOrFail();
+        $this->assertSame($payload['assunto'], $created->assunto);
+        $this->assertSame(['lote' => 'Lote 02'], $created->model_field_values);
+        $snapshot = $created->pdf_template_snapshot;
+        $this->saveSettings($this->settings('standard', [['key' => 'lote', 'label' => 'Lote', 'type' => 'select', 'required' => true, 'options' => ['Lote 03']]]));
+        $this->postJson(route('api.mobile.rnc.offline.store'), [...$payload, 'local_uuid' => 'rnc-model-2'], $headers)->assertConflict();
+        $this->postJson(route('api.mobile.rnc.offline.store'), $payload, $headers)->assertOk();
+        $this->assertSame($snapshot, $created->fresh()->pdf_template_snapshot);
+        $this->assertSame(1, RelatorioNaoConformidade::count());
+    }
+
     private function saveSettings(array $settings): void
     {
         $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), $settings)->assertSessionHasNoErrors();

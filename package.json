@@ -4,6 +4,8 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
+        "test:rdo-ui": "node tests/Frontend/rdo-show-client.test.mjs",
+        "test:tutorial-ui": "node tests/Frontend/tutorials-visual.test.mjs",
         "dev": "vite",
         "dev:app": "composer run dev",
         "serve:php": "php -d upload_max_filesize=100M -d post_max_size=128M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 127.0.0.1:8000 server.php",
@@ -16,6 +18,7 @@
         "autoprefixer": "^10.4.12",
         "axios": "^1.16.1",
         "concurrently": "^9.0.1",
+        "jsdom": "26.1.0",
         "laravel-vite-plugin": "^3.1",
         "postcss": "^8.4.31",
         "tailwindcss": "^3.2.1",

@@ -29,7 +29,7 @@ class EnsureMobileApiToken
 
         $tenant = $token->tenant;
 
-        if (! $token->user || ! $token->user->hasTenantAccess($tenant)) {
+        if ($tenant->status !== 'active' || ! $token->user || $token->user->must_change_password || ! $token->user->hasTenantAccess($tenant)) {
             return response()->json(['message' => 'Usuário sem acesso ao tenant.'], 403);
         }
 
