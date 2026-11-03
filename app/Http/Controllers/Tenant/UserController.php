@@ -460,6 +460,50 @@ class UserController extends Controller
         return back()->with('success', 'Usuario atualizado.');
     }
 
+    public function updateContracts(Request $request, Tenant $tenant, TenantUser $membership): RedirectResponse
+    {
+        $this->authorizeTenantUsers($tenant, UserPermissions::EDIT);
+        $this->ensureMembershipBelongsToTenant($tenant, $membership);
+        $data = $request->validate($this->contractAccessRules($tenant));
+        DB::transaction(fn () => $this->syncContractAccesses($request, $tenant, $membership->user, $data['contract_accesses'], true));
+
+        return back()->with('success', 'Vínculos com os contratos atualizados.');
+    }
+
+    private function contractAccessRules(Tenant $tenant): array
+    {
+        return [
+            'contract_accesses' => ['present', 'array'],
+            'contract_accesses.*.contract_id' => [
+                'required',
+                'integer',
+                Rule::exists('contracts', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id)),
+            ],
+            'contract_accesses.*.side' => ['required', Rule::in(array_keys(self::CONTRACT_ROLES_BY_SIDE))],
+            'contract_accesses.*.role' => ['required', 'string'],
+            'contract_accesses.*.activity_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.activity_permissions.*' => ['required', 'string', Rule::in(ActivityPermissions::all())],
+            'contract_accesses.*.contract_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.contract_permissions.*' => ['required', 'string', Rule::in(ContractPermissions::all())],
+            'contract_accesses.*.project_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.project_permissions.*' => ['required', 'string', Rule::in(ProjectPermissions::all())],
+            'contract_accesses.*.rnc_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.ic_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.rnc_permissions.*' => ['required', 'string', Rule::in(RncPermissions::all())],
+            'contract_accesses.*.ic_permissions.*' => ['required', 'string', Rule::in(IcPermissions::all())],
+            'contract_accesses.*.documentation_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.documentation_permissions.*' => ['required', 'string', Rule::in(DocumentationPermissions::all())],
+            'contract_accesses.*.diario_obra_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.diario_obra_permissions.*' => ['required', 'string', Rule::in(DiarioObraPermissions::all())],
+            'contract_accesses.*.ordem_servico_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.ordem_servico_permissions.*' => ['required', 'string', Rule::in(OrdemServicoPermissions::all())],
+            'contract_accesses.*.os_dnit_permissions' => ['sometimes', 'array'],
+            'contract_accesses.*.os_dnit_permissions.*' => ['required', 'string', Rule::in(OsDnitPermissions::all())],
+            'contract_accesses.*.medicao_permissions' => ['nullable', 'array'],
+            'contract_accesses.*.medicao_permissions.*' => ['required', 'string', Rule::in(MedicaoPermissions::all())],
+        ];
+    }
+
     public function deactivate(Request $request, Tenant $tenant, TenantUser $membership): RedirectResponse
     {
         $this->authorizeTenantUsers($tenant, UserPermissions::DEACTIVATE);
