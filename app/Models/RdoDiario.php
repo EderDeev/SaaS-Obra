@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'tenant_id',
+    'workflow_snapshot',
+    'pdf_configuration_snapshot',
     'rdo_configuracao_id',
     'contract_id',
     'obra_id',
@@ -19,6 +21,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'sequence_number',
     'code',
     'reference_date',
+    'is_holiday',
     'status',
     'current_version',
     'generated_automatically',
@@ -38,7 +41,10 @@ class RdoDiario extends Model
     protected function casts(): array
     {
         return [
+            'workflow_snapshot' => 'array',
+            'pdf_configuration_snapshot' => 'array',
             'reference_date' => 'date',
+            'is_holiday' => 'boolean',
             'current_version' => 'integer',
             'generated_automatically' => 'boolean',
             'submitted_at' => 'datetime',

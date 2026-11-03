@@ -50,12 +50,11 @@ export default function RdoTourPreview({ tenant, screen = 'settings' }) {
     return (
         <AuthenticatedLayout>
             <Head title="Tutorial operacional de Diário de Obra" />
-            <main className={`mx-auto px-4 py-6 sm:px-6 ${screen === 'settings' ? 'max-w-6xl' : screen === 'rda' ? 'max-w-[1400px]' : screen === 'consolidation' || screen === 'approval' || screen === 'signature' ? 'max-w-7xl' : 'max-w-[1700px]'}`}>
+            <main className={`mx-auto px-4 py-6 sm:px-6 ${screen === 'settings' ? 'max-w-6xl' : screen === 'consolidation' || screen === 'approval' || screen === 'signature' ? 'max-w-7xl' : 'max-w-[1700px]'}`}>
                 {screen === 'settings' && <SettingsPreview />}
                 {screen === 'catalogs' && <CatalogsPreview />}
                 {screen === 'responsibles' && <ResponsiblesPreview />}
                 {screen === 'calendar' && <CalendarPreview />}
-                {screen === 'rda' && <RdaPreview />}
                 {screen === 'consolidation' && <ConsolidationPreview />}
                 {screen === 'approval' && <ApprovalPreview />}
                 {screen === 'signature' && <SignaturePreview />}
@@ -142,7 +141,7 @@ function SettingsPreview() {
                 <section data-tour="rdo-settings-rules" className="sig-card p-5">
                     <h2 className="text-lg font-bold">Regras de preenchimento</h2>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <ToggleBox label="Exigir ao menos uma foto para envio" />
+                        <ToggleBox label="Incluir registro fotográfico no PDF" />
                         <ToggleBox label="Usar assinatura digital" />
                         <FakeField label="Prazo para envio (dias)" value="7" hint="O prazo padrão é de 7 dias após a data do RDO." />
                         <ToggleBox label="Parametrização ativa" />
@@ -159,7 +158,7 @@ function SettingsPreview() {
 function CatalogsPreview() {
     return (
         <>
-            <PageHeader title="Cadastros" description="Catálogos reutilizáveis para agilizar o preenchimento diário dos RDOs e RDAs." />
+            <PageHeader title="Cadastros" description="Catálogos reutilizáveis para agilizar o preenchimento diário dos RDOs." />
             <div data-tour="rdo-catalogs-tabs" className="sig-card flex flex-wrap gap-2 p-3">
                 <button type="button" className="sig-btn sig-btn-primary"><Users size={16} /> Mão de obra</button>
                 <button type="button" className="sig-btn sig-btn-secondary"><Construction size={16} /> Equipamentos</button>
@@ -213,14 +212,14 @@ function ResponsiblesPreview() {
             </section>
             <section data-tour="rdo-responsibles-flow" className="sig-card mt-5 overflow-hidden">
                 <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-                    <div><h2 className="text-lg font-bold">Responsáveis por frente</h2><p className="text-sm text-[var(--ink-500)]">RDO, assinatura e preenchimento do RDA.</p></div>
+                    <div><h2 className="text-lg font-bold">Responsáveis por frente</h2><p className="text-sm text-[var(--ink-500)]">Preenchimento, análises e assinaturas do RDO.</p></div>
                     <UserRoundCheck className="text-[var(--primary)]" size={22} />
                 </header>
                 <div className="divide-y divide-[var(--border)]">
                     <ResponsibilityRow name="Carlos Almeida" role="Preenchimento da construtora · RDO" />
                     <ResponsibilityRow name="Marina Costa" role="Aprovação da gerenciadora · RDO" />
                     <ResponsibilityRow name="João Martins" role="Assinatura digital · RDO" />
-                    <ResponsibilityRow name="Paulo Santos" role="Preenchimento de campo · RDA" tone="blue" />
+                    <ResponsibilityRow name="Paulo Santos" role="Preenchimento · Gerenciadora" tone="blue" />
                 </div>
             </section>
         </>
@@ -280,74 +279,6 @@ function CalendarPreview() {
     );
 }
 
-function RdaPreview() {
-    return (
-        <>
-            <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
-                <div>
-                    <button type="button" className="mb-3 inline-flex items-center gap-2 text-sm font-bold text-[var(--primary)]"><ArrowLeft size={16} /> Voltar para o calendário</button>
-                    <span className="eyebrow block">Diário de Obra · RDA</span>
-                    <h1 className="mt-2 text-3xl font-bold text-[var(--ink-900)]">RDA-20260723-014</h1>
-                    <p className="mt-1 text-sm text-[var(--ink-500)]">23/07/2026 · 025/2026 - Corredor Troncal</p>
-                    <div className="mt-3 w-full max-w-xl"><FakeField label="Obra / frente preenchida" value="001 - Trecho Norte" /></div>
-                </div>
-                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">Rascunho</span>
-            </header>
-
-            <section data-tour="rda-mobile-offline" className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                <div className="flex items-start gap-3">
-                    <span className="flex size-10 items-center justify-center rounded-xl bg-blue-700 text-white"><Smartphone size={20} /></span>
-                    <div>
-                        <h2 className="font-bold text-blue-950">Preenchimento mobile no campo</h2>
-                        <p className="mt-1 max-w-3xl text-sm text-blue-800">O mesmo formulário pode ser preenchido offline no aplicativo e sincronizado quando a conexão retornar.</p>
-                    </div>
-                </div>
-                <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-800"><WifiOff size={14} /> Modo offline</span>
-            </section>
-
-            <div className="space-y-5">
-                <div data-tour="rda-fields" className="space-y-5">
-                    <RdaSection title="Condições de tempo" icon={CloudSun}>
-                        <div className="grid gap-4 md:grid-cols-4">
-                            <FakeField label="Manhã" value="Ensolarado" />
-                            <FakeField label="Tarde" value="Parcialmente nublado" />
-                            <FakeField label="Noite" value="Sem chuva" />
-                            <FakeField label="Chuva" value="0,00 mm" />
-                        </div>
-                    </RdaSection>
-                    <RdaSection title="Atividades e ocorrências" icon={ClipboardList}>
-                        <div className="grid gap-4 md:grid-cols-[1fr_1.3fr_auto] md:items-end">
-                            <FakeField label="Atividade" value="Concretagem da laje do bloco A" />
-                            <FakeField label="Descrição / ocorrência" value="Serviço executado conforme planejamento diário." />
-                            <button type="button" className="sig-btn sig-btn-primary"><Plus size={16} /> Adicionar</button>
-                        </div>
-                    </RdaSection>
-                </div>
-                <RdaSection title="Mão de obra" icon={Users}>
-                    <ResourceTable rows={[['Pedreiro', 'Mão de obra direta', '8'], ['Servente', 'Mão de obra direta', '12']]} />
-                </RdaSection>
-                <RdaSection title="Equipamentos" icon={Construction}>
-                    <ResourceTable rows={[['Betoneira', 'Operando', '2'], ['Caminhão bomba', 'Operando', '1']]} />
-                </RdaSection>
-                <RdaSection title="Subcontratadas" icon={Building2}>
-                    <ResourceTable rows={[['Concretar Serviços', 'Concretagem', '1 equipe']]} />
-                </RdaSection>
-                <RdaSection title="Registro fotográfico" icon={Camera}>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                        {[1, 2, 3].map((photo) => (
-                            <div key={photo} className="flex aspect-[16/8] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-slate-50 text-slate-400"><Camera size={24} /></div>
-                        ))}
-                    </div>
-                </RdaSection>
-            </div>
-            <div data-tour="rda-publish" className="sticky bottom-0 mt-6 flex flex-wrap justify-end gap-3 border-t border-[var(--border)] bg-[var(--surface)] py-4">
-                <button type="button" className="sig-btn sig-btn-secondary"><Save size={16} /> Salvar rascunho</button>
-                <button type="button" className="sig-btn sig-btn-primary"><Send size={16} /> Publicar RDA</button>
-            </div>
-        </>
-    );
-}
-
 function ConsolidationPreview() {
     return (
         <>
@@ -372,23 +303,6 @@ function ConsolidationPreview() {
                 <span className="eyebrow">Obras / frentes participantes</span>
                 <div className="mt-2 flex flex-wrap gap-2"><SelectedChip text="001 - Trecho Norte" /><SelectedChip text="002 - Trecho Sul" /></div>
             </div>
-            <section data-tour="rdo-rda-import" className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                        <span className="eyebrow text-blue-700">RDA publicado</span>
-                        <h2 className="mt-1 text-lg font-bold text-blue-950">Registros disponíveis para este RDO</h2>
-                        <p className="mt-1 text-sm text-blue-800">Use os apontamentos de campo para preencher as seções da frente correspondente.</p>
-                    </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-700">1 RDA</span>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-4 shadow-sm">
-                    <div><strong>RDA-20260723-014</strong><p className="text-xs text-[var(--ink-500)]">Paulo Santos · publicado às 18:42</p></div>
-                    <div className="flex gap-2">
-                        <button type="button" className="sig-btn sig-btn-secondary">Visualizar RDA</button>
-                        <button type="button" className="sig-btn sig-btn-primary"><UploadCloud size={16} /> Importar dados</button>
-                    </div>
-                </div>
-            </section>
             <div className="mb-4 flex justify-end"><button type="button" className="sig-btn sig-btn-primary"><ClipboardList size={16} /> Preencher RDO completo</button></div>
             <div data-tour="rdo-sections" className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {sectionCards.map(([Icon, title, description], index) => (
@@ -479,7 +393,6 @@ function SignaturePreview() {
                     <div>
                         <span className="eyebrow">Assinatura digital</span>
                         <h2 className="mt-1 text-lg font-bold">Aguardando assinaturas</h2>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">Após o RDO ser aprovado, envie o PDF para assinatura da construtora, gerenciadora e cliente.</p>
                     </div>
                     <button type="button" className="sig-btn sig-btn-primary"><Send size={16} /> Enviar para assinatura</button>
                 </header>
@@ -601,7 +514,7 @@ function SelectionRow({ code, name }) {
     );
 }
 
-function RdaSection({ title, icon: Icon, children }) {
+function RdoSection({ title, icon: Icon, children }) {
     return (
         <section className="sig-card overflow-hidden">
             <header className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-4">

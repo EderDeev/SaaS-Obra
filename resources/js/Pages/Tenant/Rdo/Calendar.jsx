@@ -4,29 +4,12 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ClipboardPenLine, Copy, Download, Eye, Plane, Plus, RotateCcw, Settings, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
-
-const statusTone = {
-    rascunho: 'bg-amber-50 text-amber-700',
-    em_analise_gerenciadora: 'bg-blue-50 text-blue-700',
-    em_aprovacao_cliente: 'bg-violet-50 text-violet-700',
-    devolvido_construtora: 'bg-red-50 text-red-700',
-    pendente_comprovacao: 'bg-amber-50 text-amber-700',
-    arquivado: 'bg-emerald-50 text-emerald-700',
-    aguardando_assinatura: 'bg-blue-50 text-blue-700',
-    pronto_assinatura: 'bg-violet-50 text-violet-700',
-    assinado: 'bg-emerald-50 text-emerald-700',
-};
+import { AlertTriangle, CalendarDays, ClipboardPenLine, Copy, Download, Eye, List, Plane, Plus, RotateCcw, Settings, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { rdoCalendarStage, rdoStageColors } from './calendarStageAppearance';
 
 function calendarStatusTone(rdo) {
-    if (rdo.status === 'arquivado') {
-        if (rdo.signature_status === 'completed') return statusTone.assinado;
-        if (rdo.signature_status === 'waiting') return statusTone.aguardando_assinatura;
-        return statusTone.pronto_assinatura;
-    }
-
-    return statusTone[rdo.status] || statusTone.rascunho;
+    return rdoStageColors[rdoCalendarStage(rdo)].badge;
 }
 
 function deadlineCounterTone(tone) {
@@ -58,12 +41,36 @@ function monthBounds(month) {
     };
 }
 
+function RdoAccessAction({ rdo, className = 'sig-btn sig-btn-primary sig-btn-sm' }) {
+    const fill = ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'].includes(rdo.status) && rdo.can_fill;
+    return <Link href={rdo.show_url} className={className}>{fill ? <ClipboardPenLine size={14} /> : <Eye size={14} />}{fill ? rdo.calendar_action_label || 'Preencher' : rdo.status === 'em_analise_gerenciadora' ? 'Analisar' : 'Visualizar'}</Link>;
+}
+
 export default function Calendar({ contracts, obras, filters, configuration, rdos, copyOptions = [], batch_download_url = null, can_generate = false }) {
-    const { currentTenant } = usePage().props;
+    const { currentTenant, auth } = usePage().props;
+    const preferenceKey = `sigworks:rdo:view:${currentTenant.slug}:${auth?.user?.id || 'user'}`;
+    const [view, setView] = useState('calendar');
+    const [listDate, setListDate] = useState(formatLocalDate(new Date()));
+    useEffect(() => { try { setView(localStorage.getItem(preferenceKey) === 'list' ? 'list' : 'calendar'); } catch {} }, [preferenceKey]);
     const initialRender = useRef(true);
     const [createDate, setCreateDate] = useState(null);
     const [copyFromId, setCopyFromId] = useState('');
     const [creating, setCreating] = useState(false);
+    const selectedContract = contracts.find(contract => Number(contract.id) === Number(filters.contract_id));
+    const workflow = configuration?.workflow;
+    const modelParties = workflow ? [...new Set([...(workflow.fill_parties || [workflow.fill_party || 'construtora']), ...(workflow.review_parties || [])])] : [];
+    const partyNames = { construtora: 'Construtora', gerenciadora: 'Gerenciadora', cliente: 'Cliente' };
+    const generationWeekdays = (configuration?.generation_weekdays || []).map(Number);
+    const listCanGenerate = Boolean(configuration?.active && listDate
+        && generationWeekdays.includes(new Date(`${listDate}T12:00:00`).getDay())
+        && (!configuration.start_date || listDate >= configuration.start_date)
+        && (!configuration.end_date || listDate <= configuration.end_date));
+    const changeView = next => {
+        initialRender.current = true;
+        setView(next);
+        try { localStorage.setItem(preferenceKey, next); } catch {}
+    };
+    const listRdos = useMemo(() => [...rdos].sort((a, b) => String(b.reference_date).localeCompare(String(a.reference_date)) || b.id - a.id), [rdos]);
     const rdoDates = useMemo(() => new Set(rdos.map((rdo) => rdo.reference_date)), [rdos]);
     const events = useMemo(() => rdos.map((rdo) => ({
         id: String(rdo.id),
@@ -126,15 +133,17 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
 
     return (
         <AuthenticatedLayout>
-            <Head title="RDO - Calendário" />
+            <Head title={view === 'calendar' ? 'RDO - Calendário' : 'RDO - Lista'} />
             <div className="mx-auto max-w-[1700px] px-4 py-6 sm:px-6">
                 <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                     <div>
                         <span className="eyebrow">Diário de Obra</span>
                         <h1 className="mt-2 text-3xl font-bold">RDO</h1>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">Acompanhe, preencha e envie os registros diários pelo calendário.</p>
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">Acompanhe, preencha e envie os registros diários.</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2 md:items-end">
+                        <div className="flex flex-wrap gap-2">
+                        <div role="group" aria-label="Visualização dos RDOs" className="flex gap-1 rounded-lg border border-[var(--border)] bg-white p-1">{[['calendar', CalendarDays, 'Calendário'], ['list', List, 'Lista']].map(([key, Icon, label]) => <button key={key} type="button" aria-pressed={view === key} onClick={() => changeView(key)} className={`sig-btn sig-btn-sm ${view === key ? 'sig-btn-primary' : 'sig-btn-ghost'}`}><Icon size={16} />{label}</button>)}</div>
                         <button type="button" className="sig-btn sig-btn-secondary" onClick={() => startRdoTour(currentTenant.slug)}>
                             <Plane size={17} /> Iniciar tour
                         </button>
@@ -145,6 +154,12 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                             >
                                 <Settings size={17} /> Parametrizar RDO
                             </Link>
+                        )}
+                        </div>
+                        {configuration && (
+                            <p className="text-xs text-[var(--ink-500)] md:text-right" aria-label="Modelo de RDO do contrato">
+                                Modelo: {modelParties.map(party => partyNames[party] || party).join(' + ')}
+                            </p>
                         )}
                     </div>
                 </div>
@@ -197,7 +212,18 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                     </div>
                 )}
 
-                <p className="mb-2 text-xs font-semibold text-[var(--ink-500)] sm:hidden">Deslize lateralmente para ver todos os dias da semana.</p>
+                <div aria-label="Cores das etapas do RDO" className="mb-4 flex flex-wrap gap-x-5 gap-y-2">{Object.entries(rdoStageColors).map(([key, stage]) => <span key={key} className="inline-flex items-center gap-2 text-xs text-[var(--ink-500)]"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${stage.dot}`} />{stage.label}</span>)}</div>
+                {view === 'list' && <section aria-label="RDOs em lista" className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[var(--ink-500)]">{listRdos.length} RDO(s) no período</p>{can_generate && configuration && <div className="flex flex-wrap items-end gap-2"><label className="text-xs text-[var(--ink-500)]">Data do novo RDO<input type="date" aria-label="Data do novo RDO" className="sig-input mt-1" value={listDate} onChange={event => setListDate(event.target.value)} /></label><button type="button" className="sig-btn sig-btn-primary" disabled={!listCanGenerate || rdoDates.has(listDate)} onClick={() => openCreate(listDate)}><Plus size={16} />Criar RDO</button></div>}</div>
+                    {listRdos.map(rdo => <article key={rdo.id} data-rdo-stage={rdoCalendarStage(rdo)} className={`sig-card min-w-0 border-l-4 p-5 ${rdoStageColors[rdoCalendarStage(rdo)].border}`}>
+                        <div className="flex flex-wrap items-start justify-between gap-3"><div><span className="font-mono text-xs font-bold text-[var(--primary)]">{rdo.code}</span><h2 className="mt-1 text-base font-semibold">{rdo.reference_date_formatted}</h2></div><div className="flex flex-wrap gap-2"><span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${calendarStatusTone(rdo)}`}>{rdo.calendar_status_label || rdo.status_label}</span>{rdo.has_reservations && <span className="sig-pill bg-amber-100 text-amber-900"><AlertTriangle size={13} />Com ressalvas</span>}</div></div>
+                        <p className="mt-3 text-sm text-[var(--ink-500)]">{selectedContract?.code} · {selectedContract?.name}</p>
+                        {configuration?.obras?.length > 0 && <p className="mt-2 break-words text-xs text-[var(--ink-500)]">{configuration.obras.map(obra => `${obra.codigo} · ${obra.nome}`).join(' / ')}</p>}
+                        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{rdo.deadline_counter && <span className={`sig-pill ${deadlineCounterTone(rdo.deadline_counter_tone)}`}>{rdo.deadline_counter}</span>}{rdo.is_reopened && rdo.reopened_until && <span className="sig-pill bg-emerald-50 text-emerald-700">Reaberto até {rdo.reopened_until}</span>}</div><div className="flex flex-wrap gap-2">{rdo.can_reopen && <button type="button" className="sig-btn sig-btn-sm border-amber-200 bg-amber-50 text-amber-800" onClick={event => reopenRdo(event, rdo)}><RotateCcw size={14} />Reabrir RDO</button>}<RdoAccessAction rdo={rdo} /></div></div>
+                    </article>)}
+                    {!listRdos.length && <div className="rounded-xl border border-dashed border-[var(--border)] bg-white px-5 py-12 text-center"><List size={28} className="mx-auto text-slate-400" /><h2 className="mt-3 font-semibold">Nenhum RDO no período selecionado</h2><p className="mt-1 text-sm text-[var(--ink-500)]">Ajuste o contrato ou as datas para consultar outros registros.</p></div>}
+                </section>}
+                {view === 'calendar' && <div><p className="mb-2 text-xs font-semibold text-[var(--ink-500)] sm:hidden">Deslize lateralmente para ver todos os dias da semana.</p>
                 <div className="rdo-calendar rounded-xl border border-[var(--border)] bg-white p-3 shadow-sm sm:p-5">
                     <FullCalendar
                         plugins={[dayGridPlugin, interactionPlugin]}
@@ -222,7 +248,7 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                         }}
                         dayCellContent={(arg) => {
                             const date = formatLocalDate(arg.date);
-                            const weekdayEnabled = configuration?.generation_weekdays?.includes(arg.date.getDay());
+                            const weekdayEnabled = generationWeekdays.includes(arg.date.getDay());
                             const withinStart = !configuration?.start_date || date >= configuration.start_date;
                             const withinEnd = !configuration?.end_date || date <= configuration.end_date;
                             const canGenerate = can_generate && !arg.isOther && configuration?.active && weekdayEnabled && withinStart && withinEnd && !rdoDates.has(date);
@@ -247,30 +273,22 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                         }}
                         eventContent={(arg) => {
                             const rdo = arg.event.extendedProps;
-                            const isFillableStatus = ['rascunho', 'devolvido_construtora', 'pendente_comprovacao'].includes(rdo.status);
-                            const canFill = Boolean(rdo.can_fill);
                             return (
-                                <div className="flex min-h-[116px] w-full flex-col rounded-lg border border-[var(--border)] bg-white p-2 shadow-sm">
+                                <div data-rdo-stage={rdoCalendarStage(rdo)} className={`flex min-h-[116px] w-full flex-col rounded-lg border border-l-4 border-[var(--border)] bg-white p-2 shadow-sm ${rdoStageColors[rdoCalendarStage(rdo)].border}`}>
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="mono truncate text-[11px] font-bold">{rdo.code}</span>
                                         <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${calendarStatusTone(rdo)}`}>
                                             {rdo.calendar_status_label || rdo.status_label}
                                         </span>
                                     </div>
+                                    {rdo.has_reservations && <span aria-label={`Com ressalvas em ${rdo.reservation_obra_count || 1} obra(s)`} className="mt-2 inline-flex items-center gap-1 self-start rounded-md bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-900"><AlertTriangle size={12} aria-hidden="true" /> Com ressalvas</span>}
                                     {rdo.deadline_counter && (
                                         <div className={`mt-2 flex min-h-[36px] items-center justify-center rounded-md px-2 py-1 text-center text-[9px] font-black uppercase leading-tight tracking-wide ${deadlineCounterTone(rdo.deadline_counter_tone)}`}>
                                             {rdo.deadline_counter}
                                         </div>
                                     )}
                                     <div className="mt-auto grid gap-1 pt-2">
-                                        <Link href={rdo.show_url} className="inline-flex min-h-[32px] items-center justify-center gap-1 rounded-md bg-[var(--primary)] px-2 py-1.5 text-[10px] font-bold text-white">
-                                            {isFillableStatus && canFill
-                                                ? <ClipboardPenLine size={12} />
-                                                : <Eye size={12} />}
-                                            {isFillableStatus && canFill
-                                                ? (rdo.calendar_action_label || 'Preencher')
-                                                : 'Visualizar'}
-                                        </Link>
+                                        <RdoAccessAction rdo={rdo} className="inline-flex min-h-[32px] items-center justify-center gap-1 rounded-md bg-[var(--primary)] px-2 py-1.5 text-[10px] font-bold text-white" />
                                         {rdo.can_reopen && (
                                             <button
                                                 type="button"
@@ -290,7 +308,7 @@ export default function Calendar({ contracts, obras, filters, configuration, rdo
                             );
                         }}
                     />
-                </div>
+                </div></div>}
             </div>
             {createDate && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && setCreateDate(null)}>

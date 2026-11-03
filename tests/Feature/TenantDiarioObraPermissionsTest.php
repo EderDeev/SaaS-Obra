@@ -22,7 +22,7 @@ class TenantDiarioObraPermissionsTest extends TestCase
     {
         [$tenant, $user, $contractA, $contractB] = $this->context([
             DiarioObraPermissions::VIEW,
-            DiarioObraPermissions::FILL_RDA,
+            DiarioObraPermissions::FILL_RDO,
         ]);
 
         ContractParticipant::query()
@@ -42,7 +42,7 @@ class TenantDiarioObraPermissionsTest extends TestCase
                 'tenant' => $tenant,
                 'contract_id' => $contractA->id,
             ]))
-            ->assertOk();
+            ->assertRedirect(route('tenant.diario-obra.rdo.calendar', $tenant->slug));
 
         $this->actingAs($user)
             ->get(route('tenant.diario-obra.rdo.calendar', [

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['tenant_id', 'rdo_diario_id', 'obra_id', 'updated_by_id', 'secao', 'dados'])]
+#[Fillable(['tenant_id', 'rdo_diario_id', 'obra_id', 'filling_party', 'updated_by_id', 'secao', 'dados'])]
 class RdoSecaoRegistro extends Model
 {
     protected $table = 'rdo_secao_registros';

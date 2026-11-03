@@ -19,6 +19,9 @@ class RdoDailyGenerator
             ->orderBy('id')
             ->each(function (RdoConfiguracao $configuration) use ($now, &$created): void {
                 $localNow = $now->setTimezone($configuration->timezone);
+                if ($localNow->format('H:i') < RdoConfiguracao::GENERATION_TIME) {
+                    return;
+                }
 
                 if ($this->generateForConfiguration($configuration, $localNow->startOfDay(), true)) {
                     $created++;
@@ -40,7 +43,7 @@ class RdoDailyGenerator
                 ->orWhereDate('end_date', '>=', $date->toDateString()))
             ->orderBy('id')
             ->each(function (RdoConfiguracao $configuration) use ($date, $automatic, &$created): void {
-                if (! in_array($date->dayOfWeek, $configuration->generation_weekdays ?? [], true)) {
+                if (! in_array($date->dayOfWeek, array_map('intval', $configuration->generation_weekdays ?? []), true)) {
                     return;
                 }
 
@@ -64,9 +67,10 @@ class RdoDailyGenerator
             return null;
         }
 
-        if (! in_array($date->dayOfWeek, $configuration->generation_weekdays ?? [], true)) {
+        if (! in_array($date->dayOfWeek, array_map('intval', $configuration->generation_weekdays ?? []), true)) {
             return null;
         }
+
 
         try {
             return DB::transaction(function () use ($configuration, $date, $automatic, $createdById): ?RdoDiario {
@@ -90,6 +94,7 @@ class RdoDailyGenerator
                 if ($lockedConfiguration->copy_previous_day) {
                     $previous = RdoDiario::query()
                         ->where('tenant_id', $lockedConfiguration->tenant_id)
+                        ->where('contract_id', $lockedConfiguration->contract_id)
                         ->where('obra_id', $lockedConfiguration->obra_id)
                         ->whereDate('reference_date', '<', $date->toDateString())
                         ->latest('reference_date')
@@ -104,7 +109,7 @@ class RdoDailyGenerator
                     ->value('sequence_number');
                 $sequence = $lastSequence + 1;
 
-                return RdoDiario::create([
+                $diary = RdoDiario::create([
                     'tenant_id' => $lockedConfiguration->tenant_id,
                     'rdo_configuracao_id' => $lockedConfiguration->id,
                     'contract_id' => $lockedConfiguration->contract_id,
@@ -117,7 +122,11 @@ class RdoDailyGenerator
                     'reference_date' => $date->toDateString(),
                     'status' => 'rascunho',
                     'generated_automatically' => $automatic,
+                    'pdf_configuration_snapshot' => [...\App\Support\RdoPdfTemplates::forContract($lockedConfiguration->tenant, $lockedConfiguration->contract_id), ...($lockedConfiguration->report_company_id ? ['company_name' => \App\Models\Empresa::where('tenant_id', $lockedConfiguration->tenant_id)->where('contract_id', $lockedConfiguration->contract_id)->whereKey($lockedConfiguration->report_company_id)->value('nome') ?? ''] : []), 'logos' => app(\App\Services\RdoDocumentLogos::class)->snapshot($lockedConfiguration->tenant, $lockedConfiguration->contract)],
+                    'workflow_snapshot' => $lockedConfiguration->workflow ?? \App\Support\RdoWorkflow::DEFAULT,
                 ]);
+                if ($previous) $this->copyConfiguredSections($lockedConfiguration, $previous, $diary);
+                return $diary;
             });
         } catch (QueryException $exception) {
             if (in_array((string) $exception->getCode(), ['23000', '23505'], true)) {
@@ -125,6 +134,30 @@ class RdoDailyGenerator
             }
 
             throw $exception;
+        }
+    }
+
+    private function copyConfiguredSections(RdoConfiguracao $configuration, RdoDiario $previous, RdoDiario $diary): void
+    {
+        $parties = \App\Support\RdoWorkflow::fillParties($diary);
+        $fronts = $configuration->obras()->pluck('obras.id')->all();
+        foreach ($previous->secoes()->whereIn('obra_id', $fronts)->whereIn('filling_party', $parties)->get() as $section) {
+            $data = null;
+            if ($section->secao === 'mao_obra' && $configuration->copy_workforce) {
+                $data = array_intersect_key($section->dados, array_flip(['efetivos', 'subcontratadas']));
+            } elseif ($section->secao === 'equipamentos' && $configuration->copy_equipment) {
+                $data = array_intersect_key($section->dados, ['registros' => true]);
+            } elseif ($section->secao === 'atividades' && $configuration->copy_pending_activities) {
+                $data = ['atividades' => array_values(array_filter($section->dados['atividades'] ?? [], fn ($activity) => !in_array($activity['status'] ?? 'pendente', ['concluido', 'concluida', 'completed'], true)))];
+            }
+            if ($data === null) continue;
+            foreach (['efetivos' => \App\Models\RdoMaoObraCadastro::class, 'subcontratadas' => \App\Models\RdoSubcontratadaCadastro::class, 'registros' => \App\Models\RdoEquipamentoCadastro::class] as $key => $model) {
+                if (!isset($data[$key])) continue;
+                $ids = $model::where('tenant_id', $diary->tenant_id)->where('contract_id', $diary->contract_id)->where('active', true)->pluck('id')->all();
+                $data[$key] = array_intersect_key($data[$key], array_flip($ids));
+            }
+            \App\Support\RdoCatalogs::validate($diary, [$section->secao => $data]);
+            $diary->secoes()->create(['tenant_id' => $diary->tenant_id, 'obra_id' => $section->obra_id, 'filling_party' => $section->filling_party, 'secao' => $section->secao, 'dados' => $data]);
         }
     }
 }

@@ -19,8 +19,8 @@ class RdoResponsavelController extends Controller
 {
     private const STAGES = [
         'construtora' => 'Preenchimento da construtora',
-        'gerenciadora' => 'Aprovação da gerenciadora',
-        'cliente' => 'Aprovação do cliente',
+        'gerenciadora' => 'Preenchimento e análise da gerenciadora',
+        'cliente' => 'Comentário do cliente',
         'assinatura' => 'Assinatura do RDO',
     ];
 

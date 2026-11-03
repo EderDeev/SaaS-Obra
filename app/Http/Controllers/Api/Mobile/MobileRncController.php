@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Api\Mobile\MobileRdaController;
+use App\Http\Controllers\Api\Mobile\MobileRdoController;
 use App\Models\Contract;
 use App\Models\Disciplina;
 use App\Models\Empresa;
@@ -39,11 +39,12 @@ class MobileRncController extends Controller
         $contractIds = $contracts->pluck('id')->all();
 
         return response()->json([
+            'tenants' => MobileAuthController::availableTenants($user)->map->only(['id', 'slug', 'name'])->values(),
             'tenant' => ['id' => $tenant->id, 'slug' => $tenant->slug, 'name' => $tenant->name],
             'contracts' => $contracts->values(),
             'document_models' => $contracts->mapWithKeys(function ($contract) use ($tenant) {
                 $config = \App\Support\RncPdfTemplates::forContract($tenant, $contract->id);
-                return [$contract->id => ['layout' => $config['layout'], 'field_definitions' => $config['field_definitions']]];
+                return [$contract->id => ['layout' => $config['layout'], 'field_definitions' => $config['field_definitions'], 'revision' => self::modelRevision($config)]];
             }),
             'obras' => $tenant->obras()
                 ->whereIn('contract_id', $contractIds)
@@ -64,8 +65,11 @@ class MobileRncController extends Controller
                 ->orderBy('sigla')
                 ->orderBy('nome')
                 ->get(['id', 'tenant_id', 'contract_id', 'nome', 'sigla', 'cor']),
+            'ics' => $tenant->instrucoesCampo()->whereIn('contract_id', $contractIds)->whereNotNull('notified_at')->where('status', '!=', 'draft')->get()
+                ->filter(fn ($ic) => \App\Support\IcPermissions::can($user, $tenant, \App\Support\IcPermissions::VIEW, $contracts->firstWhere('id', $ic->contract_id)))
+                ->map(fn ($ic) => ['id' => $ic->id, 'contract_id' => $ic->contract_id, 'obra_id' => $ic->obra_id, 'label' => $ic->formatted_number.' · '.$ic->assunto])->values(),
             'gravidades' => self::GRAVIDADES,
-            ...MobileRdaController::bootstrapPayload($tenant, $user),
+            ...MobileRdoController::bootstrapPayload($tenant, $user),
         ]);
     }
 
@@ -73,6 +77,10 @@ class MobileRncController extends Controller
     {
         $tenant = $this->mobileTenant($request);
         $data = $request->validate([
+            'assunto' => ['nullable', 'string', 'max:255'],
+            'instrucao_campo_id' => ['nullable', 'integer'],
+            'document_model_revision' => ['nullable', 'string', 'size:64'],
+            'model_field_values' => ['nullable', 'array'],
             'local_uuid' => ['required', 'string', 'max:120'],
             'obra_id' => ['required', Rule::exists('obras', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
             'project_document_id' => ['nullable', Rule::exists('project_documents', 'id')->where(fn ($query) => $query->where('tenant_id', $tenant->id))],
@@ -107,6 +115,8 @@ class MobileRncController extends Controller
             ->first();
 
         if ($existing) {
+            abort_unless((int) $existing->created_by_id === (int) $request->user()->id
+                && RncPermissions::can($request->user(), $tenant, RncPermissions::CREATE, $existing->contract), 403);
             return response()->json([
                 'message' => 'RNC mobile já sincronizada anteriormente.',
                 'rnc' => $this->serializeRnc($existing),
@@ -119,6 +129,13 @@ class MobileRncController extends Controller
 
         abort_unless(RncPermissions::can($user, $tenant, RncPermissions::CREATE, $contract), 403);
 
+        $config = \App\Support\RncPdfTemplates::forContract($tenant, $contract->id);
+        abort_if(isset($data['document_model_revision']) && !hash_equals(self::modelRevision($config), $data['document_model_revision']), 409, 'O modelo deste contrato mudou. Atualize os dados e revise os campos antes de sincronizar.');
+        $data['model_field_values'] = \App\Support\RncModelFields::values($config['field_definitions'], $data['model_field_values'] ?? []);
+        if (!empty($data['instrucao_campo_id'])) {
+            $ic = $tenant->instrucoesCampo()->where('contract_id', $contract->id)->where('obra_id', $obra->id)->whereNotNull('notified_at')->where('status', '!=', 'draft')->find($data['instrucao_campo_id']);
+            if (!$ic || !\App\Support\IcPermissions::can($user, $tenant, \App\Support\IcPermissions::VIEW, $contract)) throw ValidationException::withMessages(['instrucao_campo_id' => 'Selecione uma IC comunicada da mesma obra, com acesso autorizado.']);
+        }
         $contratante = $this->empresaForContract($tenant, (int) $data['contratante_empresa_id'], $contract);
         $contratada = $this->empresaForContract($tenant, (int) $data['contratada_empresa_id'], $contract);
         $projectDocuments = $this->projectDocumentsForRnc(
@@ -170,12 +187,14 @@ class MobileRncController extends Controller
                 'longitude' => $data['longitude'] ?? null,
                 'natureza' => $disciplina->nome,
                 'gravidade' => $data['gravidade'],
+                'assunto' => $data['assunto'] ?? \Illuminate\Support\Str::limit($data['descricao_problema'], 255, ''),
+                'instrucao_campo_id' => $data['instrucao_campo_id'] ?? null,
                 'descricao_problema' => $data['descricao_problema'],
                 'observacao' => $data['observacao'] ?? null,
                 'acoes_corretivas_recomendadas' => $data['acoes_corretivas_recomendadas'],
                 'prazo_resposta_acao_corretiva' => $data['prazo_resposta_acao_corretiva'],
                 'status' => 'aberta',
-                'model_field_values' => $request->input('model_field_values', []),
+                'model_field_values' => $data['model_field_values'],
             ]);
 
             $rnc->projectDocuments()->sync($projectDocuments->pluck('id')->all());
@@ -207,6 +226,11 @@ class MobileRncController extends Controller
             'message' => 'RNC sincronizada com sucesso.',
             'rnc' => $this->serializeRnc($rnc),
         ], 201);
+    }
+
+    private static function modelRevision(array $config): string
+    {
+        return hash('sha256', json_encode([$config['layout'], $config['field_definitions']]));
     }
 
     private function empresaForContract(Tenant $tenant, int $empresaId, Contract $contract): ?Empresa

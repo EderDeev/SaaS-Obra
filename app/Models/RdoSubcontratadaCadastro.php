@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
-    'tenant_id',
+    'tenant_id', 'contract_id',
     'razao_social',
     'nome_fantasia',
     'cnpj',

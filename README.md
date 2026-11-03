@@ -2,7 +2,11 @@
 
 SaaS multi-tenant para gerenciamento de obras.
 
+Cada **tenant representa uma diretoria**. Os contratos pertencem às diretorias; as empresas participantes são cadastradas separadamente nos contratos.
+
 Documentação visual completa: [portal HTML separado](docs/portal/README.md), com guia dos módulos, acessos, arquitetura, integrações e operação segura. Abra `docs/portal/dist/index.html` para consultar offline.
+
+Documentação técnica para desenvolvimento e manutenção: [índice em Markdown](docs/tecnica/README.md) ou [portal técnico navegável](docs/tecnica/dist/index.html). Inclui arquitetura, pastas/arquivos, banco, APIs, frontend, backend, mobile, módulos e procedimentos de operação. Revisão do código local em 03/11/2026; não certifica a versão implantada em produção.
 
 - Laravel 13 + Inertia.js + React + Tailwind CSS
 - Usuários globais com vínculos por tenant e por contrato
@@ -19,9 +23,10 @@ Instalação inicial:
 composer install
 npm install
 php artisan key:generate
-php artisan migrate:fresh --seed
 npm run build
 ```
+
+Antes de qualquer comando que escreva no banco, confira ambiente, driver, host e database resolvidos. Para uma instalação nova, aplique apenas as migrations normais na conexão correta, conforme o [guia técnico de ambiente e operação](docs/tecnica/12-operacao.md). Não use reset ou seed destrutivo em uma base existente; as regras estão em `AGENTS.md`.
 
 Para subir a aplicação em desenvolvimento, use terminais separados.
 

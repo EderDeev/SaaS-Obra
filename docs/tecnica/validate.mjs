@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { JSDOM, VirtualConsole } from 'jsdom';
+
+const root = dirname(fileURLToPath(import.meta.url));
+const file = resolve(root, 'dist/index.html');
+const failures = [];
+const virtualConsole = new VirtualConsole();
+virtualConsole.on('jsdomError', error => failures.push(error.message));
+const dom = new JSDOM(readFileSync(file, 'utf8'), {url: `file:///${file.replaceAll('\\', '/')}`, runScripts: 'dangerously', virtualConsole,
+  beforeParse(window) {window.HTMLElement.prototype.scrollIntoView = function () {};}});
+const {document, Event, HashChangeEvent} = dom.window;
+assert.equal(document.documentElement.lang, 'pt-BR');
+assert.equal(document.querySelectorAll('[data-page]').length, 17);
+assert.equal(document.querySelectorAll('nav [data-target]').length, 17);
+assert.equal(document.querySelectorAll('script[src],link[rel="stylesheet"][href^="http"]').length, 0);
+const ids = [...document.querySelectorAll('[id]')].map(element => element.id);
+assert.equal(ids.length, new Set(ids).size, 'IDs duplicados');
+let references = 0;
+for (const element of document.querySelectorAll('[href],[src]')) {
+  const target = element.getAttribute('href') || element.getAttribute('src');
+  if (/^(https?:|mailto:)/.test(target)) continue;
+  references++;
+  if (target.startsWith('#')) assert.ok(document.getElementById(target.slice(1)), `Âncora ausente: ${target}`);
+  else assert.ok(existsSync(resolve(dirname(file), decodeURIComponent(target.split('#')[0]))), `Referência ausente: ${target}`);
+}
+const search = document.getElementById('search');
+const visiblePages = () => [...document.querySelectorAll('[data-page]')].filter(page => !page.hidden);
+search.value = 'RdoSignatureService';
+search.dispatchEvent(new Event('input'));
+assert.ok(visiblePages().length > 0 && visiblePages().length < 17);
+assert.ok(visiblePages().every(page => page.textContent.toLowerCase().includes('rdosignatureservice')));
+search.value = 'permissões';
+search.dispatchEvent(new Event('input'));
+const accentCount = visiblePages().length;
+search.value = 'permissoes';
+search.dispatchEvent(new Event('input'));
+assert.equal(visiblePages().length, accentCount);
+search.value = 'termo-inexistente-42997';
+search.dispatchEvent(new Event('input'));
+assert.equal(visiblePages().length, 0);
+assert.equal(document.getElementById('empty').hidden, false);
+dom.window.location.hash = '#inicio';
+dom.window.dispatchEvent(new HashChangeEvent('hashchange'));
+assert.equal(visiblePages().length, 17);
+assert.equal(document.querySelector('nav a.active').getAttribute('href'), '#inicio');
+let printed = false;
+dom.window.print = () => {printed = true;};
+document.getElementById('print').click();
+assert.equal(printed, true);
+assert.deepEqual(failures, []);
+dom.window.close();
+console.log(JSON.stringify({status: 'passed', chapters: 17, local_references: references, search: 'passed', navigation: 'passed', print_action: 'passed', javascript_errors: 0, visual_review: 'not performed; DOM validation only'}));

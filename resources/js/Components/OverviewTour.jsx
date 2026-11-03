@@ -45,7 +45,7 @@ const desktopMenuSteps = [
     {
         target: '[data-tour="overview-nav-field"]',
         title: 'Campo',
-        content: 'Diário de Obra registra RDA e RDO da execução; Qualidade concentra RNCs, evidências e ações corretivas.',
+        content: 'Diário de Obra registra o RDO da execução; Qualidade concentra RNCs, evidências e ações corretivas.',
         placement: 'right',
     },
     {

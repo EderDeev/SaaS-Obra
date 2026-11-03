@@ -323,6 +323,13 @@ HTML;
 
     private function signatureWidgets(RdoSignatureRequest $request, string $role, int $index): array
     {
+        if (!$request->relatorio_nao_conformidade_id && data_get($request->request_payload, 'signature_layout') === 'flow_end') {
+            $page = (int) data_get($request->request_payload, 'signature_page');
+            $widget = data_get($request->request_payload, 'signature_widgets.'.$role);
+            if ($role === 'assinatura') $widget = array_values(data_get($request->request_payload, 'signature_widgets', []))[$index] ?? array_values(data_get($request->request_payload, 'signature_widgets', []))[0] ?? null;
+            if (!is_array($widget)) throw new RuntimeException('Posição da assinatura não localizada para esta parte.');
+            return [['name' => 'assinatura_'.$role.'_pagina_'.$page, 'type' => 'signature', 'page' => $page, ...$widget]];
+        }
         return collect($this->rdoMainPageNumbers($request))
             ->map(fn (int $page, int $pageIndex): array => $this->signatureWidget($role, $index, $page, $pageIndex))
             ->values()
@@ -332,6 +339,7 @@ HTML;
     private function rdoMainPageNumbers(RdoSignatureRequest $request): array
     {
         if ($request->relatorio_nao_conformidade_id) return [(int) data_get($request->request_payload, 'signature_page', 1)];
+        if (data_get($request->request_payload, 'signature_layout') === 'flow_end' || data_get($request->request_payload, 'signature_layout') === 'final_page') return [(int) data_get($request->request_payload, 'signature_page')];
         $rdo = $request->rdo;
 
         if (! $rdo) {
@@ -348,19 +356,16 @@ HTML;
             return [1];
         }
 
-        $sectionsByObra = $rdo->secoes
-            ->groupBy('obra_id')
-            ->map(fn ($sections) => $sections->keyBy('secao'));
-
         $page = 1;
         $pages = [];
-
-        foreach ($obras as $obra) {
-            $pages[] = $page;
-
-            $photos = data_get($sectionsByObra->get($obra->id)?->get('fotos')?->dados, 'arquivos', []);
-            $photoPages = (int) ceil(count(is_array($photos) ? $photos : []) / 6);
-            $page += 1 + $photoPages;
+        foreach (\App\Support\RdoWorkflow::fillParties($rdo) as $party) {
+            $sectionsByObra = \App\Support\RdoWorkflow::sections($rdo, $party)->groupBy('obra_id')
+                ->map(fn ($sections) => $sections->keyBy('secao'));
+            foreach ($obras as $obra) {
+                $pages[] = $page;
+                $photos = data_get($sectionsByObra->get($obra->id)?->get('fotos')?->dados, 'arquivos', []);
+                $page += 1 + (int) ceil(count(is_array($photos) ? $photos : []) / 6);
+            }
         }
 
         return $pages ?: [1];

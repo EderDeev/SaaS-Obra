@@ -2,6 +2,10 @@
 
 Manual separado da aplicação, em português, para pessoas usuárias, administradoras e técnicas. O conteúdo descreve o snapshot local revisado em **21/10/2026**. Não confirma a versão publicada em nuvem.
 
+Para a referência técnica revisada em 03/11/2026, incluindo banco, rotas, arquivos importantes e mobile, consulte a [documentação técnica](../tecnica/README.md) e seu [portal navegável](../tecnica/dist/index.html). Este manual anterior permanece disponível como referência de uso.
+
+Correção conceitual: `Tenant` representa uma **diretoria**. Menções históricas que o chamem de empresa devem ser lidas com essa distinção; empresas participantes são entidades próprias dos contratos.
+
 ## Abrir
 
 Abra **[dist/index.html](dist/index.html)** no navegador. Funciona sem servidor e sem internet. A busca, os tópicos, a ampliação das imagens e a impressão funcionam localmente. Links para referências externas precisam de internet.

@@ -1,0 +1,3423 @@
+{
+  "generated_at": "2026-11-03T15:15:30-03:00",
+  "scope": "workspace local; não é certificação de produção",
+  "application": {
+    "commit_base": "3914cb74d33224f75945544d6e8a727f5592d017",
+    "branch": "fix/contracts-optional-value-20261027",
+    "alteracoes_locais": "M README.md\n M app/Http/Controllers/Api/Mobile/MobileAuthController.php\n M app/Http/Controllers/Api/Mobile/MobileRncController.php\n M app/Http/Controllers/Tenant/RdoCadastroController.php\n M app/Http/Controllers/Tenant/RdoController.php\n M app/Http/Controllers/Tenant/RdoResponsavelController.php\n M app/Http/Middleware/EnsureMobileApiToken.php\n M app/Models/RdoConfiguracao.php\n M app/Models/RdoDiario.php\n M app/Models/RdoEquipamentoCadastro.php\n M app/Models/RdoFiscalizacaoRegistro.php\n M app/Models/RdoMaoObraCadastro.php\n M app/Models/RdoSecaoRegistro.php\n M app/Models/RdoSubcontratadaCadastro.php\n M app/Notifications/RdoFlowChangedNotification.php\n M app/Services/Assistant/AssistantContextBuilder.php\n M app/Services/Assistant/AssistantRetriever.php\n M app/Services/RdoDailyGenerator.php\n M app/Services/RdoPdfRenderer.php\n M app/Services/RdoSignatureService.php\n M app/Services/Signatures/OpenSignSignatureProvider.php\n M app/Support/DiarioObraPermissions.php\n M app/Support/TutorialCatalog.php\n M docs/portal/README.md\n M package-lock.json\n M package.json\n M public/favicon.ico\n M resources/js/Components/OverviewTour.jsx\n M resources/js/Components/RdoTour.jsx\n M resources/js/Layouts/AuthenticatedLayout.jsx\n M resources/js/Pages/Tenant/OsDnit/CreateOrder.jsx\n M resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfModelPreview.jsx\n M resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Show.jsx\n M resources/js/Pages/Tenant/Rdo/Cadastros.jsx\n M resources/js/Pages/Tenant/Rdo/Calendar.jsx\n M resources/js/Pages/Tenant/Rdo/Settings.jsx\n M resources/js/Pages/Tenant/Rdo/Show.jsx\n M resources/js/Pages/Tenant/Rdo/TourPreview.jsx\n M resources/js/Pages/Tenant/Tutorials/Index.jsx\n M resources/views/pdf/rdo.blade.php\n M routes/api.php\n M routes/console.php\n M routes/web.php\n M tests/Feature/TenantAccessTest.php\n M tests/Feature/TenantAssistantTest.php\n M tests/Feature/TenantDiarioObraPermissionsTest.php\n M tests/Feature/TenantRdoTest.php\n M tests/Feature/TenantRncModelFieldsTest.php\n?? app/Console/Commands/SimulateAdditionalLocalRdos.php\n?? app/Console/Commands/SimulateLocalRdos.php\n?? app/Http/Controllers/Api/Mobile/MobileRdoController.php\n?? app/Models/RdoPdfSetting.php\n?? app/Services/RdoDocumentLogos.php\n?? app/Services/RdoPdfPreview.php\n?? app/Support/RdoCatalogs.php\n?? app/Support/RdoPdfTemplates.php\n?? app/Support/RdoWorkflow.php\n?? database/migrations/2026_10_27_180000_add_workflow_to_rdo_configurations_and_diaries.php\n?? database/migrations/2026_10_27_190000_separate_rdo_sections_by_filling_party.php\n?? database/migrations/2026_10_28_100000_create_rdo_mobile_syncs_table.php\n?? database/migrations/2026_10_28_110000_add_rdo_pdf_settings.php\n?? database/migrations/2026_10_28_120000_add_report_company_to_rdo_configurations.php\n?? database/migrations/2026_10_28_130000_scope_rdo_catalogs_to_contracts.php\n?? database/migrations/2026_10_29_150000_add_activities_to_rdo_inspections.php\n?? database/migrations/2026_10_29_160000_add_comment_to_rdo_inspections.php\n?? database/migrations/2026_10_29_170000_add_weather_to_rdo_inspections.php\n?? database/migrations/2026_10_30_120000_add_manual_holiday_to_rdo_diaries.php\n?? docs/tecnica/\n?? public/audio/notification-bubble.wav\n?? public/audio/notification-happy-bell.wav\n?? public/images/tutorials/os/\n?? resources/fixtures/\n?? resources/js/Components/OsDnitDemandFields.jsx\n?? resources/js/Components/RdoCatalogPicker.jsx\n?? resources/js/Pages/Tenant/Rdo/ClientReviewPanel.jsx\n?? resources/js/Pages/Tenant/Rdo/DocumentWorkspace.jsx\n?? resources/js/Pages/Tenant/Rdo/InspectionDocumentFile.jsx\n?? resources/js/Pages/Tenant/Rdo/InspectionEvidenceEditor.jsx\n?? resources/js/Pages/Tenant/Rdo/ManagerFlowActions.jsx\n?? resources/js/Pages/Tenant/Rdo/PdfDownloadModal.jsx\n?? resources/js/Pages/Tenant/Rdo/WorkflowEditor.jsx\n?? resources/js/Pages/Tenant/Rdo/calendarStageAppearance.js\n?? resources/js/Pages/Tenant/Rdo/partyAppearance.css\n?? resources/js/Pages/Tenant/Rdo/partyAppearance.js\n?? resources/js/Pages/Tenant/Tutorials/OsDemandPreview.jsx\n?? resources/js/Pages/Tenant/Tutorials/OsStagePreview.jsx\n?? resources/js/Pages/Tenant/Tutorials/OsWorkflowTutorial.jsx\n?? resources/js/Pages/Tenant/Tutorials/TutorialStageModal.jsx\n?? resources/js/Pages/Tenant/Tutorials/TutorialWalkthrough.jsx\n?? resources/js/Pages/Tenant/Tutorials/TutorialWorkspace.jsx\n?? resources/js/Pages/Tenant/Tutorials/VisualTutorial.jsx\n?? resources/js/Pages/Tenant/Tutorials/os-workflow-tutorial.css\n?? resources/js/Pages/Tenant/Tutorials/tutorialExamples.js\n?? resources/js/Pages/Tenant/Tutorials/tutorialScenes.js\n?? resources/js/Pages/Tenant/Tutorials/tutorialVisualData.js\n?? resources/js/Pages/Tenant/Tutorials/visual-tutorial.css\n?? resources/js/assets/\n?? resources/views/pdf/rdo-analysis-row.blade.php\n?? resources/views/pdf/rdo-concremat.blade.php\n?? resources/views/pdf/rdo-heading-row.blade.php\n?? resources/views/pdf/viewer.blade.php\n?? scripts/build-favicon.php\n?? tests/Feature/MobileTenantSelectionTest.php\n?? tests/Feature/TenantRdoWorkflowTest.php\n?? tests/Frontend/rdo-show-client.test.mjs\n?? tests/Frontend/tutorials-visual.test.mjs"
+  },
+  "mobile": {
+    "commit_base": "e042e3a616b868cb83a78a24cbec83fbfcb338ae",
+    "branch": "master",
+    "alteracoes_locais": "M App.tsx\n M README.md\n M app.json\n M assets/android-icon-background.png\n M assets/android-icon-foreground.png\n M assets/android-icon-monochrome.png\n M assets/favicon.png\n M assets/icon.png\n M assets/splash-icon.png\n M package-lock.json\n M package.json\n M src/services/sync.ts\n M src/storage/database.ts\n M src/types.ts\n?? expo-go-production-qr.png\n?? expo-go-production-qr.svg\n?? expo-local-qr.svg\n?? expo-production-iphone-qr.svg\n?? expo-production.err.log\n?? expo-production.log\n?? expo-test.err.log\n?? expo-test.log\n?? scripts/\n?? src/services/context.ts"
+  },
+  "counts": {
+    "chapters": 17,
+    "routes": 418,
+    "table_names": 123,
+    "source_files": 850
+  },
+  "sources": [
+    {
+      "path": "../mobile-rnc/app.json",
+      "sha256": "6c10c8bf73368238ba98ef9aac78e3664e2bf8041c05fd35e49915addc7b8561"
+    },
+    {
+      "path": "../mobile-rnc/App.tsx",
+      "sha256": "756497f867d09ce5acddc08d368b3fd86ea84a157b6b628f6a0bfbbf86c8cf2e"
+    },
+    {
+      "path": "../mobile-rnc/eas.json",
+      "sha256": "5ae3e53afd0a51dd30384feecab57cad3243cfb254d925c544127bd684a1ed4f"
+    },
+    {
+      "path": "../mobile-rnc/package.json",
+      "sha256": "9dd4fde7079b218f0d3c9eac9830c76b63e7d744c7884877bb2a57925b2dbfb2"
+    },
+    {
+      "path": "../mobile-rnc/scripts/test-mobile-sync.cjs",
+      "sha256": "0d2a201c0d2e44cf355abb472fb473b2adef6ef233fd3cc7e497c8814ab34d90"
+    },
+    {
+      "path": "../mobile-rnc/src/config.ts",
+      "sha256": "4994fd1903a9a53aa705456b07ea1d6c807b4a5792b7ec3550b05914989e4e81"
+    },
+    {
+      "path": "../mobile-rnc/src/services/context.ts",
+      "sha256": "277dac71848d598e5edfe5cd97960f92da94660dc3cafc729b8ff708d5ec6faa"
+    },
+    {
+      "path": "../mobile-rnc/src/services/sync.ts",
+      "sha256": "c6d849a230b14871c1295d88e128aef382eebab44b26aa5fd4e8eb0917910826"
+    },
+    {
+      "path": "../mobile-rnc/src/storage/database.ts",
+      "sha256": "647e666cf839d697b64f17ef478165c2c064a3742b8703c7a020b4e83e18e2d2"
+    },
+    {
+      "path": "../mobile-rnc/src/types.ts",
+      "sha256": "76948c3f3ce7a08b2e579f1fad360b31e994e3d97b8ce433f382f807a6d22d2c"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "b5707b022daea09ac0f657e6471c73f8c2508d58eeb9d8641a39ef8d1e01843f"
+    },
+    {
+      "path": "app/Console/Commands/FreezeRncDocumentModels.php",
+      "sha256": "5a3d86515507a7172a4fe64a7ebcedee3ee5dbe24fb215bf76a3b0e96d3ea46b"
+    },
+    {
+      "path": "app/Console/Commands/FreezeRncPdfLogos.php",
+      "sha256": "8dd2337b0ef7a05afbb2dda265ed8f953682355047ca871236cb1737b0835b45"
+    },
+    {
+      "path": "app/Console/Commands/GenerateDailyRdos.php",
+      "sha256": "f0fd25ffe24c73d9345c5d4f728958f1c78a2ba8aeb00f87c342270fc59970ac"
+    },
+    {
+      "path": "app/Console/Commands/SeedOsDnitSandbox.php",
+      "sha256": "bcfc056e6ebfc6378547e3be634d1aaed36fe09af71609cfc526c98c39e9e986"
+    },
+    {
+      "path": "app/Console/Commands/SeedProjectValidationScenario.php",
+      "sha256": "ac957688d8ba2c1f287c71c4675006f9d5c8e33b06d0ef52ebeb87be23203ff6"
+    },
+    {
+      "path": "app/Console/Commands/SimulateAdditionalLocalRdos.php",
+      "sha256": "f6ab46fd080683a3ee3b2185afd9f8334f22c0aa4b5e40f49c34fdabb844b666"
+    },
+    {
+      "path": "app/Console/Commands/SimulateLocalRdos.php",
+      "sha256": "a9e58484c8db19db138b1d9d3dcc886359b56cb84b055033ad5ea270df650cfc"
+    },
+    {
+      "path": "app/Http/Controllers/Api/Mobile/MobileAuthController.php",
+      "sha256": "3d2d223de41493e847464ef79f78c38f9dc2c239e35cc9e92aa14a4c66405ad7"
+    },
+    {
+      "path": "app/Http/Controllers/Api/Mobile/MobileRdaController.php",
+      "sha256": "5636bd3669d2daf8b840b725396cd20e04616b3da07f4915628c353b02f38618"
+    },
+    {
+      "path": "app/Http/Controllers/Api/Mobile/MobileRdoController.php",
+      "sha256": "fc6ecb7555819b70601992a739a5272ca50f512f76024cc5330d0d807aebb10b"
+    },
+    {
+      "path": "app/Http/Controllers/Api/Mobile/MobileRncController.php",
+      "sha256": "b89e22fefbb329858c1241c12f0f575d281351a66ac90612c656a6a275828c6d"
+    },
+    {
+      "path": "app/Http/Controllers/Api/OpenSignWebhookController.php",
+      "sha256": "9ee9bb7c7d0bef28b6ad22c918dfe82b3e8f509e455917cb2b6816d71470123a"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/AuthenticatedSessionController.php",
+      "sha256": "8dd906760ae3ef32d1ca82731af6e8f69ab03de865c11eee05558ddbefec1262"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/ConfirmablePasswordController.php",
+      "sha256": "99285d8af325a5a8d00dbea3c5443277a8ce9050d5a7fa29afce2e310191ef17"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/EmailVerificationNotificationController.php",
+      "sha256": "24d5704b7534ad365800a33e7c537bf63467f1271c4bc801b351c8a05a77e5b9"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/EmailVerificationPromptController.php",
+      "sha256": "ac015dc07e1aed52ae2cb95a98b2e3c37174bba4ff5df85963fece8bf3dc3dd2"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/ForcedPasswordChangeController.php",
+      "sha256": "c6dc2237dde476ce765f4a46774548be26c620c7515ced5aa3221b4523320940"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/NewPasswordController.php",
+      "sha256": "db6dd78e1d6a5188cb5f6a6638f94d95fdb8f8a50a91a72349a7dbc6327c4bee"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/PasswordController.php",
+      "sha256": "9e47601940ced6708957f01d3e81f5b952603341899cd0e36167274caa645bd7"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/PasswordResetLinkController.php",
+      "sha256": "58033cccd637ca3d46a3670fd6cbd9ac35f5ce0ba1c9801c7c4763178cbc4267"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/RegisteredUserController.php",
+      "sha256": "4e230d66469bc71159b5bce608fcffeaa9a5c16ca5ae3a962b819238d2bb8d9d"
+    },
+    {
+      "path": "app/Http/Controllers/Auth/VerifyEmailController.php",
+      "sha256": "5f6080a239709740135d9138085ceb1857c5570a0fea35e62c976fc90929631e"
+    },
+    {
+      "path": "app/Http/Controllers/Controller.php",
+      "sha256": "25d1c1ef8e6cc8a376553faacfba2b07d9dfaee9bdbb84f14f77517580e9deb1"
+    },
+    {
+      "path": "app/Http/Controllers/NotificationController.php",
+      "sha256": "65c5685c2f93f1324df35d4309acf60502d206f19968e56057df0c3c03bb69ef"
+    },
+    {
+      "path": "app/Http/Controllers/Platform/ApsUsageController.php",
+      "sha256": "bee95c49b81ab8214cb3fe4aaf6c5dc0ea47734dfbd1c0ded3aa308c13f90d1a"
+    },
+    {
+      "path": "app/Http/Controllers/Platform/DashboardController.php",
+      "sha256": "2039c6a7fc2ea974cbc68efc3495a91fae0982561f88f066fb12d141f590161e"
+    },
+    {
+      "path": "app/Http/Controllers/Platform/TenantController.php",
+      "sha256": "94d65bf29a7e2f6051536c5984d617900dfaff605c263ca0d46bb37f33d9fb5f"
+    },
+    {
+      "path": "app/Http/Controllers/ProfileController.php",
+      "sha256": "feb017b2f4b96860f73d10bb2cc10d46648e0a6ae4746133002940de35488d29"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ActivityController.php",
+      "sha256": "6a38529e47a8e74fb80413e8f9ef1a1fd443c15bfd0a63c27d802903c79aa8ee"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/AssistantController.php",
+      "sha256": "43792b7d960eab1420803b11618d5c29bbdde4bc3b7547257ef4b296487cceca"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/BoletimMedicaoController.php",
+      "sha256": "fe43bb13c746baa345686aefc5200af17c6995ba5bda5793b9d5b67ffffa39dd"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ContractAdditiveController.php",
+      "sha256": "a8dad60d29aea48929f377e4f65ba499ea66d930003b997bcc2557cd3c4e9cf3"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ContractController.php",
+      "sha256": "80ec29a7058df60ce72a475ecdddca15acdcc857060a7577294601908d27ed92"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ContractParticipantController.php",
+      "sha256": "232ccf1363a5afe8c9957162ad0992ac218b0df685c48c9ffad90138aa8a7148"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/DashboardController.php",
+      "sha256": "85a6871646138bb88a60e21f480775815abb4461111d0386bf5d7c358c16ec8d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/FolhaRostoController.php",
+      "sha256": "667211e5b71fb53660aa16e93f8b108be201b416b9725f5faf7c5fc54d79834b"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/GedController.php",
+      "sha256": "d1a4331b09129a8615e30b710dfb3cf64bed0fd916a3f7e74862915debaf0102"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/MedicaoBiController.php",
+      "sha256": "0fb447cfaaa2990c1bed5c76f245a21ea525ca6f47f4acd822bf756df186cf0d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/MedicaoController.php",
+      "sha256": "693f30f3e0468843b389b2fa34f6bd3dfbe6871d78b17b3ce88de17886123a07"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/MedicaoRelatorioController.php",
+      "sha256": "085acff83b852fae62ad36689e38a213468ea92f8925f398c71f5d4d50b71c4b"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OrcamentoController.php",
+      "sha256": "34d3d646f2fcc822b047f2f971ead51b8e0cf0c5fb195bb33f226081d889de1f"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OrdemServicoController.php",
+      "sha256": "74907f99ba8c1d71c6a302919ded1a635f9ccf1e6d09cd9ba010a12493ede56a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OrdemServicoMetricsController.php",
+      "sha256": "5d6983456066ab420be8b86be3008b0e44c3e14a3edba21d1c0459d96b551040"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitDashboardController.php",
+      "sha256": "6fa52c52f15ac4addc53bddbb3a9caf64acb0ecee060882126f3f8a13d5a03f7"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitOrderController.php",
+      "sha256": "e5ed2cd2acdca1e9946aa9189699200cee8e2cbde540dd13b7724f832311745d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitProductController.php",
+      "sha256": "b3920ef2a1683a989af0c38fbbdc4595b3c1d07b39cc06c9457a41a43ce13240"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitResponsibleController.php",
+      "sha256": "a0f16ac0c0fd4747fad4e8c9155af9b748a88dc0e932ba9136aa1c551e80c087"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitSettingsController.php",
+      "sha256": "5e57e50e21b0d18304bc393981ffae6812ab37a31822118dde510134621744bb"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitTourController.php",
+      "sha256": "ec5aa3d893df3aa803ac629897a2648a8c38afbe0ecafcdec0a33846e4e71b57"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/OsDnitWorkflowController.php",
+      "sha256": "4145ddd509d78adb1fbce7446fb88a48562f06550718079f55cb5fdcd3515004"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/ContratoController.php",
+      "sha256": "30eeeb3799ab514b9bcaeb6725da87bd2917f0a4f7e10282a8ae240b9127c818"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/DisciplinaController.php",
+      "sha256": "f91c191e3a732ecee47d9f8bdcd1d9b6ee02dc68526871ddf46f11103be0a2c8"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/EmpresaController.php",
+      "sha256": "9f17b05279f5016ed3e12e3f2b45425c57a767ef2aca5674ae5d8e482b4b9365"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/ObraController.php",
+      "sha256": "a303992e6c1321ef02e691d14e4a682c50f91607fb5f3980d18e4b3f357359a6"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/TrechoController.php",
+      "sha256": "0a4d308dddc71e93eaa96f4926870b65bf3102a73ae001a220e903a5c7de4ac2"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Parametrizacao/UsuarioContratoController.php",
+      "sha256": "0647a4302fcfcbefdfec5589ea817b2257975dacf902fef35c69b30c0271b48a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/PermissionController.php",
+      "sha256": "4e755e372d606508b0eedecbef4aa810ea708fbad161bc9d447d65153d52a668"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectController.php",
+      "sha256": "da17d3b395cf89234ef07ffd27d2b6bb3b8d6de3ccd121a08ae19961165356d5"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectResponsavelController.php",
+      "sha256": "733e7949b69103f832ded6d1ef245ede905f11d54b01837e10175d59de070270"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectReviewController.php",
+      "sha256": "78b0afa0970ca346a40ecbbde8088a3fd5d438566ef67e21b4bdd83702cbd813"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectReviewWorkspaceController.php",
+      "sha256": "d759bc90933a8b8a12df699187f52288a1ec20bf4d134472f8d1f3342e4f83db"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectSubmissionBatchController.php",
+      "sha256": "ae964052edb76ea913a4b61251fb1971122d129ff0aeca923387df407bd26c79"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/ProjectViewerController.php",
+      "sha256": "887f03b287ced51da875b42adb05dcc42dc5794f485a429424fbb3ae5e07489a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/IcResponsavelController.php",
+      "sha256": "4e793c6ff2aaf34222e13c465e325e69cceb5bb89125ff34b043a368c3ac9cc2"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/InstrucaoCampoController.php",
+      "sha256": "d70c77c2b42056e3211b475d33b6666cb27280aaa61e180d052199883a8de0c5"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RelatorioNaoConformidadeController.php",
+      "sha256": "b15bba5b48cb2b6adc8b752942e356daf5ed8c86bb53bebbad8f6bbff7f9e73d"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RncAcaoCorretivaController.php",
+      "sha256": "e463e46216b7aff3046ba36974f0eb5ee625421cfbf9f9d074c47b96006be379"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RncEvidenciaController.php",
+      "sha256": "eaa62638c4d14071e97060553fdde040d88fe511f02ebbef4d305bb5ff7dbdd4"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RncPdfSettingController.php",
+      "sha256": "cddd935c6c9167836f138390cb56558de645c85626cf9ac316169b1ef5d39f43"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RncResponsavelController.php",
+      "sha256": "bed5752777b8e609a5a44d4fe5a13e6d19f84bc678d0804ad8124a4bc187c4ee"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/Qualidade/RncSignatureController.php",
+      "sha256": "7ebedbd634f08638d182c386ca4f3b20483cb50e2c589f7e37c244259caeba8a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdaController.php",
+      "sha256": "b39adecf0f56f055c54fed3a1ab693784a0048f5b1d7376750980e2c6f68f31a"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdaResponsavelController.php",
+      "sha256": "8fb48ab353552a0c87b8f5461562ca19beda7607b75cf12dca66bc7376ed4e70"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdoCadastroController.php",
+      "sha256": "becb036c66de706e5fdd691f06d53d88e6732789770601dc4a74d7d3bb664a5e"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdoController.php",
+      "sha256": "e9cda0cd76b3c6856e14b5138adfc9da4fe6c837ff78adc3e9214954f9c50740"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdoResponsavelController.php",
+      "sha256": "b73c0bc623875b509afe78d2c0b2fb1bfd8047b52fc3219ef8ed6af0f1f80fdb"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/RdoSignatureController.php",
+      "sha256": "8c769910e51e2ecf0b4b48a81b2e60aee8a254d5d4f5eb44ce2448d5bfcd066b"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/TutorialController.php",
+      "sha256": "1e2184d033baf235d1a0c19e5e31685671e7a4b1b3e9eef4fd866f235d531d27"
+    },
+    {
+      "path": "app/Http/Controllers/Tenant/UserController.php",
+      "sha256": "ae13664b3631bbf7843fa8cc55b1da9399d4811865bf38a09f823c5313e4a2e0"
+    },
+    {
+      "path": "app/Http/Controllers/TenantSelectionController.php",
+      "sha256": "6dc8c877fe5f2694dcd9692cba5672cd143ebbb330bcd06001acecfc766d61d0"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureContractPermission.php",
+      "sha256": "ae12fb18cc9e5c7640f066459850888e7cfa16177a101d31bad53e1a52c29759"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureDiarioObraPermission.php",
+      "sha256": "1a86a1719e53a82b81a69f3b3f483ebaf742f1ed6a4028207208a390c51ee697"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureDocumentationPermission.php",
+      "sha256": "dd757c21befa0e80700a8a2e82074c91dc3110cc94ce856a8ec967a4b9e614a1"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureMedicaoPermission.php",
+      "sha256": "7b7e34bc88139da916bfb598cec51c996b9f4fdefa8608c81c05c35465973ba2"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureMobileApiToken.php",
+      "sha256": "d68badc07d84c41255218be5f0992d3d76d1e67dcd18730646d40fb3b659e61f"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureOrdemServicoPermission.php",
+      "sha256": "5709f9c037d024c5cca79a6ec6034f8d161d160266fef5461baba8901eec3ce1"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureOsDnitPermission.php",
+      "sha256": "f22df458d37f8ebe27f033da0e93f077513ffd865c4b52ce1f7f154fdc87ac47"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureParametrizacaoPermission.php",
+      "sha256": "a6f292e20941b19e5b96f5a3cd5810fedbd495b56e4195f4d30c67bea759822d"
+    },
+    {
+      "path": "app/Http/Middleware/EnsurePasswordWasChanged.php",
+      "sha256": "21b53da0d2cb8e47d494ee10c334dbb4b52ba295e17eb89573ca4519985acf22"
+    },
+    {
+      "path": "app/Http/Middleware/EnsurePlatformAdmin.php",
+      "sha256": "26133c39bbc869813abf2edf0e7be758931861bb1156d5512971621fd5bc5f9e"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureTenantAccess.php",
+      "sha256": "1d2d63766272acc516239a8d7b577661a21ff25d6bcad8187d05b24f57db5337"
+    },
+    {
+      "path": "app/Http/Middleware/EnsureTenantAdmin.php",
+      "sha256": "69a520f238a9c32803e2cb9ea0359a2c056131665961621f6d0ce2a260bc6a5c"
+    },
+    {
+      "path": "app/Http/Middleware/HandleInertiaRequests.php",
+      "sha256": "c2bfd301722772e0263666d780893abf9869f8310a53fb7b38e96fe224e34937"
+    },
+    {
+      "path": "app/Http/Middleware/ResolveTenant.php",
+      "sha256": "afea0e84aa714938e507bb25333ae72764a7a55f588de7b5e9f8fc694ad8f2a3"
+    },
+    {
+      "path": "app/Http/Requests/Auth/LoginRequest.php",
+      "sha256": "d64740bf9748fcd0b33a14d72aa42ec2868f2579746b3e1701426006c7eaa6a3"
+    },
+    {
+      "path": "app/Http/Requests/ProfileUpdateRequest.php",
+      "sha256": "70e6d7ee22a5198d37b7751451e55c704b3f3c3e583e01cfb9f5815577b6cae2"
+    },
+    {
+      "path": "app/Http/Requests/SendAssistantMessageRequest.php",
+      "sha256": "ae714b0d6441a1a7e4c27f02f85fcae42b8a8cea92e17e2992b465a50b4278ec"
+    },
+    {
+      "path": "app/Jobs/DeleteStoredImportFileJob.php",
+      "sha256": "0e7837bf9f8b228e220cf2005ce728168d03b389bdd8d7f90ffb43bd9912c0ec"
+    },
+    {
+      "path": "app/Jobs/ImportOrcamentoComposicoesJob.php",
+      "sha256": "2ef1d5196485cce8ca2a7db407043604666470704d4e3de8e838a409f3457f4b"
+    },
+    {
+      "path": "app/Jobs/ProcessGedDocumentAttachmentOcrJob.php",
+      "sha256": "8ff25bc617c09e08b097d6e65b4e8b24d82f30b6088e383199b5eb6501599874"
+    },
+    {
+      "path": "app/Jobs/ProcessGedDocumentOcrJob.php",
+      "sha256": "d20ba4b784dcedef958834a6aca58250e9463dc8935097f7878b596cac2dd661"
+    },
+    {
+      "path": "app/Jobs/ProcessProjectVersionApsJob.php",
+      "sha256": "0e517307b8abc2d301cdda6d93b8f333063702983571bb2f9a9c8138acd6a042"
+    },
+    {
+      "path": "app/Jobs/RemoveRejectedProjectVersionFromApsJob.php",
+      "sha256": "681973c0f1ce0293783ea048ed1db37fe5f08d7562dbf1d1978787ecd1eb8c1e"
+    },
+    {
+      "path": "app/Models/Activity.php",
+      "sha256": "86d7c92985343db1f1fe32ea2bb1e371e9828a75cf14588325c218c89f703966"
+    },
+    {
+      "path": "app/Models/ActivityChecklistItem.php",
+      "sha256": "507791ec4089d49dcd36fa450d4a92c36b3546245b9d5f253e76d42de28c8a06"
+    },
+    {
+      "path": "app/Models/ActivityComment.php",
+      "sha256": "ae19e8ff8a40c9e8e96493b4869171561c027a11a73caaf883a427898cbba003"
+    },
+    {
+      "path": "app/Models/ActivityFile.php",
+      "sha256": "d84dcc5f4a005113ec344485d8677d25d53ecc658ad329842133a7e70736dcac"
+    },
+    {
+      "path": "app/Models/AiConversation.php",
+      "sha256": "4fea80e7d8af6d440ac8bf4d8941b517e9c53a3b8bf0808942030adeccb57d77"
+    },
+    {
+      "path": "app/Models/AiMessage.php",
+      "sha256": "c2ff8ff78b5825f2e151d78e9393e9df284639e1d3171314606aa251a7c78eb5"
+    },
+    {
+      "path": "app/Models/AiMonthlyUsage.php",
+      "sha256": "be2faa9a55133fd8cfbbd694775a0748c09a46aa7cdc9b33f70b231259f696d4"
+    },
+    {
+      "path": "app/Models/BoletimMedicao.php",
+      "sha256": "4ffbf00a6527098f4f6dfa4d6a6711aad422a47cf07d09cb140496465703fa26"
+    },
+    {
+      "path": "app/Models/Contract.php",
+      "sha256": "946ee9c3a6b8899685fb3b0ad2acbff35e821fcbf9ad50e2c218a21ab02d148f"
+    },
+    {
+      "path": "app/Models/ContractAdditive.php",
+      "sha256": "8387d2c7783b3e7b81a3d045935c10205d0d4d643394bde2be6554d1dfd82bb5"
+    },
+    {
+      "path": "app/Models/ContractParticipant.php",
+      "sha256": "a7c55b153d166806efbb46f5484a827a3e5e9625335c98c38638e34d7db007ab"
+    },
+    {
+      "path": "app/Models/Disciplina.php",
+      "sha256": "d56887981e42e36ee4c33add33f7ad94d31822afc72a4095332d0e5efa6c19d3"
+    },
+    {
+      "path": "app/Models/Empresa.php",
+      "sha256": "4203109ffc5e0a92b97581cf677c36c75c8ff5bbf2ce6293d59517fbe13e5282"
+    },
+    {
+      "path": "app/Models/FolhaRosto.php",
+      "sha256": "b76b21fe4aa3ce1f83891defd8a1caa4970d28f8d077ea912ffdf60005b4b503"
+    },
+    {
+      "path": "app/Models/FolhaRostoAnalise.php",
+      "sha256": "47caaa898a8aaa685d85c8ec8ac09d73280c4971d79dc3c32c4129fd41b83197"
+    },
+    {
+      "path": "app/Models/FolhaRostoAnaliseResponsavel.php",
+      "sha256": "82ccca74752c1c06c33276dbb0935f7caeec6e0c34e086fa207c798795a7a68c"
+    },
+    {
+      "path": "app/Models/FolhaRostoFluxoHistorico.php",
+      "sha256": "76271686ee75f29fd561bf9fc7fa6798c5e0899cd91f6ee4d15ee062af7b74c2"
+    },
+    {
+      "path": "app/Models/FolhaRostoItem.php",
+      "sha256": "837eded8913e8c9fa878fd0cddaf0e7af3ee95de58f48818513e0fa790346a60"
+    },
+    {
+      "path": "app/Models/FolhaRostoItemAnalise.php",
+      "sha256": "6984fe462e09fd85136185cad5bddc32d3acac0fd7b3147ee09e248b08e96b21"
+    },
+    {
+      "path": "app/Models/GedCorrespondent.php",
+      "sha256": "d112f2e45bb3f73cce064cc18349be226343a055ea7a83f86251ec1adafbf3c5"
+    },
+    {
+      "path": "app/Models/GedDocument.php",
+      "sha256": "1c5e2213cc083e6e41344102b8d56b48ef8b3107b0efe1a2f06363ac2ee1227c"
+    },
+    {
+      "path": "app/Models/GedDocumentAttachment.php",
+      "sha256": "cb20fe2a8cb81160b20181553bfeaab96f908e88f4596c5a16906c7c8b2f0198"
+    },
+    {
+      "path": "app/Models/GedDocumentEvent.php",
+      "sha256": "0e5338c0b3178998c41644ef92c6b3f51b5ef1f4bc46417db2b085edf6e1e7c5"
+    },
+    {
+      "path": "app/Models/GedDocumentNote.php",
+      "sha256": "a0445edbd94c977ea34fd376968894dbb537b582b25c9451738954588eabea3c"
+    },
+    {
+      "path": "app/Models/GedDocumentType.php",
+      "sha256": "7df07a0a7fd65f9645db19768b5b1b7c85a97c90278a76f46cb4da13deeeccaa"
+    },
+    {
+      "path": "app/Models/GedDocumentVersion.php",
+      "sha256": "61e3e7761385d6fdd700c7ee785eab11b868aac72008b265cee8b810892475e8"
+    },
+    {
+      "path": "app/Models/GedEmailAccount.php",
+      "sha256": "de7b0da8497e50f8c4eb4e19d87d1b2dfeadf66c39aaf19c9a6991c2d998c286"
+    },
+    {
+      "path": "app/Models/GedEmailProcessedMessage.php",
+      "sha256": "153c850cf0fd883beb26e5bcded8b974b0aeb6eda678a44930c5bcaff2fead04"
+    },
+    {
+      "path": "app/Models/GedEmailRule.php",
+      "sha256": "bf532fee59fc7386da512b2edc17ea3e3c1232787baeddcd823752d75e504543"
+    },
+    {
+      "path": "app/Models/GedTag.php",
+      "sha256": "f89c2756fee0ff8503853eacc36460016c219ab5cd73c37802a9291f9749c8b3"
+    },
+    {
+      "path": "app/Models/InstrucaoCampo.php",
+      "sha256": "3700c33ba53633bd11a7a77cf4caa809db6b38b33bad84a66cb901c08eef72ad"
+    },
+    {
+      "path": "app/Models/InstrucaoCampoAttachment.php",
+      "sha256": "cbf3579f724a18f2ba2d56c2e7d1eb5893f96b816eee4ebd6e17fc156eb65422"
+    },
+    {
+      "path": "app/Models/InstrucaoCampoEvent.php",
+      "sha256": "352890d2b667d149848810aac8052c4dba05a29908696d1d4682c039c44f5b7c"
+    },
+    {
+      "path": "app/Models/InstrucaoCampoPhoto.php",
+      "sha256": "51827348da5333296e09a108fa935118f27a7029a66eb66ef84eda815f4dcf4f"
+    },
+    {
+      "path": "app/Models/InstrucaoCampoResponsavel.php",
+      "sha256": "f3511492368750f1ab673af693c305bb75180778824d2b4e10061876add357b0"
+    },
+    {
+      "path": "app/Models/MedicaoIndiceReajuste.php",
+      "sha256": "0c99acdc2ce1dd5a5056e4c2b96a9bee2a08971b39e5c78bcb8d4e54b48628ac"
+    },
+    {
+      "path": "app/Models/MedicaoIndiceReajusteCompetencia.php",
+      "sha256": "676081d518384195383c7e44bd88c4c4c06e0b555f1fa3534e15e4e7b9720c65"
+    },
+    {
+      "path": "app/Models/MedicaoItem.php",
+      "sha256": "7a24a25c2bc6f137a477447f2a6b775717db5e00a949ed08bddab9a0d91049f0"
+    },
+    {
+      "path": "app/Models/MedicaoItemAdditive.php",
+      "sha256": "08e4b99a6588e9dcb73e104df8a5849a6ae576f93edac9bc6d9ed1338e6f10fd"
+    },
+    {
+      "path": "app/Models/MedicaoItemAdditiveItem.php",
+      "sha256": "5f47b6b9b27c3948fd8c6ef589fd870c10ad2767ea435ba636f81b4bf1abaf82"
+    },
+    {
+      "path": "app/Models/MedicaoItemReajusteIndice.php",
+      "sha256": "087874680b98d5dbcf68f2e5b5f2142770042617eccdd22930276f6018537e99"
+    },
+    {
+      "path": "app/Models/MedicaoItemVersion.php",
+      "sha256": "81b5376b2110389ed308e1d327dacbcfbe7512ecd08c8fcfab81828a59d95234"
+    },
+    {
+      "path": "app/Models/MobileApiToken.php",
+      "sha256": "3772cfafe7708c6e04a1ea92f06eafd8515e1a0042393bde72435e25e421f113"
+    },
+    {
+      "path": "app/Models/Obra.php",
+      "sha256": "608174e6bfa2f346ac0fdbca5d027ec1533fa1a6bf81b91ab3a3ca008750010a"
+    },
+    {
+      "path": "app/Models/Orcamento.php",
+      "sha256": "aae02be8b4c7621170d146e33f98b135bb28a4c948894c450b7ceceb8fa2abf2"
+    },
+    {
+      "path": "app/Models/OrcamentoAcesso.php",
+      "sha256": "bb191643874e06665ca0943c01d109048c18a55c9e82ed4276106e390260ec92"
+    },
+    {
+      "path": "app/Models/OrcamentoComposicao.php",
+      "sha256": "bb344dd1cceede9b19e5a389a38fe9295cd8508e4bfae1612004c5274a4d5da8"
+    },
+    {
+      "path": "app/Models/OrcamentoComposicaoAnaliticoItem.php",
+      "sha256": "d7356f3fb085aba1a9ee0a93d817ee6a03ac5655b47fccc54b0c92998eb682d0"
+    },
+    {
+      "path": "app/Models/OrcamentoComposicaoItem.php",
+      "sha256": "144fd5130fac8a4ac353931569c4268740b530a806d9c400357545336e84db5e"
+    },
+    {
+      "path": "app/Models/OrcamentoEtapa.php",
+      "sha256": "272f2754496ef5cb68dcf90cbe61812cc45ef5c6c669578ad8118007f688b5a8"
+    },
+    {
+      "path": "app/Models/OrcamentoInsumo.php",
+      "sha256": "b5adb6c6017ec6e8bef333695eb7f1151b1a8585ba963298c273298b3e5698a7"
+    },
+    {
+      "path": "app/Models/OrcamentoInsumoGrupo.php",
+      "sha256": "768ef5728e63688ef0e88565c56d77e887e5e9e4577b46996e29cba8dfb6dac0"
+    },
+    {
+      "path": "app/Models/OrcamentoItem.php",
+      "sha256": "6b869579ee12442d514bf55627bb88f177d63d46f9cc05365ae2412177096561"
+    },
+    {
+      "path": "app/Models/OrdemServico.php",
+      "sha256": "27b06c782a59cd953bced05bedf368129c838e85946dea03dce9655796886051"
+    },
+    {
+      "path": "app/Models/OrdemServicoAnalise.php",
+      "sha256": "ee6ad3c817b3601a98e12f224c9698d83569b0e8a7357610ea97f025215b7a52"
+    },
+    {
+      "path": "app/Models/OrdemServicoComentario.php",
+      "sha256": "804160b59fd530d39da6721960f1862a167565fc34362aa52507ac9b776ed8a0"
+    },
+    {
+      "path": "app/Models/OrdemServicoContractSetting.php",
+      "sha256": "d3da704f2f4df46168c21e92f5e9d46db7ab58d1e225fd27c9b76ab72928207c"
+    },
+    {
+      "path": "app/Models/OrdemServicoDocumento.php",
+      "sha256": "6ac2a4e54e3d3cf95cde8ac66597521ba50c7a7f8b4cdc7dd0fa4abf7c5fd090"
+    },
+    {
+      "path": "app/Models/OrdemServicoItem.php",
+      "sha256": "7380416e6276080f3ede7475fde4b096e544037ca20674f98f044c1fa5206305"
+    },
+    {
+      "path": "app/Models/OrdemServicoObraResponsavel.php",
+      "sha256": "14d6cecc1b06e44cffea4725ba551fc491765121fece48ff36cc88835493e4ea"
+    },
+    {
+      "path": "app/Models/OrdemServicoResponsavel.php",
+      "sha256": "3c620810fd5b069591cdb58000dd05b57e1b27400984ad55bed5c0933eac7924"
+    },
+    {
+      "path": "app/Models/OsDnitHighway.php",
+      "sha256": "7619e12acab4418e40580bd95f893525d5ff51afa95187e0f70219d159e472bb"
+    },
+    {
+      "path": "app/Models/OsDnitOrder.php",
+      "sha256": "53dc72c4c3638530b3491360ba30a518339d93a19bd0af26cf9bb436a3f7581e"
+    },
+    {
+      "path": "app/Models/OsDnitOrderAttachment.php",
+      "sha256": "d358ca93e4f0b6dab071bab809fc8808116717dcfd66b601f877fda404486973"
+    },
+    {
+      "path": "app/Models/OsDnitOrderEvent.php",
+      "sha256": "fc72f68881a4e9a5b44209ae0f7c6a0d006cd8fe43c6c81bf3fc6cb2ed774066"
+    },
+    {
+      "path": "app/Models/OsDnitOrderItem.php",
+      "sha256": "918f810b7a101f8e29cc8a6cde81cfde87680e8e116ca073f68660af63368152"
+    },
+    {
+      "path": "app/Models/OsDnitProduct.php",
+      "sha256": "3ccb45f786d023c813cc8fd151b8be2ab5643c275b886d2befbac79f1f26daac"
+    },
+    {
+      "path": "app/Models/OsDnitResponsible.php",
+      "sha256": "12a99ccfc874d8433817b4441b97f2e06afea4982872bf18d20849f8d5efa1fc"
+    },
+    {
+      "path": "app/Models/OsDnitSupervisionLot.php",
+      "sha256": "f5aacf9ae40e7b612ae729a1d080334b7dbb951506a037faca263aa7f7446a57"
+    },
+    {
+      "path": "app/Models/ProjectDisciplineResponsavel.php",
+      "sha256": "45a1ae5b65adb422033fac6e1175c0756ea1bbe28f13a076b359ec15f71079d4"
+    },
+    {
+      "path": "app/Models/ProjectDocument.php",
+      "sha256": "f77697ec8853f4fe29706281aa1e16990fae24458b300753d74881e40e558147"
+    },
+    {
+      "path": "app/Models/ProjectDocumentStatusChange.php",
+      "sha256": "235bc9b9cd4bd4e7fb6b6bc6dd9d5c192b40d105248cb30cd2f6f4c6346ac1c7"
+    },
+    {
+      "path": "app/Models/ProjectDocumentVersion.php",
+      "sha256": "cf549e9d6f5292cf2318edaf955068513a993ac5aadf91792ba2e9f99d01e725"
+    },
+    {
+      "path": "app/Models/ProjectPhase.php",
+      "sha256": "cbd9089d2e7c06c92e3e46b30f35071a502f3c75391e27279c141dd83de36fff"
+    },
+    {
+      "path": "app/Models/ProjectReviewChecklist.php",
+      "sha256": "98809f529f8505317660b0691325886c6797ba0bd20d0095dd6bd8a56406fd1e"
+    },
+    {
+      "path": "app/Models/ProjectReviewChecklistItem.php",
+      "sha256": "c87e7eb935a0ae6413dbf8db7628f6b4a0f97614f319ad6b0b4dbbdcd4b32835"
+    },
+    {
+      "path": "app/Models/ProjectReviewMarkup.php",
+      "sha256": "a48ca8957d29b8c030eaa7d338004b747a85053c199e8d2a4130b5c767141e09"
+    },
+    {
+      "path": "app/Models/ProjectReviewMarkupReply.php",
+      "sha256": "0117ee4e686c139df12b795a107e5c06f0b73fcac3d1efee35249d5cb6a9f609"
+    },
+    {
+      "path": "app/Models/ProjectSubmissionBatch.php",
+      "sha256": "87e18a8dc81074ca0aa65f2bc4bcee0f1229761d24b400872d828efb1e124227"
+    },
+    {
+      "path": "app/Models/RdaApontamento.php",
+      "sha256": "564883390cde1b3eb7fc184a6cd9c622f134e018c2ffd826c437932d11a487ec"
+    },
+    {
+      "path": "app/Models/RdoAnalise.php",
+      "sha256": "c0085df77ba9021437865b1d3b6bcdda994f8b5fdba45128b0b35c9698a93cc2"
+    },
+    {
+      "path": "app/Models/RdoConfiguracao.php",
+      "sha256": "7a7ad607b94d0dc2536d782c600992269a2e14c31017cc3471681335aa5069ab"
+    },
+    {
+      "path": "app/Models/RdoDiario.php",
+      "sha256": "26cb3ccbecce7dd084a916467f49f363d18dea09de93a21977b8f642d0a99e24"
+    },
+    {
+      "path": "app/Models/RdoDivergencia.php",
+      "sha256": "d7a4cb45e832d8e03efc0d1d16de1e59fdf6187cd94195d557a367a268a550a7"
+    },
+    {
+      "path": "app/Models/RdoEquipamentoCadastro.php",
+      "sha256": "45d94b8ae935a166040158fcf1fd5a63737158ec818f657e38eecebec5a9feb5"
+    },
+    {
+      "path": "app/Models/RdoFiscalizacaoRegistro.php",
+      "sha256": "404fca9d645e99b6200c0103d6f243de1118a5e761271dd3420091552639040e"
+    },
+    {
+      "path": "app/Models/RdoMaoObraCadastro.php",
+      "sha256": "3cdbfc7ec9f4fa90ed33d4c53f86347b9b6793d0b4bc86e443edc8cc4e756aff"
+    },
+    {
+      "path": "app/Models/RdoPdfSetting.php",
+      "sha256": "1dd58e1567c65d2a0e325adc5a5d757ee4a6d03bf38cc896373d22b3546e5fbe"
+    },
+    {
+      "path": "app/Models/RdoResponsavel.php",
+      "sha256": "8203a0c718d040df9ac07be5e59d51d86c6b4e1b8c3a7be1b24feeccc9cb47df"
+    },
+    {
+      "path": "app/Models/RdoSecaoRegistro.php",
+      "sha256": "ba08ec6539b07a20f6cc1378dd78c7c750eac9b41da016f5581ee11a2fdab48f"
+    },
+    {
+      "path": "app/Models/RdoSignatureRequest.php",
+      "sha256": "76405a97aa4f7d66133cbdb1cb4fb5c738f76be828fb12ba8d05b3b531011a71"
+    },
+    {
+      "path": "app/Models/RdoSignatureSigner.php",
+      "sha256": "997ea3eb61b2c1eb1958c1732524aa28029799514e97938072892135cbb29246"
+    },
+    {
+      "path": "app/Models/RdoSubcontratadaCadastro.php",
+      "sha256": "d92f0730cbad1257a7e6177ef58ac63db450671843e8dc48bd5352735d484ba3"
+    },
+    {
+      "path": "app/Models/RdoVersao.php",
+      "sha256": "2f86f57a3a7fecae4700580e84a9a7953f91056cdc1894ae8755f0c1e6551bdf"
+    },
+    {
+      "path": "app/Models/RelatorioNaoConformidade.php",
+      "sha256": "247364113bc01e3ebc07887c4809b1e40fec3783ae8bea96f951d8cf6737e116"
+    },
+    {
+      "path": "app/Models/RelatorioNaoConformidadeAcaoCorretiva.php",
+      "sha256": "5902000d6a75f535239db93a7752b927e45dbc0be6da86819dc2f11329a78244"
+    },
+    {
+      "path": "app/Models/RelatorioNaoConformidadeEvidencia.php",
+      "sha256": "3edd5a90b7f4e6f4c80350e362628393d3a7dfadc40b3e76c284783b4f987f31"
+    },
+    {
+      "path": "app/Models/RelatorioNaoConformidadeEvidenciaPhoto.php",
+      "sha256": "5605956790e640d54def1720ff156a5babfbf76b33c9510362549ae40c1a83ae"
+    },
+    {
+      "path": "app/Models/RelatorioNaoConformidadePhoto.php",
+      "sha256": "cd1139c54cd6a5cc29700e0154f2c5dc91732a8e306224d57132bd5f591e2249"
+    },
+    {
+      "path": "app/Models/RelatorioNaoConformidadeResponsavel.php",
+      "sha256": "0e2710567397b76a9251385771a4c89af4ae637cf07a2fb256517616e11990e0"
+    },
+    {
+      "path": "app/Models/RncPdfSetting.php",
+      "sha256": "f02ce1a54bebc180c203e675052a4f9fe77d32d15ea7fffc04a58324ca4ee577"
+    },
+    {
+      "path": "app/Models/RncSignatureSetting.php",
+      "sha256": "3a3b4efcfb0116f6525cbc347834fcdb81d546532c8822955536d727e5dabbfe"
+    },
+    {
+      "path": "app/Models/Tenant.php",
+      "sha256": "281388bf62119247df04df402aa8230fd161d3fae5364bd39b920139e1400b13"
+    },
+    {
+      "path": "app/Models/TenantUser.php",
+      "sha256": "5d63d8b7e29d6e06fb95eac9b62edf93e6d4cacca0cbe5042c92bde088e49fb5"
+    },
+    {
+      "path": "app/Models/TipoEmpresa.php",
+      "sha256": "8a30b710de5b739c73d1e0906780f9b40f46dc1e0264fb190c123bf742f96359"
+    },
+    {
+      "path": "app/Models/Trecho.php",
+      "sha256": "78fde3dba0ec2964c96a39f0c1c8bed01203583536055e6c7e29c8f7a8ebcdbf"
+    },
+    {
+      "path": "app/Models/User.php",
+      "sha256": "8d0c5f87ca59761974973da3e40249b7fbeeedd590be2758580592b858e814d0"
+    },
+    {
+      "path": "app/Notifications/ActivityAssignedNotification.php",
+      "sha256": "c5d6280bdf2213991a0e15c357fef36bc0faeac7ac952d2f8252d433ab366ab8"
+    },
+    {
+      "path": "app/Notifications/ActivityChecklistItemsAddedNotification.php",
+      "sha256": "56af9c60e7b8310da3c227c18f10b6c0e8bc1e534889c484c364941530364582"
+    },
+    {
+      "path": "app/Notifications/ActivityCommentedNotification.php",
+      "sha256": "7decd8268244ef02bf0d9f76d8c6d45b395475550e73a54ffde1681eef48879b"
+    },
+    {
+      "path": "app/Notifications/ActivityFileUploadedNotification.php",
+      "sha256": "d7fda0cbbc56d742f18fc8f57edeed72b77c17d13c423381e1cfc73c7c600410"
+    },
+    {
+      "path": "app/Notifications/ActivityStatusChangedNotification.php",
+      "sha256": "15ccd0e73633984631ff15e43ef55225bed34f3783a8e8f01d4f3cf834dd8a39"
+    },
+    {
+      "path": "app/Notifications/FolhaRostoFlowChangedNotification.php",
+      "sha256": "dfdbaf70c02e829cc5a9837c02df6bad73fd45967417ec9c97156ab485b10276"
+    },
+    {
+      "path": "app/Notifications/FolhaRostoSubmittedForAnalysisNotification.php",
+      "sha256": "283a0ff972b419bacc6ad764317dcafb928ceba2ef07dbec6f82bb4584f433c5"
+    },
+    {
+      "path": "app/Notifications/IcFlowNotification.php",
+      "sha256": "949bcfb18b83aa26ba8a577a91f076074ddae84bd614b643f6bf5b6b6c88f00f"
+    },
+    {
+      "path": "app/Notifications/OrdemServicoApprovalDecisionNotification.php",
+      "sha256": "6bb28f36bcfadb6018527b0fce61cfcb2813f94f99155e1a371f837c7949bf72"
+    },
+    {
+      "path": "app/Notifications/OrdemServicoCommentNotification.php",
+      "sha256": "d20ace0abea6b71e5702ce2d65c7876fcbe63072ee7402e2e9ea22b24a68be3a"
+    },
+    {
+      "path": "app/Notifications/OrdemServicoLifecycleNotification.php",
+      "sha256": "b1ed2cfed1fdf99801c4afc6b582108f6180cf109eb42f5c4cbcf801fb1ff63b"
+    },
+    {
+      "path": "app/Notifications/OrdemServicoReadyForApprovalNotification.php",
+      "sha256": "ca67954317b9e4d2fb64f7eb1b9416e72df3d291c3f1f66a73b9a3e2d921f633"
+    },
+    {
+      "path": "app/Notifications/OrdemServicoReturnedForCorrectionNotification.php",
+      "sha256": "037eb07ee775bb31d9ff0de8c6baeeb246b94a3f0a7d653d952bf3917aad2b03"
+    },
+    {
+      "path": "app/Notifications/OrdemServicoSubmittedForReviewNotification.php",
+      "sha256": "2859c64ebcf8bc80d4d6efbe4823bcbe648179e59f3f7df6e8f01e51cebd3c71"
+    },
+    {
+      "path": "app/Notifications/OsDnitFlowChangedNotification.php",
+      "sha256": "0a6e458261b8542b216fd5b0d33919230319b76e16ea3e89a78006e5bcb4476e"
+    },
+    {
+      "path": "app/Notifications/ProjectApprovedNotification.php",
+      "sha256": "347dd508ace62aba5a9398caa0782dd1faf35387d52cd46088606d766a94d79d"
+    },
+    {
+      "path": "app/Notifications/ProjectBatchWorkflowNotification.php",
+      "sha256": "6ab2c0590825443b5b1631ea5be6fd2430bd729124cf0c7af145231106f0f86b"
+    },
+    {
+      "path": "app/Notifications/ProjectRejectedNotification.php",
+      "sha256": "c78ba56d44dce0e7d237925dc77434bb3972aaa7bd3ac5adc56559138a70dd7a"
+    },
+    {
+      "path": "app/Notifications/ProjectReviewMarkupCreatedNotification.php",
+      "sha256": "d3e23a93fbfec7423b5f3b212c292da77900f42178af76920c7b0df6ce0fc27b"
+    },
+    {
+      "path": "app/Notifications/ProjectSubmittedForReviewNotification.php",
+      "sha256": "11f232f056cd9bb64b05889de469287a78117b00a296516ecc7ecdac3dbfee5e"
+    },
+    {
+      "path": "app/Notifications/ProjectVerifiedForApprovalNotification.php",
+      "sha256": "f63d0808bd5c587311e781369aa0853a7bc49d648d0365de2fa91404d80fef3a"
+    },
+    {
+      "path": "app/Notifications/RdoFlowChangedNotification.php",
+      "sha256": "876fd9f8755c44ffd8c99615857efdd704d7b3438faf12c807af94683d0129ae"
+    },
+    {
+      "path": "app/Notifications/RdoSignatureRequestedNotification.php",
+      "sha256": "46660f11a57490ce6941078c1e6a6c660abb7d0f5bfd30c6c86e7ec58193ebdd"
+    },
+    {
+      "path": "app/Notifications/ResetPasswordNotification.php",
+      "sha256": "f028567906e07a3b133c98e6f91cca3d588ae610a3355e2506bc5272b197fbdd"
+    },
+    {
+      "path": "app/Notifications/RncCorrectiveActionReviewedNotification.php",
+      "sha256": "3f9cdcb58dd234b3bac4340e7188906f46b0aaa1f0a1f432beab2ad1315d3fc1"
+    },
+    {
+      "path": "app/Notifications/RncCorrectiveActionSubmittedNotification.php",
+      "sha256": "0165b229a54945e4f586ad9baaf8ee7e2307ddaf1df167fad16bf1928bcbfc09"
+    },
+    {
+      "path": "app/Notifications/RncEvidenceSubmittedNotification.php",
+      "sha256": "b0e51c9cb62437bced6079a5e7487a918e69bfc11c889564922bc21b9943a77e"
+    },
+    {
+      "path": "app/Notifications/RncResponsibleNotification.php",
+      "sha256": "fdea751ea10a5f1e0b468335ad49c53007e5dc5a9838e578b2cbd2858708a7de"
+    },
+    {
+      "path": "app/Notifications/UserTemporaryPasswordNotification.php",
+      "sha256": "e6a20dc1f7a2fc5f27d0fdd377deea6627eee470441941016e1881ce9c722acc"
+    },
+    {
+      "path": "app/Providers/AppServiceProvider.php",
+      "sha256": "fed1929be3565d72623857b7c3eea6008ea9c3d13236fa448d3e37d5bbef2115"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantAccessScope.php",
+      "sha256": "63bb5767a3cc778f3d8b183c76b5a740968d489a21b3de45d475822ac4d93b53"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantActionResolver.php",
+      "sha256": "eeb959a3039e2adda530c276c37025a897330e7adb2fb1e3bf5d0f36c194db88"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantContextBuilder.php",
+      "sha256": "1612894b3cbd947ca01569454c29abab9e290dd23c508cf92793ebb6090816bb"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantQuotaService.php",
+      "sha256": "1c17a2126522168f75935120e870451e68ec3775140dea841ed93f46ae768184"
+    },
+    {
+      "path": "app/Services/Assistant/AssistantRetriever.php",
+      "sha256": "ebb7f585307612d190f74be6614b69a51deea61f70bbf96dbf502a2269b488a8"
+    },
+    {
+      "path": "app/Services/Assistant/OpenAiAssistant.php",
+      "sha256": "b7ea393006d5dcac4fae7c878fdcdf8d7544b607f1e4c425a50812da037c0911"
+    },
+    {
+      "path": "app/Services/Assistant/OsDnitAssistantContext.php",
+      "sha256": "445ebbb01632230cd6dd5bb2840449c91df550e7b210afb1e8be20ce412dbc38"
+    },
+    {
+      "path": "app/Services/AutodeskApsService.php",
+      "sha256": "c15e9e477b280eeb247b7f1b7281ce3f18bef91b6815d7e853d3861bf96ca27f"
+    },
+    {
+      "path": "app/Services/GedOcrService.php",
+      "sha256": "2ddcb4610728f58b99e1d747fb0317f4a81949127b1958fc48d61541e9a7ac72"
+    },
+    {
+      "path": "app/Services/OsDnitFlowNotifier.php",
+      "sha256": "d45a0a226bfe17af8de468e51ffbee228fb4fa283a78d51feae7a28d208f12c1"
+    },
+    {
+      "path": "app/Services/OsDnitFlowRecipients.php",
+      "sha256": "26af59287b8a9c1bf95b5e08311300658cec49cdfef0037d70b31156f95e7e8f"
+    },
+    {
+      "path": "app/Services/OsDnitOrderHistory.php",
+      "sha256": "3d4fd5970d5cf13868d62f0bfb3db5282db178f310c56825e11177672af18469"
+    },
+    {
+      "path": "app/Services/OsDnitOrderNumber.php",
+      "sha256": "2a628c53796a547bfa51e11f445e6bd5ecac70df77205a393798e861e51e2f85"
+    },
+    {
+      "path": "app/Services/OsDnitPdfRenderer.php",
+      "sha256": "18cfc54575e59a28fdbaa448d389a5b428fc4c46d2a0169ad87ac9412588bce6"
+    },
+    {
+      "path": "app/Services/OsDnitSandbox.php",
+      "sha256": "6e506ff711700782fe238bea4a2f244b4c3ac23aac81850cf9a4ee0fd7359395"
+    },
+    {
+      "path": "app/Services/ProjectMasterListExportService.php",
+      "sha256": "56b9f8ebf8f42b3010e15815abe8a4027a76de0e5df418482cb871e7beed0828"
+    },
+    {
+      "path": "app/Services/RdoDailyGenerator.php",
+      "sha256": "21fece56c4ad826c5efe3ae97a6c3154fa31c61158af64b46abd294af687a158"
+    },
+    {
+      "path": "app/Services/RdoDocumentLogos.php",
+      "sha256": "d247ecceaf3c0d56149b73623cd9151a94f0fd6ee60fdc9d7f74b9628f0cd726"
+    },
+    {
+      "path": "app/Services/RdoPdfPreview.php",
+      "sha256": "fde719d4da0015a09c29b7a3b7ad6661509cf6e969ee2023d7d122e6b9378db0"
+    },
+    {
+      "path": "app/Services/RdoPdfRenderer.php",
+      "sha256": "165d9441068a7f9f220af50c1c5dcf849ad235e6d75babe467e34e2f56321295"
+    },
+    {
+      "path": "app/Services/RdoSignatureService.php",
+      "sha256": "d82cb02af6637327cf8c6ab888c3a679b214b7ac7010945fbbd376423512f3e3"
+    },
+    {
+      "path": "app/Services/RncDocumentSnapshots.php",
+      "sha256": "b830161297d0dafc1f900a2fab2e7ecdc3e814e6625c1030280f1e6895af9c20"
+    },
+    {
+      "path": "app/Services/RncPdfLogoSnapshots.php",
+      "sha256": "e59f961a4e38428032edca5dca554bd4893595a798ac5a312892f5564c22119a"
+    },
+    {
+      "path": "app/Services/RncPdfPreview.php",
+      "sha256": "2aa5c3ffb5efc00f5fa9133fe469e7b09de123507e688406c1cf8fa5de4c7dc5"
+    },
+    {
+      "path": "app/Services/RncPdfRenderer.php",
+      "sha256": "b910912d7444e8f8d8c3ab12d2ac999950822734620a4052ee7c175319f7012b"
+    },
+    {
+      "path": "app/Services/RncSignatureService.php",
+      "sha256": "36b32058ecadbc523602918afd9fd639fc8122ec0ccb786d61afba9cff4d0927"
+    },
+    {
+      "path": "app/Services/Signatures/LocalSignatureProvider.php",
+      "sha256": "81658e14558c6d649e91942f0fea81ec8c52e04a91e977936f232d6216eb9bfc"
+    },
+    {
+      "path": "app/Services/Signatures/OpenSignSignatureProvider.php",
+      "sha256": "8a6ee994f7bf8a4f6616b8dd697597671c0f045cf2daed08d76601c69054c8bc"
+    },
+    {
+      "path": "app/Services/Signatures/SignatureProviderInterface.php",
+      "sha256": "7c62d6b8d75d317c203370f591d596ea059e0f6e124396298a0c2b9a85fa0f94"
+    },
+    {
+      "path": "app/Services/Storage/StoredFileMaterializer.php",
+      "sha256": "03de1753608d0683ba8af9e23fcbecadc21d1e6bbac5aab195098bbf92a5096e"
+    },
+    {
+      "path": "app/Support/AccessibleTenants.php",
+      "sha256": "8c98d1e933e2e47e9253368ac70bc7650cbf222a0ab198c40c2f4abdb6f1794d"
+    },
+    {
+      "path": "app/Support/ActivityPermissions.php",
+      "sha256": "dd8b45802380635549d272137f20222ad91d28a99a8f79499abda58d64743bcc"
+    },
+    {
+      "path": "app/Support/BudgetPermissions.php",
+      "sha256": "16b478227cda7e3c90bbe65e85f55cf91a424f9574d85f42df5ed9d664ca2b1d"
+    },
+    {
+      "path": "app/Support/ContractPermissions.php",
+      "sha256": "3bbb0bbca96c1fd7c9c8e3440b5b0b90cd610bab112eed6e904a09df2cfdbfba"
+    },
+    {
+      "path": "app/Support/DiarioObraPermissions.php",
+      "sha256": "f5f29bf16b537c48b18e0e7f92b9f8912ec736d2603c9db57e15cb9fe837462e"
+    },
+    {
+      "path": "app/Support/DocumentationPermissions.php",
+      "sha256": "1eff5a89d18fcf0ea673dfcec92ee2314756d970662d083cb9f578bd7348f522"
+    },
+    {
+      "path": "app/Support/IcPermissions.php",
+      "sha256": "5e5122d9759d1ccaf3233cc4caf1a3bdb7d90cb385803a9866a5b4989c94afed"
+    },
+    {
+      "path": "app/Support/JsonMetadataSanitizer.php",
+      "sha256": "1a0edbdfc892f4ab8eb1d7aa3afbba281065932d0ddff4aee51e27b8ba5b68e8"
+    },
+    {
+      "path": "app/Support/MedicaoItemValueResolver.php",
+      "sha256": "64edfa3c314f587ff6b36e6fc842dff6e581182c4398548fd659440d306f7c74"
+    },
+    {
+      "path": "app/Support/MedicaoPermissions.php",
+      "sha256": "185b3dcaf9b01d6a4f82f85c7d1e737585816f80a329237cfbf1b3ed4039a8a7"
+    },
+    {
+      "path": "app/Support/MedicaoReajusteCalculator.php",
+      "sha256": "78ef37b31e68286f9977f7d12736989a42529a09c152d4aaf1be2b576dd27e2a"
+    },
+    {
+      "path": "app/Support/NavigationPermissions.php",
+      "sha256": "e4f6b0a6d7d7667b959c7d888062a9c605e757412474852b2876ecc3cf3aad3d"
+    },
+    {
+      "path": "app/Support/NotificationFeed.php",
+      "sha256": "182c217fa62cacdbc8ad5429a6ef14d3b8110f050a4faf4f3a1d10c516754e4d"
+    },
+    {
+      "path": "app/Support/OrdemServicoPermissions.php",
+      "sha256": "8f2c7815011e13a8401cde85a0bf22a7c24ebf1a05db3aa0b2ea4e393b0d6acc"
+    },
+    {
+      "path": "app/Support/OsDnitContractAccess.php",
+      "sha256": "a4cd06abf75b09d51033f8126b6202c18e3ef6f25fd482686c6593b7d81f90b0"
+    },
+    {
+      "path": "app/Support/OsDnitManagementSummary.php",
+      "sha256": "bacafdceca7efbc5cd075053ee52dbd324e6ac366ff92af4ba30e2f08ec69de8"
+    },
+    {
+      "path": "app/Support/OsDnitPermissions.php",
+      "sha256": "459338c20a24c78f1177115f9f518026c5e9f2aa6bdbb206a39e4a5d223194a4"
+    },
+    {
+      "path": "app/Support/OsDnitWorkflowAccess.php",
+      "sha256": "2e9eedda358f11d30e5a77f59b7ee160f42e1ddaf500b44fe56f7d77c2ba4ee2"
+    },
+    {
+      "path": "app/Support/ParametrizacaoPermissions.php",
+      "sha256": "4ee162ec248faaf15ab1176602f8bd19bb7dd566e4492590f2cba05eeb49922d"
+    },
+    {
+      "path": "app/Support/PasswordPolicy.php",
+      "sha256": "20e074fec5d38da275a6f203bf7b0567ca1ce550fb074dea756f8972d50b7453"
+    },
+    {
+      "path": "app/Support/ProjectCap.php",
+      "sha256": "960c65c7db9aaa914f7489e4b9526e66e501b3c5e4df84e47b418fd0e2d2a457"
+    },
+    {
+      "path": "app/Support/ProjectPermissions.php",
+      "sha256": "6952a628295457d6d84abcc4afee9940519e1766f5950284c4db4478875a2ca6"
+    },
+    {
+      "path": "app/Support/RdoCatalogs.php",
+      "sha256": "3bc358d23dc2de76806b7b79a6b2e14f61faac6f77086ef757ef103751841f1d"
+    },
+    {
+      "path": "app/Support/RdoPdfTemplates.php",
+      "sha256": "f8ff6d014bff7e8586231e1421f0a14b1840308dde2675780985f9360db4e5c8"
+    },
+    {
+      "path": "app/Support/RdoWorkflow.php",
+      "sha256": "0ccf69196635efcb64f4e8f73455226a7421c324aaff2d1f78467d835d4091eb"
+    },
+    {
+      "path": "app/Support/RncDashboardFields.php",
+      "sha256": "21e79291061b576dadd76933eca4e60aba5b7a97f8862abae0cb80bd3d9c684b"
+    },
+    {
+      "path": "app/Support/RncListing.php",
+      "sha256": "30cc2ff06ef1ef9b88d99762369887b2ddfd94ba7eb401bdc0faf4842399ea02"
+    },
+    {
+      "path": "app/Support/RncModelFields.php",
+      "sha256": "10d29f9cdbcb0608a455065a18f6b010d534e686b5c73c35cb4b1b4a9ec59c85"
+    },
+    {
+      "path": "app/Support/RncPdfHeaderFields.php",
+      "sha256": "0cc5676061ad00e66ae357368bd707de64e00b171d152cbdc29f8efa45eea0f9"
+    },
+    {
+      "path": "app/Support/RncPdfTemplates.php",
+      "sha256": "e9d959f362878e51918abb903ebfa98de3ce58eb433f28d40f43bd502e9738a7"
+    },
+    {
+      "path": "app/Support/RncPermissions.php",
+      "sha256": "0b587986e3c644eae36accbb721dbfae3f99fff7771868d2a640ccf72f51f94d"
+    },
+    {
+      "path": "app/Support/TenantLandingPage.php",
+      "sha256": "1e967b8c81281bb26a549b5d8569472e483b048f06c2fe77262635ae4d72a2e6"
+    },
+    {
+      "path": "app/Support/TenantRoles.php",
+      "sha256": "e53d2d6b2fb8ec35d5036dc7b783e18fb5e06a97f174ad719dea8aeedacf0a9b"
+    },
+    {
+      "path": "app/Support/TutorialCatalog.php",
+      "sha256": "5a275bb0d94e101781e8993867d375d05f875dcb4c0e74e84d4d31804c7c4f1f"
+    },
+    {
+      "path": "app/Support/UserPermissions.php",
+      "sha256": "6dc69a28cbad4ecd747cdeb46fbbb64f8c053fbb3dd2c4904a80c57383f05c59"
+    },
+    {
+      "path": "composer.json",
+      "sha256": "26d5f1f4ffa9ff5a297cd08cc35fa248ae2c94f12097e81bd7c8491e0109c3e2"
+    },
+    {
+      "path": "composer.lock",
+      "sha256": "c02ef4671ffc376a825e07c2140ee7d5cb138b0f3177b0e73cf7324f774ee055"
+    },
+    {
+      "path": "config/app.php",
+      "sha256": "ddfdad99d7a64fc82bcdb775242bd31ceadf513be7508754fd17d74e238f6182"
+    },
+    {
+      "path": "config/auth.php",
+      "sha256": "c7e204e9785c9f596d66fb884b493f658f2327f157646bdb4088efd6b3a7773f"
+    },
+    {
+      "path": "config/cache.php",
+      "sha256": "aff5a15068835cdbbfb4ce876d34202a221933b086bf7f3f7f309d4a312a20ae"
+    },
+    {
+      "path": "config/database.php",
+      "sha256": "4e21320bbdc09ab110165e469d5e18c087c61fa92cdc826db88af1b087cadd95"
+    },
+    {
+      "path": "config/filesystems.php",
+      "sha256": "eefcd2fb307d40cd9e019b83b57edce9d23c4a05dec3f65c15675f0fec5805cc"
+    },
+    {
+      "path": "config/ged.php",
+      "sha256": "5d474b9a37e18da03f208088460d035a95bad9c96a9e64d32f6e1ea0f8e8f920"
+    },
+    {
+      "path": "config/logging.php",
+      "sha256": "4ed043bee5fec861537be4d06b30fbd5082a2ada2b3efed78b7c3f981e744b81"
+    },
+    {
+      "path": "config/mail.php",
+      "sha256": "05482232a33b8fdd2991ea0a5b15399d975be9acfd8d67d1b949b185cf58b695"
+    },
+    {
+      "path": "config/os_dnit.php",
+      "sha256": "b6fbcf8a48ecceab63e15012f7ae481f13b16a68f7d743a902bfe26314221a0d"
+    },
+    {
+      "path": "config/projects.php",
+      "sha256": "85b2547879d3413cffc590c32d0553405cf3d9cbe476fc70a56e5f129bc2e3e1"
+    },
+    {
+      "path": "config/queue.php",
+      "sha256": "60944b16dd8f32bc6efb63a9f0379bbf54c75fda239ec9e352ab555e3195385c"
+    },
+    {
+      "path": "config/services.php",
+      "sha256": "e67dec5c2ebdb2cd0b12aebbf65c8a52b0a843dc06a5fdeadf0202658d3dd093"
+    },
+    {
+      "path": "config/session.php",
+      "sha256": "64272cfbef6f47c65bf857f1c5b1e853700c0d0278de46b86663fd83ef4aeed8"
+    },
+    {
+      "path": "config/signatures.php",
+      "sha256": "4c519a6e69e454c9a45338ad8835126ef0a8a4480bfd23a33d75ac39f1c9fead"
+    },
+    {
+      "path": "database/migrations/0001_01_01_000000_create_users_table.php",
+      "sha256": "59b9f816eaba7e99154c2608edfc752543416169b87eec0bae556f16ccb59032"
+    },
+    {
+      "path": "database/migrations/0001_01_01_000001_create_cache_table.php",
+      "sha256": "fbb4665e5a977e71df4e74ec75b3c06ca4f17ad0de7138fe9786639189978e77"
+    },
+    {
+      "path": "database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "sha256": "df4910687180313a14a3f96a8bddd808ae145ed1b107cd772caf865c0dc2b746"
+    },
+    {
+      "path": "database/migrations/2026_05_15_151000_create_tenants_table.php",
+      "sha256": "eb6e48df24dab6964c5e8a04dd977686927e91f5c0cb7f7709493b46f4dab135"
+    },
+    {
+      "path": "database/migrations/2026_05_15_151010_create_tenant_users_table.php",
+      "sha256": "13a83c7bc876b7cf3a6998597429ea4e0bd1c29a40c325215ff05b3f86404d08"
+    },
+    {
+      "path": "database/migrations/2026_05_15_151020_create_contracts_table.php",
+      "sha256": "c2305336b7a057929eedf22dc2fd3384b143b430d546fddc87136914420a9f7b"
+    },
+    {
+      "path": "database/migrations/2026_05_15_151030_create_contract_participants_table.php",
+      "sha256": "524feaa1e567ba26ce8439d438e91a7ff593daed5ad0d3383121f30571d991f2"
+    },
+    {
+      "path": "database/migrations/2026_05_16_100000_create_tipos_empresa_table.php",
+      "sha256": "bde39baa72b95c611d8385d917d4eaaeb035a65dcfcb0b4daf87ea90ce1516ae"
+    },
+    {
+      "path": "database/migrations/2026_05_16_100010_create_empresas_table.php",
+      "sha256": "37a9e82c796f8829cb7a00550e93dcb1d56da60a32f51087ec3a5c47fb2d93de"
+    },
+    {
+      "path": "database/migrations/2026_05_16_101000_create_obras_table.php",
+      "sha256": "0e108004387647055ebbefea1b094e1c194f81e8358bfe1ad9b3982955e101a1"
+    },
+    {
+      "path": "database/migrations/2026_05_16_102000_add_contract_id_to_empresas_and_obras.php",
+      "sha256": "f03d0c40050d60afde4432ac7dee966f489be68e732499cc2d97cfc47c8db8f0"
+    },
+    {
+      "path": "database/migrations/2026_05_16_102010_backfill_contract_id_on_empresas_and_obras.php",
+      "sha256": "82bb096c9751ebb245f53ec250e9d7f0743c4cd19ad443658611f83aae15dfea"
+    },
+    {
+      "path": "database/migrations/2026_05_16_103000_add_parametrizacao_links_to_contracts.php",
+      "sha256": "0a67a77bf4573b616c61e6c89901c322eb483f192a9645a79ee16841d302f818"
+    },
+    {
+      "path": "database/migrations/2026_05_16_104000_add_currency_to_contracts.php",
+      "sha256": "027b0a9dfec86ac2b9dfab8932d2625b83e0e23d0bd6f0ea04e4bb19dd56dd97"
+    },
+    {
+      "path": "database/migrations/2026_05_16_105000_add_cliente_tipo_and_fiscalizadora_to_contracts.php",
+      "sha256": "3ff63d60d1bb155e093d3b94a0db61d79394b0a80124f5629b4a81e1ac4b2014"
+    },
+    {
+      "path": "database/migrations/2026_05_16_110000_add_location_to_contracts.php",
+      "sha256": "8b732d12aa7f5268f3d9436c583a9f4b08252d9ef6be5b87cfa061994f89fb59"
+    },
+    {
+      "path": "database/migrations/2026_05_16_111000_add_empresa_id_to_tenant_users.php",
+      "sha256": "fdafa395171fd1d9d7e96b15845c1e257355b82b97889e6200cc075c411643f5"
+    },
+    {
+      "path": "database/migrations/2026_05_16_112000_create_notifications_table.php",
+      "sha256": "a0127e0fe1b03757f5bb09c981dd862723b4d11a4291aa0232ae799aa438ec32"
+    },
+    {
+      "path": "database/migrations/2026_05_16_112010_create_activities_table.php",
+      "sha256": "97f23f1bae3bd545bb37fdcf8b2bf6473e63e72d0cbdf9f5da3f6d2ae048ee1b"
+    },
+    {
+      "path": "database/migrations/2026_05_16_112020_create_activity_user_table.php",
+      "sha256": "e76f9a648d3c4cdb1a6e6f1dd7215c91b514594daccac55129913b910c0a4cb9"
+    },
+    {
+      "path": "database/migrations/2026_05_16_112030_create_activity_comments_table.php",
+      "sha256": "2f9272d8b568f4a13df441dbfee8eec6357cf723229157041d498eb2aa233fb1"
+    },
+    {
+      "path": "database/migrations/2026_05_16_112040_create_activity_files_table.php",
+      "sha256": "40a5613d2493acb5fc658b5a9d790f0a507562bbe991b1abaf6acf940fee9bb9"
+    },
+    {
+      "path": "database/migrations/2026_05_16_113000_normalize_user_avatar_urls.php",
+      "sha256": "c57287be8c7a83979beaf28a302a35fd7d0b2cc71f3c820e5f12105d5437be38"
+    },
+    {
+      "path": "database/migrations/2026_05_16_114000_create_relatorio_nao_conformidades_table.php",
+      "sha256": "21950c7b414dbd757765b80a5b73def72693e7931e82fd02d86f65503181cac1"
+    },
+    {
+      "path": "database/migrations/2026_05_16_114010_create_relatorio_nao_conformidade_photos_table.php",
+      "sha256": "b4836568b03b6bcf4d9e63430b80fdb0b6f07ec17735bfeca3fcc76ccf9b334f"
+    },
+    {
+      "path": "database/migrations/2026_05_16_115000_add_sequence_to_relatorio_nao_conformidades_table.php",
+      "sha256": "285e798a914a8f6a14fc44ae834a745251fd170b67b78a0a7e11bd8b0f2dca1d"
+    },
+    {
+      "path": "database/migrations/2026_05_16_115010_rename_rnc_corrective_action_deadline_column.php",
+      "sha256": "0d6b1b70496b7f811238daef2a3539bba643a3c7a7fed1a1cc5ca46de694cac5"
+    },
+    {
+      "path": "database/migrations/2026_05_17_120000_create_relatorio_nao_conformidade_responsaveis_table.php",
+      "sha256": "94c84bf0b5fdecb33e282a7677d79623cab04cf9667f66920ce5b25ba3903174"
+    },
+    {
+      "path": "database/migrations/2026_05_17_121000_add_soft_deletes_to_relatorio_nao_conformidades_table.php",
+      "sha256": "3b3cc0d37aaaaa918497acd4b6ae186e3d5cd432182193add79ac2301b5856dc"
+    },
+    {
+      "path": "database/migrations/2026_05_17_122000_add_notified_at_to_relatorio_nao_conformidades_table.php",
+      "sha256": "1bc95a39e472163a513ebe5791ee9da2318c95623cdfd0ed6f5720877f1876e3"
+    },
+    {
+      "path": "database/migrations/2026_05_17_123000_create_relatorio_nao_conformidade_acoes_corretivas_table.php",
+      "sha256": "27a1ffb5ae0553b258ebc4887f3953e4b92efe87a12867461fbaaa7c0544821d"
+    },
+    {
+      "path": "database/migrations/2026_05_17_124000_add_review_fields_to_relatorio_nao_conformidade_acoes_corretivas_table.php",
+      "sha256": "2c55541f2e8fe71bb624773d401c4d19725fac44c0e1968732ca65bcd16cdff4"
+    },
+    {
+      "path": "database/migrations/2026_05_17_125000_add_execution_deadline_to_relatorio_nao_conformidade_acoes_corretivas_table.php",
+      "sha256": "44e2dc3eeeb3c8829f088a3870efe541c3cbfacd351bd3e42184de42678bdcd5"
+    },
+    {
+      "path": "database/migrations/2026_05_18_090000_create_relatorio_nao_conformidade_evidencias_table.php",
+      "sha256": "2089ef3771031b15872fe0445926947dcafe094d2aa951452fa7a49565cea7ed"
+    },
+    {
+      "path": "database/migrations/2026_05_19_101000_add_comment_to_relatorio_nao_conformidade_evidencia_photos_table.php",
+      "sha256": "d90c21fb5809c0a935b16219d07a74b88e11ebd92afc0a2e8e64aad25e9a5147"
+    },
+    {
+      "path": "database/migrations/2026_05_19_102000_add_logo_path_to_empresas_table.php",
+      "sha256": "00b42c771145ee81880f97210d94e58efe9efaf8e509c4ee551e428ff41a6ece"
+    },
+    {
+      "path": "database/migrations/2026_05_19_130000_add_permissions_to_relatorio_nao_conformidade_responsaveis_table.php",
+      "sha256": "860a567dd5eb2bf1426937793d79999061d0b150a581c923b63ecf5f57e59c57"
+    },
+    {
+      "path": "database/migrations/2026_05_20_100000_add_activity_permissions_to_tenant_users_table.php",
+      "sha256": "daf15a688efc483cd69b1350ba1d3c6d119b6745da6c89f6ac83f21de7e8ff82"
+    },
+    {
+      "path": "database/migrations/2026_05_20_110000_add_user_permissions_to_tenant_users_table.php",
+      "sha256": "14c882065c30cdb70d23ab1081dcf5cc80969e7eeb4ba3a5f284c81ae34bba01"
+    },
+    {
+      "path": "database/migrations/2026_05_20_111000_add_activity_permissions_to_contract_participants_table.php",
+      "sha256": "cdb34524340751cc31cecfb3a480f28948b363690dca4a4e65e216d79eefd06f"
+    },
+    {
+      "path": "database/migrations/2026_05_20_112000_add_soft_deletes_to_empresas_obras_and_activities.php",
+      "sha256": "31390d67bb0b2af118d0cf051285ea8e7d4a0eba19c5fe41741cbc8ce87a2293"
+    },
+    {
+      "path": "database/migrations/2026_05_20_112010_add_soft_deletes_to_relatorio_nao_conformidade_responsaveis.php",
+      "sha256": "5274a981b8b9ffc69be98078f64870f4fbf94cd29622c9149b07b368911d54aa"
+    },
+    {
+      "path": "database/migrations/2026_05_21_090000_add_soft_deletes_to_contract_participants_table.php",
+      "sha256": "d39a8d83762c4d82e21eb0e0b9fcc7450c944324579895b3b27f8a63508f95a8"
+    },
+    {
+      "path": "database/migrations/2026_05_21_091000_add_parametrizacao_permissions_to_tenant_users_table.php",
+      "sha256": "e5a29c881591833acdc47fb5b88ca2d358aaeaceaace656bca9bfbb2b90fe5df"
+    },
+    {
+      "path": "database/migrations/2026_05_22_090000_create_disciplinas_table.php",
+      "sha256": "eabb08467209ed03f99f48ce1480cc439394c4a2cc3d2404569b7a429d9cd725"
+    },
+    {
+      "path": "database/migrations/2026_05_22_090010_add_disciplinas_to_parametrizacao_permissions.php",
+      "sha256": "17684d45c302d150db4a541e36ba9ff5b0c0d06226ad43844a33db4debb2c5e4"
+    },
+    {
+      "path": "database/migrations/2026_05_22_091000_add_project_permissions_to_users_and_participants.php",
+      "sha256": "2e6b992ad9d99b159609fdec414f0f73b3b8be6e0beceb665da0887c26c59043"
+    },
+    {
+      "path": "database/migrations/2026_05_22_091010_create_project_documents_tables.php",
+      "sha256": "644a38ac079cd992156c92d4c7e9b1171cc1db3d24c0ee651ab160ff0d02d29b"
+    },
+    {
+      "path": "database/migrations/2026_05_22_092000_expand_project_document_code_length.php",
+      "sha256": "ffa6d0a5c00cfa95d88be517fc04ca97f033712928157d630ffa818a3eaedadd"
+    },
+    {
+      "path": "database/migrations/2026_05_22_093000_add_review_flow_to_project_documents.php",
+      "sha256": "f61cd0d43e5415e11cdda6fe2ad552f94ba4063f6d211a7a5035753b70d5850b"
+    },
+    {
+      "path": "database/migrations/2026_05_22_094000_create_project_discipline_responsaveis_table.php",
+      "sha256": "767a70b30d2bfaa1e86e2b85bee41348e8ea124be34ad667230da853080c91f6"
+    },
+    {
+      "path": "database/migrations/2026_05_22_101000_add_project_approval_flow.php",
+      "sha256": "6e43f9e0dff0c2253d2de2df04fab4864161b5a78ddd96d5a0ae058d2a7afb26"
+    },
+    {
+      "path": "database/migrations/2026_05_24_090000_add_revision_flow_to_project_document_versions.php",
+      "sha256": "db13fac41844eeda19a4f9c53196f4eb58bea6f6cabb683203eaa61536529efb"
+    },
+    {
+      "path": "database/migrations/2026_05_25_090000_add_change_summary_to_project_document_versions.php",
+      "sha256": "77c39a5a14187831629fbe7405a4f3465bc9e9756b2eed931bd41e4ecc468f09"
+    },
+    {
+      "path": "database/migrations/2026_05_25_091000_add_stored_name_to_project_document_versions.php",
+      "sha256": "44a8712282fadbde5486456aee15fde114d8ae7c86ebc5d1de990355a2237292"
+    },
+    {
+      "path": "database/migrations/2026_05_26_090000_create_project_phases_table.php",
+      "sha256": "b5934a855ae572e84a3b3b48f464138f22c6e317622681a29b35431f3e27ca7a"
+    },
+    {
+      "path": "database/migrations/2026_05_27_090000_add_cap_to_project_document_versions.php",
+      "sha256": "2d74e5f12c084c433ea9661a476ab8c62c11c40003f2beb576ff5d56942435c7"
+    },
+    {
+      "path": "database/migrations/2026_05_28_090000_create_project_review_workspace_tables.php",
+      "sha256": "c86c9d26e5658267bc7a525b7feb7ae5fba440c0a297ad9ee6c44f912b42c0e0"
+    },
+    {
+      "path": "database/migrations/2026_05_28_150000_add_must_change_password_to_users_table.php",
+      "sha256": "8d0ca63738b50996227c8077dc368eec6f0229ca077997a92cbed48284407b56"
+    },
+    {
+      "path": "database/migrations/2026_05_29_090000_add_inactivation_fields_to_project_documents_table.php",
+      "sha256": "be3587ffdf618d7646c08ea3738a1f3e872297cad86e9d4e3f7968fb5e43156b"
+    },
+    {
+      "path": "database/migrations/2026_06_01_090000_add_category_to_activities_table.php",
+      "sha256": "9df17e9cbc03bbc4fc62ce0e03bcc7e8ac60662f1058e3bb090afc11b236fc3b"
+    },
+    {
+      "path": "database/migrations/2026_06_01_090000_add_project_document_id_to_relatorio_nao_conformidades_table.php",
+      "sha256": "6044257bb132ed7599b518c0dd834ecc588f38c35b93647f0f01b70da5a102e2"
+    },
+    {
+      "path": "database/migrations/2026_06_01_090000_create_orcamento_insumo_grupos_table.php",
+      "sha256": "a25c51ef3b849b2077b94f23a343703ebcdad6e9a15d50f9e2c1df90351824b0"
+    },
+    {
+      "path": "database/migrations/2026_06_01_091000_add_disciplina_id_to_relatorio_nao_conformidades_table.php",
+      "sha256": "264248f981665f6de4af044eeb2414fd5680afab740995417fc4b49b4579b6e7"
+    },
+    {
+      "path": "database/migrations/2026_06_02_090000_create_orcamento_insumos_table.php",
+      "sha256": "50d3885b0d19a66e54894d4153990f80e30ae54fac283e4bdae01be2ab12be87"
+    },
+    {
+      "path": "database/migrations/2026_06_03_090000_add_classificacao_to_orcamento_insumos_table.php",
+      "sha256": "749093cc7efac9c2f501401dbad7316a1633df01f953800f51342345fd800a02"
+    },
+    {
+      "path": "database/migrations/2026_06_03_110000_create_orcamento_composicoes_table.php",
+      "sha256": "255482cd8a51541d553db65c2f5f67ac4507ac279957c84544e027b5fa423153"
+    },
+    {
+      "path": "database/migrations/2026_06_03_120000_create_orcamento_composicao_items_table.php",
+      "sha256": "56517dc762d313eafa10424946f82ea5251b3b3ab3941f4ca0d59b39356430be"
+    },
+    {
+      "path": "database/migrations/2026_06_03_130000_add_is_global_to_orcamento_composicoes_table.php",
+      "sha256": "76eb3623c4bcb9860798ee99ec2f2ffa45384636babd95f06203879ba09c90ae"
+    },
+    {
+      "path": "database/migrations/2026_06_03_140000_create_orcamento_composicao_analitico_items_table.php",
+      "sha256": "dad00b193e62b669031ef3b72c2faec8c202730cd3c31aeca10e90a5101746fb"
+    },
+    {
+      "path": "database/migrations/2026_06_05_090000_increase_orcamento_price_precision.php",
+      "sha256": "4fa9e0275894f6afd9840e537a2695818af0f79a57cd867d229dd8fd89607c64"
+    },
+    {
+      "path": "database/migrations/2026_06_05_101000_optimize_orcamento_composicao_queries.php",
+      "sha256": "19a96e7b7541308d2b1b868932b2b9b7611f29e13033074eeadef521a591f5d7"
+    },
+    {
+      "path": "database/migrations/2026_06_08_090000_add_improdutivo_costs_to_orcamento_insumos_table.php",
+      "sha256": "580f36746fea7164741e4a3ec91a1b79ef21145770c1fc91d9bdcf92ae0f464e"
+    },
+    {
+      "path": "database/migrations/2026_06_08_101000_add_grupo_id_to_orcamento_insumos_table.php",
+      "sha256": "3ba8bb32b936aecb030bb0ab4582c51c6a82580eba7c6ad3294fb24fdfb7df16"
+    },
+    {
+      "path": "database/migrations/2026_06_08_102000_add_observacao_to_orcamento_insumos_table.php",
+      "sha256": "ec9288e989207d88a4b8b7415b34455cf3d2bde0e20d91dc5b501b59a0be672b"
+    },
+    {
+      "path": "database/migrations/2026_06_08_103000_make_orcamento_insumos_uf_nullable.php",
+      "sha256": "1913628e0d036c58b3e5e3c38881d3e04507f363db1dc1ecd37a5aba78ade88c"
+    },
+    {
+      "path": "database/migrations/2026_06_09_090000_add_sicro3_fields_to_orcamento_composicoes_table.php",
+      "sha256": "d884490428986776c338e4b4ca91408aca90e0bea4018a92c632429392af1365"
+    },
+    {
+      "path": "database/migrations/2026_06_09_100000_add_sicro3_section_to_orcamento_composicao_items_table.php",
+      "sha256": "561f1f6ab6d8c7324956370d00d672de7519aad9dba865583c54b04ddc4281c8"
+    },
+    {
+      "path": "database/migrations/2026_06_10_090000_add_sicro3_calculation_fields_to_orcamento_composicao_items_table.php",
+      "sha256": "603417eef9adb62c03a6a165f4a226b53e7ebee0ea449dfd76f1128fa0f0af87"
+    },
+    {
+      "path": "database/migrations/2026_06_10_120000_make_orcamento_composicoes_uf_nullable.php",
+      "sha256": "9f7c087b020c0fc5dee9c2c3fc3946f2c7289f55c3e830ff4cf1562b892bf890"
+    },
+    {
+      "path": "database/migrations/2026_06_10_130000_add_sicro3_reference_fields_to_orcamento_composicao_items_table.php",
+      "sha256": "654a8e8109a23d7d9908ddb1faa289ee09aa7181d33d1ea05925d3c9cbfa4824"
+    },
+    {
+      "path": "database/migrations/2026_06_11_090000_create_orcamentos_table.php",
+      "sha256": "7bf3aed4914d21ae8ec09e25cbf77562f5c211aa51eceeaae3295208c17c4ce1"
+    },
+    {
+      "path": "database/migrations/2026_06_11_150000_add_sicro3_fields_to_orcamento_composicao_analitico_items_table.php",
+      "sha256": "be133d203313683ddb9d0778add2d6eb4f841f7e8b2255ba33cd3819b1a2a217"
+    },
+    {
+      "path": "database/migrations/2026_06_12_090000_create_orcamento_etapas_table.php",
+      "sha256": "e65ea0103bdc3f1c6cb482cada9e1403c55e04b8ecc3f0324c0e7c38242002d1"
+    },
+    {
+      "path": "database/migrations/2026_06_12_100000_create_orcamento_itens_table.php",
+      "sha256": "685ad9a87bec6c93c6b4d05233d80b0e9acf4ac590d1204366d0977c95ee5875"
+    },
+    {
+      "path": "database/migrations/2026_06_15_090000_create_medicao_itens_table.php",
+      "sha256": "1dd648491419eb00d1945c4677c51dbbaf5b3e01375742dedd4933423831fe25"
+    },
+    {
+      "path": "database/migrations/2026_06_16_090000_make_orcamento_etapas_ordem_hierarchical.php",
+      "sha256": "3cdc70386e591d1ac6c0f1a4fa594b032cccf0f9ceddcbf95c2ebe7724a2b1ec"
+    },
+    {
+      "path": "database/migrations/2026_06_16_150000_add_closed_fields_to_orcamentos_table.php",
+      "sha256": "c6138b968e0550dd749f27bf4ac5be3c4131bc4be72ae55c869a6117fec27697"
+    },
+    {
+      "path": "database/migrations/2026_06_17_090000_create_medicao_item_additives_tables.php",
+      "sha256": "9b9901f11debd6fec64060d565b5f8c2c9ae1bcfc22aa7bf7f72885e9b963841"
+    },
+    {
+      "path": "database/migrations/2026_06_17_110000_create_medicao_indices_reajuste_table.php",
+      "sha256": "42c7bef63dd1c8f219fee2543d11e54605ba68ee1d36054bacc12250b9872e61"
+    },
+    {
+      "path": "database/migrations/2026_06_17_113000_create_medicao_indice_reajuste_competencias_table.php",
+      "sha256": "0e64cf9ab5d9a1af7ce0b47384c4b53b5a2f5dd3115ae130a10c7f380aa590c2"
+    },
+    {
+      "path": "database/migrations/2026_06_17_120000_create_medicao_item_reajuste_indices_table.php",
+      "sha256": "fd47f5582b72b47f9470245c663f1cdb280e9ba6920f8bf0d93698941a0488eb"
+    },
+    {
+      "path": "database/migrations/2026_06_17_130000_create_ordem_servicos_tables.php",
+      "sha256": "8198e0bc1609f9f24e300dd2e22f3778a3578f99bdbcb930a93d3f8a2b76b269"
+    },
+    {
+      "path": "database/migrations/2026_06_18_100000_add_empresas_to_ordem_servicos_table.php",
+      "sha256": "5ab78cc2f7996c5bf54f6398b8f75cd351231a35561050a0be9eaa3fb3f10131"
+    },
+    {
+      "path": "database/migrations/2026_06_18_120000_create_ordem_servico_obra_responsaveis_table.php",
+      "sha256": "ebc4c31dbd66ed5f7ae5dd7b3039ec7d005784d93d930cdeca68bfc268cae44c"
+    },
+    {
+      "path": "database/migrations/2026_06_18_121000_add_analysis_fields_to_ordem_servicos_table.php",
+      "sha256": "9910e9e2a155d96118489cb8132c3ec86efb0799229f9f0e458218d66c74f301"
+    },
+    {
+      "path": "database/migrations/2026_06_18_122000_create_ordem_servico_analises_table.php",
+      "sha256": "692d13b2469050329ed39cd1f0cf40bf3cf2e334a2694f9ad175959bf7362023"
+    },
+    {
+      "path": "database/migrations/2026_06_18_130000_add_eap_sequence_to_ordem_servicos_table.php",
+      "sha256": "005f63de9a263500866ec4e6ab01ab8ef5c09030d2952a7ac3c32f7a0a692cad"
+    },
+    {
+      "path": "database/migrations/2026_06_18_140000_create_folhas_rosto_tables.php",
+      "sha256": "f1d5e64b9bed75f7121a99d577ef2d220319929c6d3c2f263dca589979e05775"
+    },
+    {
+      "path": "database/migrations/2026_06_18_150000_add_memoria_calculo_to_folhas_rosto_table.php",
+      "sha256": "1c1a920326a8c5e6d93b3f1e7214e94462c39ffdbc1e7dd40c28b01373bc34b7"
+    },
+    {
+      "path": "database/migrations/2026_06_18_160000_create_boletins_medicao_table.php",
+      "sha256": "2924530ec5e989765d7dddef7a78a1152c90e7c1596e63060a51cc823c99651a"
+    },
+    {
+      "path": "database/migrations/2026_06_18_170000_add_construtora_to_folhas_rosto_table.php",
+      "sha256": "fe818debee5fbc11416276001fb0f418174c88cb72c8fca80b5a7527805a3a65"
+    },
+    {
+      "path": "database/migrations/2026_06_18_180000_create_folha_rosto_analise_responsaveis_table.php",
+      "sha256": "d6e361ca393924641ca51035ff00d992872ac305369931fede6371f41d33bb8a"
+    },
+    {
+      "path": "database/migrations/2026_06_18_181000_simplify_folha_rosto_analise_responsaveis_scope.php",
+      "sha256": "014ac234ea667d07ef41eb97e211d0f5b61d755a1f1d6800514c0af77a26beac"
+    },
+    {
+      "path": "database/migrations/2026_06_19_090000_create_folha_rosto_analises_tables.php",
+      "sha256": "56ff50c1a01661857cba9bae66ff6d9d6e679584dad342669712a4535b61abde"
+    },
+    {
+      "path": "database/migrations/2026_06_19_100000_create_ordem_servico_project_documents_table.php",
+      "sha256": "ba687441603c7b0579a62cea35d9e2d1703c0f77c67293c7151fd453624eae7e"
+    },
+    {
+      "path": "database/migrations/2026_06_19_110000_create_folha_rosto_fluxo_historicos_table.php",
+      "sha256": "7b7455c5661d9236464c21361816924317073f26664bcde42105a5363e575a21"
+    },
+    {
+      "path": "database/migrations/2026_06_19_120000_add_submitted_for_analysis_at_to_folhas_rosto_table.php",
+      "sha256": "2e8bdb6cefaa93215ca26c55c5527bc4f4efd19e5ee80f2e406a34f20bbac7be"
+    },
+    {
+      "path": "database/migrations/2026_06_19_121000_correct_folha_rosto_analysis_submission_dates.php",
+      "sha256": "60c5203a84c7caf6e2b680f98eaf4dd1cd6ca738e559d66d80656f4718bb4851"
+    },
+    {
+      "path": "database/migrations/2026_06_19_122000_add_analysis_flags_to_folha_rosto_itens_table.php",
+      "sha256": "5dc2a374ced636550fa45743bd3233aa6a3637772fdaaf4a6c28192f95a44f52"
+    },
+    {
+      "path": "database/migrations/2026_06_22_150000_create_mobile_api_tokens_table.php",
+      "sha256": "92de87d157811ba7d76fea9217b0b607260b007d3c53fddb156962d6b69da25c"
+    },
+    {
+      "path": "database/migrations/2026_06_22_150100_add_mobile_local_uuid_to_relatorio_nao_conformidades_table.php",
+      "sha256": "ab9749e2aae0043be0de7180ad7d831368a39b25769d12ede11bc4a44156f012"
+    },
+    {
+      "path": "database/migrations/2026_06_23_140000_add_social_charge_rates_to_orcamentos_table.php",
+      "sha256": "63f2d0c5b4a203bfea140d49f8f2954fef7d163b3547f6f161d1d159531cfab6"
+    },
+    {
+      "path": "database/migrations/2026_06_23_180000_create_rdo_tables.php",
+      "sha256": "f6d170930e568915d1ff35d42e9df3cbcba65bb44513bf2334674a019e0c9647"
+    },
+    {
+      "path": "database/migrations/2026_06_24_090000_change_rdo_submission_deadline_to_days.php",
+      "sha256": "a74fd63bedcf7938a5883a035af66de0859e64e1eb23daff3ff7cf40c244827f"
+    },
+    {
+      "path": "database/migrations/2026_06_24_100000_create_rdo_configuracao_obras_table.php",
+      "sha256": "43bcf04ece2d5c04a4fbd61dcfc71f15a513c08cb85f77077b8f829403cefcc1"
+    },
+    {
+      "path": "database/migrations/2026_06_24_110000_create_rdo_cadastros_tables.php",
+      "sha256": "e88920bfe0b50f15bcf3fc9b7fa93c1ff80984bac07f74dcd46ee2a12cacae77"
+    },
+    {
+      "path": "database/migrations/2026_06_24_120000_create_rdo_secao_registros_table.php",
+      "sha256": "8024bf79d80fd54901ab7622ec64b0f07f75501103b56d8caf4e099fbbf7195d"
+    },
+    {
+      "path": "database/migrations/2026_06_25_090000_separate_rdo_sections_by_obra.php",
+      "sha256": "47090b9589e1a3ecdc8c86afb382746ff0bbe106949c41a37437b2971c132c39"
+    },
+    {
+      "path": "database/migrations/2026_06_25_100000_normalize_rdo_subcontractor_labor_data.php",
+      "sha256": "1699cf465867874dd19703ccc6f0f447688cf78ef0c4a20a0f056d3a5dfeb96e"
+    },
+    {
+      "path": "database/migrations/2026_06_25_110000_split_rdo_rainfall_by_period.php",
+      "sha256": "7ac3c09987655d99da97ba7c86eb7983ce1bd01a35f72ea866ae2f8a0793372b"
+    },
+    {
+      "path": "database/migrations/2026_06_25_120000_create_rdo_analises_table.php",
+      "sha256": "41c4350035900dadbedce7a303b12327fd709eb6d2d0638737eef7dd09b17d5b"
+    },
+    {
+      "path": "database/migrations/2026_06_25_130000_create_rdo_responsaveis_table.php",
+      "sha256": "e069d69d0658b0104ae093e9a4c36bc5241cf0dca5a8786b2693faf093a6c4ed"
+    },
+    {
+      "path": "database/migrations/2026_06_25_140000_unify_rdo_approval_stage.php",
+      "sha256": "263897a75c247e7039192dfc59c8c3e251ad0ab9344a8f8e178a4a954f52bae9"
+    },
+    {
+      "path": "database/migrations/2026_06_25_150000_create_rdo_signature_tables.php",
+      "sha256": "676188810d05482709e15702efe3e53f7258bd8c979782202189569be62ae258"
+    },
+    {
+      "path": "database/migrations/2026_06_27_090000_create_rda_apontamentos_table.php",
+      "sha256": "f3adbc67b31b2fd97a47dbe276045363807d8793b4d0abe3652ae4699bb17c26"
+    },
+    {
+      "path": "database/migrations/2026_06_29_120000_add_modulo_to_rdo_responsaveis_table.php",
+      "sha256": "28ea257300df24071dbc7c7d9df4a96bbdc560eda50b42f221f23784fab34ee6"
+    },
+    {
+      "path": "database/migrations/2026_07_01_120000_add_digital_signature_to_rdo_configuracoes.php",
+      "sha256": "ba22fd83801912d2d39f7dba932f5cfc520732eadd3c3f59fae46f0222d28f23"
+    },
+    {
+      "path": "database/migrations/2026_07_02_120000_add_reopen_fields_to_rdo_diarios.php",
+      "sha256": "ede6d49748e9005fca3c3d152eb33fc1e491d46f890359daa30e7ce26eee93d8"
+    },
+    {
+      "path": "database/migrations/2026_07_02_140000_create_ged_tables.php",
+      "sha256": "f1ed916b04f487be8ba4098f2bfd174afe4a495967fc57953fb2d9ca2ea54c76"
+    },
+    {
+      "path": "database/migrations/2026_07_03_090000_add_contract_to_ged_document_types.php",
+      "sha256": "b3e9315d2680e5e5ea3edda879b55b20fa542f7669e103d1e6820c249d50747b"
+    },
+    {
+      "path": "database/migrations/2026_07_03_091000_add_contract_to_ged_tags.php",
+      "sha256": "87f895372eceda925d7cf4eca812bc67755246b35a4deb2d5a620687a40ae725"
+    },
+    {
+      "path": "database/migrations/2026_07_03_100000_add_sequence_to_ged_documents.php",
+      "sha256": "588525ffcfdd7470614a551d5038f7e7f27d1d6ac3b7f91904b17e4fd3901be6"
+    },
+    {
+      "path": "database/migrations/2026_07_03_101000_create_ged_document_events_table.php",
+      "sha256": "36664ef1a3bb1c9390e06de5e572e3782ed15d4bb212f21ced71fe4ce079efcf"
+    },
+    {
+      "path": "database/migrations/2026_07_03_102000_create_ged_document_notes_table.php",
+      "sha256": "04dfcfab2c29c91b91d0f825e009fd2c6a41b915668edeaa85ac02f97d7363a1"
+    },
+    {
+      "path": "database/migrations/2026_07_08_210000_create_ged_email_tables.php",
+      "sha256": "f2ca19fff60621bd38bd5645f01e0b52047038e4f238460e6fe90ec83437e787"
+    },
+    {
+      "path": "database/migrations/2026_07_09_100000_expand_ged_email_rules_and_logs.php",
+      "sha256": "ccbe2fec14bfb8d3f852997d8edb8adcd85b67b64860742db972cca57f366562"
+    },
+    {
+      "path": "database/migrations/2026_07_10_120000_create_contract_additives_table.php",
+      "sha256": "fe8ac69370c49e769db836d141aed8058612c7e57c2a0db2da3bec95e1719e86"
+    },
+    {
+      "path": "database/migrations/2026_07_10_130000_add_base_document_to_contracts_table.php",
+      "sha256": "9c06cb60acdf492b9aa5ac847fc77c0e25558fecc8ead0de1d612a23b6ec5e39"
+    },
+    {
+      "path": "database/migrations/2026_07_13_160000_create_ged_document_attachments_table.php",
+      "sha256": "f580b08335328bd013273339c8fc90a0bd945334fc6a9567fcdfbc25e4e72d36"
+    },
+    {
+      "path": "database/migrations/2026_07_13_170000_add_ocr_fields_to_ged_document_attachments.php",
+      "sha256": "b50a2eb261d385f6d767e962754d8a37136abe88f96968fad1d5d04432cb07b4"
+    },
+    {
+      "path": "database/migrations/2026_07_22_120000_create_project_review_markup_replies_table.php",
+      "sha256": "9a2050c8e5d0b30cd1aa779d16568a7b48b2239c659f0de3b75fbdd758556a8b"
+    },
+    {
+      "path": "database/migrations/2026_07_22_130000_backfill_project_cap_numbers_with_eap.php",
+      "sha256": "ad952f1b1d74128ff4297ece4c878e077863c4d9b45dae83fd148f0eba7fdca4"
+    },
+    {
+      "path": "database/migrations/2026_07_23_120000_create_rnc_project_documents_table.php",
+      "sha256": "c5ced69587976c92157c6ccb3ec3fe81bb0e4733d123f15bc8b83920c0b20c43"
+    },
+    {
+      "path": "database/migrations/2026_07_23_140000_add_responsibility_type_to_rnc_responsaveis_table.php",
+      "sha256": "8abe1ab284fa6fbf36a64ff4226a360914c55e43587755bbfeb6bbe2967f27ff"
+    },
+    {
+      "path": "database/migrations/2026_07_24_120000_add_visibility_to_activities_table.php",
+      "sha256": "1803570c83c8d142d25fd7ce625a14186a6e08da358dc8f17fffa54d754f0105"
+    },
+    {
+      "path": "database/migrations/2026_07_28_120000_add_measurement_mode_to_contracts_and_folhas_rosto.php",
+      "sha256": "f05e036db070677b59d91604771dbd4ed865f5220d2d4ac04162f4f4b0417954"
+    },
+    {
+      "path": "database/migrations/2026_07_28_180000_scope_boletim_sequence_to_contract.php",
+      "sha256": "dc6caee07ad2cbcadcda28f6462ea58334c9dc2adb0c17b1a0b38ce19434fad9"
+    },
+    {
+      "path": "database/migrations/2026_07_29_120000_add_view_activity_metrics_permission.php",
+      "sha256": "f76d7e23a523fbbb2ebfe679ccb4418b9e63352b69d32e2a438eaf72de086cd6"
+    },
+    {
+      "path": "database/migrations/2026_07_30_090000_add_budget_permissions_and_orcamento_accesses.php",
+      "sha256": "6428796b51abfc5e31f03465c19609cf02ad2a8ac9586834610a2e41f2d7c9ee"
+    },
+    {
+      "path": "database/migrations/2026_08_04_090000_create_ai_assistant_conversations.php",
+      "sha256": "1be0ef8cf27ca33fde9c20256b012e2279119418a4e3b8512b9fd4144fdfbc3c"
+    },
+    {
+      "path": "database/migrations/2026_08_05_120000_add_ai_quotas_and_monthly_usage.php",
+      "sha256": "6c90ff93f1e0464496e03e1c8276cbe1a092f4535d1ec96fa16881528197d264"
+    },
+    {
+      "path": "database/migrations/2026_08_05_140000_add_documentation_permissions_to_users_and_participants.php",
+      "sha256": "4ff5cadfbcdac901950fcf53c3d9927560dc3d25fe24f62c85bfcf4a15ecfa20"
+    },
+    {
+      "path": "database/migrations/2026_08_05_150000_add_diario_obra_permissions_to_users_and_participants.php",
+      "sha256": "feebc6877b105ad39c3c1efbbadd1e647b5a2bfc0fba9de978e39d840a63e34e"
+    },
+    {
+      "path": "database/migrations/2026_08_05_160000_add_ordem_servico_permissions_to_users_and_participants.php",
+      "sha256": "3b7d0f07c2bbce9b6f217f6149b17db8de604e09670e20b09553ff93b1d46cd6"
+    },
+    {
+      "path": "database/migrations/2026_08_05_170000_add_medicao_permissions_to_users_and_participants.php",
+      "sha256": "da35e855cce4a6805d51e78ef99e99dc96dd5d3ad237597872de0c91640dd304"
+    },
+    {
+      "path": "database/migrations/2026_08_05_180000_add_contract_permissions_to_users_and_participants.php",
+      "sha256": "c8bc00bc970ecfeb2333b3c3ee72586b200eb088e944eb21855ba4729063f73a"
+    },
+    {
+      "path": "database/migrations/2026_08_05_181000_expand_parametrizacao_permissions.php",
+      "sha256": "6a62a5945d0f5a0daba4035246dd57fab61ada865b64d3f78382f0718382dea5"
+    },
+    {
+      "path": "database/migrations/2026_08_05_190000_create_trechos_and_link_project_documents.php",
+      "sha256": "799bdbc1fae98374de7bd6a67e4b88902ec456958f1ea5fda537f091ac49b739"
+    },
+    {
+      "path": "database/migrations/2026_08_05_200000_create_project_submission_batches.php",
+      "sha256": "c36a6348e9a3518a7ab07372ce791175c6a3cf3d3dd926a570e5aad5c094fc8e"
+    },
+    {
+      "path": "database/migrations/2026_08_05_201000_make_project_batch_cap_nullable.php",
+      "sha256": "bde31e1d2d584f18a04ea17f56d1bacf04429d18f908a5ffd2f766696aa259a9"
+    },
+    {
+      "path": "database/migrations/2026_08_06_111500_create_project_review_markup_assignees_table.php",
+      "sha256": "b91abbd687b4cbfcac6d32efc5aa83fd41973ed7145abe120f85a2d073066e53"
+    },
+    {
+      "path": "database/migrations/2026_08_06_120000_create_project_document_status_changes_table.php",
+      "sha256": "ed0036dcb203c0b33924c0efb97396e437412d5ed5713517508076da9e81bdf7"
+    },
+    {
+      "path": "database/migrations/2026_08_06_130000_expand_project_permissions_for_batches_and_comments.php",
+      "sha256": "e439aad8c8d0f7e2a88e80241837e0e0a369836268f89e6d2c009618165b84e1"
+    },
+    {
+      "path": "database/migrations/2026_08_06_131000_expand_project_version_cap_number.php",
+      "sha256": "226b894249b8ed37a69304d596909e76076260fa78b57df4f653e0e221a0b57c"
+    },
+    {
+      "path": "database/migrations/2026_08_06_140000_add_storage_disk_to_project_document_versions.php",
+      "sha256": "13cbfc07c73315c47597f24b3dec1f50d75aec5edbdd44ac7585ff13d5f2294f"
+    },
+    {
+      "path": "database/migrations/2026_08_07_090000_add_checklists_to_activities.php",
+      "sha256": "91dc54e2fc017e284bb4abf80ed622fed852674b4e5f92356c599f30d164d46b"
+    },
+    {
+      "path": "database/migrations/2026_08_07_100000_split_medicao_financial_permissions.php",
+      "sha256": "cbb086aea2f2a30d1c3467d604834dec650e9f5819130e1ff8ad4a60b0b4927b"
+    },
+    {
+      "path": "database/migrations/2026_08_07_110000_add_responsaveis_snapshot_to_folha_rosto_fluxo_historicos.php",
+      "sha256": "9896be754ca98e687457e0ad0deb9fd686ea5dbd0f6eeba005c78edf914ceb5c"
+    },
+    {
+      "path": "database/migrations/2026_08_10_120000_extend_ordem_servico_execution_flow.php",
+      "sha256": "d152588fef48a7b6eb8182f0466ad573119f0029b11f14f6f6eb640696b7bd23"
+    },
+    {
+      "path": "database/migrations/2026_08_10_130000_add_ordem_servico_settings_permission.php",
+      "sha256": "b2569ac4990eba3dbabf230f1423732a6938b05baedf4ed9cd5c33b5259c0dd4"
+    },
+    {
+      "path": "database/migrations/2026_08_10_140000_add_execution_period_to_ordem_servicos.php",
+      "sha256": "6f2ccba2cc934dd077ffba6fa8d54fca0daaf96b60c129bb59aeb81f78224e38"
+    },
+    {
+      "path": "database/migrations/2026_08_10_150000_add_ordem_servico_metrics_permission.php",
+      "sha256": "5d9980ee8070ff36dd85f50d868e1a51cf9c91e40e5d5a5f496f055935a99699"
+    },
+    {
+      "path": "database/migrations/2026_08_11_090000_reconcile_ordem_servico_planned_costs.php",
+      "sha256": "c53dac2e67546ec0dc536d91487220ddf2465de9936ddf8b8c5bdfa14fd4e273"
+    },
+    {
+      "path": "database/migrations/2026_08_17_150000_sanitize_ged_document_metadata.php",
+      "sha256": "4b3a5c90900ae5f09d77c21dca1e9fa0046e800ebbbc542b8e2009fc6a04541f"
+    },
+    {
+      "path": "database/migrations/2026_08_17_160000_fix_rdo_generation_time_at_0005.php",
+      "sha256": "6a0bb572327062494e02b4c6148195e1a05bbfcf6e1ed4f0204a256a0e16de47"
+    },
+    {
+      "path": "database/migrations/2026_08_24_120000_reformulate_rdo_contractual_flow.php",
+      "sha256": "fbf57c64ec64e0bffb3c51fa9eba0982c740e2eb416e8381ef4aeb48099d1ec9"
+    },
+    {
+      "path": "database/migrations/2026_10_20_150000_create_os_dnit_products_table.php",
+      "sha256": "e32d4db6f6afa504aca1104e54c0227c417943d2264ff2d567184764f78332d8"
+    },
+    {
+      "path": "database/migrations/2026_10_20_160000_create_os_dnit_highways_table.php",
+      "sha256": "283f1098c48627ec28c238d5b2722c4b64d5b4cce204832606eaf17468be6d9b"
+    },
+    {
+      "path": "database/migrations/2026_10_20_170000_create_os_dnit_orders_tables.php",
+      "sha256": "158685947c470c2a53222a684f081a6d452ef87dad3e2a7ef60df9ab69b0f075"
+    },
+    {
+      "path": "database/migrations/2026_10_20_180000_scope_os_dnit_catalogs_to_contracts.php",
+      "sha256": "77596bbc2db44878427b0b92928c9da07381697854b499045aa308b8305cae54"
+    },
+    {
+      "path": "database/migrations/2026_10_20_190000_add_os_dnit_review_workflow.php",
+      "sha256": "ae21b56fb15ec71723f582af658f329a80026b3a8d075e90d007120bbd29e501"
+    },
+    {
+      "path": "database/migrations/2026_10_21_180000_add_os_dnit_permissions_and_soft_deletes.php",
+      "sha256": "b2c0c5131efa461ba945847afff97d368f516e56ffa6934fa899e20e6394eebb"
+    },
+    {
+      "path": "database/migrations/2026_10_21_190000_link_activities_to_os_dnit_orders.php",
+      "sha256": "0dc94ff07187b91f3af96d5800024d051c6e0eb14446cf571ca62539696bb19a"
+    },
+    {
+      "path": "database/migrations/2026_10_22_150000_add_navigation_permissions_to_tenant_users.php",
+      "sha256": "dde35ec524514c2c594ef9d16d1b5d4dbc2815de8242809a21791d1add9714ba"
+    },
+    {
+      "path": "database/migrations/2026_10_22_180000_create_instrucao_campo_tables.php",
+      "sha256": "fe15db9326f7961d307dd465d1a693cd01ad624f601e7b02192fe03e34a3c344"
+    },
+    {
+      "path": "database/migrations/2026_10_22_190000_add_supervision_lots_and_order_completion.php",
+      "sha256": "56a392c2ec7d6f231d2eca88af8aac351c6094a4eaa05eb48f6ed9a2874ed07b"
+    },
+    {
+      "path": "database/migrations/2026_10_23_130000_add_os_dnit_contract_exemption_to_users.php",
+      "sha256": "d7758d69c591dc32e3b785d01ab8e26c499fb77e2da14d411b53c2e3e0d13882"
+    },
+    {
+      "path": "database/migrations/2026_10_23_150000_add_quality_subjects_and_ic_attachments.php",
+      "sha256": "8a2e6ba04e28c0e9e9e9f369a249d10d8204f71e97dfaaacc6d0f6860a881eb1"
+    },
+    {
+      "path": "database/migrations/2026_10_23_160000_simplify_ic_evidence_workflow.php",
+      "sha256": "996035e55de27260c1b2e4aed3ab247256f0113907a7435f556ef91a77966c0d"
+    },
+    {
+      "path": "database/migrations/2026_10_23_170000_add_ic_reference_to_rncs.php",
+      "sha256": "fdbb6985e15df08fc24386eb5366f6c5db62f25645e3ecd6251f52ccf22568df"
+    },
+    {
+      "path": "database/migrations/2026_10_23_180000_add_rnc_evidence_resolution.php",
+      "sha256": "feb74f6d7a4356fdd5ece9391144f83a6c8285c67deb03b4907ef214f22d9812"
+    },
+    {
+      "path": "database/migrations/2026_10_23_190000_add_rnc_signatures.php",
+      "sha256": "19f95e34152844f879459107abcc4004cbeabaebfc1457e382bb4ea8f8e8f5f2"
+    },
+    {
+      "path": "database/migrations/2026_10_23_200000_allow_rnc_evidence_without_zip.php",
+      "sha256": "f1fc6d957a6ea52b3026fe478ea0df97a5e13d6dc2b481d8f29ab3cc66d69ca6"
+    },
+    {
+      "path": "database/migrations/2026_10_24_120000_create_rnc_pdf_settings_table.php",
+      "sha256": "2ad093f32c68378c75619f3da1f6f0dae6c09a59a3d5e9df810d2fdab1c66022"
+    },
+    {
+      "path": "database/migrations/2026_10_26_180000_add_pdf_logo_snapshot_to_relatorio_nao_conformidades_table.php",
+      "sha256": "12de2408ee66106c75a1d98619cc179940f211e28e68b7bc4c73e57551329afa"
+    },
+    {
+      "path": "database/migrations/2026_10_26_190000_add_rnc_model_fields_and_document_snapshot.php",
+      "sha256": "1192a7a26dc3b864f846e0c88bb1075e781874b12f8d0a230164902f1ff63f2f"
+    },
+    {
+      "path": "database/migrations/2026_10_27_180000_add_workflow_to_rdo_configurations_and_diaries.php",
+      "sha256": "ff2a77689fcc4ec4a000ab6fe3b7bd535c65c187b0ae547dfbdfe85f7b3424fd"
+    },
+    {
+      "path": "database/migrations/2026_10_27_190000_separate_rdo_sections_by_filling_party.php",
+      "sha256": "498d3da98aca267a2314e7de55cd070f6d624205a5153fffb56e55f596057b42"
+    },
+    {
+      "path": "database/migrations/2026_10_28_100000_create_rdo_mobile_syncs_table.php",
+      "sha256": "9d7a438ac7ee561db68f45c1d03b5f977e8c1b968a4ceb649d0d8af4a672ebda"
+    },
+    {
+      "path": "database/migrations/2026_10_28_110000_add_rdo_pdf_settings.php",
+      "sha256": "22c88722416902edbc05d99498563377eca27ff19aad4409e0fbb53ce4578666"
+    },
+    {
+      "path": "database/migrations/2026_10_28_120000_add_report_company_to_rdo_configurations.php",
+      "sha256": "80d4bd15cd5652e1a3621993fae7d88e684cde19acf1ccd2485843eaf5bcc249"
+    },
+    {
+      "path": "database/migrations/2026_10_28_130000_scope_rdo_catalogs_to_contracts.php",
+      "sha256": "8512fc846ca7c56104188534313e355b1690e09b1f91d5e8ac4584f53a7e5e09"
+    },
+    {
+      "path": "database/migrations/2026_10_29_150000_add_activities_to_rdo_inspections.php",
+      "sha256": "12733c73acd852fae8bfa84a408be0a086984a746337abfcb05757f60e28724e"
+    },
+    {
+      "path": "database/migrations/2026_10_29_160000_add_comment_to_rdo_inspections.php",
+      "sha256": "0e8306e4b313c32c464adb2fdf53a74caa15af162557eb1d2af1dd443637d267"
+    },
+    {
+      "path": "database/migrations/2026_10_29_170000_add_weather_to_rdo_inspections.php",
+      "sha256": "6e72a96ef97e0816ac5e291aa3d3faf161edb648387d683ed0ef32ee7eede09d"
+    },
+    {
+      "path": "database/migrations/2026_10_30_120000_add_manual_holiday_to_rdo_diaries.php",
+      "sha256": "a3d26a6daf1a81350e929b6c631af2e6662af14e74ccbb2cd0603c397958675a"
+    },
+    {
+      "path": "docs/tecnica/01-arquitetura.md",
+      "sha256": "ecd4f051b1ef7e82ff2ad56dc070a79411a8f0eb3a0f5eab176544db1f6d227c"
+    },
+    {
+      "path": "docs/tecnica/02-estrutura.md",
+      "sha256": "d3e9f08595b95e2e50e70db95e7004e7c44734aa3146e4b6eaa5a6210d1e2241"
+    },
+    {
+      "path": "docs/tecnica/03-tenants-seguranca.md",
+      "sha256": "5d4dbcaabdeae15ec65b919fbd5ce5548effd43d01de8e61614d272d444a5d0f"
+    },
+    {
+      "path": "docs/tecnica/04-banco.md",
+      "sha256": "057d9e15944ec14e6186f2d37942a8a04ae43f0014aade613d4a48fc3dba1f29"
+    },
+    {
+      "path": "docs/tecnica/05-backend.md",
+      "sha256": "89aaaf964abf89f610263665dbba2e69c49d3a76563a25f2e4eb62b9d350431e"
+    },
+    {
+      "path": "docs/tecnica/06-frontend.md",
+      "sha256": "eea0550dc4569c85b0404a29ac1bbaeb4c9050e27696a73129573a454ebd4125"
+    },
+    {
+      "path": "docs/tecnica/07-api.md",
+      "sha256": "da797e67f1b1792355033522e436057fa3d5d114a960daa70a0989cb04a708ea"
+    },
+    {
+      "path": "docs/tecnica/08-mobile.md",
+      "sha256": "3a3d80fc021fd19a8f388241240f712f449d28008da87bd5a59dbbc47c45ff33"
+    },
+    {
+      "path": "docs/tecnica/09-qualidade-diario.md",
+      "sha256": "b7fda67d995f44cb22800258f375b49e3acb3ddc9b85f03e3fc13341d3ee8fa1"
+    },
+    {
+      "path": "docs/tecnica/10-modulos.md",
+      "sha256": "0095a3e804116a423a482498a055045838e897bd4d5c615fef6dec492de91bd8"
+    },
+    {
+      "path": "docs/tecnica/11-integracoes.md",
+      "sha256": "38740d90451a122b9e4bc3cffc08a0769771121b02d8bfaa92999f2d6c82d19d"
+    },
+    {
+      "path": "docs/tecnica/12-operacao.md",
+      "sha256": "9201663053beb66cfa2ae53f4eb630f8ae59ffec94bac37bf90a5e2bd95bb032"
+    },
+    {
+      "path": "docs/tecnica/13-testes-manutencao.md",
+      "sha256": "20349bd75b0fdba9c655916140cbfd1a99afbcad99ac6e44e61905bcc93eb69a"
+    },
+    {
+      "path": "docs/tecnica/app.js",
+      "sha256": "b0c0d357c44f20ccd3f7c6dfdc2473a44c6e7055fc182b1548ef93cd2e4793bf"
+    },
+    {
+      "path": "docs/tecnica/build.py",
+      "sha256": "8dbf55bfbb2ab8ef142fcb181eb0d23e5bbdf96fe1e067f424442a721bdf980a"
+    },
+    {
+      "path": "docs/tecnica/fontes/rotas.json",
+      "sha256": "67bb211adaeac82dd863cadbf2acd6f73b8b5769c4eec2c17880da4c163139da"
+    },
+    {
+      "path": "docs/tecnica/inventario-arquivos.md",
+      "sha256": "f10f0dcfaf9ddb6944861ea82223bc9a27fa5c7abf0eaae0114dd05bee77af58"
+    },
+    {
+      "path": "docs/tecnica/inventario-banco.md",
+      "sha256": "572b04d8d83fdcee40ec21f79f3d011f55b8d8f316a13bfb670b67e338291e1e"
+    },
+    {
+      "path": "docs/tecnica/inventario-rotas.md",
+      "sha256": "d8da1fb59e01c822eca868a45945192a292bdfc1d8ae414911d0342a9277957a"
+    },
+    {
+      "path": "docs/tecnica/README.md",
+      "sha256": "1eef70f9e9326770e7bdf7abd6e19516ddc432d126d2941ef0ff0744c8e00f5b"
+    },
+    {
+      "path": "docs/tecnica/requirements.txt",
+      "sha256": "27ee4653d8710528900cd033b71eb5816ce4e040169c85a97bebc7e4bb4c8ee8"
+    },
+    {
+      "path": "docs/tecnica/shell.html",
+      "sha256": "02730c1cbe081c4de2b02335cfb70d468721e86d5259471688e3778c15206149"
+    },
+    {
+      "path": "docs/tecnica/styles.css",
+      "sha256": "fb00bbe29b1809ccb24d4224f3ff6d4693dc8839846824bdf2fc9cf13acb2a53"
+    },
+    {
+      "path": "docs/tecnica/validate.mjs",
+      "sha256": "d7cc20dfe57821df95a1cae62d946def9661de6ac848ba9a5378e1bb87c7ebf2"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "9669d70beb4ca822fb9516f92a5765250ee2ac25a9235c1289aee47cf8b83d09"
+    },
+    {
+      "path": "package.json",
+      "sha256": "f6eb5637cd495c33acae8e873166b3fe72dd6e89e7eb175bff2f12446c4d065b"
+    },
+    {
+      "path": "phpunit.xml",
+      "sha256": "c0d5c4a19d12a88411340657a838cf48555d599e0b17e1cf69e3e4fe2fa34a9b"
+    },
+    {
+      "path": "railway/init-app.sh",
+      "sha256": "2bd9feaeac2d9502599750ff28f7ec2115ce87f60dfdc18a84e971de78c1df6b"
+    },
+    {
+      "path": "railway/start-app.sh",
+      "sha256": "e5cf71f2468aad07f9562c34637fac860860e104a8ba1930105c4d68c8ef4250"
+    },
+    {
+      "path": "railway.toml",
+      "sha256": "800709d796ebf45c0c23951d8ec78f20db3bbd7c90c9a3ba6c34497e78664cb6"
+    },
+    {
+      "path": "resources/js/Components/ActivityOsDnitSelect.jsx",
+      "sha256": "76a62d51f6d5ed9f518327b950104f2df507d5a79c3c93631628736f368ffe7e"
+    },
+    {
+      "path": "resources/js/Components/ActivityTour.jsx",
+      "sha256": "05ed30f37b2e3558046c794796fe456f91ec2b1dd390c651ab80299b8db1cde6"
+    },
+    {
+      "path": "resources/js/Components/AiAssistantChat.jsx",
+      "sha256": "53ca358e4b38eaa3ae080dcb1d587ddbe08d2979562c7ba1c341680815a6729d"
+    },
+    {
+      "path": "resources/js/Components/BudgetTour.jsx",
+      "sha256": "549e16556f6198dafe79aedda1389dab10f578eb78cfd2da053521d34517bdae"
+    },
+    {
+      "path": "resources/js/Components/ConfirmActionButton.jsx",
+      "sha256": "5b8a93fa15597c132c6b55caa17c80652e59445827afe155b90533b5136b7718"
+    },
+    {
+      "path": "resources/js/Components/ContractAccessCard.jsx",
+      "sha256": "e3cdd323b8e091a72419079dac105bbd96fae99f8d377bdf4de6305e751ac1fc"
+    },
+    {
+      "path": "resources/js/Components/ContractTour.jsx",
+      "sha256": "3a3e2870f3e0edda1551ce4cc98606d36082f0cbc5bcf7a8ca39adbcac7d1ffa"
+    },
+    {
+      "path": "resources/js/Components/GedTour.jsx",
+      "sha256": "4fe0c583a906e49297f0ff053cac1d10a97d0c4dd60fba72585fca8fee1ad6fc"
+    },
+    {
+      "path": "resources/js/Components/GuidedModuleTour.jsx",
+      "sha256": "c8e93cfb13568d2639e086f16742534408cfb20bf7c9830f0599525d3ae81346"
+    },
+    {
+      "path": "resources/js/Components/OsDnitAnalysisModal.jsx",
+      "sha256": "c73b007a78d188210c1bfdd7352b3620d060c0c5436831ccbe5db00bc6b3acb1"
+    },
+    {
+      "path": "resources/js/Components/OsDnitConfirmDialog.jsx",
+      "sha256": "d0d0e915b1ffdf91c68adfc14907986a44c83eeb2b498eea7cdc8dd58a42d96a"
+    },
+    {
+      "path": "resources/js/Components/OsDnitDeleteButton.jsx",
+      "sha256": "7d0ba97a794f43b01fd9bcf42358f4ef66a664a7b002a38b015a79907f6b0e13"
+    },
+    {
+      "path": "resources/js/Components/OsDnitDemandFields.jsx",
+      "sha256": "1de3ee19dd6baed25529f1d4bc70ca22fe5c2ad23811ebf590d5cf6e2f72cb51"
+    },
+    {
+      "path": "resources/js/Components/OsDnitKilometerInput.jsx",
+      "sha256": "31b2749dbf7b03331af86e0c12376c6f000de33841a75aae094e36a1565c2094"
+    },
+    {
+      "path": "resources/js/Components/OsDnitManagementCard.jsx",
+      "sha256": "f3e304c12231047d6cb44fbe3d0f8ac3d2ffd2ceb1f133ac7307ae1e317d01ad"
+    },
+    {
+      "path": "resources/js/Components/OsDnitOrderUi.jsx",
+      "sha256": "c256dfc9a3137fd570065afe87d9efe8013ccffec069ba49e92a145912e21f9d"
+    },
+    {
+      "path": "resources/js/Components/OsDnitPdfDownload.jsx",
+      "sha256": "7916db03d004da72b3eced4a53face2bda4d4f1722405edb4cbfd89a9d3db842"
+    },
+    {
+      "path": "resources/js/Components/OsDnitProductPicker.jsx",
+      "sha256": "ce1e596b6f0199efdd17b78027a5d8f57d5106eb6afbc3405dad9781e2a11530"
+    },
+    {
+      "path": "resources/js/Components/OsDnitTour.jsx",
+      "sha256": "bc825b2f14de32f16c714db209f6a8335540408e5b44b2115192fb5325bd5354"
+    },
+    {
+      "path": "resources/js/Components/OsDnitTourButton.jsx",
+      "sha256": "811e1f99ec31312c78abde92f8183e72a67f28e192a6cbcbe64adaffa9944057"
+    },
+    {
+      "path": "resources/js/Components/OsDnitWorkflow.jsx",
+      "sha256": "cd458c44d9f022ab5aa3eb69fc02375a29f40f09682eef09a431588a9046bd5b"
+    },
+    {
+      "path": "resources/js/Components/OverviewTour.jsx",
+      "sha256": "9e9957487acdbae01cb20e06b5566e6a7b5d0d602caeee6559d668610eda067d"
+    },
+    {
+      "path": "resources/js/Components/PasswordStrengthMeter.jsx",
+      "sha256": "837464fb09e31bb7402e5955c17adc9280d345f3c1700ac99fc47f9596d29278"
+    },
+    {
+      "path": "resources/js/Components/ProjectBatchSubmissionModal.jsx",
+      "sha256": "a29dff37b0b1655cf21bf402ff9a622d98868350095f2e2c096ba2be51654240"
+    },
+    {
+      "path": "resources/js/Components/ProjectCapModal.jsx",
+      "sha256": "194b182e5b9cf36e87b76a6aa4404011c4152d4871a3dc876cbeaa8e5d8f68a5"
+    },
+    {
+      "path": "resources/js/Components/ProjectIdentity.jsx",
+      "sha256": "224da3adbf8b83cb715381ca97d7afee6f24296303926ba056b2d7283c49d3b3"
+    },
+    {
+      "path": "resources/js/Components/ProjectModuleTourPreview.jsx",
+      "sha256": "4dfe2e5f942127395c434052d1429692815923657034ad1c4004a5541d068b8d"
+    },
+    {
+      "path": "resources/js/Components/ProjectTour.jsx",
+      "sha256": "e670d4e190e453c2910fbc94f1cfe2b50f71b583a3bdd8811d12a9a573c6199a"
+    },
+    {
+      "path": "resources/js/Components/RdoCatalogPicker.jsx",
+      "sha256": "1e0006e3728a07bb4e698ea101112d002a4f4e15002a66bc815b18cc06fcb020"
+    },
+    {
+      "path": "resources/js/Components/RdoTour.jsx",
+      "sha256": "9b6cd754894082e5a50729e6be65ae9fe425cfb7352cf65c32f77444cf2122ad"
+    },
+    {
+      "path": "resources/js/Components/RncTour.jsx",
+      "sha256": "5f3dbf36f235fe06e98244c84dd7241355955ff598ba8dfa04e78e26f631a93b"
+    },
+    {
+      "path": "resources/js/Components/SigLogo.jsx",
+      "sha256": "8a6076ef4e94dccef1fc873dd457c03b1a8944eb093dabb0aeddeceea5b9d978"
+    },
+    {
+      "path": "resources/js/Pages/Auth/ConfirmPassword.jsx",
+      "sha256": "961ef22fb34ae9d8761f0c698d950af20b6f8c991e00f439626516c0c2b9c1e6"
+    },
+    {
+      "path": "resources/js/Pages/Auth/ForcePasswordChange.jsx",
+      "sha256": "c3694cb200f532040b7ec0db11883392650f021b8bee47b5e49a2f49a56fcbd7"
+    },
+    {
+      "path": "resources/js/Pages/Auth/ForgotPassword.jsx",
+      "sha256": "1bc5f6e202cf345226d6ae28c316857a110f53262b81cdde8b514a46499d004b"
+    },
+    {
+      "path": "resources/js/Pages/Auth/Login.jsx",
+      "sha256": "030096286149597f32c0b060e23831db0b387ae1d314ad0d47cccd196ee4c1c8"
+    },
+    {
+      "path": "resources/js/Pages/Auth/Register.jsx",
+      "sha256": "49a2b11eae13a4e3b125938a2f92080c3c5d177e2a885170a0ba15e60fe70e24"
+    },
+    {
+      "path": "resources/js/Pages/Auth/ResetPassword.jsx",
+      "sha256": "4fa857bcd53759b6cec759301a3e2e6b18d66d10347f866080819afcbbf5fdee"
+    },
+    {
+      "path": "resources/js/Pages/Auth/SelectTenant.jsx",
+      "sha256": "19682ee210433cedd02b3fddf6700e09104ffd416f8f2fa5a62519b771616dd3"
+    },
+    {
+      "path": "resources/js/Pages/Auth/VerifyEmail.jsx",
+      "sha256": "e1eb549663b27064d149ac9bca21ce8d001b07efcc3ab244c0834a0dafad70d5"
+    },
+    {
+      "path": "resources/js/Pages/Dashboard.jsx",
+      "sha256": "3a23189c2399daf43d6c7c3ba0de1717d34dc392e8c1bf202bb3c1317184d64b"
+    },
+    {
+      "path": "resources/js/Pages/Platform/Aps/Index.jsx",
+      "sha256": "dca1796f41bc3d2012cf325021285de7bdebc49637bad44c611463dbe084bfff"
+    },
+    {
+      "path": "resources/js/Pages/Platform/Dashboard.jsx",
+      "sha256": "777557acf4027de61873a3d4417893b8ba32c4713cc057d3f0f0b7ea5d129c90"
+    },
+    {
+      "path": "resources/js/Pages/Platform/Tenants/Index.jsx",
+      "sha256": "b2660ab12bd487823784804a80358c03057babd62e2e5a68c6737b5e9d6b44c8"
+    },
+    {
+      "path": "resources/js/Pages/Profile/Edit.jsx",
+      "sha256": "b2b9848361b03f36c397e7c8a5332d2126471eafc3fc156637446806ea394d94"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Activities/Index.jsx",
+      "sha256": "e837dee8f0afb02a0c79967034c4b7f6a4a30dbec5e56a86da6a74aac989893c"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Activities/Metrics.jsx",
+      "sha256": "f9208b7cf92c194b0434340de7e41847b338523a46378996017e93435c848f2c"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Contracts/Index.jsx",
+      "sha256": "9b39eb109da0c6a2ed89344ab767fb1f7a750e7546ce977053022c8046b3c21b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Contracts/Show.jsx",
+      "sha256": "f6c27c073636cf35db31c948399812295827c55db5cf8c04b6f641d624109df9"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Contracts/TourPreview.jsx",
+      "sha256": "5d784db1bf1de00b4a2ee3f109424f3e31832bce2cea8abc2421095f895de82b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Dashboard.jsx",
+      "sha256": "aa5092974e2a18910e7d7ff614d7bde48f30c857bec5ae4555ed5e246d11e174"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Ged/Email.jsx",
+      "sha256": "08d411fa72e0f5276a17b0d220d7e3e26d039c25c4b5171a2c89b1ee13000966"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Ged/Index.jsx",
+      "sha256": "3a272aaef5f66eb8812b58b25785c10b527466a8cd842c70f8acc5a10698d501"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Ged/Settings.jsx",
+      "sha256": "2dd79a6328ac97849f633a3411e4d611ec2ff0b8883dad1a41b8643371895c39"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Ged/Show.jsx",
+      "sha256": "b6600748d22dc144157ce3ab269fa36ac5a16bbcb47ce1966f612c78b1d69892"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Ged/TourPreview.jsx",
+      "sha256": "61995d974cdb4d20b93dcc1b328f935ea1d4964a8a01e9c61a8620477e8d0476"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Ged/Trash.jsx",
+      "sha256": "d3037942d42c7326412ca92baf40a0e90548b0471b0ac709ca27fb8b5ae847e8"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Ged/Triage.jsx",
+      "sha256": "9e636cd647ccfffd836569212a45a21e559a40f60797e7d4444b8a3e61c62196"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/AnalisarPleito/Index.jsx",
+      "sha256": "bdac2fb3480594fd673dd27b298acc109dcc1d7b52b1fdee3e3aafce4af83f53"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/AnalisarPleito/Responsaveis.jsx",
+      "sha256": "9fedc6189781aaf2245589e390de08720bf006cd4c95ece5dbb45aabaa5b98a4"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/BI/Index.jsx",
+      "sha256": "8ef65f3d038119cb21b3d9c94b67acf9219b33e4809884b0c5351e0cf1d776db"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/BoletimMedicao/Index.jsx",
+      "sha256": "735f04eee8ab3076e87da6c3fa1cf0ef6f3b9a71dfcc6cbb6ece43027be3764b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/FolhaRosto/Index.jsx",
+      "sha256": "a174ea5320c3b6f22f0affede7b5b97e0aff29d19888016fc7f79a7fe4939f0f"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/FolhaRosto/Show.jsx",
+      "sha256": "c72c8d86c32ccd2bfc373ecbd0e20e6b433d9bf3be5f515e87adea4743e55a37"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/IndicesReajuste.jsx",
+      "sha256": "d0960ea6df18a01df2c9217d507821ac190df7ea34cec0acda9530b87d0b2079"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/Itens.jsx",
+      "sha256": "fbd632cfa904aaf0944da92aaad8c9044f2ef786212774751b24ab1db0f441bf"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Medicao/Relatorios/Index.jsx",
+      "sha256": "e3457f468b0e8ed23282132e75ac86861292a1056d7a8a0116dd9137b81125eb"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Composicoes/Create.jsx",
+      "sha256": "44d04f42f440fb93517a777b7bf9c7304c1a728a79999a02b82090c04c76deeb"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Composicoes/Show.jsx",
+      "sha256": "866d9b6e226f3e69a8e0f068a2f7d00d0b8f68fc7c4ab0b37a9bf6ec98fd5272"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Composicoes.jsx",
+      "sha256": "81a03b082caadcfdec39daed44274dadae3164bf3fd85e7d1a20b48944400ce0"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Create.jsx",
+      "sha256": "7d76a1136f93266a88c6c3b5dfee1454ac138bada069f6144ca0728c91583261"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Import.jsx",
+      "sha256": "89eb0b6e1d6d9fbee82ff4c32acb4a860d6146e566049a0bf5331f82545d1859"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Index.jsx",
+      "sha256": "08f4ea5e03c38d1aff1b6180fe4639016f8f3cf2beda238351bc6c48f62c88f2"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Insumos.jsx",
+      "sha256": "85c866dad10d48496620f9af484dd92ed9f12807f8af87dfae1c3b3c3eb82ddc"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Partials/BudgetAccessDialog.jsx",
+      "sha256": "8a7774b6764ef0e345780c24522849d3eee4c6f6811036526c6ffe33f59d9fb7"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Partials/OrcamentoShell.jsx",
+      "sha256": "424beebd051229ea99c5200cbde334eeddcf7387812f7a2fdb23f607f4686057"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/Show.jsx",
+      "sha256": "42a3233a5ca23e9583bce5496d4fb4abcaa84eded76f36326128e2b41d4aba42"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Orcamentos/TourPreview.jsx",
+      "sha256": "bead141968d76007e7e6661ec99f3eb72144b3575051fc76992eb2b73f02b092"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OrdemServico/Analise.jsx",
+      "sha256": "6c3222a9106b6cb80ca99ef2134baba9d42bbb78a4004084f8f031faadb1758b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OrdemServico/Index.jsx",
+      "sha256": "d1e1faa4562c61d6f53cb253a953da7efcbddbddbcce75b8de18f8b02b84e2fc"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OrdemServico/Metrics.jsx",
+      "sha256": "b9ae60a509ada0b81b31c72844ccc8ae944b554a82a168e658a19ce487514b9b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OrdemServico/Responsaveis.jsx",
+      "sha256": "6fb2f1dc15d8be365cec6cd3b2772c713c35a3f121f5b009ec09d8a3a75d4a81"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OrdemServico/Settings.jsx",
+      "sha256": "432ffc422398763d00605002bce6d80fed5263ae2e6a1c02ee418e8043a86599"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OrdemServico/Show.jsx",
+      "sha256": "82813e45998a062c1c0d8ac99755a6cf5fefe255c3d9c5f10990441fb32d1b65"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/CreateOrder.jsx",
+      "sha256": "ad9f875a45afc9ff311cae13e3ec64ba114c9c32ef206793b91eea986eea5b2d"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/Dashboard.jsx",
+      "sha256": "7975eff3cf53f40e970eee05aeb17a950f2c399a805229d36d687fecb5c11bdd"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/Index.jsx",
+      "sha256": "2f634a4915847038c9d44b2f9edc1eb8177651f0415dd4d3ef224fdc64fcafa8"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/Orders.jsx",
+      "sha256": "f5e17c2fe2e97f520818529490eb31f894e853d8254830e3a6a68545d5119dac"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/Products.jsx",
+      "sha256": "620e1b073403031953c33712953a70226e6b061def4637defbd866caed9c660a"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/Responsibles.jsx",
+      "sha256": "7b85cf6841918d6679692a47979a1ab80262ec7f884545ba45b06d9a5d430724"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/Settings.jsx",
+      "sha256": "e78cc55d41e2ec0921e76cee1be33f53a8fc9db6d1ca857a14bde84c9fb1486f"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/ShowOrder.jsx",
+      "sha256": "4648e121eb4e4e296aadc43ce9acffdab24a66b98b7b4baf284c657334f1fa4f"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/OsDnit/TourPreview.jsx",
+      "sha256": "fbde4532795e84e55601c1a5d8537a45bd9a76036e456735337109682a223e3d"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Parametrizacao/Contratos/Index.jsx",
+      "sha256": "c702f7644daea5c6189532bf3b2cca95c455e17ff0c8cd31ff537e52c6a08c5a"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Parametrizacao/Disciplinas/Index.jsx",
+      "sha256": "ca9bf22c29c1f253a0b0fdccdc203d294160b286f291b10df71646face05d676"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Parametrizacao/Empresas/Index.jsx",
+      "sha256": "16b55a87420c81b71702b3191a8ce6c09072b68f1798fb375443d4ad4f28c306"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Parametrizacao/Obras/Index.jsx",
+      "sha256": "20c29c68e38bd78846f1bf6f1a2d0038b91ba9073a73d6018cc0caf5c91e8688"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Parametrizacao/Trechos/Index.jsx",
+      "sha256": "54d40ccb2ff1c9afc501e83d27ef3882028c7de4d174de1885e0c0c4c5f43ed5"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Parametrizacao/UsuariosContratos/Index.jsx",
+      "sha256": "4ebd833ef50084f8edcaaf1031a21a6030ec7a939157d1f31196f77d33b23c93"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Permissions/Index.jsx",
+      "sha256": "9fe7a884050c695915b2dc2cceb77d28a183ae43997c07508273d85b68740490"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/Comparison.jsx",
+      "sha256": "5caf5f626827446100ec9eefae2ac31b2bbe6a624d33b56d53fc3110e6c6f684"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/Index.jsx",
+      "sha256": "7367a69eed2597cb2de118338fe2597b7949850d7291a89ed558355eb806ec35"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/MasterList.jsx",
+      "sha256": "7316a2f27a1b6c90f3a9d8b90d2a08b1c782f2e608567cef7cf642ec40372e09"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/Responsaveis.jsx",
+      "sha256": "c69d5e09b0c8fdcba1533cc4a3fd00215e04f497cba5961e4c32ebe9291fbb75"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/Review.jsx",
+      "sha256": "3cc80ca34d1b9a3302926961e735fe6d55e946fc3d896c7fe4ba1e5f66cff27f"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/Revisions.jsx",
+      "sha256": "0331d91ceb1759465ff6c0e4013c5c83abdee5d0a9f5ed74ba429a6bed930f69"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/TourPreview.jsx",
+      "sha256": "a7853c2493cae91122c736c7f41ef030065bbdb5cf29846c7738edf97b4121cb"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/Tree.jsx",
+      "sha256": "cb39fb1b331318d2b9ef075c86f74b76ee3885c126d381c8d39da8abe85a0ff2"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Projects/Viewer.jsx",
+      "sha256": "7ab789ef7f9fd8b479aaea96f42a270f7acaa8cf14281bb4ed37bf80aae32cb2"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Create.jsx",
+      "sha256": "8a249e5c20561f232c6da4d52f54b8e141e5469169b10e1edf78dc6638bf64a0"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Dashboard.jsx",
+      "sha256": "d0a0133542587be73e2c27fa3829157338852d3429d6bc16a2a9907cf8028242"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Evidence.jsx",
+      "sha256": "c0b70579d9065d797d006cefbbeafdcd0d81c7d6ee5af66d3efb421f697cf938"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/EvidenceButton.jsx",
+      "sha256": "574d32400df7aee7e905e1c8d47fa07088a6fe4ecc03fafced425ec0d6e95182"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/EvidenceForm.jsx",
+      "sha256": "21edc8d35c60186087a28026f5afb75c9890417916b523253994bed0921cb7b3"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Index.jsx",
+      "sha256": "941e7dc547fd3cbeb5dc4775537750d7f25c8d4b61a857c855c7dff360b5c63d"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/PhotoRegister.jsx",
+      "sha256": "5b47805da032b110b2bdb800b2ec6819c1562e25f60a500096b1e1bbb1a8c552"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Responsaveis.jsx",
+      "sha256": "678c261fc040e8068bccd13571b98234f84ca20c22b8a92b30f56d3909069218"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Show.jsx",
+      "sha256": "e8473bb9e79f6f026b532162a06cc4dd348515263a4c15947299130e8ef480f8"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/InstrucaoCampo/Ui.jsx",
+      "sha256": "a45e31dccad445dd2bd5ff7ec786a696ef47d65466bf5881b5ba45e716da9eb0"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/AcaoCorretiva.jsx",
+      "sha256": "bca44191154cd260c09257697c5552bf28c92c715db29685c1787b334bbd1765"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/AnalisarProposta.jsx",
+      "sha256": "68fe3da1632031343c2a9bc291b1b1ec6ff7105f95fb4b00a44abaf4b1461a69"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Create.jsx",
+      "sha256": "136a4b694c3c15650c26a59cc4324e1966e373fc841c894a39b0bd3ec287e1ee"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Dashboard.jsx",
+      "sha256": "29d564079b607b4df2f2b8ac385bc3779021c34502143df1b04b97721513da1c"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Evidenciar.jsx",
+      "sha256": "b1dba41197d457c4e593a2db9f9e5e4e69e67c4fced3912c47d1c892f6ec1b42"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Index.jsx",
+      "sha256": "6ccc754bfd99babc6026f416b70e8e5a70e57e86890c14b2b477c3642ca60d9f"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/InspectionFieldsSettings.jsx",
+      "sha256": "14ab2dfc733194d42860f26dd970bdad9a69622e1ba1502a10af8f072b47ab5d"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/LocationMap.jsx",
+      "sha256": "e78069ab88c8970a35f8ae60fccaa1eb18e4baf67c57516bc1ce966da6f66fbb"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/LogoUploadField.jsx",
+      "sha256": "0100559da7b64cedebe0c32a758fecd2eed7d5c1d038b7f28735d34534971c75"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ModelFields.jsx",
+      "sha256": "05bf9230de263170a3f676f0429fe7f8e9cbdc6190e688ef54c9f8ba84c297e0"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ModelFieldsEditor.jsx",
+      "sha256": "5496d2f44df17ca473af72582ab1787a9b51d0fdaf8c8a38fd1cf25f04a3f3c4"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfDownload.jsx",
+      "sha256": "3eb576e0f25529302526a639539c5eb20cc8c814dd7c162b3f19e39a5c13b8ca"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfModelPreview.jsx",
+      "sha256": "1e046dd412405049313d035140bcf62a2beed9bb5e92ba03d9c5ec803698689b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfPreviewDocument.jsx",
+      "sha256": "71098994dc94cbd5ec3c2b2854c590ad9c301011cc99b9b1b70ca28e75ff0889"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfPreviewPage.jsx",
+      "sha256": "855fa655db6149fedb267c7ec5e2fef76e3c69f8bc8d392dc4f07f3da070afbf"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/PdfSettings.jsx",
+      "sha256": "e955f8c67b3d07ef4ffdab60952865c7c77d39d24df2a358d1db6f663398ed27"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/ReferencePicker.jsx",
+      "sha256": "6a30498e7a8077b7c9f5472ba8ac493f15bba1c230ef75fbc05e5a99e497e81f"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Responsaveis.jsx",
+      "sha256": "bf8b0aa24f27830e1bce85a23d5592e1b0dfa6ab1c9ea0c8b21d8546e189ea59"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/Show.jsx",
+      "sha256": "59986ca687fe8a9c8766152e3f270da66aa8193c83d41f6874015f46ca927023"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/SignaturePanel.jsx",
+      "sha256": "65d6df784b554087014b1e01a44adfa3c0d48a50ed333736d03ebebc98fce320"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/SignatureSettings.jsx",
+      "sha256": "a20b17df357c10a31b6bdfd4a53b44e8c6f5a4ca060a9a84e6acd03e616e03ec"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/TourPreview.jsx",
+      "sha256": "379d833e3660585f5db7c986f6f89ac5ba449222b1d9437cc3a93b5faa42d68b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowButton.jsx",
+      "sha256": "cced58acd60c7f4491af37faa13c0888e4490b935bf47edfbc21d5bc732750b1"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowForm.jsx",
+      "sha256": "f3558ea34d3f44ecd88a7e8ed295e643881cee6f3b8f48a613ad5d3c68ed3da9"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Qualidade/RelatorioNaoConformidade/WorkflowPage.jsx",
+      "sha256": "e2d14abe50127e4c227154ea7f580592c19c66920aea41727585c599de2fc40b"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rda/Index.jsx",
+      "sha256": "823e619e037068b9b742a17fd2a5d13c08f43835938c024ff3d02f7bb7b2eadc"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rda/Show.jsx",
+      "sha256": "c927544f7f659b16ff2040377c94803ccef1472066a9c4392e4548803a4634bb"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/Cadastros.jsx",
+      "sha256": "513d60e639ced6bd51d67f87508d3d6efa5704a7e1509ef555bf2343fd844efb"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/Calendar.jsx",
+      "sha256": "0c71e4bcb091869c8447c1de6d49de4cb0e9a37eaa0e3f6dd83732257cd618ec"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/ClientReviewPanel.jsx",
+      "sha256": "6e83762e030362157c0d25fce1b76842556a17f6a334f8efa7d9fbf18d18c534"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/Dashboard.jsx",
+      "sha256": "5a1bf86438de7f92daa4205cfe0831a802ecfc47ee67562134aa1550938e1b66"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/DocumentWorkspace.jsx",
+      "sha256": "49b253ca64a2d385c22bc06de9830bb9ef8f1b6b957b5aec9eaf9faed09e278f"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/InspectionDocumentFile.jsx",
+      "sha256": "00fed19698b6c6c144a8acd4c4f2f428e3f1b15cbf49ca64f63480d6b2811144"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/InspectionEvidenceEditor.jsx",
+      "sha256": "bd7e4647ea3f08e6245cce8dc7688e0b0df2ed7db80fab9c0f683dfff80cea31"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/ManagerFlowActions.jsx",
+      "sha256": "1db78347b9953318ce340c91ab8910bd1ac97a220cfbfd37b0b3938ef83ac077"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/PdfDownloadModal.jsx",
+      "sha256": "e0614c0fa369890a1eb439f1ec1d68c0cda2e4800c9304afbdc1647e35f9f5fe"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/Responsaveis.jsx",
+      "sha256": "9a582ee753ee39c236edb63b3c3d43feee2b031fc61d5a8bd2a8b1907d6801f4"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/Settings.jsx",
+      "sha256": "5c5fea730ee0776a59e35de9719ae881ce1a6986766ec546457ecc36c6d3e060"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/Show.jsx",
+      "sha256": "ec94218c0042adf088e19f3c275cec3e57e987568bc8667ddd3a93b05108018a"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/TourPreview.jsx",
+      "sha256": "5fd2e1322358898f9a90b7b4684f754c92558afd913f4f88d9fa728f50287bd7"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Rdo/WorkflowEditor.jsx",
+      "sha256": "893cafaa3d722d35798c69a8484318df95d3b2aa02ebaf830eb79421fdfcc0a5"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/Index.jsx",
+      "sha256": "59fbe2266625b8beb19fcb34e61cc814a77b9cc9df5e265f5aa39ee3aa161434"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/OsDemandPreview.jsx",
+      "sha256": "cf43835e714575c1fce58aa5b93417ab1320a1a6e01e9a07194fa2d9ffd37b72"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/OsStagePreview.jsx",
+      "sha256": "4136413660c773d6a65b4623087821a6d96540d476e99b7132bedf4770115ee9"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/OsWorkflowTutorial.jsx",
+      "sha256": "5ce364b7bc1f4de1df6186c7aed74a3725df8b4ad687a2b51de7c79894deaa47"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/TutorialStageModal.jsx",
+      "sha256": "086dd93207310eb501b6ea17dc5d2a130e33342e641871b764b767d7e1a45db1"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/TutorialWalkthrough.jsx",
+      "sha256": "8774feb67f9f8d40f0f0fcf9c3f6c5d4e4c56a9e8bfc05371cda18bbf86ca070"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/TutorialWorkspace.jsx",
+      "sha256": "fa568ab8f086f1a875c5df265eeee32a683f03af10082f1030d557da4191635d"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Tutorials/VisualTutorial.jsx",
+      "sha256": "065bbebe51f2b40cc91c973e5bd5a9a6c5e5862ba96664dec94022cfc67121c1"
+    },
+    {
+      "path": "resources/js/Pages/Tenant/Users/Index.jsx",
+      "sha256": "f65fb2ce78fef3ec559643223db22693b0626ce3d1322dc384bb7ba88a7ad592"
+    },
+    {
+      "path": "resources/views/pdf/medicao-fluxo-fr.blade.php",
+      "sha256": "5928969de173d9603e3905ae7b9af336a15c34913337602cf6c286f0418050e9"
+    },
+    {
+      "path": "resources/views/pdf/medicao-pleito-preliminar.blade.php",
+      "sha256": "40959b02a543dce2c8b6f37bdadbb6d87d1491a29b8e3da2825218bf5be4a17e"
+    },
+    {
+      "path": "resources/views/pdf/medicao-resumo.blade.php",
+      "sha256": "1c1a7a7b919e0a4e1b7173a3b64cd9b47df0ddc703da2da97e54ca368b7aed3c"
+    },
+    {
+      "path": "resources/views/pdf/ordem-servico.blade.php",
+      "sha256": "b961ab1e1122dc231abd928e34581b53f429934a2a01efc8d971965715fdc315"
+    },
+    {
+      "path": "resources/views/pdf/os-dnit-comparison.blade.php",
+      "sha256": "98c3a47bad0678a1d02cabd2e85d1f44004f00ece852a9e9895693d5881e1f53"
+    },
+    {
+      "path": "resources/views/pdf/os-dnit-products.blade.php",
+      "sha256": "3e1b2a89f089ec54370516ddc09e96dae64ed3c522f20a557ad22fabdea51883"
+    },
+    {
+      "path": "resources/views/pdf/os-dnit-stage-header.blade.php",
+      "sha256": "9fa96455386842d09bdb7235d77ba09bfc1a8e238710ac6484ba521897e0ccf5"
+    },
+    {
+      "path": "resources/views/pdf/os-dnit.blade.php",
+      "sha256": "6a4c8e55289a079e503d201de9a50879cf72d05eec9fccf18b92d6c7f9636208"
+    },
+    {
+      "path": "resources/views/pdf/partials/rnc-model-fields.blade.php",
+      "sha256": "a29388ef5b93d17f0d17e2b4f4c521d6f9017477f0add864171dc741d53c137e"
+    },
+    {
+      "path": "resources/views/pdf/project-batch-cap.blade.php",
+      "sha256": "903b038e7702b41678e16db8de9e5e275198530a9a79d19a34c2b5723758fd0a"
+    },
+    {
+      "path": "resources/views/pdf/project-cap.blade.php",
+      "sha256": "3c3932ae87502a785943e95d3ffb91b6f180cd7a759b865403670cfaf985d732"
+    },
+    {
+      "path": "resources/views/pdf/project-master-list.blade.php",
+      "sha256": "937c0ec51497f7bc17073890813fcb8b2bb671029299f546d299655f99d94c61"
+    },
+    {
+      "path": "resources/views/pdf/rdo-analysis-row.blade.php",
+      "sha256": "401903872b8b23c491404a614f722ffba7dce7f81dcc7dcf53417c460a1015f5"
+    },
+    {
+      "path": "resources/views/pdf/rdo-concremat.blade.php",
+      "sha256": "55d948f1481a5c118852ae040f3cc2e80a527b8a6ba189ac0a28270773bdb34b"
+    },
+    {
+      "path": "resources/views/pdf/rdo-heading-row.blade.php",
+      "sha256": "344cf83b6451a663f3869b357bb84e5c6bcd452e71b5d2386c43f3782915dd3f"
+    },
+    {
+      "path": "resources/views/pdf/rdo.blade.php",
+      "sha256": "da17a14df1458529325b31d63fcbacdb6b4ff1bb9abe1ed1cc862ba1a18bbf81"
+    },
+    {
+      "path": "resources/views/pdf/rnc-form-photos.blade.php",
+      "sha256": "b6cd45b2375c7d996d1424a4078e5b9385481bc2cc3d4b955c959a269f7d8361"
+    },
+    {
+      "path": "resources/views/pdf/rnc-form.blade.php",
+      "sha256": "7c76021b877383ad4f717175e239f596baaa8ade50c000aff1e4f62d3d4d6a4b"
+    },
+    {
+      "path": "resources/views/pdf/rnc.blade.php",
+      "sha256": "3169e4e9e9003ee713486f68a1f3fe5b9c8c10970a9334ca0b360326cb711e90"
+    },
+    {
+      "path": "resources/views/pdf/viewer.blade.php",
+      "sha256": "c79bcb051008b94ab3219d271ee684a81407cd45d9d953d2136db99f6fa1ca9e"
+    },
+    {
+      "path": "routes/api.php",
+      "sha256": "a2c6fcb5e7a0f1d19c4620cb11b0e970896b26665270a57210d08751dc0a10c8"
+    },
+    {
+      "path": "routes/auth.php",
+      "sha256": "0796c067f54ee6930a02be2877d273f757cb1f2d4a38b9161ceeb8f9a7d38293"
+    },
+    {
+      "path": "routes/console.php",
+      "sha256": "401d494d90714aafbf6f36fbc23d4ee1157223534855b9550c9296f706fe7ae2"
+    },
+    {
+      "path": "routes/web.php",
+      "sha256": "0649b7def8ea15dea83eb0d6110992a8c1b656d67a11b8a104eb92ff338d722a"
+    },
+    {
+      "path": "tests/bootstrap.php",
+      "sha256": "0f1ec82cd29d603e7666d981bc68dde8ba3776722367e11e6dbd8dc033b277d1"
+    },
+    {
+      "path": "tests/Feature/Auth/AuthenticationTest.php",
+      "sha256": "47ebd23064d6e0023a07a2011f4f23b8263e26707ff3bbbe8926478a2223be0b"
+    },
+    {
+      "path": "tests/Feature/Auth/EmailVerificationTest.php",
+      "sha256": "ee9fe6e9df4a60968a0857d3a2ea6b5d79248308db0b8a4844ce094c1d89143c"
+    },
+    {
+      "path": "tests/Feature/Auth/PasswordConfirmationTest.php",
+      "sha256": "255e0c8d39d61cde86a497fa845aae4e0a4f593f83d4c3591e8f149e68e696e3"
+    },
+    {
+      "path": "tests/Feature/Auth/PasswordResetTest.php",
+      "sha256": "99a62c1261e11a7a0e9ee8645d90a4c5d28e8a862be5bb470d5e82d125957e7b"
+    },
+    {
+      "path": "tests/Feature/Auth/PasswordUpdateTest.php",
+      "sha256": "3bd86ee9814c4bbe6e46f9907f56b34082b0e8db60b7f66d2bef3b081955e01c"
+    },
+    {
+      "path": "tests/Feature/Auth/RegistrationTest.php",
+      "sha256": "abe6c6c802bc17c678105c5bb7fdbfe7a57bafe6a8c68a09f8b90ec504ec6f5a"
+    },
+    {
+      "path": "tests/Feature/ExampleTest.php",
+      "sha256": "76c2b1bb07cbec845e89fa77271b4047b3c8aa72c31f11debc72368d0892a188"
+    },
+    {
+      "path": "tests/Feature/GedMetadataSanitizationTest.php",
+      "sha256": "a9eb9e39db4c511c35b51f7636605dd5000343ddd12f4de4f46afef6c6473c3e"
+    },
+    {
+      "path": "tests/Feature/GedOcrIntegrationTest.php",
+      "sha256": "a25934b102de02fc0b9521b7b90da3e0e8388aa943085d17215bc952b63c5f3b"
+    },
+    {
+      "path": "tests/Feature/MobileTenantSelectionTest.php",
+      "sha256": "cbd003052dd46ad00b00f218b27b369e697606deab39a6eea874fa1a7b0fa001"
+    },
+    {
+      "path": "tests/Feature/NotificationReadTest.php",
+      "sha256": "04ab035840165304fef8f040403f1380f58ea36a259eef08e1d24a966ed74c8f"
+    },
+    {
+      "path": "tests/Feature/OrcamentoImportTest.php",
+      "sha256": "9c8cd76679c59bf3f530b91413b930f81f0ce072e141c14adb58dc96f6ea7738"
+    },
+    {
+      "path": "tests/Feature/OsDnitAdminExemptionTest.php",
+      "sha256": "606ed884d2c0a2dc983588c5850ba52b17365991693485473940f3c7a872e755"
+    },
+    {
+      "path": "tests/Feature/OsDnitContractIsolationTest.php",
+      "sha256": "a6dfbc399b1dea2176e58d6a3bb2299c38a33dfa45e81f9e5287a292edece88b"
+    },
+    {
+      "path": "tests/Feature/OsDnitContractMigrationTest.php",
+      "sha256": "c1009e6f9ee88a4da89f270de8980af9243cf2666e40189931a01be457674438"
+    },
+    {
+      "path": "tests/Feature/OsDnitDashboardTest.php",
+      "sha256": "d733c67063bb8b59669d5336dd0959530a08efd9979760d2a505b832ab855c51"
+    },
+    {
+      "path": "tests/Feature/OsDnitEmptyTenantTest.php",
+      "sha256": "5e2bdc0ab24d56d0debfb3999161f4242b2be8f1c6e0054b85218f4889f2f096"
+    },
+    {
+      "path": "tests/Feature/OsDnitHighwaysTest.php",
+      "sha256": "e033b5191306d41db92820a691a4d0152df5ea366bfb9664ee24d0daea464ec5"
+    },
+    {
+      "path": "tests/Feature/OsDnitManagementSummaryTest.php",
+      "sha256": "883daeeaabbf5cbaf0234aa74eda9e57089e093db3b17ac7056e154770d2717a"
+    },
+    {
+      "path": "tests/Feature/OsDnitOrdersTest.php",
+      "sha256": "5e6529c166771e1ae39ce4eb40f2b6bc74a47e294be6f1f023ed85337d736f63"
+    },
+    {
+      "path": "tests/Feature/OsDnitPdfTest.php",
+      "sha256": "a962fb7ec68c03297ad99469c7ac24441d66c455ab2b664124e0d11418865ee9"
+    },
+    {
+      "path": "tests/Feature/OsDnitPermissionsTest.php",
+      "sha256": "2038b59c5c8c88911bb716f38de216aeace91b09fcfddda630e486cb494fcfe3"
+    },
+    {
+      "path": "tests/Feature/OsDnitProductsTest.php",
+      "sha256": "fd3d4d2b9078ca4490beb3ba2e3c1f50bf65c72ae8e83c781b3224a2253b939c"
+    },
+    {
+      "path": "tests/Feature/OsDnitSandboxTest.php",
+      "sha256": "1173950765aa0e25cc8cdeeefc53d43c584eee37ba6151d1f98782e1d9de708b"
+    },
+    {
+      "path": "tests/Feature/OsDnitSupervisionLotMigrationTest.php",
+      "sha256": "6626f6703d0ca8e507ad25fb4c19260247becca0d6c97c46c3de35ad02fcaa23"
+    },
+    {
+      "path": "tests/Feature/OsDnitWorkflowTest.php",
+      "sha256": "7546666aa5e49143619ad2b1278421f53f5249374adb5fe23256e3daf244187f"
+    },
+    {
+      "path": "tests/Feature/PlatformApsUsageTest.php",
+      "sha256": "f26e0c789dadb8402983807d7b2a6de687eb93b1ea314b4de7c45d1e23adca44"
+    },
+    {
+      "path": "tests/Feature/PlatformDashboardTest.php",
+      "sha256": "53a4a767ca4fd73b0741c457ec4ad040bb80930c8c5260c1f5aa6aefd5a217c3"
+    },
+    {
+      "path": "tests/Feature/PrivateStorageServingTest.php",
+      "sha256": "7fef17cc6485c56dbaf4d30a537d045537f16b6c5038cce8c6baf5e5c7c6c2bc"
+    },
+    {
+      "path": "tests/Feature/ProductionDatabaseProtectionTest.php",
+      "sha256": "e3783fa70271dd8ae57445bcf44c34c915b992cdccb4086701cba1813eb9a89b"
+    },
+    {
+      "path": "tests/Feature/ProfileTest.php",
+      "sha256": "98b7b4841eb26a0bfc9b6b908a8194c33ea08ce327ad162713f31069bd9b5ed6"
+    },
+    {
+      "path": "tests/Feature/TenantAccessTest.php",
+      "sha256": "dec6cd028427ccfef4a35db754308ece61d2f5f2083fb9a4bf415336404d8f2c"
+    },
+    {
+      "path": "tests/Feature/TenantActivityAuthorizationMatrixTest.php",
+      "sha256": "8c0f117aa141ed4075c86b56a6e6ad4995012def0bdf14684bab868c6299647b"
+    },
+    {
+      "path": "tests/Feature/TenantActivityOsDnitTest.php",
+      "sha256": "db42324cc360b708545e940070e6a218d46ba21756b3910696da4dee68827dad"
+    },
+    {
+      "path": "tests/Feature/TenantActivityTest.php",
+      "sha256": "72dfec168dd305e19230f1dacc7db5238c4f54b7434c7eafa377dc6f3d935325"
+    },
+    {
+      "path": "tests/Feature/TenantAssistantOsDnitTest.php",
+      "sha256": "5fb1414da09ca23818337b0e70bdb0a5feb90304adcbc1088777371ea767f675"
+    },
+    {
+      "path": "tests/Feature/TenantAssistantTest.php",
+      "sha256": "5f067fd0f492e05cd777aa3f415da8e6f1acec349d45bfab06a05be8b0d19b87"
+    },
+    {
+      "path": "tests/Feature/TenantBudgetAuthorizationTest.php",
+      "sha256": "de4613c532c60a7e551f6169412d9f448ef8e741c276a8d79143f89186a05f34"
+    },
+    {
+      "path": "tests/Feature/TenantBudgetWorkflowTest.php",
+      "sha256": "b25d1c1759283427b7516bb4d229d7d3fb305a1ee53f899eb6a2754af305591a"
+    },
+    {
+      "path": "tests/Feature/TenantCompositionConfigurationTest.php",
+      "sha256": "b87384505077dc2b8e0d7cf8b787b1f20099a12df89654e0813527e040737426"
+    },
+    {
+      "path": "tests/Feature/TenantContractPermissionsTest.php",
+      "sha256": "61cbf9f3466ac3000423a3e093a1fdda1412ab9bd81a32001be6f4b0607fd28b"
+    },
+    {
+      "path": "tests/Feature/TenantContractValueTest.php",
+      "sha256": "ba39a1d658900bad1a96f2e66c7a62233a03571c48216af03c03d1cc7a82251c"
+    },
+    {
+      "path": "tests/Feature/TenantDashboardTest.php",
+      "sha256": "d490efb965133b8dd6d70291d8f71dc804a62090ff6869039f54ef17299f79f9"
+    },
+    {
+      "path": "tests/Feature/TenantDiarioObraPermissionsTest.php",
+      "sha256": "dd4543c6ef9fb80602fb328bf7caa4d7854ce9dad3f35638d13f3f4d6426a5aa"
+    },
+    {
+      "path": "tests/Feature/TenantDocumentationTest.php",
+      "sha256": "76d59ec809d185332147dca6d25466f29cf0eb0f550d92a4fe6899958abdd2c7"
+    },
+    {
+      "path": "tests/Feature/TenantFolhaRostoTest.php",
+      "sha256": "82fc4aa5af579f7c309ad5281bc0e86441f7a89d4b4d8c93c2e024efe4f15dde"
+    },
+    {
+      "path": "tests/Feature/TenantIcTest.php",
+      "sha256": "ee2eca6c578ce9ff069ff13e9ed0178148ae693a9af7f62cd6d7dc2246032b46"
+    },
+    {
+      "path": "tests/Feature/TenantMeasurementModeTest.php",
+      "sha256": "dc906928dd2e8b15bdedbc78ff49e445f76e30f7734269029c2c30722cd87b87"
+    },
+    {
+      "path": "tests/Feature/TenantMedicaoFinancialIntegrityTest.php",
+      "sha256": "5275cbce992ef401a0c6cc891df463779ad0e640412f746c86a6cd41bb5a7dbd"
+    },
+    {
+      "path": "tests/Feature/TenantMedicaoFlowReportTest.php",
+      "sha256": "65f4dc33ae95c8c7e121088269eec18376a39016ed127f5a8c4dd96d99d2f823"
+    },
+    {
+      "path": "tests/Feature/TenantMedicaoPermissionsTest.php",
+      "sha256": "ca01cb1b948ddc00b57cad923fdb4f512dea969434d792a9efefd7ffd6ef5466"
+    },
+    {
+      "path": "tests/Feature/TenantNavigationPermissionsTest.php",
+      "sha256": "c524940683bcd95b8e18544b896fc9ffdaaa0acc4c4a8908d7640b2d9d932c06"
+    },
+    {
+      "path": "tests/Feature/TenantOrdemServicoExecutionFlowTest.php",
+      "sha256": "d51a84d99b16e06640633d8dd8d6b01acc6d088ff9fa5d5f40179486ea61eef6"
+    },
+    {
+      "path": "tests/Feature/TenantOrdemServicoMeasurementProgressTest.php",
+      "sha256": "b73892ebd5edb0e288df4bb234565a982ecafff02229b72db8f8946368d5e6b4"
+    },
+    {
+      "path": "tests/Feature/TenantOrdemServicoPermissionsTest.php",
+      "sha256": "df45245f1bfa59d712831b1bde94163c6cd73d9df344a5bd3e81dea6379d416a"
+    },
+    {
+      "path": "tests/Feature/TenantOrdemServicoRejectionTest.php",
+      "sha256": "f215315bd4dfea673d75700583b0380403b86b825855089a97e125a62afa81a0"
+    },
+    {
+      "path": "tests/Feature/TenantParametrizacaoTest.php",
+      "sha256": "dc25a4282d93c29fe26fcc88a9965b5aaf026e3c192115d096a21a0a2433f749"
+    },
+    {
+      "path": "tests/Feature/TenantProjectTest.php",
+      "sha256": "6eeb6333ada2cba8f8e52ffff26b121953447a80b3ae3adac023a34426852882"
+    },
+    {
+      "path": "tests/Feature/TenantRdoTest.php",
+      "sha256": "32fc206113c7f342cf8f07b4d43adc1fc01dc76c62d2f931ffcee06d024f587c"
+    },
+    {
+      "path": "tests/Feature/TenantRdoWorkflowTest.php",
+      "sha256": "0ad91cad279705a1643df4f8a3dbb111b7a7a0f3d2356da614e59b12c97aea9b"
+    },
+    {
+      "path": "tests/Feature/TenantRncListingTest.php",
+      "sha256": "80306b35d5613d68bd6072d1b0a7478e8d2690fe3094e7b0b95817ac6dc7eb5d"
+    },
+    {
+      "path": "tests/Feature/TenantRncModelFieldsTest.php",
+      "sha256": "20d2a50a118bb059ae9028aa0dddbc9b9e3deba9a4a48cb4f9e412833925156d"
+    },
+    {
+      "path": "tests/Feature/TenantRncPdfSettingsTest.php",
+      "sha256": "148f2b97a50f6bf3b5f94087b044d841a4c2e84d514f53fbfd337e61e782a56e"
+    },
+    {
+      "path": "tests/Feature/TenantRncSignatureTest.php",
+      "sha256": "4ce60df28cd4e29f1c0065f067a7a4367ae3d2bae295cfbec925d26aaf1cb486"
+    },
+    {
+      "path": "tests/Feature/TenantRncTest.php",
+      "sha256": "c223070a7a5344cef371f7d6af0cd3a95bb5b37dd5f5f6e942b30198e95d2856"
+    },
+    {
+      "path": "tests/Feature/TenantSelectionTest.php",
+      "sha256": "9d714b4a7d48a1fa523bacaad13cf27cfa9bd61f02ef889fdbe8c15fdfd2eb76"
+    },
+    {
+      "path": "tests/Feature/TenantUserCreationPermissionsTest.php",
+      "sha256": "e0d22bd7f843810948003fb0d35c2bbcc67a4493d56ebf9978dd789e0ca5162e"
+    },
+    {
+      "path": "tests/Feature/TenantUserOsDnitPermissionsTest.php",
+      "sha256": "9c416d11b57073f1752e1f93366b93a119c70d0e2039ec0daf48031f4dc0e6c9"
+    },
+    {
+      "path": "tests/Frontend/activityTour.test.mjs",
+      "sha256": "eca2b2b2f52961dc86ac091955c828d331d3ef3ec4f68a812624048b1365b076"
+    },
+    {
+      "path": "tests/Frontend/contractMapLocation.test.mjs",
+      "sha256": "08368c46244d71fabd86bba0ad1866d1b2e9f4ecc0fce348b8c04244e3061de0"
+    },
+    {
+      "path": "tests/Frontend/notificationFeed.test.mjs",
+      "sha256": "0605f30cd022277c6b2f60d65365003460e0048cecb360a10b26e4215db6cfe2"
+    },
+    {
+      "path": "tests/Frontend/notificationSound.test.mjs",
+      "sha256": "f6c7704b5344653b9ec6261d4d50b7a8f1057c0b3fab7c8c6a8d58b0e2d802b6"
+    },
+    {
+      "path": "tests/Frontend/os-dnit-permissions.test.mjs",
+      "sha256": "da7f7bb409465c7a06effc9e0194150944645c71f322dbe31c11f9234fa7b6af"
+    },
+    {
+      "path": "tests/Frontend/osDnitAnalysisForm.test.mjs",
+      "sha256": "b7c0eca57f5246c8a924991d200a58d898933e8c1a001bd5c8cd55e2f57939dd"
+    },
+    {
+      "path": "tests/Frontend/osDnitKilometers.test.mjs",
+      "sha256": "89a89017b8b85979c171713bd449db022328753e9e491c48baa80443189f0510"
+    },
+    {
+      "path": "tests/Frontend/rdo-show-client.test.mjs",
+      "sha256": "5a5f8317258c2e27275cf8326f41e59b0e8e4df342c3767f80fcc681584d1693"
+    },
+    {
+      "path": "tests/Frontend/tutorials-visual.test.mjs",
+      "sha256": "c0fa308af9367eb680be13095961c30cba98a8935f41109b9dae241268e2d67c"
+    },
+    {
+      "path": "tests/TestCase.php",
+      "sha256": "d4c55b3aac7d6216d64cf9ad7de10c5a7ff2849d9d78600f07e021f31be2006c"
+    },
+    {
+      "path": "tests/Unit/AutodeskApsServiceTest.php",
+      "sha256": "9bbb406cd82bd5bd2f4f78e5d864ab8fd5a9ad7e5a18a837f1548267bb03fef8"
+    },
+    {
+      "path": "tests/Unit/ExampleTest.php",
+      "sha256": "ffacae5c1a2a44c809420af5b3b404910da1b12167d58764dac6d10b8ba8cfaf"
+    },
+    {
+      "path": "tests/Unit/JsonMetadataSanitizerTest.php",
+      "sha256": "b93cde9000f3423c656995dc725436cbce9af1fbbcf53ff26f9ae6798c5401af"
+    },
+    {
+      "path": "tests/Unit/OpenSignSignatureProviderTest.php",
+      "sha256": "27a2abcf345dff9eaa15bb9c9d0e48a8bbf9975d5ecc65850465605761eae8b8"
+    },
+    {
+      "path": "tests/Unit/OrdemServicoApprovalDecisionNotificationTest.php",
+      "sha256": "d13b0e083fa16588a5b2c7dd6273b64fcb4ef0a9ca46f7967753a2087b3c94a6"
+    },
+    {
+      "path": "tests/Unit/OrdemServicoWorkflowNotificationTest.php",
+      "sha256": "0c175ee13a109356fbed565e68df1655a218d3743a2029ee0cbfaeda1f8e6f8d"
+    },
+    {
+      "path": "tests/Unit/ProjectEapTest.php",
+      "sha256": "2528be4cd71baae1de917229394d1db17d4c6232630016f2dff7cb8ddc20eaed"
+    },
+    {
+      "path": "tests/Unit/StoredFileMaterializerTest.php",
+      "sha256": "37577726fd8fdeff5f103b392a21fdfef527406463f16b2a3615ab11b986f33e"
+    },
+    {
+      "path": "tests/Unit/TutorialCatalogTest.php",
+      "sha256": "2a63d0729006dda5ce3efcc7ae547d155508885d62e121d7719935f31155cc9b"
+    }
+  ],
+  "database_inventory": "static migration declarations, not live database introspection"
+}

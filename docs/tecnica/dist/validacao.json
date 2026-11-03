@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-11-03T15:15:30-03:00",
+  "status": "passed",
+  "checks": {
+    "markdown_local_references": "passed",
+    "chapter_rendering": "passed",
+    "route_snapshot_json": "passed",
+    "assets_copied": "passed",
+    "no_external_runtime_dependencies": "passed"
+  },
+  "visual_browser_review": "not performed by this generator",
+  "database_queries": false,
+  "production_access": false,
+  "counts": {
+    "chapters": 17,
+    "routes": 418,
+    "table_names": 123,
+    "source_files": 850
+  },
+  "dom_validation": {
+    "status": "passed",
+    "chapters": 17,
+    "local_references": 1550,
+    "search": "passed",
+    "navigation": "passed",
+    "print_action": "passed",
+    "javascript_errors": 0,
+    "visual_review": "not performed; DOM validation only"
+  }
+}

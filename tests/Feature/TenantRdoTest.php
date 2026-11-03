@@ -39,7 +39,7 @@ class TenantRdoTest extends TestCase
                 'end_date' => null,
                 'generation_time' => '00:00',
                 'timezone' => 'America/Sao_Paulo',
-                'generation_weekdays' => [0, 1, 2, 3, 4, 5, 6],
+                'generation_weekdays' => ['0', '1', '2', '3', '4', '5', '6'],
                 'generate_on_holidays' => true,
                 'copy_previous_day' => true,
                 'copy_workforce' => true,
@@ -52,6 +52,7 @@ class TenantRdoTest extends TestCase
             ]);
 
         $response->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame([0, 1, 2, 3, 4, 5, 6], RdoConfiguracao::query()->firstOrFail()->generation_weekdays);
         $this->assertDatabaseHas('rdo_configuracoes', [
             'tenant_id' => $tenant->id,
             'contract_id' => $contract->id,
@@ -78,6 +79,7 @@ class TenantRdoTest extends TestCase
     {
         [$tenant, $user, $contract, $obra] = $this->scenario();
         $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $user->id);
+        $configuration->update(['generation_weekdays' => ['0', '1', '2', '3', '4', '5', '6']]);
         $generator = app(RdoDailyGenerator::class);
 
         $this->assertSame(1, $generator->generateDue(CarbonImmutable::parse('2026-06-23 00:05:00', 'America/Sao_Paulo')->utc()));
@@ -147,14 +149,14 @@ class TenantRdoTest extends TestCase
 
     public function test_rdo_catalogs_can_register_labor_equipment_and_subcontractors(): void
     {
-        [$tenant, $user] = $this->scenario();
+        [$tenant, $user, $contract] = $this->scenario();
 
         $this->actingAs($user)
             ->post(route('tenant.diario-obra.rdo.cadastros.mao-obra.store', $tenant), [
                 'descricao' => 'Pedreiro',
                 'tipo' => 'direta',
                 'unidade' => 'pessoa',
-                'active' => true,
+                'active' => true, 'contract_id' => $contract->id,
             ])
             ->assertSessionHasNoErrors();
 
@@ -164,7 +166,7 @@ class TenantRdoTest extends TestCase
                 'descricao' => 'Escavadeira hidráulica',
                 'unidade' => 'unidade',
                 'propriedade' => 'locado',
-                'active' => true,
+                'active' => true, 'contract_id' => $contract->id,
             ])
             ->assertSessionHasNoErrors();
 
@@ -176,7 +178,7 @@ class TenantRdoTest extends TestCase
                 'responsavel' => 'Responsável Teste',
                 'telefone' => '(91) 99999-9999',
                 'email' => 'contato@subteste.test',
-                'active' => true,
+                'active' => true, 'contract_id' => $contract->id,
             ])
             ->assertSessionHasNoErrors();
 
@@ -282,7 +284,7 @@ class TenantRdoTest extends TestCase
 
         $sections = [
             'clima' => ['manha' => 'ensolarado'],
-            'mao_obra' => ['efetivos' => ['1' => 5]],
+            'mao_obra' => ['efetivos' => [\App\Models\RdoMaoObraCadastro::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'descricao' => 'Pedreiro', 'tipo' => 'direta', 'unidade' => 'pessoa', 'active' => true])->id => 5]],
             'equipamentos' => ['registros' => []],
             'atividades' => ['atividades' => [['titulo' => 'Serviço', 'ocorrencia' => 'Serviço executado']]],
             'fotos' => ['legenda' => 'Frente de serviço', 'arquivos' => []],
@@ -1030,7 +1032,9 @@ class TenantRdoTest extends TestCase
             ->assertRedirect()
             ->assertSessionHasNoErrors();
 
-        Http::assertSent(function ($request): bool {
+        $signaturePage = (int) \App\Models\RdoSignatureRequest::where('rdo_diario_id', $rdo->id)->firstOrFail()->request_payload['signature_page'];
+        $widgetPosition = \App\Models\RdoSignatureRequest::where('rdo_diario_id', $rdo->id)->firstOrFail()->request_payload['signature_widgets']['cliente'];
+        Http::assertSent(function ($request) use ($signaturePage, $widgetPosition): bool {
             $payload = $request->data();
 
             return $request->url() === 'https://sandbox.opensign.test/api/v1.2/createdocument'
@@ -1043,9 +1047,11 @@ class TenantRdoTest extends TestCase
                 && data_get($payload, 'signers.0.signer_role') === 'signer'
                 && data_get($payload, 'signers.0.role') === 'cliente'
                 && data_get($payload, 'signers.0.widgets.0.type') === 'signature'
-                && data_get($payload, 'signers.0.widgets.0.name') === 'assinatura_cliente_pagina_1'
-                && data_get($payload, 'signers.0.widgets.0.x') === 431
-                && data_get($payload, 'signers.0.widgets.0.y') === 710
+                && data_get($payload, 'signers.0.widgets.0.page') === $signaturePage
+                && count(data_get($payload, 'signers.0.widgets', [])) === 1
+                && data_get($payload, 'signers.0.widgets.0.name') === 'assinatura_cliente_pagina_'.data_get($payload, 'signers.0.widgets.0.page')
+                && data_get($payload, 'signers.0.widgets.0.x') === $widgetPosition['x']
+                && data_get($payload, 'signers.0.widgets.0.y') === $widgetPosition['y']
                 && data_get($payload, 'signers.0.widgets.0.w') === 112
                 && data_get($payload, 'signers.0.widgets.0.h') === 34;
         });

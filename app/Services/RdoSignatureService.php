@@ -92,6 +92,7 @@ class RdoSignatureService
         $request->update([
             'unsigned_pdf_path' => $pdfPath,
             'request_payload' => [
+                ...($request->request_payload ?? []),
                 'signers' => $request->signers->map->only(['role', 'name', 'email'])->values()->all(),
             ],
         ]);
@@ -450,7 +451,10 @@ class RdoSignatureService
         $fileName = sprintf('rdo-%s-%s-assinatura-%d.pdf', Str::slug($rdo->code), $rdo->reference_date?->format('Ymd'), $request->id);
         $path = "tenant-{$tenant->id}/rdo/{$rdo->id}/assinaturas/{$fileName}";
 
-        Storage::disk('public')->put($path, $this->pdfRenderer->render($tenant, $rdo)->output());
+        $pdf = $this->pdfRenderer->render($tenant, $rdo);
+        $bytes = $pdf->output();
+        Storage::disk('public')->put($path, $bytes);
+        $request->update(['request_payload' => [...($request->request_payload ?? []), ...$this->pdfRenderer->signaturePlacement($pdf), 'unsigned_sha256' => hash('sha256', $bytes)]]);
 
         return $path;
     }
@@ -506,7 +510,7 @@ class RdoSignatureService
             'cliente' => $rdo->contract?->cliente_empresa_id,
         ];
 
-        return collect($roles)
+        return collect($roles)->only(\App\Support\RdoWorkflow::parties($rdo))
             ->flatMap(function (?int $empresaId, string $role) use ($tenant, $rdo): Collection {
                 $users = RdoResponsavel::query()
                     ->with('user:id,name,email')

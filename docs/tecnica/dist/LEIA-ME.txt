@@ -1,0 +1,4 @@
+SigWorks · documentação técnica
+Abra index.html. Extraia e preserve toda a pasta para consultar imagens e fontes.
+Referências de código-fonte exigem o checkout da aplicação.
+Auditoria e limites: auditoria.json, validacao.json e o capítulo inicial.

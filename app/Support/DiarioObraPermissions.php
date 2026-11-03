@@ -23,9 +23,8 @@ class DiarioObraPermissions
     public const SETTINGS = 'manage_rdo_settings';
 
     public const LABELS = [
-        self::VIEW => 'Visualizar RDO e RDA',
-        self::FILL_RDA => 'Preencher e publicar RDA',
-        self::FILL_RDO => 'Preencher e consolidar RDO',
+        self::VIEW => 'Visualizar RDO',
+        self::FILL_RDO => 'Preencher RDO (web e aplicativo)',
         self::REVIEW_RDO => 'Analisar e aprovar RDO',
         self::SIGNATURES => 'Gerenciar assinaturas do RDO',
         self::DASHBOARD => 'Visualizar dashboard do RDO',
@@ -182,7 +181,7 @@ class DiarioObraPermissions
         }
 
         if (in_array($role, TenantRoles::coordinationRoles(), true)) {
-            return [self::VIEW, self::FILL_RDA, self::FILL_RDO, self::REVIEW_RDO, self::SIGNATURES, self::DASHBOARD, self::RESPONSIBLES, self::CATALOGS];
+            return [self::VIEW, self::FILL_RDO, self::REVIEW_RDO, self::SIGNATURES, self::DASHBOARD, self::RESPONSIBLES, self::CATALOGS];
         }
 
         if (in_array($role, [
@@ -193,11 +192,11 @@ class DiarioObraPermissions
             'tenant_member',
             'member',
         ], true)) {
-            return [self::VIEW, self::FILL_RDA, self::FILL_RDO, self::REVIEW_RDO, self::DASHBOARD];
+            return [self::VIEW, self::FILL_RDO, self::REVIEW_RDO, self::DASHBOARD];
         }
 
         return in_array($role, TenantRoles::administrativeRoles(), true)
-            ? [self::VIEW, self::FILL_RDA, self::DASHBOARD]
+            ? [self::VIEW, self::DASHBOARD]
             : [];
     }
 }

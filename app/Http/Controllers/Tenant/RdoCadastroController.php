@@ -8,6 +8,7 @@ use App\Models\RdoMaoObraCadastro;
 use App\Models\RdoSecaoRegistro;
 use App\Models\RdoSubcontratadaCadastro;
 use App\Models\Tenant;
+use App\Support\DiarioObraPermissions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,32 +18,36 @@ use Inertia\Response;
 
 class RdoCadastroController extends Controller
 {
-    public function index(Tenant $tenant): Response
+    public function index(Request $request, Tenant $tenant): Response
     {
+        $ids = DiarioObraPermissions::contractIdsFor($request->user(), $tenant, DiarioObraPermissions::CATALOGS);
+        $contracts = $tenant->contracts()->when($ids !== null, fn ($query) => $query->whereIn('id', $ids))->orderBy('code')->get(['id', 'code', 'name']);
+        $filter = $request->input('contract_id', '');
+        abort_if($filter !== '' && $filter !== 'unassigned' && !$contracts->contains('id', (int) $filter), 404);
+        $catalog = function (string $model) use ($tenant, $filter, $contracts, $ids) {
+            return $model::where('tenant_id', $tenant->id)
+                ->where(fn ($q) => $q->whereIn('contract_id', $contracts->pluck('id'))->when($ids === null, fn ($q) => $q->orWhereNull('contract_id')))
+                ->when($filter === 'unassigned', fn ($q) => $q->whereNull('contract_id'))
+                ->when($filter !== '' && $filter !== 'unassigned', fn ($q) => $q->where('contract_id', (int) $filter))->get();
+        };
         return Inertia::render('Tenant/Rdo/Cadastros', [
-            'maoObra' => RdoMaoObraCadastro::query()
-                ->where('tenant_id', $tenant->id)
-                ->orderBy('tipo')
-                ->orderBy('descricao')
-                ->get(),
-            'equipamentos' => RdoEquipamentoCadastro::query()
-                ->where('tenant_id', $tenant->id)
-                ->orderBy('descricao')
-                ->get(),
-            'subcontratadas' => RdoSubcontratadaCadastro::query()
-                ->where('tenant_id', $tenant->id)
-                ->orderBy('razao_social')
-                ->get(),
+            'contracts' => $contracts, 'filters' => ['contract_id' => $filter],
+            'maoObra' => $catalog(RdoMaoObraCadastro::class)->sortBy('descricao')->values(),
+            'equipamentos' => $catalog(RdoEquipamentoCadastro::class)->sortBy('descricao')->values(),
+            'subcontratadas' => $catalog(RdoSubcontratadaCadastro::class)->sortBy('razao_social')->values(),
         ]);
     }
 
     public function storeMaoObra(Request $request, Tenant $tenant): RedirectResponse
     {
+        $this->validateContract($request, $tenant, null);
         $data = $request->validate([
+            'contract_id' => ['required', 'integer'],
             'descricao' => [
                 'required', 'string', 'max:255',
                 Rule::unique('rdo_mao_obra_cadastros')->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $request->integer('contract_id'))
                     ->where('tipo', $request->input('tipo'))
                     ->whereNull('deleted_at')),
             ],
@@ -57,12 +62,15 @@ class RdoCadastroController extends Controller
 
     public function updateMaoObra(Request $request, Tenant $tenant, RdoMaoObraCadastro $maoObra): RedirectResponse
     {
+        $this->validateContract($request, $tenant, $maoObra);
         $this->ensureTenant($tenant, $maoObra);
         $data = $request->validate([
+            'contract_id' => ['required', 'integer'],
             'descricao' => [
                 'required', 'string', 'max:255',
                 Rule::unique('rdo_mao_obra_cadastros')->ignore($maoObra->id)->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $request->integer('contract_id'))
                     ->where('tipo', $request->input('tipo'))
                     ->whereNull('deleted_at')),
             ],
@@ -86,6 +94,7 @@ class RdoCadastroController extends Controller
 
     public function storeEquipamento(Request $request, Tenant $tenant): RedirectResponse
     {
+        $this->validateContract($request, $tenant, null);
         $data = $this->equipmentData($request, $tenant);
         RdoEquipamentoCadastro::create(['tenant_id' => $tenant->id, ...$data, 'active' => true]);
 
@@ -94,6 +103,7 @@ class RdoCadastroController extends Controller
 
     public function updateEquipamento(Request $request, Tenant $tenant, RdoEquipamentoCadastro $equipamento): RedirectResponse
     {
+        $this->validateContract($request, $tenant, $equipamento);
         $this->ensureTenant($tenant, $equipamento);
         $equipamento->update($this->equipmentData($request, $tenant, $equipamento, true));
 
@@ -111,6 +121,7 @@ class RdoCadastroController extends Controller
 
     public function storeSubcontratada(Request $request, Tenant $tenant): RedirectResponse
     {
+        $this->validateContract($request, $tenant, null);
         $data = $this->subcontractorData($request, $tenant);
         RdoSubcontratadaCadastro::create(['tenant_id' => $tenant->id, ...$data, 'active' => true]);
 
@@ -119,6 +130,7 @@ class RdoCadastroController extends Controller
 
     public function updateSubcontratada(Request $request, Tenant $tenant, RdoSubcontratadaCadastro $subcontratada): RedirectResponse
     {
+        $this->validateContract($request, $tenant, $subcontratada);
         $this->ensureTenant($tenant, $subcontratada);
         $subcontratada->update($this->subcontractorData($request, $tenant, $subcontratada, true));
 
@@ -134,13 +146,26 @@ class RdoCadastroController extends Controller
         return back()->with('success', 'Subcontratada removida.');
     }
 
+    private function validateContract(Request $request, Tenant $tenant, ?Model $record): void
+    {
+        if ($record) $this->ensureTenant($tenant, $record);
+        $request->validate(['contract_id' => ['required', 'integer', Rule::exists('contracts', 'id')->where('tenant_id', $tenant->id)]]);
+        $contract = $tenant->contracts()->findOrFail($request->integer('contract_id'));
+        abort_unless(DiarioObraPermissions::can($request->user(), $tenant, DiarioObraPermissions::CATALOGS, $contract), 403);
+        if ($record?->contract_id && (int) $record->contract_id !== (int) $contract->id) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['contract_id' => 'O contrato deste cadastro não pode ser alterado. Cadastre um novo item no outro contrato.']);
+        }
+    }
+
     private function equipmentData(Request $request, Tenant $tenant, ?RdoEquipamentoCadastro $equipment = null, bool $includeActive = false): array
     {
         $rules = [
+            'contract_id' => ['required', 'integer'],
             'codigo' => [
                 'nullable', 'string', 'max:50',
                 Rule::unique('rdo_equipamento_cadastros')->ignore($equipment?->id)->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $request->integer('contract_id'))
                     ->whereNull('deleted_at')),
             ],
             'descricao' => ['required', 'string', 'max:255'],
@@ -160,12 +185,14 @@ class RdoCadastroController extends Controller
         $request->merge(['cnpj' => $this->formatCnpj((string) $request->input('cnpj', ''))]);
 
         $rules = [
+            'contract_id' => ['required', 'integer'],
             'razao_social' => ['required', 'string', 'max:255'],
             'nome_fantasia' => ['nullable', 'string', 'max:255'],
             'cnpj' => [
                 'nullable', 'string', 'size:18', 'regex:/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/',
                 Rule::unique('rdo_subcontratada_cadastros')->ignore($subcontractor?->id)->where(fn ($query) => $query
                     ->where('tenant_id', $tenant->id)
+                    ->where('contract_id', $request->integer('contract_id'))
                     ->whereNull('deleted_at')),
             ],
             'responsavel' => ['nullable', 'string', 'max:255'],
@@ -183,6 +210,8 @@ class RdoCadastroController extends Controller
     private function ensureTenant(Tenant $tenant, Model $model): void
     {
         abort_unless((int) $model->tenant_id === (int) $tenant->id, 404);
+        $ids = DiarioObraPermissions::contractIdsFor(request()->user(), $tenant, DiarioObraPermissions::CATALOGS);
+        abort_unless($ids === null || ($model->contract_id && $ids->contains((int) $model->contract_id)), 403);
     }
 
     private function ensureNotUsedInRdo(Tenant $tenant, string $section, string $resourceKey, int $catalogId, string $label): void
@@ -190,8 +219,7 @@ class RdoCadastroController extends Controller
         $isUsed = RdoSecaoRegistro::query()
             ->where('tenant_id', $tenant->id)
             ->where('secao', $section)
-            ->whereRaw("(dados->?) ? ?", [$resourceKey, (string) $catalogId])
-            ->exists();
+            ->get(['dados'])->contains(fn ($row) => array_key_exists((string) $catalogId, $row->dados[$resourceKey] ?? []));
 
         if ($isUsed) {
             throw \Illuminate\Validation\ValidationException::withMessages([

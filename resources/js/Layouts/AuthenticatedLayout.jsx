@@ -127,8 +127,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     const [osDnitOpen, setOsDnitOpen] = useState(() => route().current('tenant.os-dnit.*'));
     const [diarioObraOpen, setDiarioObraOpen] = useState(() => route().current('tenant.diario-obra.*'));
     const [gedOpen, setGedOpen] = useState(() => route().current('tenant.ged.*'));
-    const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen && diarioObraTourScreen !== 'rda'));
-    const [rdaOpen, setRdaOpen] = useState(() => route().current('tenant.diario-obra.rda.*') || diarioObraTourScreen === 'rda');
+    const [rdoOpen, setRdoOpen] = useState(() => route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen));
     const [medicaoRelatoriosOpen, setMedicaoRelatoriosOpen] = useState(() =>
         route().current('tenant.medicao.boletim-medicao.*')
         || route().current('tenant.medicao.relatorios.*')
@@ -560,30 +559,11 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
             }] : []),
         ]
         : [];
-    const rdaItems = tenant
-        ? [
-            ...(diarioObraCan.view_diario_obra ? [{
-                label: 'Calendário',
-                href: route('tenant.diario-obra.rda.index', tenant.slug),
-                active: route().current('tenant.diario-obra.rda.index') || route().current('tenant.diario-obra.rda.show') || diarioObraTourScreen === 'rda',
-            }] : []),
-            ...(diarioObraCan.manage_diario_responsibles ? [{
-                label: 'Responsáveis',
-                href: route('tenant.diario-obra.rda.responsaveis.index', tenant.slug),
-                active: route().current('tenant.diario-obra.rda.responsaveis.*'),
-            }] : []),
-        ]
-        : [];
     const diarioObraItems = [
         ...(rdoItems.length > 0 ? [{
             label: 'RDO',
-            active: route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen && diarioObraTourScreen !== 'rda'),
+            active: route().current('tenant.diario-obra.rdo.*') || Boolean(diarioObraTourScreen),
             children: rdoItems,
-        }] : []),
-        ...(rdaItems.length > 0 ? [{
-            label: 'RDA',
-            active: route().current('tenant.diario-obra.rda.*') || diarioObraTourScreen === 'rda',
-            children: rdaItems,
         }] : []),
     ];
     const projectItems = tenant
@@ -878,8 +858,6 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                                                     ? [rncOpen, setRncOpen]
                                                     : child.label === 'IC' && item.label === 'Qualidade'
                                                         ? [icOpen, setIcOpen]
-                                                    : child.label === 'RDA'
-                                                    ? [rdaOpen, setRdaOpen]
                                                     : child.label === 'Relatórios'
                                                         ? [medicaoRelatoriosOpen, setMedicaoRelatoriosOpen]
                                                         : child.label === 'Análise Medição'
