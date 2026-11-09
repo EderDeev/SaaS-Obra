@@ -42,7 +42,9 @@
         .report-heading { text-align: right; vertical-align: middle; }
         .report-title { font-family: DejaVu Sans, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.3; color: {{ $titleColor }}; }
         .report-meta { margin-top: 6px; font-family: DejaVu Sans, sans-serif; font-size: 8px; color: #64748b; }
-        .report-party { margin-top: 4px; font-family: DejaVu Sans, sans-serif; font-size: 7px; color: #64748b; }
+        .report-party { display: inline-block; margin-top: 5px; padding: 4px 9px; font-size: 10px; font-weight: bold; color: #fff; }
+        .report-party-construtora { background: #c2410c; }
+        .report-party-gerenciadora { background: #1d4ed8; }
 
         .logo-cell { height: 52px; text-align: center; width: 24%; }
         .logo-cell img { max-height: 50px; max-width: 160px; }
@@ -158,7 +160,7 @@
             display: block;
             line-height: 1.05;
         }
-        .blank-row td { height: 13px; }
+        .resource-row td { height: 13px; }
         .activity td { height: 17px; }
         .comment-box { height: 42px; }
         .signature td {
@@ -226,7 +228,7 @@
         'em_aprovacao_cliente' => 'Aguardando manifestação do cliente',
         'devolvido_construtora' => 'Devolvido',
         'pendente_comprovacao' => 'Pendente de comprovação',
-        'arquivado' => \App\Support\RdoWorkflow::savesWithoutApproval($rdo) ? 'Salvo' : 'Arquivado',
+        'arquivado' => \App\Support\RdoWorkflow::savesWithoutApproval($rdo) ? 'Finalizado' : 'Arquivado',
         default => 'Rascunho',
     };
     $weather = fn ($value) => match ($value) {
@@ -291,7 +293,6 @@
     $elapsedPercent = ($totalDays && $elapsedDays !== null) ? min(($elapsedDays / $totalDays) * 100, 100) : null;
     $projectName = $contract->description ?: $contract->name;
     $local = trim(($contract->city ?: '').($contract->state ? ' / '.$contract->state : '')) ?: '-';
-    $rowsFixed = 10;
 @endphp
 
 @foreach ($fillingParties as $fillingParty)
@@ -310,7 +311,7 @@
         $indirect = collect(data_get($maoObra, 'efetivos', []))->filter(fn ($qty, $id) => data_get($catalogs['mao_obra'], "{$id}.tipo") === 'indireta');
         $subs = collect(data_get($maoObra, 'subcontratadas', []));
         $equips = collect(data_get($equipamentos, 'registros', []));
-        $maxRows = max($rowsFixed, $direct->count(), $indirect->count(), $subs->count(), $equips->count());
+        $maxRows = max($direct->count(), $indirect->count(), $subs->count(), $equips->count());
         $directValues = $direct->values()->all();
         $directKeys = $direct->keys()->values()->all();
         $indirectValues = $indirect->values()->all();
@@ -351,7 +352,7 @@
 
     <section class="page">
         <table class="header">
-            @include('pdf.rdo-heading-row', ['heading' => $documentConfiguration['title'], 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate).' · '.$statusLabel($rdo->status), 'fillingLabel' => count($fillingParties) > 1 || $fillingParty !== 'construtora' ? 'Preenchimento: '.\App\Support\RdoWorkflow::PARTIES[$fillingParty] : ''])
+            @include('pdf.rdo-heading-row', ['heading' => $documentConfiguration['title'], 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate).' · '.$statusLabel($rdo->status), 'headerParty' => $fillingParty])
             <tr>
                 <td colspan="4">
                     <span class="label">Nome do projeto</span>
@@ -402,6 +403,7 @@
             @if (filled(data_get($clima, 'observacoes')))<table style="margin-top:4px"><tr><td class="summary-note"><strong>Observações do clima:</strong> {{ data_get($clima, 'observacoes') }}</td></tr></table>@endif
         </div>
 
+        @if (!\App\Support\RdoWorkflow::isManagerFieldRecord($rdo, $fillingParty) || $direct->isNotEmpty() || $indirect->isNotEmpty() || $subs->isNotEmpty() || $equips->isNotEmpty() || filled(data_get($maoObra, 'observacoes')) || filled(data_get($equipamentos, 'observacoes')))
         <div class="section">
             <table>
                 <tr>
@@ -419,7 +421,7 @@
                         $equipId = $equipKeys[$i] ?? null;
                         $equipRecord = $equipValues[$i] ?? [];
                     @endphp
-                    <tr class="blank-row">
+                    <tr class="resource-row">
                         <td>{{ $directId ? data_get($catalogs['mao_obra'], "{$directId}.descricao", "Item {$directId}") : '' }}</td>
                         <td class="center">{{ $directId ? $fmtQty($directValues[$i] ?? null) : '' }}</td>
                         <td>{{ $indirectId ? data_get($catalogs['mao_obra'], "{$indirectId}.descricao", "Item {$indirectId}") : '' }}</td>
@@ -443,18 +445,22 @@
             </table>
         </div>
 
+        @endif
         <div class="section">
             <table>
-                <tr><td class="bar" colspan="3">Atividades e ocorrências</td></tr>
-                <tr><th style="width: 8%;">Item</th><th style="width: 28%;">Título</th><th>Ocorrência</th></tr>
-                @for ($i = 0; $i < 11; $i++)
-                    @php $activity = $activityItems[$i] ?? null; @endphp
+                <tr><td class="bar">Atividades e ocorrências</td></tr>
+            </table>
+            <table>
+                <tr><th style="width:6%">Item</th><th style="width:34%">Título</th><th style="width:60%">Ocorrência</th></tr>
+                @forelse ($activityItems as $activity)
                     <tr class="activity">
-                        <td class="center">{{ $i + 1 }}</td>
+                        <td class="center">{{ $loop->iteration }}</td>
                         <td>{{ data_get($activity, 'titulo', '') }}</td>
                         <td>{{ data_get($activity, 'ocorrencia', '') }}</td>
                     </tr>
-                @endfor
+                @empty
+                    <tr><td colspan="3">Nenhuma atividade registrada nesta frente.</td></tr>
+                @endforelse
             </table>
         </div>
 
@@ -477,9 +483,10 @@
     @foreach ($photoPages as $photoPage)
         <section class="page">
             <table class="header">
-            @include('pdf.rdo-heading-row', ['heading' => 'Registro Fotográfico', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
-<tr>
-                    <td colspan="4"><span class="label">Nome do projeto</span><span class="value">{{ $projectName }}</span></td>
+                @include('pdf.rdo-heading-row', ['heading' => 'Registro Fotográfico', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'headerParty' => $fillingParty])
+                <tr>
+                    <td colspan="2"><span class="label">Nome do projeto</span><span class="value">{{ $projectName }}</span></td>
+                    <td colspan="2"><span class="label">Frente de serviço</span><span class="value">{{ $obra->nome }}</span></td>
                     <td><span class="label">Local</span><span class="value">{{ $local }}</span></td>
                 </tr>
             </table>
@@ -523,7 +530,7 @@
 @if ($inspections->isNotEmpty())
     <section class="page">
         <table class="header">
-            @include('pdf.rdo-heading-row', ['heading' => 'Observações e evidências da gerenciadora', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
+            @include('pdf.rdo-heading-row', ['heading' => 'Observações e evidências da gerenciadora', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'headerParty' => 'gerenciadora', 'partyLabel' => 'Gerenciadora'])
 </table>
         @foreach ($inspections as $inspection)
             <div class="section">
@@ -552,6 +559,7 @@
                         $inspectionActivities = collect([['titulo' => 'Registro da gerenciadora', 'ocorrencia' => $inspection->resumo_fiscalizacao]]);
                     }
                 @endphp
+                @if (!\App\Support\RdoWorkflow::hasParallelManagerFilling($rdo) || $inspectionActivities->isNotEmpty() || filled($inspection->comentario))
                 <table style="margin-top:6px">
                     <tr><td class="bar" colspan="2">Atividades da gerenciadora</td></tr>
                     @forelse ($inspectionActivities as $activity)
@@ -562,6 +570,7 @@
                     <tr><td class="bar" colspan="2">Comentário da gerenciadora</td></tr>
                     <tr><td colspan="2">{!! nl2br(e($inspection->comentario ?: 'Nenhum comentário registrado.')) !!}</td></tr>
                 </table>
+                @endif
                 @if (!empty($inspection->evidencias))
                     <table style="margin-top:6px"><tr><td class="bar" colspan="2">Evidências da frente</td></tr>
                     @foreach (collect($inspection->evidencias)->chunk(2) as $files)<tr>@foreach ($files as $file)<td style="width:50%; padding:8px; text-align:center">@php $image = $inspectionImage($file); @endphp
@@ -582,7 +591,7 @@
 @if ($divergences->isNotEmpty())
     <section class="page">
         <table class="header">
-            @include('pdf.rdo-heading-row', ['heading' => 'Matriz de divergências', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
+            @include('pdf.rdo-heading-row', ['heading' => 'Matriz de divergências', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate)])
 </table>
         @foreach ($divergences as $item)
             <div class="section">
@@ -604,7 +613,7 @@
 @if ($includeWorkflowAppendix ?? true)
 <section class="page">
         <table class="header">
-            @include('pdf.rdo-heading-row', ['heading' => 'Histórico de análise e aprovação', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate), 'fillingLabel' => ''])
+            @include('pdf.rdo-heading-row', ['heading' => 'Histórico de análise e aprovação', 'subtitle' => $rdo->code.' · '.$fmtDate($referenceDate)])
 </table>
         @if ($versions->isNotEmpty())
             <div class="section">

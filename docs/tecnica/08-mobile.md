@@ -2,7 +2,7 @@
 
 ## Projeto e responsabilidade
 
-O app está em [mobile-rnc](../../../mobile-rnc/README.md). O nome público é **SigWorks**; o slug Expo, identificadores nativos e alguns nomes de armazenamento permanecem históricos para preservar continuidade. Não troque bundle ID, package ou nome do SQLite apenas para renomear a interface: isso pode criar outro aplicativo ou ocultar rascunhos existentes.
+O app está em [sigworks-mobile](../../../sigworks-mobile/README.md). O nome público é **SigWorks**; o slug Expo, identificadores nativos e alguns nomes de armazenamento permanecem históricos para preservar continuidade. Não troque bundle ID, package ou nome do SQLite apenas para renomear a interface: isso pode criar outro aplicativo ou ocultar rascunhos existentes.
 
 O escopo implementado é criação de RNC offline, preenchimento de RDO offline, sincronização e encaminhamento inicial do RDO. Análise, aprovação e assinatura continuam no sistema web. Exportar um bundle não significa ter gerado um APK/IPA ou testado um aparelho físico.
 
@@ -10,16 +10,22 @@ O escopo implementado é criação de RNC offline, preenchimento de RDO offline,
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| [App.tsx](../../../mobile-rnc/App.tsx) | Sessão, seleção de contrato, navegação, listas, formulários, fotos e sincronização |
-| [src/types.ts](../../../mobile-rnc/src/types.ts) | Tipos de sessão, bootstrap, formulários e rascunhos |
-| [src/config.ts](../../../mobile-rnc/src/config.ts) | Seleção da URL da API por plataforma/ambiente |
-| [src/services/sync.ts](../../../mobile-rnc/src/services/sync.ts) | Login, troca de tenant, bootstrap, payloads e envio |
-| [src/services/context.ts](../../../mobile-rnc/src/services/context.ts) | Chave de cache contextual e bloqueio de rascunho estrangeiro |
-| [src/storage/database.ts](../../../mobile-rnc/src/storage/database.ts) | SQLite local, configurações e estados de sincronização |
-| [app.json](../../../mobile-rnc/app.json) | Nome, ícones, splash, identificadores e projeto Expo |
-| [eas.json](../../../mobile-rnc/eas.json) | Perfis de build e ambiente da API |
-| [assets](../../../mobile-rnc/assets) | Ícones e splash SigWorks |
-| [scripts/test-mobile-sync.cjs](../../../mobile-rnc/scripts/test-mobile-sync.cjs) | Verificação dos payloads e isolamento sem API externa |
+| [App.tsx](../../../sigworks-mobile/App.tsx) | Entrada do aplicativo; exporta o navegador |
+| [src/navigation/AppNavigator.tsx](../../../sigworks-mobile/src/navigation/AppNavigator.tsx) | Seleção das telas e ligação de dados/callbacks |
+| [src/screens](../../../sigworks-mobile/src/screens) | Telas de login, início, listagem e preenchimento de RNC/RDO |
+| [src/components](../../../sigworks-mobile/src/components) | Controles compartilhados, calendário, recursos, atividades e fotos |
+| [src/hooks/useMobileApp.ts](../../../sigworks-mobile/src/hooks/useMobileApp.ts) | Sessão, seleção de diretoria/contrato, estado dos formulários e coordenação do salvamento/sincronização |
+| [src/styles/appStyles.ts](../../../sigworks-mobile/src/styles/appStyles.ts) | Estilos compartilhados das telas e componentes |
+| [src/utils/mobile.ts](../../../sigworks-mobile/src/utils/mobile.ts) | Datas, valores iniciais, validação local e auxiliares de contexto |
+| [src/types.ts](../../../sigworks-mobile/src/types.ts) | Tipos de sessão, bootstrap, formulários e rascunhos |
+| [src/config.ts](../../../sigworks-mobile/src/config.ts) | Seleção da URL da API por plataforma/ambiente |
+| [src/services/sync.ts](../../../sigworks-mobile/src/services/sync.ts) | Login, troca de tenant, bootstrap, payloads e envio |
+| [src/services/context.ts](../../../sigworks-mobile/src/services/context.ts) | Chave de cache contextual e bloqueio de rascunho estrangeiro |
+| [src/storage/database.ts](../../../sigworks-mobile/src/storage/database.ts) | SQLite local, configurações e estados de sincronização |
+| [app.json](../../../sigworks-mobile/app.json) | Nome, ícones, splash, identificadores e projeto Expo |
+| [eas.json](../../../sigworks-mobile/eas.json) | Perfis de build e ambiente da API |
+| [assets](../../../sigworks-mobile/assets) | Ícones e splash SigWorks |
+| [scripts/test-mobile-sync.cjs](../../../sigworks-mobile/scripts/test-mobile-sync.cjs) | Verificação dos payloads e isolamento sem API externa |
 
 ## Servidor, diretoria (tenant) e contrato
 

@@ -5,7 +5,7 @@
 | Pasta | Responsabilidade |
 | --- | --- |
 | `obras-saas/` | Backend Laravel, frontend web, migrations, testes e infraestrutura principal |
-| `mobile-rnc/` | Aplicativo SigWorks em Expo/React Native; o nome da pasta é histórico |
+| `sigworks-mobile/` | Aplicativo SigWorks em Expo/React Native |
 | `paperless-ngx-reference/` | Material de referência separado; não é o ponto de entrada do SaaS |
 | `entregas/` | Artefatos de entrega do workspace; não é fonte de regras da aplicação |
 

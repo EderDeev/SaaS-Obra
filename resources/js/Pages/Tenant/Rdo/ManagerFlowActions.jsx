@@ -9,6 +9,7 @@ export default function ManagerFlowActions({ rdo, obraId, renderApprovalFields }
     const [action, setAction] = useState(null);
     const form = useForm({ obra_ids: [], comments_by_obra: {}, divergencia: emptyDivergence(), reservation_obra_ids: [], reservations_by_obra: {} });
     const finalApproval = rdo.workflow?.model === 'gerenciadora_construtora';
+    const requiresApprovalComment = rdo.flow_actions?.approve?.comment_required !== false;
     const fronts = (rdo.obras || []).filter(obra => rdo.flow_obra_ids?.includes(Number(obra.id)));
     const returning = action === 'return';
     const open = next => {
@@ -26,7 +27,11 @@ export default function ManagerFlowActions({ rdo, obraId, renderApprovalFields }
         const finalAction = finalApproval && !returning ? form.data.reservation_obra_ids.length ? 'approve_with_reservations' : 'approve' : action;
         form.transform(data => ({
             action: finalAction, filling_party: rdo.fill_party, obra_ids: fronts.map(obra => Number(obra.id)),
-            comments_by_obra: returning ? Object.fromEntries(fronts.map(obra => [obra.id, data.divergencia.versao_gerenciadora])) : Object.fromEntries(data.obra_ids.map(id => [id, data.comments_by_obra[id] || ''])),
+            ...(returning || requiresApprovalComment ? {
+                comments_by_obra: returning
+                    ? Object.fromEntries(fronts.map(obra => [obra.id, data.divergencia.versao_gerenciadora]))
+                    : Object.fromEntries(data.obra_ids.map(id => [id, data.comments_by_obra[id] || ''])),
+            } : {}),
             ...(returning && rdo.can_create_divergence ? { divergencia: { ...data.divergencia, obra_id: data.obra_ids[0] } } : {}),
             ...(finalAction === 'approve_with_reservations' ? { reservation_obra_ids: data.reservation_obra_ids, reservations_by_obra: data.reservations_by_obra } : {}),
         }));
@@ -48,7 +53,7 @@ export default function ManagerFlowActions({ rdo, obraId, renderApprovalFields }
             <form role="dialog" aria-modal="true" aria-label={returning ? 'Devolver RDO para a construtora' : finalApproval ? 'Aprovação final da gerenciadora' : 'Encaminhar RDO ao cliente'} onSubmit={submit} className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-xl">
                 <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4"><h2 className="text-lg font-bold">{returning ? 'Devolver para a construtora' : finalApproval ? 'Aprovação final da gerenciadora' : 'Encaminhar para aprovação do cliente'}</h2><button type="button" disabled={form.processing} onClick={close} className="sig-btn sig-btn-ghost" aria-label="Fechar decisão"><X size={18} /></button></header>
                 <div className="space-y-4 p-5">
-                    <p className="text-sm text-[var(--ink-500)]">{returning ? 'Todas as obras do RDO serão devolvidas juntas para a construtora. Selecione abaixo apenas a obra relacionada à divergência e registre o que deverá ser esclarecido.' : finalApproval ? 'Todas as obras serão aprovadas juntas. Confira o parecer e indique as ressalvas de cada obra.' : 'Todas as obras serão encaminhadas juntas. Confira o parecer de cada uma antes de confirmar.'}</p>
+                    <p className="text-sm text-[var(--ink-500)]">{returning ? 'Todas as obras do RDO serão devolvidas juntas para a construtora. Selecione abaixo apenas a obra relacionada à divergência e registre o que deverá ser esclarecido.' : finalApproval ? 'Todas as obras serão aprovadas juntas. Confira o parecer e indique as ressalvas de cada obra.' : 'Todas as obras do RDO serão encaminhadas juntas para aprovação do cliente.'}</p>
                     <div className="flex flex-wrap gap-2" aria-label="Obras desta decisão">{fronts.map(obra => {
                         const id = Number(obra.id), selected = form.data.obra_ids.includes(id);
                         if (!returning) return <span key={id} className="sig-pill"><CheckCircle2 size={15} /> {obra.codigo} · {obra.nome}</span>;
@@ -59,7 +64,7 @@ export default function ManagerFlowActions({ rdo, obraId, renderApprovalFields }
                         <label className="block text-sm font-semibold">Título da divergência<input required maxLength={180} className="sig-input mt-1" value={form.data.divergencia.titulo} onChange={event => setDivergence('titulo', event.target.value)} /></label>
                         <label className="block text-sm font-semibold">Versão registrada pela construtora<textarea required maxLength={10000} rows={4} className="sig-input mt-1" value={form.data.divergencia.versao_construtora} onChange={event => setDivergence('versao_construtora', event.target.value)} /></label>
                         <label className="block text-sm font-semibold">Constatação da gerenciadora<textarea required maxLength={5000} rows={4} className="sig-input mt-1" value={form.data.divergencia.versao_gerenciadora} onChange={event => setDivergence('versao_gerenciadora', event.target.value)} /></label>
-                    </div> : finalApproval ? renderApprovalFields(form) : fronts.filter(obra => form.data.obra_ids.includes(Number(obra.id))).map(obra => <label key={obra.id} className="block text-sm font-semibold">Parecer · {obra.codigo} · {obra.nome}<textarea required maxLength={5000} rows={3} className="sig-input mt-2" value={form.data.comments_by_obra[obra.id] || ''} onChange={event => form.setData('comments_by_obra', { ...form.data.comments_by_obra, [obra.id]: event.target.value })} /></label>)}
+                    </div> : finalApproval ? renderApprovalFields(form) : requiresApprovalComment && fronts.filter(obra => form.data.obra_ids.includes(Number(obra.id))).map(obra => <label key={obra.id} className="block text-sm font-semibold">Parecer · {obra.codigo} · {obra.nome}<textarea required maxLength={5000} rows={3} className="sig-input mt-2" value={form.data.comments_by_obra[obra.id] || ''} onChange={event => form.setData('comments_by_obra', { ...form.data.comments_by_obra, [obra.id]: event.target.value })} /></label>)}
                     {Object.entries(form.errors).map(([key, error]) => <p key={key} role="alert" className="text-sm text-red-600">{error}</p>)}
                     <p className="text-sm text-[var(--ink-500)]">Ao confirmar, todos os usuários envolvidos receberão e-mail e notificação no sistema.</p>
                 </div>

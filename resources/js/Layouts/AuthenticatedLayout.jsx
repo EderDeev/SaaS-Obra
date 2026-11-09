@@ -32,6 +32,7 @@ import {
     ShieldCheck,
     SlidersHorizontal,
     Users,
+    Wallet,
 } from 'lucide-react';
 
 function initials(name = 'Usuário') {
@@ -121,6 +122,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     const [rncOpen, setRncOpen] = useState(() => route().current('tenant.qualidade.rnc.*'));
     const [icOpen, setIcOpen] = useState(() => route().current('tenant.qualidade.ic.*'));
     const [projectOpen, setProjectOpen] = useState(() => route().current('tenant.projects.*'));
+    const [contractFinanceOpen, setContractFinanceOpen] = useState(() => route().current('tenant.contract-finance.*'));
     const [orcamentosOpen, setOrcamentosOpen] = useState(() => route().current('tenant.orcamentos.*'));
     const [medicaoOpen, setMedicaoOpen] = useState(() => route().current('tenant.medicao.*'));
     const [ordemServicoOpen, setOrdemServicoOpen] = useState(() => route().current('tenant.ordem-servico.*'));
@@ -642,10 +644,18 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
     }
 
     if (tenant) {
+        const financeRouteParams = { tenant: tenant.slug, contract_id: props.selectedContract?.id };
         navItems.push(
             ...(navigationCan.view_overview ? [{ label: 'Visão geral', icon: Home, href: route('tenant.dashboard', tenant.slug), active: route().current('tenant.dashboard') }] : []),
             ...(contractCan.view_contracts ? [
-                { label: 'Contratos', icon: ClipboardList, href: route('tenant.contracts.index', tenant.slug), active: route().current('tenant.contracts.*'), badge: contract ? 'ativo' : null },
+                { label: 'Contratos', icon: ClipboardList, href: route('tenant.contracts.index', tenant.slug), active: route().current('tenant.contracts.*') },
+                {
+                    label: 'Financeiro do Contrato', icon: Wallet, active: route().current('tenant.contract-finance.*'),
+                    children: [
+                        { label: 'Financeiro', href: route('tenant.contract-finance.index', tenant.slug), active: route().current('tenant.contract-finance.index') || route().current('tenant.contract-finance.settings') },
+                        { label: 'Dashboard', href: route('tenant.contract-finance.dashboard', financeRouteParams), active: route().current('tenant.contract-finance.dashboard') },
+                    ],
+                },
             ] : []),
             ...(activityCan.view_activities ? [
                 { label: 'Atividades', icon: Activity, href: route('tenant.activities.index', tenant.slug), active: route().current('tenant.activities.*') },
@@ -706,7 +716,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
         : tenant
             ? [
                 { label: tenant.name, href: tenantHomeUrl },
-                { label: route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Liberação de Serviço' : route().current('tenant.os-dnit.*') ? 'Ordem de Serviço' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
+                { label: route().current('tenant.contract-finance.*') ? 'Financeiro do Contrato' : route().current('tenant.contracts.*') ? 'Contratos' : route().current('tenant.activities.*') ? 'Atividades' : route().current('tenant.orcamentos.*') ? 'Orçamentos' : route().current('tenant.medicao.*') ? 'Medição' : route().current('tenant.ordem-servico.*') ? 'Liberação de Serviço' : route().current('tenant.os-dnit.*') ? 'Ordem de Serviço' : route().current('tenant.diario-obra.*') ? 'Diário de Obra' : route().current('tenant.projects.*') ? 'Projetos' : route().current('tenant.users.*') ? 'Usuários' : route().current('tenant.parametrizacao.*') ? 'Parametrização' : route().current('tenant.qualidade.*') ? 'Qualidade' : route().current('tenant.tutorials.*') ? 'Tutoriais' : 'Visão geral' },
             ]
             : [
                 { label: 'Platform' },
@@ -734,7 +744,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
         },
         {
             label: 'Gestão',
-            items: navItems.filter((item) => ['Visão geral', 'Contratos', 'Atividades'].includes(item.label)),
+            items: navItems.filter((item) => ['Visão geral', 'Contratos', 'Financeiro do Contrato', 'Atividades'].includes(item.label)),
         },
         {
             label: 'Programação',
@@ -771,23 +781,6 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                     </Link>
                 </div>
 
-                {contract && (
-                    <div className="px-3 pb-2 pt-3">
-                        <Link
-                            href={route('tenant.contracts.index', tenant.slug)}
-                            className="flex w-full items-center gap-3 rounded-lg border border-[var(--side-border)] bg-[var(--side-hover)] px-3 py-2.5 text-left"
-                        >
-                            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--primary)] text-[11px] font-bold text-white">
-                                {contract.code?.slice(0, 2)}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                                <span className="eyebrow block text-[var(--side-fg-dim)]">Contrato ativo</span>
-                                <span className="mono block truncate text-[12.5px] text-[var(--side-fg)]">{contract.code}</span>
-                            </span>
-                        </Link>
-                    </div>
-                )}
-
                 <nav className="flex-1 overflow-y-auto py-2">
                     {navSections.map((section) => (
                         <div
@@ -806,7 +799,8 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                             {section.label && <div className="sig-nav-section-label">{section.label}</div>}
                             {section.items.map((item) => {
                         const Icon = item.icon;
-                        const childrenOpen = item.label === 'Qualidade'
+                        const childrenOpen = item.label === 'Financeiro do Contrato' ? contractFinanceOpen
+                            : item.label === 'Qualidade'
                             ? qualidadeOpen
                             : item.label === 'Diário de Obra'
                                 ? diarioObraOpen
@@ -821,7 +815,8 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                                         : item.label === 'Documentação'
                                             ? gedOpen
                                             : projectOpen;
-                        const toggleChildren = item.label === 'Qualidade'
+                        const toggleChildren = item.label === 'Financeiro do Contrato' ? () => setContractFinanceOpen((open) => !open)
+                            : item.label === 'Qualidade'
                             ? () => setQualidadeOpen((open) => !open)
                             : item.label === 'Diário de Obra'
                                 ? () => setDiarioObraOpen((open) => !open)
@@ -843,6 +838,7 @@ export default function AuthenticatedLayout({ children, osDnitTourScreen = null 
                                     <button
                                         type="button"
                                         className={`sig-nav-item border-0 bg-transparent text-left ${item.active ? 'active' : ''}`}
+                                        aria-expanded={childrenOpen}
                                         onClick={toggleChildren}
                                     >
                                         <Icon size={17} strokeWidth={1.8} />

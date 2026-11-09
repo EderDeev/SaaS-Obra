@@ -1,0 +1,48 @@
+{
+  "saida": "os-dnit-criar-os",
+  "titulo": "Como criar uma Ordem de Serviço DNIT",
+  "subtitulo": "Tutorial do SigWorks",
+  "fim": "Fim do tutorial",
+  "fimDetalhe": "Para praticar no sistema, abra Ordem de Serviço e clique em Iniciar tour.",
+  "login": {
+    "email": "gestor@teste-os-dnit.test",
+    "tenant": "teste-os-dnit"
+  },
+  "segmentos": [
+    {
+      "id": "intro",
+      "tela": "lista",
+      "fala": "Neste vídeo, você vai ver como criar uma ordem de serviço do dê-nit no SigWorks. Comece pelo menu Ordem de Serviço. Os dados mostrados a seguir são fictícios.",
+      "legenda": "Neste vídeo, você vai ver como criar uma Ordem de Serviço DNIT no SigWorks. Comece pelo menu Ordem de Serviço. Os dados mostrados a seguir são fictícios.",
+      "apontar": "a:has-text(\"Criar OS\"), button:has-text(\"Criar OS\")"
+    },
+    {
+      "id": "identificacao",
+      "tela": "tour",
+      "passo": 5,
+      "fala": "Clique em Criar OS e preencha contrato, lote, rodovia, trecho, assunto e prazo. A rodovia vem da parametrização, e o número da ordem é gerado automaticamente. Se precisar, inclua anexos.",
+      "legenda": "Clique em Criar OS e preencha contrato, lote, rodovia, trecho, assunto e prazo. A rodovia vem da Parametrização, e o número da OS é gerado automaticamente. Se precisar, inclua anexos."
+    },
+    {
+      "id": "detalhes",
+      "tela": "tour",
+      "passo": 6,
+      "fala": "Depois, informe a necessidade técnica e a justificativa. Você não escolhe os produtos nesta etapa: quem define é a Supervisão, na análise. Clique em Salvar demanda e revise antes de enviar.",
+      "legenda": "Depois, informe a necessidade técnica e a justificativa. Você não escolhe os produtos nesta etapa: quem define é a Supervisão, na análise. Clique em Salvar demanda e revise antes de enviar."
+    },
+    {
+      "id": "envio",
+      "tela": "tour",
+      "passo": 7,
+      "fala": "Quando estiver tudo certo, clique em Enviar para análise e confirme. Atenção: depois do envio, o pedido original não pode mais ser editado, nem mesmo se for devolvido.",
+      "legenda": "Quando estiver tudo certo, clique em Enviar para análise e confirme. Atenção: depois do envio, o pedido original não pode mais ser editado, nem mesmo se for devolvido."
+    },
+    {
+      "id": "analise",
+      "tela": "tour",
+      "passo": 8,
+      "fala": "A partir daí, a ordem de serviço segue para a Supervisão, que analisa o pedido e define produtos, quantidades e prazo. Pronto, sua solicitação está no fluxo.",
+      "legenda": "A partir daí, a OS segue para a Supervisão, que analisa o pedido e define produtos, quantidades e prazo. Pronto, sua solicitação está no fluxo."
+    }
+  ]
+}

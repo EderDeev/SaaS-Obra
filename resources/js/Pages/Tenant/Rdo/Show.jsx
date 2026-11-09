@@ -4,7 +4,7 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Camera, CheckCircle2, ClipboardList, ClipboardPenLine, CloudSun, Construction, Eye, FileText, GitCompareArrows, History, ImagePlus, MessageSquareText, Plus, RefreshCw, Save, Send, Trash2, Upload, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import PdfDownloadModal from './PdfDownloadModal';
-import DocumentWorkspace, { RdoSection, ReadSection } from './DocumentWorkspace';
+import DocumentWorkspace, { isImpracticableDay, RdoSection, ReadSection } from './DocumentWorkspace';
 import RdoCatalogPicker from '@/Components/RdoCatalogPicker';
 import InspectionEvidenceEditor from './InspectionEvidenceEditor';
 import InspectionDocumentFile from './InspectionDocumentFile';
@@ -69,11 +69,17 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
     useEffect(() => () => photoPreviews.current.forEach(url => URL.revokeObjectURL(url)), []);
     const flowForm = useForm({ comment: '', return_to: '', comments_by_obra: {}, reservations_by_obra: {}, reservation_obra_ids: [], obra_ids: rdo.flow_obra_ids || [] });
     const [pendingFlow, setPendingFlow] = useState(null);
+    const managerOnly = rdo.workflow?.model === 'gerenciadora';
+    const unsavedFilling = completeForm.isDirty || fillDraftCount > 0 || holidayForm.isDirty;
+    const canFinalize = managerOnly && rdo.can_fill && Boolean(rdo.flow_actions?.submit);
+    const finalizing = managerOnly && pendingFlow?.action === 'submit';
     const confirmationLabel = pendingFlow ? ({
         approve: rdo.active_stage === 'cliente' && rdo.workflow?.client_comment_only ? 'Confirmar comentário' : 'Confirmar aprovação',
         approve_with_reservations: 'Confirmar aprovação com ressalvas',
         return: 'Confirmar devolução',
-        submit: rdo.workflow?.model === 'gerenciadora' ? 'Confirmar conclusão' : 'Confirmar envio',
+        submit: finalizing ? 'Confirmar finalização'
+            : rdo.status === 'pendente_comprovacao' ? 'Confirmar envio da comprovação'
+            : rdo.status === 'devolvido_construtora' ? 'Confirmar reenvio' : 'Confirmar envio',
     }[pendingFlow.action] || 'Confirmar ação') : '';
     const inspectionForm = useForm(inspectionValues(null, rdo.flow_obra_ids?.[0] || ''));
     const divergenceForm = useForm({ obra_id: rdo.flow_obra_ids?.[0] || '', topico: 'Atividades e ocorrências', titulo: '', versao_construtora: '', versao_gerenciadora: '' });
@@ -159,7 +165,7 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
             ...extras,
         }, {
             preserveScroll: true,
-            preserveState: false,
+            preserveState: 'errors',
             onError: (errors) => flowForm.setError(errors),
             onSuccess: () => { flowForm.setData({ ...flowForm.data, comment: '', return_to: '', comments_by_obra: {}, reservations_by_obra: {}, reservation_obra_ids: [] }); setPendingFlow(null); },
             onFinish: () => setFlowProcessing(false),
@@ -167,7 +173,8 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
     };
 
     const openInspection = (record = null) => {
-        const selected = rdo.flow_obra_ids?.includes(Number(activeObraId)) ? activeObraId : rdo.flow_obra_ids?.[0];
+        const allowedFronts = rdo.inspection_obra_ids ?? rdo.flow_obra_ids ?? [];
+        const selected = allowedFronts.includes(Number(activeObraId)) ? activeObraId : allowedFronts[0];
         if (!record) record = (rdo.inspection_records || []).find(item => item.is_current_version && Number(item.obra_id) === Number(selected));
         const obraId = Number(record?.obra_id || selected || rdo.obras?.[0]?.id || '');
         inspectionForm.clearErrors();
@@ -177,11 +184,18 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
 
     const saveInspection = (event, drafts = {}) => {
         event.preventDefault();
-        inspectionForm.transform(data => ({ obras: Object.values({ ...drafts, [data.obra_id]: data }) }));
+        inspectionForm.transform(data => ({
+            filling_party: rdo.fill_party,
+            obras: Object.values({ ...drafts, [data.obra_id]: data }).map(record => {
+                if (!rdo.parallel_manager_filling) return record;
+                const { obra_id, status, evidencias, evidencias_metadados, evidencias_comentarios, evidencias_ordem } = record;
+                return { obra_id, status, evidencias, evidencias_metadados, evidencias_comentarios, evidencias_ordem };
+            }),
+        }));
         inspectionForm.post(route('tenant.diario-obra.rdo.inspection.store-works', [currentTenant.slug, rdo.id]), {
             forceFormData: true,
             preserveScroll: true,
-            preserveState: false,
+            preserveState: rdo.parallel_manager_filling,
             onSuccess: () => setInspectionOpen(false),
         });
     };
@@ -333,22 +347,33 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
 
                 {flash.success && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 font-semibold text-emerald-700">{flash.success}</div>}
 
-                {(rdo.fill_parties?.length || 0) > 1 && <section className="mt-5" aria-label="Preenchimentos por parte">
-                    <div className="flex flex-wrap gap-2">{rdo.fill_parties.map(party => <button key={party} type="button" aria-pressed={party === rdo.fill_party} className={`sig-btn ${party === rdo.fill_party ? 'sig-btn-primary' : ''}`} onClick={() => router.get(route('tenant.diario-obra.rdo.show', [currentTenant.slug, rdo.id]), { filling_party: party }, { preserveScroll: true, preserveState: false })}>{partyLabels[party]}</button>)}</div>
-                </section>}
                 {fillLocked && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><span>Prazo de preenchimento encerrado em {rdo.submission_deadline_formatted}.</span><button type="button" onClick={() => setDeadlineModalOpen(true)} className="sig-btn">Consultar prazo</button></div>}
                 <DocumentWorkspace rdo={rdo} catalogs={catalogs} recordCatalogs={record_catalogs} form={completeForm} mode={workspaceMode}
                     canEdit={Boolean(rdo.can_edit && rdo.can_fill)} obraId={activeObraId}
+                    partySelector={rdo.fill_parties?.length > 1 && (
+                        <div className="flex flex-wrap gap-2" role="group" aria-label="Preenchimentos por parte">
+                            {rdo.fill_parties.map(party => (
+                                <button key={party} type="button" data-rdo-party={rdoParty(party)} aria-pressed={party === rdo.fill_party}
+                                    className={`sig-btn ${party === rdo.fill_party ? 'sig-btn-primary rdo-party-selected' : ''}`}
+                                    onClick={() => router.get(route('tenant.diario-obra.rdo.show', [currentTenant.slug, rdo.id]), { filling_party: party }, { preserveScroll: true, preserveState: false })}>
+                                    {partyLabels[party]}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     onObraChange={id => { if (Number(id) === Number(activeObraId)) return true; if (workspaceMode === 'edit' && completeForm.isDirty) { fillDrafts.current[activeObraId] = completeForm.data; setFillDraftCount(Object.keys(fillDrafts.current).length); } loadCompleteForObra(id, workspaceMode === 'edit'); return true; }}
                     pendingWorks={fillDraftCount + (holidayForm.isDirty ? 1 : 0)}
-                    renderDayFields={() => <label className="grid max-w-sm gap-2 text-sm font-semibold">O dia do RDO foi feriado?<select aria-label="O dia do RDO foi feriado?" className="sig-input bg-white" value={holidayForm.data.is_holiday} onChange={event => holidayForm.setData('is_holiday', event.target.value)}><option value="">Não informado</option><option value="1">Sim</option><option value="0">Não</option></select></label>}
+                    renderDayFields={() => rdo.can_set_holiday === false
+                        ? <p className="text-sm">Feriado (informado pela construtora): {rdo.is_holiday == null ? 'Não informado' : rdo.is_holiday ? 'Sim' : 'Não'}</p>
+                        : <label className="grid max-w-sm gap-2 text-sm font-semibold">O dia do RDO foi feriado?<select aria-label="O dia do RDO foi feriado?" className="sig-input bg-white" value={holidayForm.data.is_holiday} onChange={event => holidayForm.setData('is_holiday', event.target.value)}><option value="">Não informado</option><option value="1">Sim</option><option value="0">Não</option></select></label>}
                     renderFields={renderWorkspaceField} onSave={saveComplete}
+                    onAttachEvidence={rdo.can_manage_inspection && (rdo.inspection_obra_ids ?? rdo.flow_obra_ids ?? []).includes(Number(activeObraId)) ? () => openInspection() : undefined}
                     completeOpen={completeRdoOpen} onCompleteOpenChange={setCompleteRdoOpen}
                     onDownloadPdf={() => setPdfDownloadOpen(true)}
                     renderInspectionEvidence={files => <InspectionEvidenceList files={files} />}
                     renderCompleteExtras={() => <div className="space-y-4">{rdo.divergences?.length > 0 && <DivergencePanel rdo={{...rdo,can_create_divergence:false,can_respond_divergence:false,can_conclude_divergence:false,can_decide_divergence:false}} onCreate={() => {}} onAction={() => {}} />}<SignaturePanel rdo={{...rdo,can_manage_signatures:false}} manualForm={manualSignatureForm} /></div>} />
 
-                {workspaceMode !== 'edit' && <div className="mt-5">
+                {workspaceMode !== 'edit' && !rdo.parallel_manager_filling && <div className="mt-5">
                     {((rdo.workflow?.review_parties || ['gerenciadora', 'cliente']).includes('gerenciadora') || rdo.inspection_records?.length > 0) && <InspectionPanel key={rdo.id} rdo={rdo} onOpen={openInspection} filterable />}
                 </div>}
 
@@ -356,7 +381,19 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
 
                 <div className="mt-5">
                     {rdo.workflow?.model === 'gerenciadora_construtora' && rdo.divergences?.length > 0 && <button type="button" className="sig-btn mb-3" onClick={() => setReviewDivergencesOpen(true)}><MessageSquareText size={16} /> Consultar devoluções</button>}
-                    {rdo.workflow?.model === 'gerenciadora' ? <section className="mb-5 rounded-xl border border-[var(--border)] bg-white p-4"><strong>{rdo.status === 'rascunho' ? 'Preenchimento' : rdo.status_label}</strong><p className="mt-1 text-sm text-[var(--ink-500)]">Registro da gerenciadora, sem fluxo de aprovação.</p></section> : <WorkflowPanel rdo={rdo} obraId={activeObraId} form={flowForm} processing={flowProcessing} onAction={changeFlow} />}
+                    {managerOnly ? (
+                        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white p-4">
+                            <div>
+                                <strong>{rdo.status === 'arquivado' ? 'RDO finalizado' : 'Finalização do RDO'}</strong>
+                                <p className="mt-1 text-sm text-[var(--ink-500)]">{rdo.status === 'arquivado'
+                                    ? 'Os registros estão disponíveis para consulta.'
+                                    : 'Salve os registros de todas as frentes antes de finalizar. A finalização bloqueia a edição.'}</p>
+                            </div>
+                            {canFinalize && <button type="button" className="sig-btn sig-btn-primary disabled:opacity-50"
+                                disabled={unsavedFilling || completeForm.processing || flowProcessing}
+                                onClick={() => changeFlow('submit')}><CheckCircle2 size={16} /> Finalizar RDO</button>}
+                        </section>
+                    ) : <WorkflowPanel rdo={rdo} obraId={activeObraId} form={flowForm} processing={flowProcessing} onAction={changeFlow} />}
                 </div>
 
                 <SignaturePanel
@@ -371,7 +408,7 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
             </div>
 
             {pdfDownloadOpen && <PdfDownloadModal rdo={rdo} pdfUrl={route('tenant.diario-obra.rdo.pdf', [currentTenant.slug, rdo.id])} onClose={() => setPdfDownloadOpen(false)} />}
-            {pendingFlow && <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" data-rdo-flow-confirmation aria-label={confirmationLabel} className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"><h2 className="text-lg font-bold">{confirmationLabel} do RDO?</h2><p className="mt-3 text-sm">{rdo.code} · Todas as obras serão movimentadas juntas.{pendingFlow.extras.return_to && ` Destino: ${partyLabels[pendingFlow.extras.return_to]}.`}</p><p className="mt-2 text-sm text-[var(--ink-500)]">Os usuários envolvidos receberão um e-mail e uma notificação no sistema.</p>{Object.values(flowForm.errors).map((error, index) => <p key={index} role="alert" className="mt-2 text-sm text-red-600">{error}</p>)}<div className="mt-5 flex justify-end gap-2"><button type="button" disabled={flowProcessing} className="sig-btn" onClick={() => setPendingFlow(null)}>Cancelar</button><button type="button" disabled={flowProcessing} className="sig-btn sig-btn-primary" data-confirm-rdo-action onClick={executeFlow}>{flowProcessing ? 'Processando…' : confirmationLabel}</button></div></section></div>}
+            {pendingFlow && <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" data-rdo-flow-confirmation aria-label={confirmationLabel} className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"><h2 className="text-lg font-bold">{confirmationLabel} do RDO?</h2><p className="mt-3 text-sm">{rdo.code} · {finalizing ? 'Todas as frentes serão finalizadas juntas e os registros ficarão bloqueados para edição.' : 'Todas as obras serão movimentadas juntas.'}{pendingFlow.extras.return_to && ` Destino: ${partyLabels[pendingFlow.extras.return_to]}.`}</p><p className="mt-2 text-sm text-[var(--ink-500)]">Os usuários envolvidos receberão um e-mail e uma notificação no sistema.</p>{Object.values(flowForm.errors).map((error, index) => <p key={index} role="alert" className="mt-2 text-sm text-red-600">{error}</p>)}<div className="mt-5 flex justify-end gap-2"><button type="button" disabled={flowProcessing} className="sig-btn" onClick={() => setPendingFlow(null)}>Cancelar</button><button type="button" disabled={flowProcessing} className="sig-btn sig-btn-primary" data-confirm-rdo-action onClick={executeFlow}>{flowProcessing ? 'Processando…' : confirmationLabel}</button></div></section></div>}
             {reviewDivergencesOpen && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-label="Devoluções do RDO" className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-4 shadow-xl"><div className="mb-3 flex items-center justify-between"><h2 className="font-bold">Devoluções do RDO</h2><button type="button" className="sig-btn sig-btn-sm" onClick={() => setReviewDivergencesOpen(false)}><X size={17} /> Fechar</button></div><DivergencePanel rdo={rdo} onAction={openDivergenceAction} /></section></div>}
             {activeSection && (
                 <SectionModal
@@ -431,6 +468,7 @@ export default function Show({ rdo, catalogs = {}, record_catalogs = null }) {
 }
 
 function InspectionPanel({ rdo, onOpen, filterable = false }) {
+    const allowedFronts = rdo.inspection_obra_ids ?? rdo.flow_obra_ids ?? [];
     const currentRecords = (rdo.inspection_records || []).filter((item) => item.is_current_version);
     const fronts = (rdo.obras?.length ? rdo.obras : [rdo.obra]).filter(Boolean);
     const [selectedFront, setSelectedFront] = useState(() => String(fronts[0]?.id || ''));
@@ -443,12 +481,12 @@ function InspectionPanel({ rdo, onOpen, filterable = false }) {
                 <div className="flex min-h-12 items-center gap-3">
                     <span className="rdo-party-accent rounded-lg bg-blue-50 p-2 text-blue-600"><ClipboardPenLine size={20} aria-hidden="true" /></span>
                     <div>
-                        <h2 className="rdo-party-label text-base font-semibold">Registros da gerenciadora</h2>
+                    <h2 className="rdo-party-label text-base font-semibold">{rdo.parallel_manager_filling ? 'Evidências da gerenciadora' : 'Registros da gerenciadora'}</h2>
                     </div>
                 </div>
                 {rdo.can_manage_inspection && (
-                    <button type="button" onClick={() => onOpen(filterable && rdo.flow_obra_ids?.includes(Number(activeFront)) ? currentRecords.find(record => String(record.obra_id) === activeFront) || { obra_id: Number(activeFront) } : undefined)} className="sig-btn sig-btn-primary">
-                        <Plus size={16} /> Registrar
+                    <button type="button" onClick={() => onOpen(filterable && allowedFronts.includes(Number(activeFront)) ? currentRecords.find(record => String(record.obra_id) === activeFront) || { obra_id: Number(activeFront) } : undefined)} className="sig-btn sig-btn-primary">
+                        <Plus size={16} /> {rdo.parallel_manager_filling ? 'Anexar evidências' : 'Registrar'}
                     </button>
                 )}
             </header>
@@ -468,24 +506,24 @@ function InspectionPanel({ rdo, onOpen, filterable = false }) {
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${record.status === 'concluido' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{record.status_label}</span>
-                                {rdo.can_manage_inspection && rdo.flow_obra_ids?.includes(Number(record.obra_id)) && (
+                                {rdo.can_manage_inspection && allowedFronts.includes(Number(record.obra_id)) && (
                                     <button type="button" onClick={() => onOpen(record)} className="sig-btn">Editar</button>
                                 )}
                             </div>
                         </div>
                         <div className="mt-3 space-y-2">
-                            <RdoSection section="clima" title="Condições do tempo" collapsed>{record.weather ? <ReadSection section="clima" data={record.weather} catalogs={{}} rdo={rdo} obraId={record.obra_id} /> : <p className="text-sm text-[var(--ink-500)]">Nenhuma condição climática registrada pela gerenciadora nesta obra.</p>}</RdoSection>
-                            <RdoSection section="atividades" title="Atividades" collapsed>
+                            {(!rdo.parallel_manager_filling || record.weather) && <RdoSection section="clima" title="Condições do tempo" collapsed>{record.weather ? <ReadSection section="clima" data={record.weather} catalogs={{}} rdo={rdo} obraId={record.obra_id} /> : <p className="text-sm text-[var(--ink-500)]">Nenhuma condição climática registrada pela gerenciadora nesta obra.</p>}</RdoSection>}
+                            {(!rdo.parallel_manager_filling || record.activities?.length || record.summary || record.services_attested || record.occurrences || record.guidance) && <RdoSection section="atividades" title="Atividades" collapsed>
                                 {record.activities?.length > 0 ? <div className="space-y-3">{record.activities.map((activity, index) => <div key={index} className="rounded-r-lg border-l-2 border-blue-500 bg-slate-50 px-4 py-3"><p className="text-xs font-semibold text-blue-600">Atividade {index + 1}</p><h3 className="mt-1 text-sm font-semibold">{activity.titulo}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{activity.ocorrencia}</p></div>)}</div> : <p className="whitespace-pre-wrap break-words text-sm text-[var(--ink-600)]">{record.summary || 'Nenhuma atividade registrada.'}</p>}
                                 {(record.services_attested || record.occurrences || record.guidance) && <dl className="mt-3 grid gap-3 text-sm md:grid-cols-3">{[['Serviços atestados', record.services_attested], ['Ocorrências constatadas', record.occurrences], ['Orientações', record.guidance]].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt className="font-semibold text-[var(--ink-700)]">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-[var(--ink-600)]">{value}</dd></div>)}</dl>}
-                            </RdoSection>
-                            <RdoSection section="comentarios" title="Comentário" collapsed><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{record.comment || 'Nenhum comentário registrado.'}</p></RdoSection>
+                            </RdoSection>}
+                            {(!rdo.parallel_manager_filling || record.comment) && <RdoSection section="comentarios" title="Comentário" collapsed><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{record.comment || 'Nenhum comentário registrado.'}</p></RdoSection>}
                             <RdoSection section="fotos" title="Evidências" collapsed>{record.evidence?.length ? <InspectionEvidenceList files={record.evidence} /> : <p className="text-sm text-[var(--ink-500)]">Nenhuma evidência registrada.</p>}</RdoSection>
                         </div>
                     </article>
                 )) : (
                     <p className="p-5 text-sm text-[var(--ink-500)]">
-                        {rdo.status === 'rascunho' ? 'O registro será aberto na etapa de análise da gerenciadora.' : 'Nenhum registro da fiscalização foi concluído nesta versão.'}
+                        {rdo.parallel_manager_filling ? 'Nenhuma evidência complementar anexada nesta frente.' : rdo.status === 'rascunho' ? 'O registro será aberto na etapa de análise da gerenciadora.' : 'Nenhum registro da fiscalização foi concluído nesta versão.'}
                     </p>
                 )}
             </div>
@@ -560,9 +598,11 @@ function inspectionValues(record, obraId) {
 }
 
 function InspectionModal({ rdo, form, onClose, onSubmit }) {
+    const title = rdo.parallel_manager_filling ? 'Evidências da gerenciadora' : 'Registro da gerenciadora';
     const drafts = useRef({});
     const current = (rdo.inspection_records || []).find(record => record.is_current_version && Number(record.obra_id) === Number(form.data.obra_id));
-    const fronts = (rdo.obras || []).filter(obra => rdo.flow_obra_ids?.includes(Number(obra.id)));
+    const allowedFronts = rdo.inspection_obra_ids ?? rdo.flow_obra_ids ?? [];
+    const fronts = (rdo.obras || []).filter(obra => allowedFronts.includes(Number(obra.id)));
     const selected = fronts.find(obra => Number(obra.id) === Number(form.data.obra_id));
     const changeFront = obraId => {
         if (Number(obraId) === Number(form.data.obra_id)) return;
@@ -578,9 +618,9 @@ function InspectionModal({ rdo, form, onClose, onSubmit }) {
     const weatherForm = { data: { dados: form.data.clima }, setData: (_, value) => form.setData('clima', value) };
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-            <form role="dialog" aria-modal="true" aria-label="Registro da gerenciadora" onSubmit={event => onSubmit(event, drafts.current)} className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <form role="dialog" aria-modal="true" aria-label={title} onSubmit={event => onSubmit(event, drafts.current)} className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
                 <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-[var(--border)] bg-white px-5 py-4">
-                    <div><span className="eyebrow">Gerenciadora</span><h2 className="mt-1 text-xl font-black">Registro da gerenciadora</h2></div>
+                    <div><span className="eyebrow">Gerenciadora</span><h2 className="mt-1 text-xl font-black">{title}</h2></div>
                     <button type="button" disabled={form.processing} onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Fechar registro"><X size={20} /></button>
                 </header>
                 <div className="space-y-5 p-5">
@@ -589,9 +629,11 @@ function InspectionModal({ rdo, form, onClose, onSubmit }) {
                         return <button type="button" key={obra.id} disabled={form.processing} aria-pressed={active} onClick={() => changeFront(Number(obra.id))} className={`sig-btn sig-btn-sm !whitespace-normal text-left ${active ? 'sig-btn-primary ring-2 ring-blue-200 ring-offset-2' : 'border border-[var(--border)] bg-white'}`}>{active && <CheckCircle2 size={17} className="shrink-0" />}<span>{obra.codigo} · {obra.nome}</span></button>;
                     })}</div>
                     <p className="text-xs text-[var(--ink-500)]">Preenchendo obra: <strong className="text-[var(--primary)]">{selected?.codigo} · {selected?.nome}</strong></p>
-                    <RdoSection section="clima" title="Condições do tempo" collapsed><WeatherFields form={weatherForm} /></RdoSection>
-                    <ActivityFields form={activityForm} />
-                    <Field label="Comentário"><textarea aria-label="Comentário do registro da gerenciadora" className="sig-input min-h-24" value={form.data.comentario} onChange={event => form.setData('comentario', event.target.value)} placeholder="Registre o comentário geral desta obra." maxLength={10000} /></Field>
+                    {!rdo.parallel_manager_filling && <>
+                        <RdoSection section="clima" title="Condições do tempo" collapsed><WeatherFields form={weatherForm} /></RdoSection>
+                        <ActivityFields form={activityForm} />
+                        <Field label="Comentário"><textarea aria-label="Comentário do registro da gerenciadora" className="sig-input min-h-24" value={form.data.comentario} onChange={event => form.setData('comentario', event.target.value)} placeholder="Registre o comentário geral desta obra." maxLength={10000} /></Field>
+                    </>}
                     <InspectionEvidenceEditor key={form.data.obra_id} form={form} existing={current?.evidence || []} />
                     {Object.entries(form.errors).map(([key, error]) => <p key={key} role="alert" className="text-sm font-semibold text-red-600">{error}</p>)}
                 </div>
@@ -945,10 +987,12 @@ function WorkflowPanel({ rdo, obraId, form, processing = false, onAction }) {
                     </div>
                 </div>
             )}
-            {actions.length === 0 && rdo.status === 'rascunho' && !rdo.submission_ready && (
+            {actions.length === 0 && rdo.status === 'rascunho' && (!rdo.submission_ready || (rdo.parallel_manager_filling && rdo.fill_party === 'gerenciadora')) && (
                 <div className="border-b border-[var(--border)] p-5">
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-                        Preencha todas as frentes de serviço antes de enviar o RDO para análise.
+                        {rdo.parallel_manager_filling && rdo.fill_party === 'gerenciadora'
+                            ? 'Salve os seus registros. Quando a construtora encaminhar o RDO, você poderá continuar o preenchimento durante a análise.'
+                            : 'Preencha todas as frentes de serviço antes de enviar o RDO para análise.'}
                     </div>
                 </div>
             )}
@@ -1241,7 +1285,7 @@ function WeatherFields({ form }) {
                 Registro anterior sem divisão por período: <strong>{form.data.dados.precipitacao_total_anterior_mm} mm</strong>.
             </div>
         )}
-        <label className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-4 py-3"><input type="checkbox" className="h-4 w-4 rounded text-[var(--primary)]" checked={Boolean(form.data.dados.dia_impraticavel)} onChange={(e) => set('dia_impraticavel', e.target.checked)} /><span className="font-semibold">Dia impraticável</span></label>
+        <label className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-4 py-3"><input type="checkbox" className="h-4 w-4 rounded text-[var(--primary)]" checked={isImpracticableDay(form.data.dados.dia_impraticavel)} onChange={(e) => set('dia_impraticavel', e.target.checked)} /><span className="font-semibold">Dia impraticável</span></label>
         <Field label="Observações" className="md:col-span-3"><textarea className="sig-input min-h-20" value={form.data.dados.observacoes || ''} onChange={(e) => set('observacoes', e.target.value)} /></Field>
     </div>;
 }

@@ -1,9 +1,9 @@
 export const partyLabels = { construtora: 'Construtora', gerenciadora: 'Gerenciadora', cliente: 'Cliente' };
 export const workflowModels = [
-    { value: 'construtora_gerenciadora_cliente', name: 'Construtora + Gerenciadora + Cliente', description: 'A construtora preenche. A gerenciadora analisa e pode devolver para ajustes. O cliente avalia e aprova.', steps: 'Construtora preenche → Gerenciadora analisa → Cliente avalia' },
-    { value: 'gerenciadora_construtora', name: 'Gerenciadora + Construtora', description: 'A construtora preenche. A gerenciadora analisa, devolve para ajustes ou faz a aprovação final, com ou sem ressalvas.', steps: 'Construtora preenche → Gerenciadora analisa e aprova' },
+    { value: 'construtora_gerenciadora_cliente', name: 'Construtora + Gerenciadora + Cliente', description: 'As duas partes registram em paralelo. A construtora encaminha e a gerenciadora continua seus registros durante a análise. O cliente dá a decisão final.', steps: 'Preenchimento em paralelo → Envio da construtora → Análise → Cliente' },
+    { value: 'gerenciadora_construtora', name: 'Gerenciadora + Construtora', description: 'As duas partes registram em paralelo. A construtora encaminha e a gerenciadora continua seus registros, analisa e decide.', steps: 'Preenchimento em paralelo → Envio da construtora → Análise e aprovação' },
     { value: 'gerenciadora_cliente', name: 'Gerenciadora + Cliente', description: 'A gerenciadora preenche tempo, atividades, recursos, fotos e comentários. O cliente analisa, aprova ou devolve para ajustes.', steps: 'Gerenciadora preenche → Cliente analisa e aprova' },
-    { value: 'gerenciadora', name: 'Somente Gerenciadora', description: 'A gerenciadora preenche e salva o RDO, sem etapas de análise ou aprovação. Conclua o preenchimento de todas as frentes para finalizar o registro.', steps: 'Gerenciadora preenche → Salvar RDO' },
+    { value: 'gerenciadora', name: 'Somente Gerenciadora', description: 'A gerenciadora preenche e salva as frentes. Ao finalizar o RDO, os registros ficam bloqueados para edição.', steps: 'Gerenciadora preenche → Salvar frentes → Finalizar RDO' },
 ];
 export const defaultWorkflow = { model: 'construtora_gerenciadora_cliente' };
 export const normalizeWorkflow = value => ({ model: value.model || ((value.fill_parties || [value.fill_party]).includes('construtora') ? 'construtora_gerenciadora_cliente' : (value.review_parties || []).includes('cliente') ? 'gerenciadora_cliente' : 'gerenciadora') });

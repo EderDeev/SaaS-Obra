@@ -65,6 +65,28 @@ class TenantRncModelFieldsTest extends TestCase
         $this->assertSame(1, RelatorioNaoConformidade::count());
     }
 
+    public function test_mobile_syncs_both_document_models_with_photos_without_duplicate_retry(): void
+    {
+        $user = auth()->user();
+        \App\Models\MobileApiToken::create(['tenant_id' => $this->tenant->id, 'user_id' => $user->id, 'token_hash' => hash('sha256', 'rnc-photo-models'), 'expires_at' => now()->addDay(), 'name' => 'Teste offline']);
+        $headers = ['Authorization' => 'Bearer rnc-photo-models', 'Accept' => 'application/json'];
+        foreach (['standard', 'inspection_form'] as $layout) {
+            $this->saveSettings($this->settings($layout));
+            $model = $this->getJson(route('api.mobile.bootstrap'), $headers)->assertOk()->json('document_models.'.$this->contract->id);
+            $values = $layout === 'inspection_form' ? ['work_type' => 'Pista Nova', 'pavement_type' => 'Rígido', 'document_km' => '620,000 a 622,900', 'document_location' => 'Acesso norte da ponte'] : [];
+            $payload = [...$this->payload, 'local_uuid' => 'photos-'.$layout, 'document_model_revision' => $model['revision'], 'model_field_values' => $values,
+                'photos' => [\Illuminate\Http\UploadedFile::fake()->image('drenagem.jpg')], 'photo_comments' => ['Obstrução da saída de drenagem'], 'photo_positions' => [1]];
+            $created = $this->post(route('api.mobile.rnc.offline.store'), $payload, $headers)->assertCreated()->json('rnc.id');
+            $files = Storage::disk('public')->allFiles();
+            $this->post(route('api.mobile.rnc.offline.store'), $payload, $headers)->assertOk()->assertJsonPath('rnc.id', $created);
+            $this->assertSame($files, Storage::disk('public')->allFiles());
+            $rnc = RelatorioNaoConformidade::findOrFail($created);
+            $this->assertSame($values, $rnc->model_field_values ?? []);
+            $this->assertSame($layout, $rnc->pdf_template_snapshot['layout']);
+        }
+        $this->assertSame(2, RelatorioNaoConformidade::count());
+    }
+
     private function saveSettings(array $settings): void
     {
         $this->post(route('tenant.qualidade.rnc.settings.store', $this->tenant), $settings)->assertSessionHasNoErrors();

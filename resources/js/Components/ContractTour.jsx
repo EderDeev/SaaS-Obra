@@ -62,15 +62,9 @@ const stepsBySection = {
             placement: 'bottom',
         },
         {
-            target: '[data-tour="contract-detail-metrics"]',
-            title: 'Indicadores',
-            content: 'Estes indicadores resumem atividades, atrasos, RNCs e projetos para facilitar a leitura das pendências do contrato.',
-            placement: 'bottom',
-        },
-        {
             target: '[data-tour="contract-detail-modules"]',
             title: 'Resumo dos módulos',
-            content: 'Acompanhe os registros mais recentes de Atividades, Projetos e RNCs sem sair do contrato. Em Ver módulo você acessa a listagem completa de cada área.',
+            content: 'Veja os módulos em uso neste contrato, as pendências e a situação de cada etapa. Em Acessar módulo você abre a área correspondente.',
             placement: 'top',
         },
         {

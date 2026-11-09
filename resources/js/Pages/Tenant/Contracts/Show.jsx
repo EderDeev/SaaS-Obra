@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ContractTour from '@/Components/ContractTour';
-import OsDnitManagementCard from '@/Components/OsDnitManagementCard';
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import ContractModuleCard from '@/Components/ContractModuleCard';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     Activity,
     AlertTriangle,
@@ -198,6 +198,7 @@ export default function ContractShow({
     parametrizacao = {},
     additives = [],
     osSummary = null,
+    modules = {},
 }) {
     const [showParametrizacao, setShowParametrizacao] = useState(false);
     const [showAdditive, setShowAdditive] = useState(false);
@@ -237,75 +238,28 @@ export default function ContractShow({
                     </div>
                     <QuickActions
                         tenant={tenant}
-                        capabilities={capabilities}
+                        contract={contract}
+                        capabilities={{ ...capabilities,
+                            createActivity: Boolean(modules.activities) && capabilities.createActivity,
+                            uploadProject: Boolean(modules.projects) && capabilities.uploadProject,
+                            createRnc: Boolean(modules.rncs) && capabilities.createRnc,
+                        }}
                         onParametrize={() => setShowParametrizacao(true)}
                         onAdditive={() => setShowAdditive(true)}
                     />
                 </header>
 
-                <section data-tour="contract-detail-metrics" className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    <Metric icon={Activity} label="Atividades abertas" value={contract.open_activities_count} />
-                    <Metric icon={AlertTriangle} label="Atividades atrasadas" value={contract.overdue_activities_count} attention={contract.overdue_activities_count > 0} />
-                    <Metric icon={ClipboardCheck} label="RNCs abertas" value={contract.open_rncs_count} attention={contract.open_rncs_count > 0} />
-                    <Metric icon={FileText} label="Projetos pendentes" value={contract.pending_projects_count} />
-                    <Metric icon={FolderKanban} label="Projetos aprovados" value={contract.approved_projects_count} />
-                </section>
-
                 <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
                     <div data-tour="contract-detail-modules" className="grid content-start gap-5">
-                        <OsDnitManagementCard tenant={tenant} summary={osSummary} contractId={contract.id} />
-                        <ModulePanel
-                            title="Atividades"
-                            subtitle="Acompanhamento das tarefas recentes deste contrato"
-                            href={capabilities.viewActivities ? route('tenant.activities.index', tenant.slug) : null}
-                        >
-                            {recentActivities.map((item) => (
-                                <ListRow
-                                    key={item.id}
-                                    title={item.title}
-                                    meta={`${item.category === 'quality' ? 'Qualidade' : 'Projeto'} · ${shortDate(item.due_date)}`}
-                                    status={activityStatusLabels[item.status] || item.status}
-                                    attention={item.status !== 'done' && item.due_date && new Date(item.due_date) < new Date()}
-                                />
-                            ))}
-                            <EmptyState show={recentActivities.length === 0}>Nenhuma atividade cadastrada neste contrato.</EmptyState>
-                        </ModulePanel>
-
-                        <div className="grid gap-5 lg:grid-cols-2">
-                            <ModulePanel
-                                title="Projetos"
-                                subtitle="Documentos submetidos recentemente"
-                                href={capabilities.viewProjects ? route('tenant.projects.index', tenant.slug) : null}
-                            >
-                                {recentProjects.map((item) => (
-                                    <ListRow
-                                        key={item.id}
-                                        title={item.title}
-                                        meta={`${item.disciplina?.sigla || 'Sem disciplina'} · ${item.latest_version?.revision || 'R00'}`}
-                                        status={projectStatusLabels[item.status] || item.status}
-                                    />
-                                ))}
-                                <EmptyState show={recentProjects.length === 0}>Nenhum projeto submetido neste contrato.</EmptyState>
-                            </ModulePanel>
-
-                            <ModulePanel
-                                title="RNCs"
-                                subtitle="Não conformidades mais recentes"
-                                href={capabilities.viewRncs ? route('tenant.qualidade.rnc.index', tenant.slug) : null}
-                            >
-                                {recentRncs.map((item) => (
-                                    <ListRow
-                                        key={item.id}
-                                        href={capabilities.viewRncs ? route('tenant.qualidade.rnc.show', [tenant.slug, item.id]) : null}
-                                        title={`${String(item.sequence_number).padStart(3, '0')}-${item.sequence_year}`}
-                                        meta={`${item.disciplina?.nome || 'Sem disciplina'} · ${item.gravidade}`}
-                                        status={rncStatusLabels[item.status] || item.status}
-                                        attention={item.status !== 'finalizada'}
-                                    />
-                                ))}
-                                <EmptyState show={recentRncs.length === 0}>Nenhuma RNC cadastrada neste contrato.</EmptyState>
-                            </ModulePanel>
+                        <div className="flex items-center justify-between gap-3">
+                            <h2 className="text-base font-semibold text-[var(--ink-900)]">Módulos em uso</h2>
+                            <span className="text-xs text-[var(--ink-500)]">Resumo deste contrato</span>
                         </div>
+                        {Object.entries(modules).map(([key, module]) => (
+                            <ContractModuleCard key={key} moduleKey={key} module={module}
+                                href={route(module.route, { tenant: tenant.slug, contract_id: contract.id })} />
+                        ))}
+                        {Object.keys(modules).length === 0 && <div className="sig-card p-5 text-sm text-[var(--ink-500)]">Nenhum módulo com registros disponíveis neste contrato.</div>}
                     </div>
 
                     <aside className="grid content-start gap-5">
@@ -359,13 +313,13 @@ function Metric({ icon: Icon, label, value, attention = false }) {
     );
 }
 
-function QuickActions({ tenant, capabilities, onParametrize, onAdditive }) {
+function QuickActions({ tenant, contract, capabilities, onParametrize, onAdditive }) {
     const actions = [
         capabilities.parametrizeContract && { label: 'Parametrizar', icon: Settings, onClick: onParametrize },
         capabilities.manageAdditives && { label: 'Aditivo', icon: FilePlus2, onClick: onAdditive },
-        capabilities.createActivity && { label: 'Nova atividade', icon: Plus, href: route('tenant.activities.index', tenant.slug) },
-        capabilities.uploadProject && { label: 'Submeter projeto', icon: Upload, href: route('tenant.projects.index', tenant.slug) },
-        capabilities.createRnc && { label: 'Nova RNC', icon: ClipboardCheck, href: route('tenant.qualidade.rnc.create', tenant.slug) },
+        capabilities.createActivity && { label: 'Nova atividade', icon: Plus, href: route('tenant.activities.index', { tenant: tenant.slug, contract_id: contract.id }) },
+        capabilities.uploadProject && { label: 'Submeter projeto', icon: Upload, href: route('tenant.projects.index', { tenant: tenant.slug, contract_id: contract.id }) },
+        capabilities.createRnc && { label: 'Nova RNC', icon: ClipboardCheck, href: route('tenant.qualidade.rnc.create', { tenant: tenant.slug, contract_id: contract.id }) },
     ].filter(Boolean);
 
     if (actions.length === 0) return null;
@@ -822,6 +776,7 @@ export function ContractParametrizacaoModal({ tenant, contract, parametrizacao, 
 }
 
 function ContractLinksTab({ tenant, contract, parametrizacao }) {
+    const { contractTypes = {} } = usePage().props;
     const empresas = parametrizacao.empresas || [];
     const obras = parametrizacao.obras || [];
     const obrasPrincipais = obras.filter((obra) => obra.tipo === 'pai');
@@ -838,6 +793,7 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
     const form = useForm({
         obra_id: contract.obra_id ? String(contract.obra_id) : '',
         total_value: contract.total_value ?? '',
+        contract_type: contract.contract_type ?? '',
         cliente_empresa_id: contract.cliente_empresa_id ? String(contract.cliente_empresa_id) : '',
         construtora_empresa_id: contract.construtora_empresa_id ? String(contract.construtora_empresa_id) : '',
         gerenciadora_empresa_id: contract.fiscalizadora_empresa_id ? String(contract.fiscalizadora_empresa_id) : '',
@@ -870,6 +826,10 @@ function ContractLinksTab({ tenant, contract, parametrizacao }) {
                 <input className="sig-input w-full" type="number" min="0" step={contract.currency === 'JPY' ? '1' : '0.01'} value={form.data.total_value} onChange={event => updateLink('total_value', event.target.value)} placeholder="Não informado" />
                 {form.errors.total_value && <span role="alert" className="text-xs text-red-600">{form.errors.total_value}</span>}
             </label>
+            <SelectField label="Tipo de contrato (opcional)" value={form.data.contract_type} onChange={(value) => updateLink('contract_type', value)} error={form.errors.contract_type}>
+                <option value="">Não informado</option>
+                {Object.entries(contractTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </SelectField>
             <SelectField label="Obra principal" value={form.data.obra_id} onChange={(value) => updateLink('obra_id', value)} error={form.errors.obra_id}>
                 <option value="">Sem obra principal</option>
                 {obrasPrincipais.map((obra) => <option key={obra.id} value={obra.id}>{obra.codigo} - {obra.nome}</option>)}

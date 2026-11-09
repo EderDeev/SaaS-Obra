@@ -87,7 +87,11 @@ class RdoPdfRenderer
             'contract' => $rdo->contract,
             'obras' => $obras,
             'sections' => $sections,
-            'fillingParties' => array_values(array_intersect(RdoWorkflow::fillParties($rdo), $parties)),
+            'fillingParties' => array_values(array_intersect(
+                RdoWorkflow::hasParallelManagerFilling($rdo) && $records->contains('filling_party', 'gerenciadora')
+                    ? RdoWorkflow::fieldParties($rdo) : RdoWorkflow::fillParties($rdo),
+                $parties,
+            )),
             'sectionsByParty' => $records->groupBy(fn ($section) => $section->filling_party ?? 'construtora')->map(fn ($records) => $records->groupBy('obra_id')->map(fn ($items) => $items->mapWithKeys(fn ($section) => [$section->secao => $section->dados]))),
             'analyses' => $rdo->analises->filter($inScope)->whereIn('etapa', $parties)->sortBy([['created_at', 'asc'], ['id', 'asc']])->values(),
             'versions' => $rdo->versoes->sortBy('version_number')->values(),

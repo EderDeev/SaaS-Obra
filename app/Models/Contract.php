@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'contractor_company_name',
     'total_value',
     'currency',
+    'contract_type',
     'city',
     'state',
     'starts_at',
@@ -34,6 +35,13 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 ])]
 class Contract extends Model
 {
+    public const TYPES = [
+        'federal' => 'Federal',
+        'estadual' => 'Estadual',
+        'municipal' => 'Municipal',
+        'privado' => 'Privado',
+    ];
+
     protected function casts(): array
     {
         return [

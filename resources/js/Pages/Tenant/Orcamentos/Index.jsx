@@ -7,6 +7,7 @@ import OrcamentoShell from './Partials/OrcamentoShell';
 
 export default function OrcamentosIndex({
     tenant,
+    filteredContract = null,
     orcamentos = [],
     stats = {},
     canCreateOrcamentos = false,
@@ -26,6 +27,15 @@ export default function OrcamentosIndex({
             {page.props.flash?.success && (
                 <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
                     {page.props.flash.success}
+                </div>
+            )}
+
+            {filteredContract && (
+                <div className="sig-card mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                    <p>Orçamentos utilizados na medição de <strong>{filteredContract.code} · {filteredContract.name}</strong></p>
+                    <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.index', tenant.slug)}>
+                        Ver todos os orçamentos
+                    </Link>
                 </div>
             )}
 
@@ -56,7 +66,7 @@ export default function OrcamentosIndex({
 
             <div className="grid gap-4 lg:grid-cols-3">
                 <InfoCard
-                    description="Total de orçamentos registrados no tenant."
+                    description={filteredContract ? 'Orçamentos utilizados na medição do contrato.' : 'Total de orçamentos registrados no tenant.'}
                     icon={ClipboardList}
                     title="Total"
                     value={stats.total ?? 0}
@@ -88,10 +98,10 @@ export default function OrcamentosIndex({
                         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
                             <FolderOpen size={22} />
                         </div>
-                        <p className="mt-3 text-sm font-semibold text-[var(--ink-900)]">Nenhum orçamento cadastrado</p>
-                        <p className="mt-1 text-sm text-[var(--ink-500)]">
+                        <p className="mt-3 text-sm font-semibold text-[var(--ink-900)]">{filteredContract ? 'Nenhum orçamento disponível para este contrato' : 'Nenhum orçamento cadastrado'}</p>
+                        {!filteredContract && <p className="mt-1 text-sm text-[var(--ink-500)]">
                             Use o botão de criar orçamento para iniciar a primeira base de orçamento.
-                        </p>
+                        </p>}
                     </div>
                 ) : (
                     <div className="divide-y divide-[var(--border)]">

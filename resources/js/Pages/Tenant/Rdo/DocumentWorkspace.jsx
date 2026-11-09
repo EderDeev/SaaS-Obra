@@ -1,9 +1,13 @@
-import { CheckCircle2, ChevronDown, ClipboardPenLine, FileText, Save, UnfoldVertical, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ClipboardPenLine, FileText, Paperclip, Save, UnfoldVertical, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import referenceImage from '@/assets/rdo-sections.png';
 import photoSectionImage from '@/assets/rdo-photo-section.png';
 import { partyLabels } from './WorkflowEditor';
 import { rdoParty } from './partyAppearance';
+
+export function isImpracticableDay(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+}
 
 const documentSections = [
     ['clima', 'Condições do tempo', 'Condições e chuva nos três períodos do dia'],
@@ -14,6 +18,16 @@ const documentSections = [
     ['fotos', 'Registro fotográfico', 'Imagens e comentários desta frente'],
 ];
 const imageOffsets = { clima: 74, mao_obra: 253, equipamentos: 433, atividades: 613, comentarios: 793 };
+
+function sectionsForParty(rdo, party) {
+    if (!rdo.parallel_manager_filling || party !== 'gerenciadora') return documentSections;
+
+    return documentSections.map(section => section[0] === 'fotos' ? ['fotos', 'Evidências', 'Fotos e anexos desta frente'] : section);
+}
+
+function inspectionRecordsForObra(rdo, obraId) {
+    return (rdo.inspection_records || []).filter(record => Number(record.obra_id) === Number(obraId) && record.is_current_version);
+}
 
 function SectionImage({ section }) {
     return section === 'fotos' ? <span aria-hidden="true" className="block h-10 w-10 shrink-0 rounded-md bg-[#f4f4f4]" style={{ backgroundImage: `url(${photoSectionImage})`, backgroundSize: '66px 66px', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
@@ -32,7 +46,7 @@ export function RdoSection({ section, title, description, children, editing, fir
 }
 const Section = RdoSection;
 
-export default function DocumentWorkspace({ rdo, catalogs, recordCatalogs, form, mode, obraId, onObraChange, renderDayFields, renderFields, onSave, canEdit, completeOpen, onCompleteOpenChange, onDownloadPdf, renderInspectionEvidence, renderCompleteExtras, pendingWorks = 0 }) {
+export default function DocumentWorkspace({ rdo, catalogs, recordCatalogs, form, mode, obraId, onObraChange, partySelector, renderDayFields, renderFields, onSave, canEdit, completeOpen, onCompleteOpenChange, onDownloadPdf, onAttachEvidence, renderInspectionEvidence, renderCompleteExtras, pendingWorks = 0 }) {
     const dialog = useRef(null);
     const dialogTitle = useId();
     useEffect(() => {
@@ -49,17 +63,22 @@ export default function DocumentWorkspace({ rdo, catalogs, recordCatalogs, form,
     const [expanded, setExpanded] = useState(false);
     const visibleObras = allFronts ? allObras : allObras.filter(obra => Number(obra.id) === Number(obraId));
     const selectedObra = allObras.find(obra => Number(obra.id) === Number(obraId));
+    const partySections = sectionsForParty(rdo, rdo.fill_party);
+    const managerFilling = rdo.parallel_manager_filling && rdo.fill_party === 'gerenciadora';
+    const complementaryEvidence = id => {
+        const files = inspectionRecordsForObra(rdo, id).flatMap(record => record.evidence || []);
+        return files.length ? renderInspectionEvidence?.(files) : null;
+    };
     const submission = (rdo.versions || []).find(version => Number(version.number) === Number(rdo.current_version))
         || [...(rdo.versions || [])].sort((a, b) => Number(b.number) - Number(a.number))[0];
-    const toggleSections = () => {
-        const next = !expanded;
-        scope.current?.querySelectorAll(`[data-workspace-mode="${mode}"] details`).forEach(node => { node.open = next; });
-        setExpanded(next);
-    };
+    useEffect(() => {
+        scope.current?.querySelectorAll(`[data-workspace-mode="${mode}"] details`).forEach(node => { node.open = expanded; });
+    }, [expanded, mode, obraId, allFronts, rdo.fill_party]);
     const errors = [...new Set(Object.values(form.errors || {}))];
     return <div ref={scope} data-rdo-party={rdoParty(rdo.fill_party)} className="mt-3 space-y-3">
-        <div className="flex justify-end">
-            <button type="button" className="sig-btn sig-btn-sm" onClick={toggleSections}><UnfoldVertical size={16} /> {expanded ? 'Recolher seções' : 'Expandir seções'}</button>
+        <div className="flex flex-wrap items-center gap-2">
+            {partySelector}
+            <button type="button" className="sig-btn sig-btn-sm ml-auto" onClick={() => setExpanded(value => !value)}><UnfoldVertical size={16} /> {expanded ? 'Recolher seções' : 'Expandir seções'}</button>
         </div>
         <div className="flex flex-wrap gap-2" aria-label="Frentes de serviço">
             {allObras.map(obra => {
@@ -69,20 +88,36 @@ export default function DocumentWorkspace({ rdo, catalogs, recordCatalogs, form,
             })}
             {mode === 'view' && allObras.length > 1 && <button type="button" className={`sig-btn sig-btn-sm ${allFronts ? 'rdo-party-selected sig-btn-primary' : 'border border-[var(--border)] bg-white'}`} aria-pressed={allFronts} onClick={() => setAllFronts(true)}>Todas as frentes</button>}
         </div>
-        <form hidden={mode !== 'edit'} onSubmit={onSave} data-workspace-mode="edit" className="space-y-2">
-            <div className="flex flex-wrap justify-between gap-2 text-xs text-[var(--ink-500)]"><span>Preenchendo obra: <strong className="text-[var(--primary)]">{selectedObra?.codigo} · {selectedObra?.nome}</strong> · {partyLabels[rdo.fill_party]}</span><span>Envio até {rdo.submission_deadline_formatted}</span></div>
-            {canEdit && <div className="rounded-xl border border-[var(--border)] bg-white p-4">{renderDayFields?.()}</div>}
-            {canEdit && documentSections.map(([key, title, description]) => <Section key={`${obraId}-${key}`} section={key} title={title} description={description} collapsed>{renderFields(key)}</Section>)}
-            {errors.length > 0 && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errors.map((error, i) => <p key={i}>{error}</p>)}</div>}
-            {canEdit && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white p-4"><p className="text-xs text-[var(--ink-500)]">{form.isDirty || pendingWorks ? 'Há alterações pendentes. Todas as obras alteradas serão salvas juntas.' : 'Você pode alternar entre as obras e salvar todos os preenchimentos de uma vez.'}</p><button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><Save size={16} /> {form.processing ? 'Salvando…' : 'Salvar todas as obras'}</button></div>}
-        </form>
-        <div hidden={mode !== 'view'} data-workspace-mode="view" data-rdo-party={rdoParty(rdo.fill_party)} className="rdo-party-panel overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
+        <section data-rdo-party={rdoParty(rdo.fill_party)} className="rdo-party-panel overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-sm">
             <header className="border-b border-[var(--border)] px-5 py-4"><div className="flex min-h-12 items-center gap-3"><span className="rdo-party-accent rounded-lg bg-blue-50 p-2 text-blue-600"><ClipboardPenLine size={20} aria-hidden="true" /></span><h2 className="rdo-party-label text-base font-semibold">Registros da {partyLabels[rdo.fill_party]?.toLocaleLowerCase('pt-BR')}</h2></div></header>
-            <div className="divide-y divide-[var(--border)]" data-contractor-records>{visibleObras.map(obra => <section key={obra.id} aria-label={`Registros de ${obra.nome}`} className="p-4">
-                <div><h3 className="font-bold">{obra.codigo} · {obra.nome}</h3><p className="mt-2 text-xs text-[var(--ink-500)]">{submission ? submission.created_by?.name || 'Usuário não informado' : 'Ainda não submetido'}{submission?.submitted_at ? ` · ${submission.submitted_at}` : ''}</p></div>
-                <div className="mt-3 space-y-2">{documentSections.map(([key, title, description]) => <Section key={key} section={key} title={title} description={description} collapsed><ReadSection section={key} data={rdo.sections?.[obra.id]?.[key] || {}} catalogs={recordCatalogs || catalogs} rdo={rdo} obraId={obra.id} /></Section>)}</div>
-            </section>)}</div>
-        </div>
+            <form hidden={mode !== 'edit'} onSubmit={onSave} data-workspace-mode="edit">
+                <div className="space-y-2 p-4">
+                    {selectedObra && <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className="font-bold">{selectedObra.codigo} · {selectedObra.nome}</h3>
+                        <span className="text-xs text-[var(--ink-500)]">Envio até {rdo.submission_deadline_formatted}</span>
+                    </div>}
+                    {canEdit && !managerFilling && <div className="mb-3">{renderDayFields?.()}</div>}
+                    {canEdit && partySections.map(([key, title, description]) => <Section key={`${obraId}-${key}`} section={key} title={title} description={description} collapsed>
+                        {renderFields(key)}
+                        {managerFilling && key === 'fotos' && <>
+                            {complementaryEvidence(obraId)}
+                            {onAttachEvidence && <button type="button" onClick={onAttachEvidence} disabled={form.processing} className="sig-btn mt-3"><Paperclip size={16} /> Anexar outros arquivos</button>}
+                        </>}
+                    </Section>)}
+                    {errors.length > 0 && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errors.map((error, i) => <p key={i}>{error}</p>)}</div>}
+                </div>
+                {canEdit && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] p-4"><p className="text-xs text-[var(--ink-500)]">{form.isDirty || pendingWorks ? 'Há alterações pendentes. Todas as obras alteradas serão salvas juntas.' : 'Você pode alternar entre as obras e salvar todos os preenchimentos de uma vez.'}</p><button type="submit" disabled={form.processing} className="sig-btn sig-btn-primary"><Save size={16} /> {form.processing ? 'Salvando…' : 'Salvar todas as obras'}</button></div>}
+            </form>
+            <div hidden={mode !== 'view'} data-workspace-mode="view">
+                <div className="divide-y divide-[var(--border)]" data-contractor-records>{visibleObras.map(obra => <section key={obra.id} aria-label={`Registros de ${obra.nome}`} className="p-4">
+                    <div><h3 className="font-bold">{obra.codigo} · {obra.nome}</h3><RecordAttribution submission={managerFilling ? inspectionRecordsForObra(rdo, obra.id)[0] : submission} showPending={!managerFilling} /></div>
+                    <div className="mt-3 space-y-2">{partySections.map(([key, title, description]) => <Section key={key} section={key} title={title} description={description} collapsed>
+                        <ReadSection section={key} data={rdo.sections?.[obra.id]?.[key] || {}} catalogs={recordCatalogs || catalogs} rdo={rdo} obraId={obra.id} />
+                        {managerFilling && key === 'fotos' && complementaryEvidence(obra.id)}
+                    </Section>)}</div>
+                </section>)}</div>
+            </div>
+        </section>
         {completeOpen && <dialog ref={dialog} aria-labelledby={dialogTitle} onCancel={event => { event.preventDefault(); onCompleteOpenChange(false); }} onClick={event => { if (event.target === event.currentTarget) { const rect = dialog.current.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onCompleteOpenChange(false); } }} className="fixed inset-0 m-auto max-h-[92dvh] w-[calc(100%_-_1.5rem)] max-w-6xl rounded-xl border border-[var(--border)] bg-white p-0 text-[var(--ink-900)] shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm">
             <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
                 <div><h2 id={dialogTitle} className="font-bold">{rdo.code} · RDO completo</h2><p className="mt-0.5 text-xs text-[var(--ink-500)]">{rdo.reference_date_formatted} · {rdo.status_label} · {allObras.length} frente(s)</p></div>
@@ -95,6 +130,14 @@ export default function DocumentWorkspace({ rdo, catalogs, recordCatalogs, form,
             <footer className="flex justify-end border-t border-[var(--border)] px-4 py-3"><button type="button" className="sig-btn sig-btn-sm" onClick={() => onCompleteOpenChange(false)}>Fechar</button></footer>
         </dialog>}
     </div>;
+}
+
+function RecordAttribution({ submission, showPending = false }) {
+    const author = submission?.user?.name ?? submission?.created_by?.name;
+    const date = submission?.submitted_at;
+    const label = [author, date].filter(Boolean).join(' · ');
+    if (!label && !showPending) return null;
+    return <p className="mt-2 text-xs text-[var(--ink-500)]">{label || 'Ainda não submetido'}</p>;
 }
 
 function DocumentBlock({ title, section, children }) {
@@ -122,23 +165,32 @@ function CompleteDocumentContent({ rdo, fronts, catalogs, submission, renderInsp
             <h3 className="border-b border-slate-200 pb-3 text-base font-bold">{front.codigo} · {front.nome}</h3>
             {parties.map(party => {
                 const filling = fillers.includes(party);
-                const records = (rdo.inspection_records || []).filter(record => Number(record.obra_id) === Number(front.id) && record.is_current_version);
+                const records = inspectionRecordsForObra(rdo, front.id);
+                const managerFilling = rdo.parallel_manager_filling && party === 'gerenciadora' && filling;
+                const evidence = managerFilling ? records.flatMap(record => record.evidence || []) : [];
+                const analysisRecords = managerFilling ? [] : records;
                 const ownRdo = { ...rdo, fill_party: party, participating_parties: [party] };
                 const data = rdo.sections_by_party?.[party]?.[front.id] || (party === rdo.fill_party ? rdo.sections?.[front.id] : {}) || {};
                 const approval = rdo.approval_comments?.[party]?.[front.id];
                 return <section key={party} data-rdo-complete-party={party} data-rdo-party={rdoParty(party)} className="rdo-party-panel overflow-hidden rounded-xl border border-[var(--border)] bg-white">
-                    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-3"><h3 className="rdo-party-label font-semibold">{partyLabels[party]}</h3><p className="text-xs text-slate-500">{filling ? [submission?.created_by?.name, submission?.submitted_at].filter(Boolean).join(' · ') || 'Ainda não submetido' : [approval?.user, approval?.created_at].filter(Boolean).join(' · ')}</p></header>
+                    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-3"><h3 className="rdo-party-label font-semibold">{partyLabels[party]}</h3>{filling ? <RecordAttribution submission={managerFilling ? records[0] : submission} showPending={!managerFilling} /> : <p className="text-xs text-slate-500">{[approval?.user, approval?.created_at].filter(Boolean).join(' · ')}</p>}</header>
                     <div className="space-y-3 p-3 sm:p-4">
-                        {filling ? documentSections.map(([key, title]) => <DocumentBlock key={key} section={key} title={title}><ReadSection section={key} data={data[key] || {}} catalogs={catalogs} rdo={ownRdo} obraId={front.id} /></DocumentBlock>) : party === 'gerenciadora' ? <>
-                            {records.length ? records.map(record => <div key={record.id} className="space-y-3" data-rdo-complete-inspection={record.id}>
+                        {filling && sectionsForParty(rdo, party).map(([key, title]) => <DocumentBlock key={key} section={key} title={title}>
+                            <ReadSection section={key} data={data[key] || {}} catalogs={catalogs} rdo={ownRdo} obraId={front.id} />
+                            {key === 'fotos' && evidence.length > 0 && renderInspectionEvidence?.(evidence)}
+                        </DocumentBlock>)}
+                        {party === 'gerenciadora' && (!filling || analysisRecords.length > 0 || approval) && <>
+                            {filling && <h4 className="border-t border-[var(--border)] pt-3 text-sm font-semibold">Análise da gerenciadora</h4>}
+                            {analysisRecords.length ? analysisRecords.map(record => <div key={record.id} className="space-y-3" data-rdo-complete-inspection={record.id}>
                                 <p className="px-1 text-xs text-slate-500">{[record.user?.name, record.submitted_at].filter(Boolean).join(' · ')}</p>
                                 {record.weather && Object.keys(record.weather).length > 0 && <DocumentBlock section="clima" title="Condições do tempo"><ReadSection section="clima" data={record.weather} catalogs={catalogs} rdo={ownRdo} obraId={front.id} /></DocumentBlock>}
                                 <DocumentBlock section="atividades" title="Atividades"><ReadSection section="atividades" data={{ atividades: record.activities?.length ? record.activities : record.summary ? [{ titulo: 'Registro da gerenciadora', ocorrencia: record.summary }] : [] }} catalogs={catalogs} rdo={ownRdo} obraId={front.id} /></DocumentBlock>
                                 <DocumentBlock section="comentarios" title="Comentário"><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{record.comment || 'Nenhum comentário registrado.'}</p></DocumentBlock>
-                                <DocumentBlock section="fotos" title="Evidências">{record.evidence?.length ? renderInspectionEvidence?.(record.evidence) : <p className="text-sm text-slate-500">Nenhuma evidência anexada.</p>}</DocumentBlock>
-                            </div>) : <p className="text-sm text-slate-500">Nenhum registro da gerenciadora nesta obra.</p>}
+                                {!managerFilling && <DocumentBlock section="fotos" title="Evidências">{record.evidence?.length ? renderInspectionEvidence?.(record.evidence) : <p className="text-sm text-slate-500">Nenhuma evidência anexada.</p>}</DocumentBlock>}
+                            </div>) : !managerFilling && <p className="text-sm text-slate-500">Nenhum registro da gerenciadora nesta obra.</p>}
                             {approval && <DocumentBlock title="Parecer da gerenciadora"><ReadSection section="comentarios" data={{}} catalogs={catalogs} rdo={ownRdo} obraId={front.id} /></DocumentBlock>}
-                        </> : <DocumentBlock section="comentarios" title="Manifestação do cliente">{approval?.decision && <p className="mb-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{approval.decision}</p>}<ReadSection section="comentarios" data={{}} catalogs={catalogs} rdo={ownRdo} obraId={front.id} /></DocumentBlock>}
+                        </>}
+                        {party === 'cliente' && <DocumentBlock section="comentarios" title="Manifestação do cliente">{approval?.decision && <p className="mb-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{approval.decision}</p>}<ReadSection section="comentarios" data={{}} catalogs={catalogs} rdo={ownRdo} obraId={front.id} /></DocumentBlock>}
                     </div>
                 </section>;
             })}
@@ -157,7 +209,7 @@ const situationLabels = { operando: 'Operando', parado: 'Parado', manutencao: 'M
 export function ReadSection({ section, data, catalogs, rdo, obraId }) {
     const labor = catalogs.mao_obra || [], equipment = catalogs.equipamentos || [], subcontractors = catalogs.subcontratadas || [];
     const find = (items, id) => items.find(item => String(item.id) === String(id));
-    if (section === 'clima') return <><DataTable headings={['Período', 'Condição', 'Chuva (mm)']} rows={['manha', 'tarde', 'noite'].map((period, i) => [['Manhã', 'Tarde', 'Noite'][i], (Array.isArray(data[period]) ? data[period] : [data[period]]).filter(Boolean).map(value => weatherLabels[value] || value).join(', ') || 'Não informado', data[`precipitacao_${period}_mm`] ?? '—'])} />{data.dia_impraticavel && <p className="mt-3 text-sm font-semibold text-amber-700">Dia impraticável</p>}{data.precipitacao_total_anterior_mm != null && <Text>Pluviosidade anterior sem divisão por período: {data.precipitacao_total_anterior_mm} mm.</Text>}<Text>{data.observacoes}</Text></>;
+    if (section === 'clima') return <><DataTable headings={['Período', 'Condição', 'Chuva (mm)']} rows={['manha', 'tarde', 'noite'].map((period, i) => [['Manhã', 'Tarde', 'Noite'][i], (Array.isArray(data[period]) ? data[period] : [data[period]]).filter(Boolean).map(value => weatherLabels[value] || value).join(', ') || 'Não informado', data[`precipitacao_${period}_mm`] ?? '—'])} />{isImpracticableDay(data.dia_impraticavel) && <p className="mt-3 text-sm font-semibold text-amber-700">Dia impraticável</p>}{data.precipitacao_total_anterior_mm != null && <Text>Pluviosidade anterior sem divisão por período: {data.precipitacao_total_anterior_mm} mm.</Text>}<Text>{data.observacoes}</Text></>;
     if (section === 'mao_obra') return <><DataTable headings={['Função / empresa', 'Classificação', 'Quantidade']} rows={[...Object.entries(data.efetivos || {}).map(([id, quantity]) => { const item = find(labor, id); return [item?.descricao || `Cadastro ${id}`, item?.tipo === 'direta' ? 'Direta' : item?.tipo === 'indireta' ? 'Indireta' : 'Não informado', quantity]; }), ...Object.entries(data.subcontratadas || {}).map(([id, quantity]) => [find(subcontractors, id)?.razao_social || `Empresa ${id}`, 'Subcontratada', quantity])]} /><Observations>{data.observacoes}</Observations></>;
     if (section === 'equipamentos') return <><DataTable headings={['Equipamento', 'Situação', 'Quantidade']} rows={Object.entries(data.registros || {}).map(([id, record]) => [find(equipment, id)?.descricao || `Equipamento ${id}`, situationLabels[record.situacao] || record.situacao || '—', record.quantidade])} /><Observations>{data.observacoes}</Observations></>;
     if (section === 'atividades') return data.atividades?.length ? (

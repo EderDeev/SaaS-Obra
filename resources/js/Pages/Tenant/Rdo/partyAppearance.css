@@ -6,7 +6,8 @@
 .rdo-party-panel[data-rdo-party] > header { background: var(--rdo-party-soft); }
 [data-rdo-party] .rdo-party-accent { color: var(--rdo-party-color); background: var(--rdo-party-ring); }
 [data-rdo-party] .rdo-party-label { color: var(--rdo-party-color); }
-[data-rdo-party] .rdo-party-selected { background: var(--rdo-party-solid) !important; border-color: var(--rdo-party-solid) !important; color: white !important; --tw-ring-color: var(--rdo-party-ring); }
+[data-rdo-party] .rdo-party-selected,
+.rdo-party-selected[data-rdo-party] { background: var(--rdo-party-solid) !important; border-color: var(--rdo-party-solid) !important; color: white !important; --tw-ring-color: var(--rdo-party-ring); }
 [data-rdo-party] details > summary { background: var(--rdo-party-soft); }
 .rdo-flow-party[data-rdo-party] { border-top: 3px solid var(--rdo-party-solid); }
 .rdo-flow-party[data-rdo-party] strong { color: var(--rdo-party-color); }

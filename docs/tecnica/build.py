@@ -25,7 +25,7 @@ except ImportError:
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-MOBILE = ROOT.parent / 'mobile-rnc'
+MOBILE = ROOT.parent / 'sigworks-mobile'
 DIST = HERE / 'dist'
 CHAPTERS = ['README.md', *[p.name for p in sorted(HERE.glob('[0-9][0-9]-*.md'))],
             'inventario-rotas.md', 'inventario-banco.md', 'inventario-arquivos.md']
@@ -37,7 +37,7 @@ def write(path: Path, value: str) -> None:
 
 
 def relative(path: Path) -> str:
-    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else '../mobile-rnc/' + path.relative_to(MOBILE).as_posix()
+    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else '../sigworks-mobile/' + path.relative_to(MOBILE).as_posix()
 
 
 def source_link(path: Path) -> str:

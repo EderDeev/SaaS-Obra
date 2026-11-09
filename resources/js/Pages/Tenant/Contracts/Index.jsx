@@ -1,5 +1,4 @@
 import ContractAccessCard from '@/Components/ContractAccessCard';
-import { OsDnitContractSnapshot } from '@/Components/OsDnitManagementCard';
 import ContractTour, { startContractTour } from '@/Components/ContractTour';
 import brazilCities from '@/Data/brazilCities';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
@@ -160,7 +159,7 @@ function companyOptions(contracts, resolve) {
     }, []).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 }
 
-export default function ContractsIndex({ tenant, contracts, statuses, canCreateContracts, contractCapabilities = {}, parametrizacao = {} }) {
+export default function ContractsIndex({ tenant, contracts, statuses, canCreateContracts, contractTypes = {}, contractCapabilities = {}, parametrizacao = {} }) {
     const page = usePage();
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState('todos');
@@ -180,6 +179,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
     const form = useForm({
         code: '',
         total_value: '',
+        contract_type: '',
         currency: 'BRL',
         city: '',
         state: '',
@@ -496,6 +496,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
             {showCreate && canCreateContracts && (
                 <ContractCreateModal
                     form={form}
+                    contractTypes={contractTypes}
                     totalValueDisplay={totalValueDisplay}
                     citiesForSelectedState={citiesForSelectedState}
                     onClose={() => setShowCreate(false)}
@@ -546,6 +547,7 @@ export default function ContractsIndex({ tenant, contracts, statuses, canCreateC
 
 function ContractCreateModal({
     form,
+    contractTypes,
     totalValueDisplay,
     citiesForSelectedState,
     onClose,
@@ -571,6 +573,12 @@ function ContractCreateModal({
                 <div className="grid gap-4 overflow-y-auto px-6 py-5 sm:grid-cols-2 lg:grid-cols-3">
                     <Field label="Código" error={form.errors.code}>
                         <input value={form.data.code} onChange={(event) => form.setData('code', event.target.value.toUpperCase())} required placeholder="CT-001" />
+                    </Field>
+                    <Field label="Tipo de contrato (opcional)" error={form.errors.contract_type}>
+                        <select value={form.data.contract_type} onChange={(event) => form.setData('contract_type', event.target.value)}>
+                            <option value="">Não informado</option>
+                            {Object.entries(contractTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
                     </Field>
                     <Field label="Moeda" error={form.errors.currency}>
                         <select value={form.data.currency} onChange={(event) => onUpdateCurrency(event.target.value)} required>
@@ -695,7 +703,6 @@ function ContractsTable({ tenant, contracts, contractCapabilities, showTourDemo,
                         <th>Empresas</th>
                         <th>Local</th>
                         <th>Vigência</th>
-                        <th>Pendências</th>
                         <th>Aditivo</th>
                         <th>Valor</th>
                         <th>Status</th>
@@ -720,14 +727,6 @@ function ContractsTable({ tenant, contracts, contractCapabilities, showTourDemo,
                             </td>
                             <td>{[contract.city, contract.state_label].filter(Boolean).join(' - ') || 'Não informado'}</td>
                             <td>{shortDate(contract.starts_at)} até {shortDate(contract.ends_at)}</td>
-                            <td>
-                                <div className="flex flex-wrap gap-1">
-                                    <CountPill label="Atividades" count={contract.open_activities_count} />
-                                    <CountPill label="RNCs" count={contract.open_rncs_count} />
-                                    <CountPill label="Projetos" count={contract.pending_projects_count} />
-                                </div>
-                                <div className="mt-2"><OsDnitContractSnapshot tenant={tenant} contract={contract} /></div>
-                            </td>
                             <td>
                                 {Number(contract.contract_additives_count || 0) > 0 ? (
                                     <button className="sig-pill sig-pill-amber cursor-pointer" type="button" onClick={() => onHistory(contract)}>
@@ -755,7 +754,7 @@ function ContractsTable({ tenant, contracts, contractCapabilities, showTourDemo,
                                         </button>
                                     )}
                                     <Link className="sig-btn sig-btn-secondary" href={route('tenant.contracts.show', [tenant.slug, contract.id])}>
-                                        Abrir
+                                        Acessar
                                     </Link>
                                 </div>
                             </td>
@@ -768,9 +767,6 @@ function ContractsTable({ tenant, contracts, contractCapabilities, showTourDemo,
     );
 }
 
-function CountPill({ label, count }) {
-    return <span className="sig-pill border border-[var(--border)]">{Number(count || 0)} {label}</span>;
-}
 
 function Field({ label, error, children }) {
     return (

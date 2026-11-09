@@ -621,13 +621,13 @@ Lista gerada do workspace. Inclui arquivos locais ainda não publicados; não é
 
 ## Mobile
 
-- [../mobile-rnc/App.tsx](../../../mobile-rnc/App.tsx).
-- [../mobile-rnc/app.json](../../../mobile-rnc/app.json).
-- [../mobile-rnc/eas.json](../../../mobile-rnc/eas.json).
-- [../mobile-rnc/package.json](../../../mobile-rnc/package.json).
-- [../mobile-rnc/src/types.ts](../../../mobile-rnc/src/types.ts).
-- [../mobile-rnc/src/config.ts](../../../mobile-rnc/src/config.ts).
-- [../mobile-rnc/src/services/context.ts](../../../mobile-rnc/src/services/context.ts).
-- [../mobile-rnc/src/services/sync.ts](../../../mobile-rnc/src/services/sync.ts).
-- [../mobile-rnc/src/storage/database.ts](../../../mobile-rnc/src/storage/database.ts).
-- [../mobile-rnc/scripts/test-mobile-sync.cjs](../../../mobile-rnc/scripts/test-mobile-sync.cjs).
+- [../sigworks-mobile/App.tsx](../../../sigworks-mobile/App.tsx).
+- [../sigworks-mobile/app.json](../../../sigworks-mobile/app.json).
+- [../sigworks-mobile/eas.json](../../../sigworks-mobile/eas.json).
+- [../sigworks-mobile/package.json](../../../sigworks-mobile/package.json).
+- [../sigworks-mobile/src/types.ts](../../../sigworks-mobile/src/types.ts).
+- [../sigworks-mobile/src/config.ts](../../../sigworks-mobile/src/config.ts).
+- [../sigworks-mobile/src/services/context.ts](../../../sigworks-mobile/src/services/context.ts).
+- [../sigworks-mobile/src/services/sync.ts](../../../sigworks-mobile/src/services/sync.ts).
+- [../sigworks-mobile/src/storage/database.ts](../../../sigworks-mobile/src/storage/database.ts).
+- [../sigworks-mobile/scripts/test-mobile-sync.cjs](../../../sigworks-mobile/scripts/test-mobile-sync.cjs).

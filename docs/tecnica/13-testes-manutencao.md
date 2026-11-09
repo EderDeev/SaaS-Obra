@@ -34,7 +34,7 @@ Esse exemplo pressupõe arquivo na raiz do projeto. Prossiga somente se a saída
 | Interface RDO | `npm run test:rdo-ui` — componentes e efeitos em JSDOM |
 | Tutoriais | `npm run test:tutorial-ui` — diagramas, modais de etapa, menu e modelos de RDO; lê o catálogo PHP sem inicializar o banco |
 | Build web | `npm run build` — resolução/compilação de assets |
-| Mobile | `npx tsc --noEmit` e `npm run test:sync`, dentro de `mobile-rnc` |
+| Mobile | `npx tsc --noEmit` e `npm run test:sync`, dentro de `sigworks-mobile` |
 | Empacotamento mobile | `npx expo export --platform android --platform ios --output-dir dist/verificacao` |
 | Documentação | `python docs/tecnica/build.py` — referências, inventários e montagem do portal |
 
