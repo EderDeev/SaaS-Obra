@@ -604,15 +604,14 @@ class ActivityController extends Controller
 
     private function validateOsDnitReference(Request $request, Tenant $tenant, Contract $contract, string $category): ?int
     {
-        if ($category !== 'os_dnit') return null;
+        if ($category !== 'os_dnit' || !$request->filled('os_dnit_order_id')) return null;
         if (!OsDnitContractAccess::contracts($request->user(), $tenant, OsDnitPermissions::VIEW)->whereKey($contract->id)->exists()) {
             throw ValidationException::withMessages(['os_dnit_order_id' => 'Você precisa de acesso às OSs DNIT deste contrato para selecionar uma ordem de serviço.']);
         }
         $data = $request->validate([
-            'os_dnit_order_id' => ['required', 'integer', Rule::exists('os_dnit_orders', 'id')
+            'os_dnit_order_id' => ['nullable', 'integer', Rule::exists('os_dnit_orders', 'id')
                 ->where('tenant_id', $tenant->id)->where('contract_id', $contract->id)->whereNull('deleted_at')],
-        ], ['os_dnit_order_id.required' => 'Selecione a ordem de serviço DNIT.',
-            'os_dnit_order_id.exists' => 'Selecione uma OS DNIT disponível neste contrato.'],
+        ], ['os_dnit_order_id.exists' => 'Selecione uma OS DNIT disponível neste contrato.'],
             ['os_dnit_order_id' => 'ordem de serviço DNIT']);
         return (int) $data['os_dnit_order_id'];
     }
