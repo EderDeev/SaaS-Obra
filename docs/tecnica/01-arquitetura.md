@@ -19,7 +19,7 @@ O Laravel concentra autenticação, autorização, regras de negócio, persistê
 | Banco operacional | Configuração PostgreSQL; SQLite em memória nos testes |
 | Jobs | Filas Laravel, com conexões e filas dedicadas em [queue.php](../../config/queue.php) |
 | PDFs | Dompdf; FPDI/FPDF também constam como dependências |
-| Mobile | Expo SDK 54 declarado, React Native 0.81.5, React 19.1 e TypeScript; [package.json mobile](../../../mobile-rnc/package.json) |
+| Mobile | Expo SDK 54 declarado, React Native 0.81.5, React 19.1 e TypeScript; [package.json mobile](../../../sigworks-mobile/package.json) |
 | Qualidade | PHPUnit 12, testes Feature/Unit e verificações de interface com JSDOM |
 
 As faixas de versão são requisitos declarados. As versões resolvidas ficam em `composer.lock` e `package-lock.json`. Não atualize bibliotecas apenas para tornar a documentação coincidente com a versão mais recente disponível.

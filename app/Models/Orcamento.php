@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -58,6 +59,18 @@ class Orcamento extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function scopeUsedInContract(Builder $query, Contract $contract): Builder
+    {
+        $items = MedicaoItem::query()->where('tenant_id', $contract->tenant_id)
+            ->where('contract_id', $contract->id)->select('source_orcamento_id');
+        $additives = MedicaoItemAdditive::query()->where('tenant_id', $contract->tenant_id)
+            ->where('contract_id', $contract->id)->select('source_orcamento_id');
+
+        return $query->where('orcamentos.tenant_id', $contract->tenant_id)
+            ->where(fn (Builder $budgets) => $budgets->whereIn('orcamentos.id', $items)
+                ->orWhereIn('orcamentos.id', $additives));
     }
 
     public function creator(): BelongsTo

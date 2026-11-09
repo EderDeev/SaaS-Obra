@@ -57,13 +57,14 @@ class OpenSignSignatureProvider implements SignatureProviderInterface
             'merge_certificate' => true,
             'notify_on_signatures' => true,
             'signers' => $request->signers
+                ->groupBy(fn ($signer) => Str::lower($signer->email))
                 ->values()
-                ->map(fn ($signer, int $index) => [
-                    'name' => $signer->name,
-                    'email' => $signer->email,
-                    'role' => $signer->role,
+                ->map(fn ($signers, int $index) => [
+                    'name' => $signers->first()->name,
+                    'email' => $signers->first()->email,
+                    'role' => $signers->first()->role,
                     'signer_role' => 'signer',
-                    'widgets' => $this->signatureWidgets($request, $signer->role, $index),
+                    'widgets' => $signers->flatMap(fn ($signer) => $this->signatureWidgets($request, $signer->role, $index))->all(),
                 ])
                 ->all(),
         ];

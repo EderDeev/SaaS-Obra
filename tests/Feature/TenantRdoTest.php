@@ -973,6 +973,78 @@ class TenantRdoTest extends TestCase
         Notification::assertSentTo($signer, \App\Notifications\RdoSignatureRequestedNotification::class);
     }
 
+    public function test_rdo_signature_roles_are_selected_manually_and_keep_multiple_roles_for_one_user(): void
+    {
+        config([
+            'signatures.driver' => 'opensign',
+            'signatures.opensign.base_url' => 'https://sandbox.opensign.test/api/v1.2',
+            'signatures.opensign.api_key' => 'test-api-key',
+            'signatures.opensign.create_request_path' => '/createdocument',
+        ]);
+        Storage::fake('public');
+        Notification::fake();
+        Http::fake([
+            'https://sandbox.opensign.test/api/v1.2/createdocument' => Http::response(['document_id' => 'manual-roles']),
+            'https://sandbox.opensign.test/api/v1.2/signinglinks/manual-roles' => Http::response(['signinglinks' => []]),
+        ]);
+        [$tenant, $owner, $contract, $obra] = $this->scenario();
+        $signer = User::factory()->create();
+        $company = $tenant->empresas()->create([
+            'contract_id' => $contract->id,
+            'tipo_empresa_id' => DB::table('tipos_empresa')->where('nome', 'cliente')->value('id'),
+            'nome' => 'Empresa do cliente', 'sigla' => 'CLI', 'cnpj' => '12.345.678/0001-95',
+        ]);
+        $contract->update(['cliente_empresa_id' => $company->id]);
+        $tenant->memberships()->create(['user_id' => $signer->id, 'role' => 'member', 'status' => 'active', 'empresa_id' => $company->id]);
+        foreach (array_keys(RdoResponsavel::SIGNATURE_STAGES) as $stage) {
+            $this->actingAs($owner)->post(route('tenant.diario-obra.rdo.responsaveis.store', $tenant), [
+                'contract_id' => $contract->id, 'obra_id' => $obra->id, 'user_id' => $signer->id, 'etapa' => $stage,
+            ])->assertRedirect()->assertSessionHasNoErrors();
+        }
+        $this->get(route('tenant.diario-obra.rdo.responsaveis.index', [$tenant, 'contract_id' => $contract->id]))
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->where('stages.3.value', 'assinatura_cliente')
+                ->where('stages.4.value', 'assinatura_gerenciadora')
+                ->where('stages.5.value', 'assinatura_construtora'));
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $owner->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration($configuration, $this->referenceDate(), false, $owner->id);
+        $rdo->update(['status' => 'arquivado', 'approved_at' => now()]);
+        $service = app(\App\Services\RdoSignatureService::class);
+        $signature = $service->createAndSend($tenant, $rdo->fresh(), $owner);
+        $this->assertEqualsCanonicalizing(['cliente', 'gerenciadora', 'construtora'], $signature->signers->pluck('role')->all());
+        $this->assertSame([$signer->id], $signature->signers->pluck('user_id')->unique()->values()->all());
+        Http::assertSent(function ($request): bool {
+            return $request->url() === 'https://sandbox.opensign.test/api/v1.2/createdocument'
+                && count($request->data()['signers']) === 1
+                && count(data_get($request->data(), 'signers.0.widgets')) === 3;
+        });
+        $service->syncProviderSigners($signature, [['email' => $signer->email, 'status' => 'completed']]);
+        $this->assertTrue($signature->fresh('signers')->signers->every(fn ($signer) => $signer->status === 'completed'));
+        Notification::assertSentToTimes($signer, \App\Notifications\RdoSignatureRequestedNotification::class, 1);
+    }
+
+    public function test_manual_rdo_signature_assignments_are_scoped_and_removal_does_not_select_other_users(): void
+    {
+        [$tenant, $owner, $contract, $obra] = $this->scenario();
+        $other = $contract->obras()->create(['tenant_id' => $tenant->id, 'codigo' => '200', 'nome' => 'Outra frente', 'tipo' => 'pai']);
+        $configuration = $this->configuration($tenant->id, $contract->id, $obra->id, $owner->id);
+        $rdo = app(RdoDailyGenerator::class)->generateForConfiguration($configuration, $this->referenceDate(), false, $owner->id);
+        $responsible = RdoResponsavel::create([
+            'tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'obra_id' => $other->id,
+            'user_id' => $owner->id, 'etapa' => 'assinatura_cliente', 'status' => 'active',
+        ]);
+        $resolver = new \ReflectionMethod(\App\Services\RdoSignatureService::class, 'resolveSigners');
+        $service = app(\App\Services\RdoSignatureService::class);
+        $this->assertCount(0, $resolver->invoke($service, $tenant, $rdo));
+        $responsible->update(['obra_id' => $obra->id]);
+        $this->assertSame('cliente', $resolver->invoke($service, $tenant, $rdo)->sole()['role']);
+        $responsible->delete();
+        $this->assertCount(0, $resolver->invoke($service, $tenant, $rdo));
+        $responsible->restore();
+        $tenant->memberships()->where('user_id', $owner->id)->update(['status' => 'inactive']);
+        $this->assertCount(0, $resolver->invoke($service, $tenant, $rdo));
+    }
+
     public function test_rdo_signature_sends_opensign_v12_json_payload(): void
     {
         config([

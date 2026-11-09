@@ -72,6 +72,35 @@ class TenantRdoWorkflowTest extends TestCase
         $this->getJson($url.'?stage=invalid')->assertUnprocessable();
     }
 
+    public function test_pdf_renders_only_registered_activity_and_resource_rows_for_each_party(): void
+    {
+        [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => 'gerenciadora_construtora']);
+        foreach (['construtora' => [5, 1], 'gerenciadora' => [12, 3]] as $party => [$activityCount, $equipmentCount]) {
+            $activities = collect(range(1, $activityCount))->map(fn ($number) => [
+                'titulo' => "Atividade {$number}",
+                'ocorrencia' => 'Execução acompanhada na frente.',
+            ])->all();
+            $equipment = collect(range(1, $equipmentCount))->mapWithKeys(fn ($id) => [$id => ['quantidade' => 1]])->all();
+            foreach (['atividades' => ['atividades' => $activities], 'equipamentos' => ['registros' => $equipment]] as $section => $data) {
+                $rdo->secoes()->create(['tenant_id' => $tenant->id, 'obra_id' => $obra->id, 'filling_party' => $party, 'secao' => $section, 'dados' => $data]);
+            }
+        }
+
+        $pdf = app(\App\Services\RdoPdfRenderer::class)->render($tenant, $rdo->fresh());
+        $xpath = new \DOMXPath($pdf->getDomPDF()->getDom());
+        $pages = $xpath->query('//section[.//tr[@class="activity"]]');
+        $this->assertCount(2, $pages);
+        foreach ([[5, 1], [12, 3]] as $index => [$activityCount, $equipmentCount]) {
+            $page = $pages->item($index);
+            $this->assertCount($activityCount, $xpath->query('.//tr[@class="activity"]', $page));
+            $this->assertCount($equipmentCount, $xpath->query('.//tr[@class="resource-row"]', $page));
+        }
+        if ($folder = getenv('RDO_ROW_CAPTURE_DIR')) {
+            if (! is_dir($folder)) mkdir($folder, 0777, true);
+            file_put_contents($folder.'/rdo-linhas.pdf', $pdf->output());
+        }
+    }
+
     public function test_pdf_export_stages_follow_each_workflow_model(): void
     {
         foreach (array_keys(RdoWorkflow::MODELS) as $model) {
@@ -90,12 +119,14 @@ class TenantRdoWorkflowTest extends TestCase
         foreach (array_keys(RdoWorkflow::MODELS) as $model) {
             [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => $model]);
             $rdo->configuracao->update(['require_photos' => true]);
-            $this->fillParty($tenant, $owner, $obra, $rdo, RdoWorkflow::fillParty($rdo), 'Sem atividade nesta obra.');
+            foreach (RdoWorkflow::fillParties($rdo) as $party) {
+                $this->fillParty($tenant, $owner, $obra, $rdo, $party, 'Sem atividade nesta obra.');
+            }
             $rdo->secoes()->where('secao', 'fotos')->delete();
             $progress = new \ReflectionMethod(\App\Http\Controllers\Tenant\RdoController::class, 'rdoCompletionPercent');
             $this->assertSame(100, $progress->invoke(app(\App\Http\Controllers\Tenant\RdoController::class), $rdo->fresh()));
             $url = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
-            if ($model !== 'gerenciadora') $this->post($url, ['action' => 'submit'])->assertSessionHasNoErrors()->assertRedirect();
+            $this->post($url, ['action' => 'submit'])->assertSessionHasNoErrors()->assertRedirect();
             if (in_array('gerenciadora', RdoWorkflow::reviews($rdo), true)) {
                 $this->post(route('tenant.diario-obra.rdo.inspection.store', [$tenant, $rdo]), ['obra_id' => $obra->id, 'atividades' => [['titulo' => 'Sem atividade', 'ocorrencia' => 'Obra sem serviços executados no dia.']], 'comentario' => 'Sem atividade nesta obra.', 'evidencias' => [], 'status' => 'concluido'])->assertSessionHasNoErrors();
                 $this->post($url, ['action' => 'approve', 'comments_by_obra' => [$obra->id => 'Sem atividade, registro conferido sem fotografias.']])->assertSessionHasNoErrors()->assertRedirect();
@@ -182,7 +213,10 @@ class TenantRdoWorkflowTest extends TestCase
         $renderer = app(\App\Services\RdoPdfRenderer::class);
         foreach (['completo' => [], 'gerenciadora' => ['stage' => 'gerenciadora', 'obra_ids' => [$obra->id]]] as $name => $export) {
             $pdf = $renderer->render($tenant, $diary, $preview, $export);
-            $text = $pdf->getDomPDF()->getDom()->textContent;
+            $dom = $pdf->getDomPDF()->getDom();
+            $text = $dom->textContent;
+            $xpath = new \DOMXPath($dom);
+            $this->assertSame('Frente de serviço'.$diary->configuracao->obras->sole()->nome, trim($xpath->evaluate('string(//thead/tr/td[strong="Frente de serviço"])')));
             foreach (['DIÁRIO DE OBRA', 'Prazo contratual', 'Saldo de prazo', 'Segurança do trabalho', 'Meio ambiente', 'Equipe envolvida', 'Comentários'] as $value) {
                 if ($value === 'Comentários' && $name === 'gerenciadora') continue;
                 $this->assertStringContainsString($value, $text);
@@ -259,8 +293,9 @@ class TenantRdoWorkflowTest extends TestCase
         $this->assertFalse($rdo->fresh()->is_holiday);
         $this->post($url, ['is_holiday' => null, 'obras' => [$make($first)]])->assertSessionHasNoErrors();
         $this->assertNull($rdo->fresh()->is_holiday);
+        foreach ([$first, $second] as $front) $this->fillParty($tenant, $owner, $front, $rdo, 'gerenciadora', 'Registro da fiscalização.');
         $this->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'submit'])->assertSessionHasNoErrors();
-        $this->postJson($url, ['is_holiday' => true, 'obras' => [$make($first)]])->assertUnprocessable();
+        $this->postJson($url, ['filling_party' => 'construtora', 'is_holiday' => true, 'obras' => [$make($first)]])->assertForbidden();
         $this->assertNull($rdo->fresh()->is_holiday);
     }
 
@@ -314,14 +349,12 @@ class TenantRdoWorkflowTest extends TestCase
 
     private function fill($tenant, $user, $obra, $rdo): void
     {
-        $sections = array_fill_keys(['clima', 'mao_obra', 'equipamentos', 'atividades', 'fotos'], []);
-        $sections['comentarios'] = [RdoWorkflow::fillParty($rdo) => 'Registro da parte selecionada.'];
-        $this->actingAs($user)->post(route('tenant.diario-obra.rdo.sections.store-all', [$tenant, $rdo]), [
-            'obra_id' => $obra->id, 'secoes' => $sections,
-        ])->assertSessionHasNoErrors()->assertRedirect();
+        foreach (RdoWorkflow::fillParties($rdo) as $party) {
+            $this->fillParty($tenant, $user, $obra, $rdo, $party, 'Registro da parte selecionada.');
+        }
     }
 
-    public function test_mobile_models_forward_all_works_together_and_manager_only_saves_without_approval(): void
+    public function test_mobile_models_move_all_works_together_including_manager_only_finalization(): void
     {
         foreach (array_keys(RdoWorkflow::MODELS) as $model) {
             [$tenant, $user, $contract, $obra, $rdo] = $this->scenario(['model' => $model]);
@@ -331,7 +364,7 @@ class TenantRdoWorkflowTest extends TestCase
             \App\Models\MobileApiToken::create(['tenant_id' => $tenant->id, 'user_id' => $user->id, 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDay(), 'name' => 'SigWorks']);
             $headers = ['Authorization' => 'Bearer '.$token];
             $bootstrap = $this->getJson(route('api.mobile.bootstrap'), $headers)->assertOk()->json('rdo_diarios');
-            $this->assertCount(2, $bootstrap);
+            $this->assertCount(2 * count(RdoWorkflow::fillParties($rdo)), $bootstrap);
             $this->assertSame($model, $bootstrap[0]['workflow']['model']);
             foreach ($bootstrap as $index => $front) {
                 $sections = array_fill_keys(['clima', 'mao_obra', 'equipamentos', 'atividades'], []);
@@ -339,13 +372,125 @@ class TenantRdoWorkflowTest extends TestCase
                 $this->postJson(route('api.mobile.rdo.offline.store'), ['local_uuid' => $token.'-'.$index, 'rdo_diario_id' => $rdo->id, 'obra_id' => $front['obra_id'], 'reference_date' => $front['reference_date'], 'filling_party' => $front['filling_party'], 'revision' => $front['revision'], 'secoes' => $sections], $headers)->assertCreated();
                 if ($index === 0) $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers)->assertUnprocessable();
             }
-            if ($model === 'gerenciadora') $this->assertSame('arquivado', $rdo->fresh()->status);
-            else {
-                $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers)->assertOk();
-                $this->assertSame($model === 'gerenciadora_cliente' ? 'em_aprovacao_cliente' : 'em_analise_gerenciadora', $rdo->fresh()->status);
-                $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers)->assertConflict();
-            }
+            $this->assertSame('rascunho', $rdo->fresh()->status);
+            $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers)->assertOk();
+            $this->assertSame(match ($model) {
+                'gerenciadora' => 'arquivado',
+                'gerenciadora_cliente' => 'em_aprovacao_cliente',
+                default => 'em_analise_gerenciadora',
+            }, $rdo->fresh()->status);
+            $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers)->assertConflict();
         }
+    }
+
+    public function test_constructor_models_allow_parallel_mobile_sync_and_keep_manager_inspection_separate(): void
+    {
+        foreach (['construtora_gerenciadora_cliente', 'gerenciadora_construtora'] as $model) {
+            [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => $model]);
+            $headers = [];
+            $people = [];
+            foreach (['construtora', 'gerenciadora'] as $party) {
+                $person = User::factory()->create(['must_change_password' => false]);
+                $people[$party] = $person;
+                $tenant->memberships()->create(['user_id' => $person->id, 'role' => 'member', 'status' => 'active']);
+                RdoResponsavel::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'obra_id' => $obra->id, 'user_id' => $person->id, 'modulo' => 'rdo', 'etapa' => $party, 'status' => 'active']);
+                $token = $model.'-'.$party;
+                \App\Models\MobileApiToken::create(['tenant_id' => $tenant->id, 'user_id' => $person->id, 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDay(), 'name' => $party]);
+                $headers[$party] = ['Authorization' => 'Bearer '.$token];
+            }
+            // Exercise a draft created before the parallel filling rollout.
+            $rdo->update(['workflow_snapshot' => [...$rdo->workflow_snapshot, 'fill_parties' => ['construtora']]]);
+            $front = $this->getJson(route('api.mobile.bootstrap'), $headers['construtora'])->assertOk()->assertJsonCount(1, 'rdo_diarios')->json('rdo_diarios.0');
+            $this->assertSame('construtora', $front['filling_party']);
+            $managerFront = $this->getJson(route('api.mobile.bootstrap'), $headers['gerenciadora'])->assertOk()->assertJsonCount(1, 'rdo_diarios')->json('rdo_diarios.0');
+            $this->assertSame('gerenciadora', $managerFront['filling_party']);
+            $this->assertFalse($managerFront['can_set_holiday']);
+            $sections = array_fill_keys(['clima', 'mao_obra', 'equipamentos', 'atividades', 'fotos'], []);
+            $sections['comentarios'] = ['construtora' => 'Concretagem executada no trecho 101.'];
+            $payload = ['local_uuid' => $model.'-offline', 'rdo_diario_id' => $rdo->id, 'obra_id' => $obra->id, 'reference_date' => $front['reference_date'], 'filling_party' => 'construtora', 'revision' => $front['revision'], 'secoes' => $sections];
+            $url = route('api.mobile.rdo.offline.store');
+            $this->postJson($url, $payload, $headers['gerenciadora'])->assertForbidden();
+            $managerPayload = [...$payload, 'local_uuid' => $model.'-manager', 'filling_party' => 'gerenciadora',
+                'revision' => $managerFront['revision'],
+                'secoes' => [...$sections, 'equipamentos' => ['observacoes' => 'Equipamento verificado pela gerenciadora.'],
+                    'comentarios' => ['gerenciadora' => 'Registro de campo da gerenciadora.']]];
+            $managerSync = $this->postJson($url, $managerPayload, $headers['gerenciadora'])->assertCreated();
+            $managerEquipment = $rdo->secoes()->where('filling_party', 'gerenciadora')->where('secao', 'equipamentos')->sole();
+            $this->assertSame('Equipamento verificado pela gerenciadora.', $managerEquipment->dados['observacoes']);
+            $evidenceUrl = route('tenant.diario-obra.rdo.inspection.store', [$tenant, $rdo]);
+            $this->actingAs($people['gerenciadora'])->post($evidenceUrl, [
+                'obra_id' => $obra->id, 'status' => 'concluido',
+                'evidencias' => [\Illuminate\Http\UploadedFile::fake()->create('relatorio-de-campo.pdf', 3, 'application/pdf')],
+            ])->assertSessionHasNoErrors();
+            $this->assertSame('rascunho', $rdo->fresh()->status);
+            $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers['gerenciadora'])->assertUnprocessable();
+            $this->postJson($url, [...$payload, 'is_holiday' => true], $headers['construtora'])->assertCreated();
+            $this->postJson($url, [...$managerPayload, 'local_uuid' => $model.'-manager-next',
+                'revision' => $managerSync->json('rdo.revision'), 'is_holiday' => false], $headers['gerenciadora'])->assertCreated();
+            $this->assertTrue($rdo->fresh()->is_holiday);
+            $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers['gerenciadora'])->assertUnprocessable();
+            $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers['construtora'])->assertOk();
+            $this->assertSame('em_analise_gerenciadora', $rdo->fresh()->status);
+            $this->assertSame(['construtora', 'gerenciadora'], $rdo->fresh()->workflow_snapshot['fill_parties']);
+            $this->getJson(route('api.mobile.bootstrap'), $headers['construtora'])->assertOk()->assertJsonCount(0, 'rdo_diarios');
+            $reviewFront = $this->getJson(route('api.mobile.bootstrap'), $headers['gerenciadora'])->assertOk()->assertJsonCount(1, 'rdo_diarios')->json('rdo_diarios.0');
+            $this->assertSame('Registro de campo da gerenciadora.', $reviewFront['sections']['comentarios']['gerenciadora']);
+            $this->postJson($url, [...$managerPayload, 'local_uuid' => $model.'-manager-review', 'revision' => $reviewFront['revision'],
+                'secoes' => [...$sections, 'comentarios' => ['gerenciadora' => 'Registro complementado durante a análise.']]], $headers['gerenciadora'])->assertCreated();
+            $this->actingAs($people['gerenciadora'])->post($evidenceUrl, [
+                'obra_id' => $obra->id, 'status' => 'concluido',
+                'evidencias' => [\Illuminate\Http\UploadedFile::fake()->image('vistoria.jpg')],
+            ])->assertSessionHasNoErrors();
+            $record = \App\Models\RdoFiscalizacaoRegistro::where('rdo_diario_id', $rdo->id)->sole();
+            $this->assertSame($people['gerenciadora']->id, $record->user_id);
+            $this->assertSame((int) $rdo->fresh()->current_version, (int) $record->version_number);
+            $this->assertSame(['relatorio-de-campo.pdf', 'vistoria.jpg'], collect($record->evidencias)->pluck('name')->all());
+            $comments = $rdo->secoes()->where('secao', 'comentarios')->get()->keyBy('filling_party');
+            $this->assertSame('Concretagem executada no trecho 101.', $comments['construtora']->dados['construtora']);
+            $this->assertSame('Registro complementado durante a análise.', $comments['gerenciadora']->dados['gerenciadora']);
+            $this->postJson($url, [...$payload, 'local_uuid' => $model.'-late'], $headers['construtora'])->assertForbidden();
+            $this->assertSame($record->evidencias, $record->fresh()->evidencias);
+        }
+    }
+
+    public function test_legacy_constructor_manager_diary_uses_the_current_manager_form_and_preserves_inspection_data(): void
+    {
+        [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => 'gerenciadora_construtora']);
+        $this->fillParty($tenant, $owner, $obra, $rdo, 'construtora', 'Registro da construtora.');
+        $flow = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
+        $this->post($flow, ['action' => 'submit'])->assertSessionHasNoErrors();
+        $rdo->refresh();
+        $legacyWorkflow = [...$rdo->workflow_snapshot, 'fill_parties' => ['construtora']];
+        $rdo->update(['workflow_snapshot' => $legacyWorkflow]);
+        $rdo->fiscalizacaoRegistros()->create([
+            'tenant_id' => $tenant->id, 'obra_id' => $obra->id, 'user_id' => $owner->id,
+            'version_number' => $rdo->current_version, 'status' => 'concluido',
+            'clima' => ['manha' => 'nublado'], 'comentario' => 'Comentário preservado.',
+            'resumo_fiscalizacao' => 'Vistoria anterior.', 'submitted_at' => now(),
+        ]);
+
+        $show = route('tenant.diario-obra.rdo.show', [$tenant, $rdo]);
+        $this->get($show)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('rdo.fill_party', 'gerenciadora')
+            ->where('rdo.can_edit', true)
+            ->where('rdo.manager_forward_ready', true)
+            ->where("rdo.sections.{$obra->id}.clima.manha", 'nublado')
+            ->where("rdo.sections.{$obra->id}.comentarios.gerenciadora", 'Comentário preservado.'));
+        $state = \App\Http\Controllers\Api\Mobile\MobileRdoController::state($rdo, $obra->id, 'gerenciadora');
+        $this->assertSame('Vistoria anterior.', $state['sections']['atividades']['atividades'][0]['ocorrencia']);
+
+        $this->post(route('tenant.diario-obra.rdo.sections.store', [$tenant, $rdo, 'equipamentos']), [
+            'obra_id' => $obra->id, 'filling_party' => 'gerenciadora', 'dados' => ['observacoes' => 'Escavadeira conferida.'],
+        ])->assertSessionHasNoErrors();
+        $this->post($flow, ['action' => 'approve', 'comments_by_obra' => [$obra->id => 'Registros conferidos.']])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertSame('arquivado', $rdo->fresh()->status);
+        $this->assertSame($legacyWorkflow, $rdo->fresh()->workflow_snapshot);
+        $this->get($show.'?filling_party=gerenciadora')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('rdo.fill_parties', ['construtora', 'gerenciadora'])
+            ->where('rdo.can_edit', false)
+            ->where("rdo.sections.{$obra->id}.equipamentos.observacoes", 'Escavadeira conferida.')
+            ->where("rdo.sections.{$obra->id}.comentarios.gerenciadora", 'Comentário preservado.'));
     }
 
     private function inspect($tenant, $obra, $rdo): void
@@ -673,7 +818,7 @@ class TenantRdoWorkflowTest extends TestCase
         foreach (array_keys(RdoWorkflow::MODELS) as $model) {
             [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => $model]);
             $this->assertSame(RdoWorkflow::forModel($model), $rdo->workflow_snapshot);
-            $this->assertSame(in_array($model, ['construtora_gerenciadora_cliente', 'gerenciadora_construtora'], true) ? ['construtora'] : ['gerenciadora'], RdoWorkflow::fillParties($rdo));
+            $this->assertSame(in_array($model, ['construtora_gerenciadora_cliente', 'gerenciadora_construtora'], true) ? ['construtora', 'gerenciadora'] : ['gerenciadora'], RdoWorkflow::fillParties($rdo));
             if ($model !== 'gerenciadora_cliente') continue;
             $this->fillParty($tenant, $owner, $obra, $rdo, 'gerenciadora', 'Atividades da gerenciadora');
             $url = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
@@ -690,23 +835,34 @@ class TenantRdoWorkflowTest extends TestCase
         }
     }
 
-    public function test_manager_only_saves_without_approval_after_all_fronts_are_complete(): void
+    public function test_manager_only_remains_editable_until_explicit_finalization(): void
     {
         [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => 'gerenciadora']);
         $second = $tenant->obras()->create(['contract_id' => $contract->id, 'codigo' => '200', 'nome' => 'Segunda frente', 'tipo' => 'pai']);
         $rdo->configuracao->obras()->attach($second->id);
+        $flow = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
+        $section = route('tenant.diario-obra.rdo.sections.store', [$tenant, $rdo, 'comentarios']);
         $this->fillParty($tenant, $owner, $obra, $rdo, 'gerenciadora', 'Primeira frente');
         $this->assertSame('rascunho', $rdo->fresh()->status);
+        $this->postJson($flow, ['action' => 'submit'])->assertUnprocessable();
         $this->fillParty($tenant, $owner, $second, $rdo, 'gerenciadora', 'Segunda frente');
+        $this->assertSame('rascunho', $rdo->fresh()->status);
+        $edit = ['obra_id' => $obra->id, 'dados' => ['gerenciadora' => 'Primeira frente revisada']];
+        $this->post($section, $edit)->assertSessionHasNoErrors();
+        $this->get(route('tenant.diario-obra.rdo.show', [$tenant, $rdo]))
+            ->assertInertia(fn (Assert $p) => $p->where('rdo.can_edit', true)->where('rdo.flow_actions.submit.label', 'Finalizar RDO'));
+        $this->post($flow, ['action' => 'submit'])->assertSessionHasNoErrors();
         $this->assertSame('arquivado', $rdo->fresh()->status);
-        $this->assertSame('Salvo', RdoWorkflow::statusLabel($rdo->fresh()));
-        $this->assertSame(['save', 'save'], $rdo->analises()->pluck('decisao')->all());
+        $this->assertSame('Finalizado', RdoWorkflow::statusLabel($rdo->fresh()));
+        $this->assertSame(['submit', 'submit'], $rdo->analises()->pluck('decisao')->all());
         $this->assertSame(1, $rdo->versoes()->count());
         $this->assertSame(['gerenciadora'], RdoWorkflow::parties($rdo->fresh()));
-        $this->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'approve'])->assertStatus(422);
+        $this->post($section, $edit)->assertForbidden();
+        $this->post(route('tenant.diario-obra.rdo.reopen', [$tenant, $rdo]))->assertUnprocessable();
+        $this->post($flow, ['action' => 'submit'])->assertUnprocessable();
     }
 
-    public function test_manager_only_mobile_save_finishes_without_an_approval_and_can_be_retried(): void
+    public function test_manager_only_mobile_sync_can_be_retried_and_finalization_blocks_new_edits(): void
     {
         [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => 'gerenciadora']);
         \App\Models\MobileApiToken::create(['tenant_id' => $tenant->id, 'user_id' => $owner->id, 'name' => 'Solo', 'token_hash' => hash('sha256', 'mobile-solo'), 'expires_at' => now()->addDay()]);
@@ -716,9 +872,11 @@ class TenantRdoWorkflowTest extends TestCase
             'revision' => \App\Http\Controllers\Api\Mobile\MobileRdoController::revision($rdo, $obra->id, 'gerenciadora'), 'secoes' => $sections];
         $headers = ['Authorization' => 'Bearer mobile-solo'];
         $url = route('api.mobile.rdo.offline.store');
-        $this->postJson($url, $payload, $headers)->assertCreated()->assertJsonPath('rdo.status', 'arquivado');
+        $this->postJson($url, $payload, $headers)->assertCreated()->assertJsonPath('rdo.status', 'rascunho');
+        $this->postJson(route('api.mobile.rdo.submit', $rdo->id), [], $headers)->assertOk()->assertJsonPath('status', 'arquivado');
         $this->postJson($url, $payload, $headers)->assertCreated();
-        $this->assertSame(['save'], $rdo->analises()->pluck('decisao')->all());
+        $this->postJson($url, [...$payload, 'local_uuid' => 'solo-2'], $headers)->assertForbidden();
+        $this->assertSame(['submit'], $rdo->analises()->pluck('decisao')->all());
         $this->assertSame(1, $rdo->versoes()->count());
     }
 
@@ -799,7 +957,10 @@ class TenantRdoWorkflowTest extends TestCase
         [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => 'construtora_gerenciadora_cliente']);
         $second = $tenant->obras()->create(['contract_id' => $contract->id, 'codigo' => '200', 'nome' => 'Frente sul', 'tipo' => 'pai']);
         $rdo->configuracao->obras()->attach($second->id);
-        foreach ([$obra, $second] as $front) $this->fillParty($tenant, $owner, $front, $rdo, 'construtora', 'Comentário original da construtora');
+        foreach ([$obra, $second] as $front) {
+            $this->fillParty($tenant, $owner, $front, $rdo, 'construtora', 'Comentário original da construtora');
+            $this->fillParty($tenant, $owner, $front, $rdo, 'gerenciadora', 'Registro de campo da gerenciadora');
+        }
         $this->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'submit'])->assertSessionHasNoErrors();
         $manager = User::factory()->create(); $client = User::factory()->create();
         foreach (['gerenciadora' => $manager, 'cliente' => $client] as $role => $person) {
@@ -839,6 +1000,7 @@ class TenantRdoWorkflowTest extends TestCase
     {
         [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => 'construtora_gerenciadora_cliente']);
         $this->fillParty($tenant, $owner, $obra, $rdo, 'construtora', 'Registro original');
+        $this->fillParty($tenant, $owner, $obra, $rdo, 'gerenciadora', 'Registro de campo da gerenciadora');
         $this->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'submit'])->assertSessionHasNoErrors();
         $url = route('tenant.diario-obra.rdo.inspection.store', [$tenant, $rdo]);
         $activities = [['titulo' => 'Inspeção da drenagem', 'ocorrencia' => 'Conferência do assentamento dos tubos.'], ['titulo' => 'Verificação do concreto', 'ocorrencia' => 'Acompanhamento da concretagem da base.']];
@@ -898,18 +1060,25 @@ class TenantRdoWorkflowTest extends TestCase
         $this->postJson($url, ['action' => 'submit', 'obra_ids' => [$first->id]])->assertUnprocessable();
         $this->assertSame('rascunho', $rdo->fresh()->status);
         $this->fillParty($tenant, $owner, $second, $rdo, 'construtora', 'Segunda frente preenchida');
+        $this->postJson($url, ['action' => 'submit', 'filling_party' => 'gerenciadora'])->assertUnprocessable();
+        $this->fillParty($tenant, $owner, $first, $rdo, 'gerenciadora', 'Registro da gerenciadora antes do envio');
         $this->post($url, ['action' => 'submit', 'obra_ids' => [$first->id]])->assertSessionHasNoErrors();
         $this->assertSame('em_analise_gerenciadora', $rdo->fresh()->status);
         $this->assertSame(2, \App\Models\RdoAnalise::where('rdo_diario_id', $rdo->id)->where('decisao', 'submit')->count());
-        $inspectionUrl = route('tenant.diario-obra.rdo.inspection.store', [$tenant, $rdo]);
-        $this->post($inspectionUrl, ['obra_id' => $first->id, 'resumo_fiscalizacao' => 'Conferida a primeira frente', 'status' => 'concluido'])->assertSessionHasNoErrors();
-        $this->get(route('tenant.diario-obra.rdo.show', [$tenant, $rdo]))->assertInertia(fn (Assert $p) => $p->where('rdo.manager_forward_ready', false));
-        $payload = ['action' => 'approve', 'obra_ids' => [$first->id, $second->id], 'comments_by_obra' => [$first->id => 'Primeira conferida', $second->id => 'Segunda conferida']];
+        $this->get(route('tenant.diario-obra.rdo.show', [$tenant, $rdo]))->assertInertia(fn (Assert $p) => $p
+            ->where('rdo.fill_party', 'gerenciadora')->where('rdo.can_edit', true)->where('rdo.can_fill', true)
+            ->where('rdo.manager_forward_ready', false)
+            ->where('rdo.sections.'.$first->id.'.comentarios.gerenciadora', 'Registro da gerenciadora antes do envio'));
+        $payload = ['action' => 'approve', 'obra_ids' => [$first->id, $second->id]];
         $this->postJson($url, [...$payload, 'obra_ids' => [$first->id]])->assertUnprocessable();
         $this->postJson($url, $payload)->assertUnprocessable();
         $this->assertSame(0, \App\Models\RdoAnalise::where('rdo_diario_id', $rdo->id)->where('etapa', 'gerenciadora')->count());
         $this->assertSame('em_analise_gerenciadora', $rdo->fresh()->status);
-        $this->post($inspectionUrl, ['obra_id' => $second->id, 'resumo_fiscalizacao' => 'Conferida a segunda frente', 'status' => 'concluido'])->assertSessionHasNoErrors();
+        $this->post(route('tenant.diario-obra.rdo.sections.store', [$tenant, $rdo, 'equipamentos']), [
+            'obra_id' => $second->id, 'filling_party' => 'gerenciadora',
+            'dados' => ['observacoes' => 'Equipamento conferido na segunda frente.'],
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(0, \App\Models\RdoFiscalizacaoRegistro::where('rdo_diario_id', $rdo->id)->count());
         $this->get(route('tenant.diario-obra.rdo.show', [$tenant, $rdo]))->assertInertia(fn (Assert $p) => $p->where('rdo.manager_forward_ready', true));
         $this->post($url, $payload)->assertSessionHasNoErrors();
         $this->assertSame('em_aprovacao_cliente', $rdo->fresh()->status);
@@ -922,6 +1091,7 @@ class TenantRdoWorkflowTest extends TestCase
     {
         [$tenant, $owner, $contract, $obra, $rdo] = $this->scenario(['model' => 'construtora_gerenciadora_cliente']);
         $this->fillParty($tenant, $owner, $obra, $rdo, 'construtora', 'Registro preservado');
+        $this->fillParty($tenant, $owner, $obra, $rdo, 'gerenciadora', 'Registro de campo da gerenciadora');
         $url = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
         $this->post($url, ['action' => 'submit'])->assertSessionHasNoErrors();
         $divergence = ['topico' => 'Qualidade', 'titulo' => 'Diferença na execução da base', 'versao_construtora' => 'Base concluída.', 'versao_gerenciadora' => 'Regularização pendente no trecho final.'];
@@ -945,7 +1115,10 @@ class TenantRdoWorkflowTest extends TestCase
         [$tenant, $owner, $contract, $first, $rdo] = $this->scenario(['model' => 'construtora_gerenciadora_cliente']);
         $second = $tenant->obras()->create(['contract_id' => $contract->id, 'codigo' => '200', 'nome' => 'Frente sul', 'tipo' => 'pai']);
         $rdo->configuracao->obras()->attach($second->id);
-        foreach ([$first, $second] as $front) $this->fillParty($tenant, $owner, $front, $rdo, 'construtora', 'Registro da frente '.$front->codigo);
+        foreach ([$first, $second] as $front) {
+            $this->fillParty($tenant, $owner, $front, $rdo, 'construtora', 'Registro da frente '.$front->codigo);
+            $this->fillParty($tenant, $owner, $front, $rdo, 'gerenciadora', 'Registro da gerenciadora');
+        }
         $url = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
         $this->post($url, ['action' => 'submit'])->assertSessionHasNoErrors();
         $payload = ['action' => 'return', 'obra_ids' => [$first->id, $second->id],
@@ -972,6 +1145,7 @@ class TenantRdoWorkflowTest extends TestCase
             RdoResponsavel::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id, 'obra_id' => $obra->id, 'user_id' => $user->id, 'modulo' => 'rdo', 'etapa' => $party, 'status' => 'active']);
         }
         $this->fillParty($tenant, $owner, $obra, $rdo, 'construtora', 'Registro da construtora');
+        $this->fillParty($tenant, $owner, $obra, $rdo, 'gerenciadora', 'Registro de campo da gerenciadora');
         $url = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
         $this->post($url, ['action' => 'submit'])->assertSessionHasNoErrors();
         foreach ($people as $user) Notification::assertSentTo($user, \App\Notifications\RdoFlowChangedNotification::class, fn ($notification) => $notification->via($user) === ['database', 'mail']);
@@ -1000,7 +1174,7 @@ class TenantRdoWorkflowTest extends TestCase
         [$tenant, $owner, $contract, $first, $rdo] = $this->scenario(['model' => 'construtora_gerenciadora_cliente']);
         $second = $tenant->obras()->create(['contract_id' => $contract->id, 'codigo' => '200', 'nome' => 'Frente sul', 'tipo' => 'pai']);
         $rdo->configuracao->obras()->attach($second->id);
-        foreach ([$first, $second] as $obra) $this->fillParty($tenant, $owner, $obra, $rdo, 'construtora', 'Registro completo');
+        foreach ([$first, $second] as $obra) $this->fill($tenant, $owner, $obra, $rdo);
         $url = route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]);
         $this->post($url, ['action' => 'submit'])->assertSessionHasNoErrors();
         foreach ([$first, $second] as $obra) $this->inspect($tenant, $obra, $rdo);
@@ -1045,6 +1219,7 @@ class TenantRdoWorkflowTest extends TestCase
         $this->assertSame('Primeira obra', $rdo->secoes()->where('obra_id', $first->id)->where('secao','comentarios')->first()->dados['construtora']);
         $this->assertSame('Segunda obra', $rdo->secoes()->where('obra_id', $second->id)->where('secao','comentarios')->first()->dados['construtora']);
         $this->assertCount(2, Storage::disk('public')->allFiles());
+        foreach ([$first, $second] as $front) $this->fillParty($tenant, $owner, $front, $rdo, 'gerenciadora', 'Registro de campo da gerenciadora');
         $this->post(route('tenant.diario-obra.rdo.flow', [$tenant,$rdo]), ['action' => 'submit'])->assertSessionHasNoErrors();
         $before = Storage::disk('local')->allFiles();
         $inspection = fn ($obra, $title) => ['obra_id' => $obra->id, 'atividades' => [['titulo' => $title, 'ocorrencia' => 'Serviços conferidos em campo.']], 'status' => 'concluido', 'evidencias' => [\Illuminate\Http\UploadedFile::fake()->image($obra->codigo.'.png')]];
@@ -1062,7 +1237,7 @@ class TenantRdoWorkflowTest extends TestCase
         $this->assertCount(1,$records[$second->id]->evidencias);
     }
 
-    public function test_solo_manager_batch_concludes_only_after_all_fronts_are_saved(): void
+    public function test_solo_manager_batch_requires_explicit_finalization_after_saving_all_fronts(): void
     {
         [$tenant,$owner,$contract,$first,$rdo] = $this->scenario(['model'=>'gerenciadora']);
         $second = $tenant->obras()->create(['contract_id'=>$contract->id,'codigo'=>'200','nome'=>'Segunda','tipo'=>'pai']);
@@ -1071,6 +1246,9 @@ class TenantRdoWorkflowTest extends TestCase
         $sections['comentarios']=['gerenciadora'=>'Registro completo'];
         $this->post(route('tenant.diario-obra.rdo.sections.store-works',[$tenant,$rdo]), ['filling_party'=>'gerenciadora','obras'=>[['obra_id'=>$first->id,'secoes'=>$sections],['obra_id'=>$second->id,'secoes'=>$sections]]])->assertSessionHasNoErrors();
         $this->assertSame(12,$rdo->secoes()->count());
+        $this->assertSame('rascunho', $rdo->fresh()->status);
+        $this->post(route('tenant.diario-obra.rdo.flow', [$tenant, $rdo]), ['action' => 'submit'])
+            ->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame('arquivado',$rdo->fresh()->status);
     }
 
@@ -1086,6 +1264,7 @@ class TenantRdoWorkflowTest extends TestCase
                 RdoResponsavel::create(['tenant_id'=>$tenant->id,'contract_id'=>$contract->id,'obra_id'=>$obra->id,'user_id'=>$person->id,'modulo'=>'rdo','etapa'=>$party,'status'=>'active']);
             }
             $this->fillParty($tenant,$owner,$obra,$rdo,'construtora','Atividades da construtora');
+            $this->fillParty($tenant,$owner,$obra,$rdo,'gerenciadora','Atividades da gerenciadora');
             $url=route('tenant.diario-obra.rdo.flow',[$tenant,$rdo]);
             $this->post($url,['action'=>'submit'])->assertSessionHasNoErrors();
             $this->assertSame('em_analise_gerenciadora',$rdo->fresh()->status);
@@ -1102,6 +1281,15 @@ class TenantRdoWorkflowTest extends TestCase
                 config(['signatures.driver'=>'local']);
                 $signature=app(\App\Services\RdoSignatureService::class)->createAndSend($tenant,$rdo->fresh(),$owner);
                 $this->assertSame(['construtora','gerenciadora'],$signature->signers->pluck('role')->all());
+            }
+            if ($action === 'approve_with_reservations') {
+                $this->fillParty($tenant, $owner, $obra, $rdo, 'construtora', 'Acabamento corrigido e conferido em campo.');
+                $this->post($url, ['action' => 'submit'])->assertSessionHasNoErrors();
+                $this->assertSame('em_analise_gerenciadora', $rdo->fresh()->status);
+                $this->assertSame(2, (int) $rdo->fresh()->current_version);
+                $this->inspect($tenant, $obra, $rdo);
+                $this->post($url, ['action' => 'approve', 'comments_by_obra' => [$obra->id => 'Correções verificadas e aprovadas.']])->assertSessionHasNoErrors();
+                $this->assertSame('arquivado', $rdo->fresh()->status);
             }
             if ($action==='return') {
                 $divergence=\App\Models\RdoDivergencia::where('rdo_diario_id',$rdo->id)->sole();
@@ -1183,6 +1371,9 @@ class TenantRdoWorkflowTest extends TestCase
             if ($photos) $this->assertStringContainsString('Registro Fotográfico', $dom->textContent);
             else $this->assertStringNotContainsString('Registro Fotográfico', $dom->textContent);
             $xpath = new \DOMXPath($dom);
+            foreach ($xpath->query('//table[@class="header"][.//div[@class="report-title" and .="Registro Fotográfico"]]') as $header) {
+                $this->assertSame($obra->nome, $xpath->evaluate('string(.//td[span="Frente de serviço"]/span[@class="value"])', $header));
+            }
             foreach ($xpath->query('//table[@class="header"]') as $header) $this->assertSame(3, $header->getElementsByTagName('img')->length);
             $style = $dom->getElementsByTagName('style')->item(0)->textContent;
             $this->assertGreaterThan(4, substr_count($style, '#873db8'));

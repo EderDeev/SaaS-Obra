@@ -23,20 +23,22 @@ class TenantContractValueTest extends TestCase
 
     public function test_contract_can_be_created_without_a_value_then_filled_and_edited(): void
     {
-        foreach ([[], ['total_value' => '']] as $index => $value) {
+        foreach ([[], ['total_value' => '', 'contract_type' => 'federal']] as $index => $value) {
             $this->post(route('tenant.contracts.store', $this->tenant), [...$value, 'code' => 'VALUE-'.$index,
                 'currency' => 'BRL', 'city' => 'Belém', 'state' => 'PA', 'starts_at' => '2026-10-01', 'ends_at' => '2027-10-01'])
                 ->assertSessionHasNoErrors()->assertRedirect();
             $contract = $this->tenant->contracts()->where('code', 'VALUE-'.$index)->firstOrFail();
             $this->assertNull($contract->total_value);
+            $this->assertSame($value['contract_type'] ?? null, $contract->contract_type);
             foreach (['1250.50', '2000.00', '0.00'] as $amount) {
                 $this->patch(route('tenant.contracts.parametrizacao.update', [$this->tenant, $contract]), ['total_value' => $amount])
                     ->assertSessionHasNoErrors()->assertRedirect();
                 $this->assertSame($amount, $contract->fresh()->total_value);
             }
-            $this->patch(route('tenant.contracts.parametrizacao.update', [$this->tenant, $contract]), ['total_value' => ''])
+            $this->patch(route('tenant.contracts.parametrizacao.update', [$this->tenant, $contract]), ['total_value' => '', 'contract_type' => 'municipal'])
                 ->assertSessionHasNoErrors();
             $this->assertNull($contract->fresh()->total_value);
+            $this->assertSame('municipal', $contract->fresh()->contract_type);
         }
     }
 

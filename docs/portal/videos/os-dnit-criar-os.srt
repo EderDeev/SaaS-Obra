@@ -1,0 +1,52 @@
+1
+00:00:03,000 --> 00:00:10,560
+Neste vídeo, você vai ver como criar uma Ordem de Serviço DNIT no SigWorks.
+
+2
+00:00:10,560 --> 00:00:13,988
+Comece pelo menu Ordem de Serviço.
+
+3
+00:00:13,988 --> 00:00:18,221
+Os dados mostrados a seguir são fictícios.
+
+4
+00:00:19,983 --> 00:00:28,062
+Clique em Criar OS e preencha contrato, lote, rodovia, trecho, assunto e prazo.
+
+5
+00:00:28,062 --> 00:00:35,731
+A rodovia vem da Parametrização, e o número da OS é gerado automaticamente.
+
+6
+00:00:35,731 --> 00:00:38,492
+Se precisar, inclua anexos.
+
+7
+00:00:40,184 --> 00:00:45,640
+Depois, informe a necessidade técnica e a justificativa.
+
+8
+00:00:45,640 --> 00:00:53,532
+Você não escolhe os produtos nesta etapa: quem define é a Supervisão, na análise.
+
+9
+00:00:53,532 --> 00:00:58,404
+Clique em Salvar demanda e revise antes de enviar.
+
+10
+00:01:00,010 --> 00:01:06,317
+Quando estiver tudo certo, clique em Enviar para análise e confirme.
+
+11
+00:01:06,317 --> 00:01:15,408
+Atenção: depois do envio, o pedido original não pode mais ser editado, nem mesmo se for devolvido.
+
+12
+00:01:17,235 --> 00:01:28,316
+A partir daí, a OS segue para a Supervisão, que analisa o pedido e define produtos, quantidades e prazo.
+
+13
+00:01:28,316 --> 00:01:32,365
+Pronto, sua solicitação está no fluxo.
+

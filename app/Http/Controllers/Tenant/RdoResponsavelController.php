@@ -21,7 +21,7 @@ class RdoResponsavelController extends Controller
         'construtora' => 'Preenchimento da construtora',
         'gerenciadora' => 'Preenchimento e análise da gerenciadora',
         'cliente' => 'Comentário do cliente',
-        'assinatura' => 'Assinatura do RDO',
+        ...RdoResponsavel::SIGNATURE_STAGES,
     ];
 
     public function index(Request $request, Tenant $tenant): Response
@@ -80,7 +80,7 @@ class RdoResponsavelController extends Controller
                         ->map(fn (RdoResponsavel $responsavel) => [
                             'id' => $responsavel->id,
                             'etapa' => $responsavel->etapa,
-                            'etapa_label' => self::STAGES[$responsavel->etapa],
+                            'etapa_label' => self::STAGES[$responsavel->etapa] ?? 'Assinatura do RDO',
                             'obra' => $responsavel->obra,
                         ])
                         ->sortBy(fn (array $link) => ($link['etapa_label'] ?? '').($link['obra']?->codigo ?? ''))
@@ -119,7 +119,7 @@ class RdoResponsavelController extends Controller
             'contract_id' => ['required', Rule::exists('contracts', 'id')->where('tenant_id', $tenant->id)],
             'obra_id' => ['required', Rule::exists('obras', 'id')->where('tenant_id', $tenant->id)],
             'user_id' => ['required', Rule::exists('users', 'id')],
-            'etapa' => ['required', Rule::in(array_keys(self::STAGES))],
+            'etapa' => ['required', Rule::in([...array_keys(self::STAGES), 'assinatura'])],
         ]);
 
         $contract = Contract::query()->where('tenant_id', $tenant->id)->findOrFail($validated['contract_id']);

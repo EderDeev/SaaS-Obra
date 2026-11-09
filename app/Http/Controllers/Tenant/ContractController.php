@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Models\TipoEmpresa;
 use App\Support\ActivityPermissions;
 use App\Support\ContractPermissions;
+use App\Support\ContractModuleSummary;
 use App\Support\OsDnitManagementSummary;
 use App\Support\ProjectPermissions;
 use App\Support\RncPermissions;
@@ -61,6 +62,7 @@ class ContractController extends Controller
         $contractCollection->each(fn (Contract $contract) => $contract->setAttribute('os_summary', $osCounts->get($contract->id)));
 
         return Inertia::render('Tenant/Contracts/Index', [
+            'contractTypes' => Contract::TYPES,
             'tenant' => $tenant,
             'contracts' => $contractCollection,
             'statuses' => ['planning', 'active', 'paused', 'completed', 'cancelled'],
@@ -121,6 +123,7 @@ class ContractController extends Controller
         $data = $request->validate([
             'code' => ['required', 'string', 'max:50', Rule::unique('contracts', 'code')->where('tenant_id', $tenant->id)],
             'total_value' => ['nullable', 'numeric', 'min:0'],
+            'contract_type' => ['nullable', Rule::in(array_keys(Contract::TYPES))],
             'currency' => ['required', 'string', Rule::in(['BRL', 'USD', 'JPY', 'CNY', 'EUR'])],
             'city' => ['required', 'string', 'max:120'],
             'state' => ['required', 'string', Rule::in(self::BRAZILIAN_STATES)],
@@ -186,6 +189,7 @@ class ContractController extends Controller
         $canParametrize = ContractPermissions::can($request->user(), $tenant, ContractPermissions::PARAMETRIZE, $contract);
         $canManageAdditives = ContractPermissions::can($request->user(), $tenant, ContractPermissions::ADDITIVES, $contract);
         $canManageParticipants = ContractPermissions::can($request->user(), $tenant, ContractPermissions::PARTICIPANTS, $contract);
+        $modules = ContractModuleSummary::forUser($request->user(), $tenant, $contract);
 
         $contract->load([
             'participants.user',
@@ -208,22 +212,39 @@ class ContractController extends Controller
             'projectDocuments as approved_projects_count' => fn (Builder $query): Builder => $query->where('status', 'ativo'),
         ]);
 
+        foreach ([
+            'activities' => ['open_activities_count', 'overdue_activities_count'],
+            'rncs' => ['open_rncs_count'],
+            'projects' => ['pending_projects_count', 'approved_projects_count'],
+        ] as $module => $attributes) {
+            if (! isset($modules[$module])) {
+                foreach ($attributes as $attribute) {
+                    $contract->setAttribute($attribute, 0);
+                }
+            }
+        }
+
         return Inertia::render('Tenant/Contracts/Show', [
+            'contractTypes' => Contract::TYPES,
             'tenant' => $tenant,
             'contract' => $contract,
-            'osSummary' => OsDnitManagementSummary::forUser($request->user(), $tenant, $contract->id),
+            'modules' => $modules,
+            'osSummary' => isset($modules['os']) ? OsDnitManagementSummary::forUser($request->user(), $tenant, $contract->id) : null,
             'recentActivities' => $contract->activities()
+                ->when(! isset($modules['activities']), fn ($query) => $query->whereRaw('1 = 0'))
                 ->visibleTo($request->user())
                 ->with('assignees:id,name,avatar_url')
                 ->latest()
                 ->limit(5)
                 ->get(['id', 'contract_id', 'created_by_id', 'assigned_to_id', 'title', 'category', 'visibility', 'status', 'priority', 'due_date', 'created_at']),
             'recentRncs' => $contract->relatorioNaoConformidades()
+                ->when(! isset($modules['rncs']), fn ($query) => $query->whereRaw('1 = 0'))
                 ->with('disciplina:id,nome,sigla')
                 ->latest()
                 ->limit(5)
                 ->get(['id', 'contract_id', 'disciplina_id', 'sequence_number', 'sequence_year', 'gravidade', 'status', 'opened_at']),
             'recentProjects' => $contract->projectDocuments()
+                ->when(! isset($modules['projects']), fn ($query) => $query->whereRaw('1 = 0'))
                 ->with([
                     'disciplina:id,nome,sigla',
                     'latestVersion' => fn ($query) => $query->select([
@@ -320,6 +341,7 @@ class ContractController extends Controller
                     ->when($gerenciadoraTipoIds->isNotEmpty(), fn ($query) => $query->whereIn('tipo_empresa_id', $gerenciadoraTipoIds))),
             ],
             'total_value' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'contract_type' => ['sometimes', 'nullable', Rule::in(array_keys(Contract::TYPES))],
             'measurement_mode' => ['sometimes', 'required', 'string', Rule::in(['simple', 'controlled'])],
         ], [
             'obra_id.exists' => 'Selecione uma obra pai deste contrato como obra principal.',
@@ -339,7 +361,7 @@ class ContractController extends Controller
             ]);
         }
 
-        $updates = [];
+        $updates = collect($data)->only('contract_type')->all();
 
         if (array_key_exists('total_value', $data)) {
             $updates['total_value'] = $data['total_value'];

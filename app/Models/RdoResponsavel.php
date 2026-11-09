@@ -21,6 +21,12 @@ class RdoResponsavel extends Model
 {
     use SoftDeletes;
 
+    public const SIGNATURE_STAGES = [
+        'assinatura_cliente' => 'Assinatura do cliente',
+        'assinatura_gerenciadora' => 'Assinatura da gerenciadora',
+        'assinatura_construtora' => 'Assinatura da construtora',
+    ];
+
     protected $table = 'rdo_responsaveis';
 
     public function contract(): BelongsTo

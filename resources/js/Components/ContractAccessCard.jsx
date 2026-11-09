@@ -1,6 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { OsDnitContractSnapshot } from '@/Components/OsDnitManagementCard';
-import { AlertTriangle, ArrowRight, Building2, Calendar, FilePlus2, FileWarning, FolderOpen, ListTodo, MapPin, Settings } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Building2, Calendar, FilePlus2, MapPin, Settings } from 'lucide-react';
 
 const currencyLocaleMap = {
     BRL: 'pt-BR',
@@ -95,14 +94,7 @@ export default function ContractAccessCard({ tenant, contract, shortDate, canPar
                 <Info icon={Calendar} text={`${shortDate(contract.starts_at)} até ${shortDate(contract.ends_at)}`} />
             </div>
 
-            <div className="grid grid-cols-3 border-y border-[var(--border)] bg-[var(--surface-muted)]">
-                <Count icon={ListTodo} label="Atividades" value={contract.open_activities_count} alert={contract.overdue_activities_count > 0} />
-                <Count icon={FileWarning} label="RNCs" value={contract.open_rncs_count} alert={contract.open_rncs_count > 0} />
-                <Count icon={FolderOpen} label="Projetos" value={contract.pending_projects_count} alert={contract.pending_projects_count > 0} />
-            </div>
-
             <footer className="mt-auto grid gap-3 px-[18px] py-3">
-                <OsDnitContractSnapshot tenant={tenant} contract={contract} />
                 <div className="flex flex-wrap items-start justify-between gap-2">
                     <span className="min-w-0 flex-1">
                         <span className="eyebrow block">Valor contratado</span>
@@ -138,7 +130,7 @@ export default function ContractAccessCard({ tenant, contract, shortDate, canPar
                             </button>
                         )}
                         <Link data-tour={tour ? 'contracts-open' : undefined} className="sig-btn sig-btn-secondary sig-btn-sm" href={detailUrl || route('tenant.contracts.show', [tenant.slug, contract.id])}>
-                            Abrir
+                            Acessar
                             <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
                         </Link>
                     </div>
@@ -153,18 +145,6 @@ function Info({ icon: Icon, text }) {
         <span className="flex min-w-0 items-center gap-2">
             <Icon size={13} className="shrink-0" />
             <span className="truncate">{text}</span>
-        </span>
-    );
-}
-
-function Count({ icon: Icon, label, value, alert }) {
-    return (
-        <span className="border-r border-[var(--border)] px-3 py-3 text-center last:border-r-0">
-            <span className={`mx-auto flex w-fit items-center gap-1 text-sm font-semibold ${alert ? 'text-[var(--amber)]' : 'text-[var(--ink-700)]'}`}>
-                <Icon size={13} />
-                {value || 0}
-            </span>
-            <span className="mt-0.5 block text-[11px] text-[var(--ink-500)]">{label}</span>
         </span>
     );
 }

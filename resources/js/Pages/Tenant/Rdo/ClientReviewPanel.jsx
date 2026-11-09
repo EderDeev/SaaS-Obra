@@ -20,6 +20,7 @@ export default function ClientReviewPanel({ rdo, form, processing, onAction, ren
     const fillingParty = (rdo.fill_parties || [rdo.fill_party]).includes('construtora') ? 'construtora' : rdo.fill_party;
     const compare = fillingParty === 'construtora';
     const data = rdo.sections_by_party?.[fillingParty]?.[currentId] || (rdo.fill_party === fillingParty ? rdo.sections?.[currentId] : {}) || {};
+    const managerFieldData = rdo.sections_by_party?.gerenciadora?.[currentId];
     const inspection = (rdo.inspection_records || []).find(record => record.is_current_version && Number(record.obra_id) === Number(currentId));
     const actions = Object.entries(rdo.flow_actions || {});
     useEffect(() => {
@@ -76,12 +77,18 @@ export default function ClientReviewPanel({ rdo, form, processing, onAction, ren
                 <p className="text-sm font-semibold">{front?.codigo} · {front?.nome}</p>
                 <div className={`grid items-start gap-4 ${compare ? 'lg:grid-cols-2' : ''}`}>
                     <section aria-label={`Comparação: ${partyLabels[fillingParty]}`} data-rdo-party={rdoParty(fillingParty)} className="rdo-party-panel overflow-hidden rounded-xl border border-[var(--border)] bg-white"><header className="rdo-party-label border-b border-[var(--border)] px-4 py-3 font-semibold">{partyLabels[fillingParty]}</header><div className="p-4">{tab === 'recursos' ? <div className="space-y-3">{[['mao_obra','Mão de obra'],['equipamentos','Equipamentos']].map(([key,label]) => <RdoSection key={key} section={key} title={label}>{read(key)}</RdoSection>)}</div> : read(tab)}</div></section>
-                    {compare && <section aria-label="Comparação: Gerenciadora" data-rdo-party={rdoParty('gerenciadora')} className="rdo-party-panel overflow-hidden rounded-xl border border-[var(--border)] bg-white"><header className="rdo-party-label border-b border-[var(--border)] px-4 py-3 font-semibold">Gerenciadora{inspection?.user?.name && <span className="mt-1 block text-xs font-normal text-[var(--ink-500)]">{inspection.user.name}</span>}</header><div className="p-4">
-                        {tab === 'atividades' && (inspection?.activities?.length ? <ReadSection section="atividades" data={{ atividades: inspection.activities }} catalogs={catalogs} rdo={rdo} obraId={currentId} /> : <p className="whitespace-pre-wrap break-words text-sm">{inspection?.summary || 'Nenhuma atividade da gerenciadora registrada nesta obra.'}</p>)}
-                        {tab === 'comentarios' && <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{inspection?.comment || rdo.approval_comments?.gerenciadora?.[currentId]?.comment || 'Nenhum comentário registrado nesta obra.'}</p>}
+                    {compare && <section aria-label="Comparação: Gerenciadora" data-rdo-party={rdoParty('gerenciadora')} className="rdo-party-panel overflow-hidden rounded-xl border border-[var(--border)] bg-white"><header className="rdo-party-label border-b border-[var(--border)] px-4 py-3 font-semibold">Gerenciadora{inspection?.user?.name && !managerFieldData && <span className="mt-1 block text-xs font-normal text-[var(--ink-500)]">{inspection.user.name}</span>}</header><div className="space-y-3 p-4">
+                        {managerFieldData && <RdoSection title="Registro de campo da gerenciadora" section={tab === 'recursos' ? 'mao_obra' : tab}>
+                            {(tab === 'recursos' ? ['mao_obra', 'equipamentos'] : [tab]).map(key => <ReadSection
+                                key={key} section={key} data={managerFieldData[key] || {}} catalogs={catalogs}
+                                rdo={{ ...rdo, fill_party: 'gerenciadora', participating_parties: ['gerenciadora'], approval_comments: {} }} obraId={currentId} />)}
+                        </RdoSection>}
+                        {managerFieldData && !rdo.parallel_manager_filling && tab !== 'recursos' && <h4 className="border-t border-[var(--border)] pt-3 text-sm font-semibold">Análise da gerenciadora</h4>}
+                        {tab === 'atividades' && (!rdo.parallel_manager_filling || !managerFieldData) && (inspection?.activities?.length ? <ReadSection section="atividades" data={{ atividades: inspection.activities }} catalogs={catalogs} rdo={rdo} obraId={currentId} /> : <p className="whitespace-pre-wrap break-words text-sm">{inspection?.summary || 'Nenhuma atividade da gerenciadora registrada nesta obra.'}</p>)}
+                        {tab === 'comentarios' && <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{(!rdo.parallel_manager_filling || !managerFieldData ? inspection?.comment : null) || rdo.approval_comments?.gerenciadora?.[currentId]?.comment || (managerFieldData ? null : 'Nenhum comentário registrado nesta obra.')}</p>}
                         {tab === 'fotos' && (inspection?.evidence?.length ? renderEvidence(inspection.evidence) : <p className="text-sm text-[var(--ink-500)]">Nenhuma evidência da gerenciadora nesta obra.</p>)}
-                        {tab === 'clima' && (inspection?.weather ? <ReadSection section="clima" data={inspection.weather} catalogs={catalogs} rdo={rdo} obraId={currentId} /> : <p className="text-sm text-[var(--ink-500)]">Nenhuma condição climática registrada pela gerenciadora nesta obra.</p>)}
-                        {tab === 'recursos' && <p className="text-sm text-[var(--ink-500)]">Mão de obra e equipamentos são registrados pela construtora. Consulte as atividades e os comentários da gerenciadora para conferir sua análise.</p>}
+                        {tab === 'clima' && (!rdo.parallel_manager_filling || !managerFieldData) && (inspection?.weather ? <ReadSection section="clima" data={inspection.weather} catalogs={catalogs} rdo={rdo} obraId={currentId} /> : <p className="text-sm text-[var(--ink-500)]">Nenhuma condição climática registrada pela gerenciadora nesta obra.</p>)}
+                        {tab === 'recursos' && !managerFieldData && <p className="text-sm text-[var(--ink-500)]">Nenhum registro de mão de obra ou equipamentos da gerenciadora nesta obra.</p>}
                     </div></section>}
                 </div>
             </div>

@@ -11,6 +11,7 @@ use App\Http\Controllers\Tenant\AssistantController;
 use App\Http\Controllers\Tenant\BoletimMedicaoController;
 use App\Http\Controllers\Tenant\ContractAdditiveController;
 use App\Http\Controllers\Tenant\ContractController;
+use App\Http\Controllers\Tenant\ContractFinanceController;
 use App\Http\Controllers\Tenant\ContractParticipantController;
 use App\Http\Controllers\Tenant\DashboardController as TenantDashboardController;
 use App\Http\Controllers\Tenant\FolhaRostoController;
@@ -203,6 +204,16 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::get('/permissoes', [TenantPermissionController::class, 'index'])->name('permissions.index');
         Route::patch('/permissoes', [TenantPermissionController::class, 'update'])->name('permissions.update');
         Route::get('/contracts', [ContractController::class, 'index'])->middleware('contract.permission:view_contracts')->name('contracts.index');
+        Route::prefix('financeiro-contrato')->name('contract-finance.')->middleware('contract.permission:view_contracts')->group(function () {
+            Route::get('/', [ContractFinanceController::class, 'show'])->defaults('section', 'Financeiro')->name('index');
+            Route::get('/dashboard', [ContractFinanceController::class, 'show'])->defaults('section', 'Dashboard')->name('dashboard');
+            Route::get('/parametrizacao', [ContractFinanceController::class, 'show'])->defaults('section', 'Parametrização')->name('settings');
+            Route::middleware('contract.permission:parametrize_contracts')->group(function () {
+                Route::put('/{contract}/linha-de-base', [ContractFinanceController::class, 'saveBaseline'])->name('baseline.update');
+                Route::put('/{contract}/metas', [ContractFinanceController::class, 'saveTarget'])->name('targets.update');
+                Route::put('/{contract}/lancamento-mensal', [ContractFinanceController::class, 'saveMonth'])->name('months.update');
+            });
+        });
         Route::get('/contracts/tour-preview', [ContractController::class, 'tourPreview'])->middleware('contract.permission:view_contracts')->name('contracts.tour-preview');
         Route::post('/contracts', [ContractController::class, 'store'])->middleware('contract.permission:create_contracts')->name('contracts.store');
         Route::get('/contracts/{contract}/documento-base/download', [ContractController::class, 'downloadBaseDocument'])->middleware('contract.permission:view_contracts')->name('contracts.base-document.download');

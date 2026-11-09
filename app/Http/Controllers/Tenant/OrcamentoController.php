@@ -19,6 +19,7 @@ use App\Models\Tenant;
 use App\Models\TipoEmpresa;
 use App\Models\User;
 use App\Support\BudgetPermissions;
+use App\Support\ContractPermissions;
 use App\Support\TenantRoles;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -138,10 +139,18 @@ class OrcamentoController extends Controller
             ->where('tenant_id', $tenant->id)
             ->latest();
 
+        $contract = null;
+        if ($request->filled('contract_id')) {
+            $contract = $tenant->contracts()->findOrFail($request->integer('contract_id'));
+            abort_unless(ContractPermissions::can($request->user(), $tenant, ContractPermissions::VIEW, $contract), 403);
+            $orcamentosQuery->usedInContract($contract);
+        }
+
         $orcamentos = BudgetPermissions::scopeVisibleTo($orcamentosQuery, $request->user(), $tenant)->get();
 
         return Inertia::render('Tenant/Orcamentos/Index', [
             'tenant' => $tenant,
+            'filteredContract' => $contract?->only(['code', 'name']),
             'orcamentos' => $orcamentos
                 ->map(fn (Orcamento $orcamento): array => [
                     ...$this->serializeOrcamento($orcamento),

@@ -61,7 +61,7 @@ class RdoSignatureService
         abort_if($activeRequest && $activeRequest->status !== 'failed', 422, 'Este RDO já possui uma solicitação de assinatura em andamento ou concluída.');
 
         $signers = $this->resolveSigners($tenant, $rdo);
-        abort_if($signers->isEmpty(), 422, 'Nenhum signatário foi encontrado. Configure responsáveis do RDO ou usuários vinculados às empresas do contrato.');
+        abort_if($signers->isEmpty(), 422, 'Nenhum signatário foi encontrado. Configure os responsáveis pelas assinaturas das partes deste modelo de RDO.');
 
         $request = DB::transaction(function () use ($tenant, $rdo, $actor, $signers): RdoSignatureRequest {
             $title = sprintf('Assinatura %s - %s', $rdo->code, $rdo->reference_date?->format('d/m/Y'));
@@ -470,6 +470,43 @@ class RdoSignatureService
 
     private function resolveSigners(Tenant $tenant, RdoDiario $rdo): Collection
     {
+        $manualResponsibles = RdoResponsavel::withTrashed()
+            ->with([
+                'user:id,name,email',
+                'user.tenantMemberships' => fn ($query) => $query
+                    ->where('tenant_id', $tenant->id)
+                    ->where('status', 'active'),
+            ])
+            ->where('tenant_id', $tenant->id)
+            ->where('modulo', 'rdo')
+            ->where('contract_id', $rdo->contract_id)
+            ->whereIn('etapa', array_keys(RdoResponsavel::SIGNATURE_STAGES))
+            ->get();
+
+        if ($manualResponsibles->isNotEmpty()) {
+            $rdo->loadMissing('configuracao.obras');
+            $obraIds = $rdo->configuracao?->obras->isNotEmpty()
+                ? $rdo->configuracao->obras->pluck('id')->all()
+                : [$rdo->obra_id];
+            $parties = \App\Support\RdoWorkflow::parties($rdo);
+
+            return $manualResponsibles
+                ->filter(fn (RdoResponsavel $responsible) => !$responsible->trashed()
+                    && $responsible->status === 'active'
+                    && in_array($responsible->obra_id, $obraIds, true)
+                    && in_array(Str::after($responsible->etapa, 'assinatura_'), $parties, true)
+                    && $responsible->user?->tenantMemberships->isNotEmpty())
+                ->map(fn (RdoResponsavel $responsible) => [
+                    'role' => Str::after($responsible->etapa, 'assinatura_'),
+                    'user_id' => $responsible->user->id,
+                    'empresa_id' => $responsible->user->tenantMemberships->first()->empresa_id,
+                    'name' => $responsible->user->name,
+                    'email' => Str::lower($responsible->user->email),
+                ])
+                ->unique(fn (array $signer) => $signer['role'].'|'.$signer['email'])
+                ->values();
+        }
+
         $signatureResponsibles = RdoResponsavel::query()
             ->with([
                 'user:id,name,email',
@@ -580,24 +617,21 @@ class RdoSignatureService
                 return;
             }
 
-            $signer = $request->signers
-                ->first(fn (RdoSignatureSigner $signer) => Str::lower($signer->email) === $email);
+            $request->signers
+                ->filter(fn (RdoSignatureSigner $signer) => Str::lower($signer->email) === $email)
+                ->each(function (RdoSignatureSigner $signer) use ($providerSigner): void {
+                    $status = $this->statusFromProviderSigner($providerSigner);
+                    $keepExistingCompletion = $status === 'sent' && $signer->status === 'completed';
+                    $status = $keepExistingCompletion ? 'completed' : $status;
 
-            if (! $signer) {
-                return;
-            }
-
-            $status = $this->statusFromProviderSigner($providerSigner);
-            $keepExistingCompletion = $status === 'sent' && $signer->status === 'completed';
-            $status = $keepExistingCompletion ? 'completed' : $status;
-
-            $signer->update([
-                'provider_signer_id' => $providerSigner['provider_signer_id'] ?? null,
-                'status' => $status,
-                'signing_url' => $providerSigner['signing_url'] ?? null,
-                'provider_payload' => $keepExistingCompletion ? $signer->provider_payload : ($providerSigner['raw'] ?? $providerSigner),
-                'signed_at' => $status === 'completed' ? ($signer->signed_at ?: now()) : null,
-            ]);
+                    $signer->update([
+                        'provider_signer_id' => $providerSigner['provider_signer_id'] ?? null,
+                        'status' => $status,
+                        'signing_url' => $providerSigner['signing_url'] ?? null,
+                        'provider_payload' => $keepExistingCompletion ? $signer->provider_payload : ($providerSigner['raw'] ?? $providerSigner),
+                        'signed_at' => $status === 'completed' ? ($signer->signed_at ?: now()) : null,
+                    ]);
+                });
         });
     }
 
@@ -762,20 +796,15 @@ class RdoSignatureService
                 return;
             }
 
-            $signer = $request->signers
-                ->first(fn (RdoSignatureSigner $signer): bool => Str::lower($signer->email) === $email);
-
-            if (! $signer) {
-                return;
-            }
-
-            $signer->update([
-                'provider_signer_id' => $signer->provider_signer_id
-                    ?: (data_get($entry, 'UserPtr.objectId') ?? data_get($entry, 'userPtr.objectId')),
-                'status' => 'completed',
-                'provider_payload' => $entry,
-                'signed_at' => $signer->signed_at ?: now(),
-            ]);
+            $request->signers
+                ->filter(fn (RdoSignatureSigner $signer): bool => Str::lower($signer->email) === $email)
+                ->each(fn (RdoSignatureSigner $signer) => $signer->update([
+                    'provider_signer_id' => $signer->provider_signer_id
+                        ?: (data_get($entry, 'UserPtr.objectId') ?? data_get($entry, 'userPtr.objectId')),
+                    'status' => 'completed',
+                    'provider_payload' => $entry,
+                    'signed_at' => $signer->signed_at ?: now(),
+                ]));
         });
     }
 

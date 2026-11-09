@@ -123,7 +123,7 @@ class RdoDailyGenerator
                     'status' => 'rascunho',
                     'generated_automatically' => $automatic,
                     'pdf_configuration_snapshot' => [...\App\Support\RdoPdfTemplates::forContract($lockedConfiguration->tenant, $lockedConfiguration->contract_id), ...($lockedConfiguration->report_company_id ? ['company_name' => \App\Models\Empresa::where('tenant_id', $lockedConfiguration->tenant_id)->where('contract_id', $lockedConfiguration->contract_id)->whereKey($lockedConfiguration->report_company_id)->value('nome') ?? ''] : []), 'logos' => app(\App\Services\RdoDocumentLogos::class)->snapshot($lockedConfiguration->tenant, $lockedConfiguration->contract)],
-                    'workflow_snapshot' => $lockedConfiguration->workflow ?? \App\Support\RdoWorkflow::DEFAULT,
+                    'workflow_snapshot' => \App\Support\RdoWorkflow::forNewDiary($lockedConfiguration->workflow),
                 ]);
                 if ($previous) $this->copyConfiguredSections($lockedConfiguration, $previous, $diary);
                 return $diary;

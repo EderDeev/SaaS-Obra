@@ -5,10 +5,13 @@ import { useMemo, useState } from 'react';
 
 const stageColors = {
     campo: 'bg-blue-50 text-blue-700',
-    construtora: 'bg-blue-50 text-blue-700',
-    gerenciadora: 'bg-amber-50 text-amber-700',
+    construtora: 'bg-orange-50 text-orange-700',
+    gerenciadora: 'bg-blue-50 text-blue-700',
     cliente: 'bg-indigo-50 text-indigo-700',
     assinatura: 'bg-emerald-50 text-emerald-700',
+    assinatura_cliente: 'bg-purple-50 text-purple-700',
+    assinatura_gerenciadora: 'bg-purple-50 text-purple-700',
+    assinatura_construtora: 'bg-purple-50 text-purple-700',
 };
 
 export default function Responsaveis({

@@ -132,7 +132,28 @@
         </div>
         @if ($rdo->configuracao?->require_photos)
             <div class="section-title center">Relatório fotográfico</div>
-            <table>@forelse ($photos->chunk(2) as $row)<tr>@foreach ($row as $photo)<td class="photo-cell">@php $image = $photoDataUri($photo['path'] ?? null); @endphp @if ($image)<img src="{{ $image }}" alt="Registro da frente">@else<span class="muted">Imagem indisponível</span>@endif<div class="caption">{!! nl2br(e($photo['comment'] ?? $photo['legenda'] ?? '')) !!}</div></td>@endforeach @if ($row->count() === 1)<td class="photo-cell"></td>@endif</tr>@empty<tr><td class="activity muted">Nenhuma fotografia registrada nesta frente.</td></tr>@endforelse</table>
+            <table>
+                <thead><tr>
+                    <td style="width:50%"><strong>Nome do projeto</strong><br>{{ $contract?->description ?: $contract?->name }}</td>
+                    <td style="width:50%"><strong>Frente de serviço</strong><br>{{ $obra->nome }}</td>
+                </tr></thead>
+                <tbody>
+                    @forelse ($photos->chunk(2) as $row)
+                        <tr>
+                            @foreach ($row as $photo)
+                                <td class="photo-cell">
+                                    @php $image = $photoDataUri($photo['path'] ?? null); @endphp
+                                    @if ($image)<img src="{{ $image }}" alt="Registro da frente">@else<span class="muted">Imagem indisponível</span>@endif
+                                    <div class="caption">{!! nl2br(e($photo['comment'] ?? $photo['legenda'] ?? '')) !!}</div>
+                                </td>
+                            @endforeach
+                            @if ($row->count() === 1)<td class="photo-cell"></td>@endif
+                        </tr>
+                    @empty
+                        <tr><td colspan="2" class="activity muted">Nenhuma fotografia registrada nesta frente.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
         @endif
         <div class="section-title center">Equipe envolvida</div>
         <table class="team"><thead><tr>@for ($i = 0; $i < 3; $i++)<th style="width:7%">Código</th><th style="width:20%">Descrição</th><th style="width:6.33%">Quant.</th>@endfor</tr></thead><tbody>

@@ -195,7 +195,7 @@
 </tr>
 <tr>
 <td>Mobile</td>
-<td>Expo SDK 54 declarado, React Native 0.81.5, React 19.1 e TypeScript; <a href="../../../../mobile-rnc/package.json">package.json mobile</a></td>
+<td>Expo SDK 54 declarado, React Native 0.81.5, React 19.1 e TypeScript; <a href="../../../../sigworks-mobile/package.json">package.json mobile</a></td>
 </tr>
 <tr>
 <td>Qualidade</td>
@@ -245,8 +245,8 @@
 <td>Backend Laravel, frontend web, migrations, testes e infraestrutura principal</td>
 </tr>
 <tr>
-<td><code>mobile-rnc/</code></td>
-<td>Aplicativo SigWorks em Expo/React Native; o nome da pasta é histórico</td>
+<td><code>sigworks-mobile/</code></td>
+<td>Aplicativo SigWorks em Expo/React Native</td>
 </tr>
 <tr>
 <td><code>paperless-ngx-reference/</code></td>
@@ -1059,7 +1059,7 @@ rg -n 'workflow_snapshot|pdf_configuration_snapshot' app database/migrations
 </section>
 <section class="chapter" id="08-mobile" data-page><a class="source-md" href="markdown/08-mobile.md">Fonte em Markdown ↗</a><h1>08 · Aplicativo mobile SigWorks</h1>
 <h2>Projeto e responsabilidade</h2>
-<p>O app está em <a href="../../../../mobile-rnc/README.md">mobile-rnc</a>. O nome público é <strong>SigWorks</strong>; o slug Expo, identificadores nativos e alguns nomes de armazenamento permanecem históricos para preservar continuidade. Não troque bundle ID, package ou nome do SQLite apenas para renomear a interface: isso pode criar outro aplicativo ou ocultar rascunhos existentes.</p>
+<p>O app está em <a href="../../../../sigworks-mobile/README.md">sigworks-mobile</a>. O nome público é <strong>SigWorks</strong>; o slug Expo, identificadores nativos e alguns nomes de armazenamento permanecem históricos para preservar continuidade. Não troque bundle ID, package ou nome do SQLite apenas para renomear a interface: isso pode criar outro aplicativo ou ocultar rascunhos existentes.</p>
 <p>O escopo implementado é criação de RNC offline, preenchimento de RDO offline, sincronização e encaminhamento inicial do RDO. Análise, aprovação e assinatura continuam no sistema web. Exportar um bundle não significa ter gerado um APK/IPA ou testado um aparelho físico.</p>
 <h2>Arquivos centrais</h2>
 <div class="table-scroll"><table>
@@ -1071,43 +1071,43 @@ rg -n 'workflow_snapshot|pdf_configuration_snapshot' app database/migrations
 </thead>
 <tbody>
 <tr>
-<td><a href="../../../../mobile-rnc/App.tsx">App.tsx</a></td>
+<td><a href="../../../../sigworks-mobile/App.tsx">App.tsx</a></td>
 <td>Sessão, seleção de contrato, navegação, listas, formulários, fotos e sincronização</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/src/types.ts">src/types.ts</a></td>
+<td><a href="../../../../sigworks-mobile/src/types.ts">src/types.ts</a></td>
 <td>Tipos de sessão, bootstrap, formulários e rascunhos</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/src/config.ts">src/config.ts</a></td>
+<td><a href="../../../../sigworks-mobile/src/config.ts">src/config.ts</a></td>
 <td>Seleção da URL da API por plataforma/ambiente</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/src/services/sync.ts">src/services/sync.ts</a></td>
+<td><a href="../../../../sigworks-mobile/src/services/sync.ts">src/services/sync.ts</a></td>
 <td>Login, troca de tenant, bootstrap, payloads e envio</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/src/services/context.ts">src/services/context.ts</a></td>
+<td><a href="../../../../sigworks-mobile/src/services/context.ts">src/services/context.ts</a></td>
 <td>Chave de cache contextual e bloqueio de rascunho estrangeiro</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/src/storage/database.ts">src/storage/database.ts</a></td>
+<td><a href="../../../../sigworks-mobile/src/storage/database.ts">src/storage/database.ts</a></td>
 <td>SQLite local, configurações e estados de sincronização</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/app.json">app.json</a></td>
+<td><a href="../../../../sigworks-mobile/app.json">app.json</a></td>
 <td>Nome, ícones, splash, identificadores e projeto Expo</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/eas.json">eas.json</a></td>
+<td><a href="../../../../sigworks-mobile/eas.json">eas.json</a></td>
 <td>Perfis de build e ambiente da API</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/assets">assets</a></td>
+<td><a href="../../../../sigworks-mobile/assets">assets</a></td>
 <td>Ícones e splash SigWorks</td>
 </tr>
 <tr>
-<td><a href="../../../../mobile-rnc/scripts/test-mobile-sync.cjs">scripts/test-mobile-sync.cjs</a></td>
+<td><a href="../../../../sigworks-mobile/scripts/test-mobile-sync.cjs">scripts/test-mobile-sync.cjs</a></td>
 <td>Verificação dos payloads e isolamento sem API externa</td>
 </tr>
 </tbody>
@@ -1586,7 +1586,7 @@ echo json_encode([
 </tr>
 <tr>
 <td>Mobile</td>
-<td><code>npx tsc --noEmit</code> e <code>npm run test:sync</code>, dentro de <code>mobile-rnc</code></td>
+<td><code>npx tsc --noEmit</code> e <code>npm run test:sync</code>, dentro de <code>sigworks-mobile</code></td>
 </tr>
 <tr>
 <td>Empacotamento mobile</td>
@@ -15574,16 +15574,16 @@ echo json_encode([
 </ul>
 <h2>Mobile</h2>
 <ul>
-<li><a href="../../../../mobile-rnc/App.tsx">../mobile-rnc/App.tsx</a>.</li>
-<li><a href="../../../../mobile-rnc/app.json">../mobile-rnc/app.json</a>.</li>
-<li><a href="../../../../mobile-rnc/eas.json">../mobile-rnc/eas.json</a>.</li>
-<li><a href="../../../../mobile-rnc/package.json">../mobile-rnc/package.json</a>.</li>
-<li><a href="../../../../mobile-rnc/src/types.ts">../mobile-rnc/src/types.ts</a>.</li>
-<li><a href="../../../../mobile-rnc/src/config.ts">../mobile-rnc/src/config.ts</a>.</li>
-<li><a href="../../../../mobile-rnc/src/services/context.ts">../mobile-rnc/src/services/context.ts</a>.</li>
-<li><a href="../../../../mobile-rnc/src/services/sync.ts">../mobile-rnc/src/services/sync.ts</a>.</li>
-<li><a href="../../../../mobile-rnc/src/storage/database.ts">../mobile-rnc/src/storage/database.ts</a>.</li>
-<li><a href="../../../../mobile-rnc/scripts/test-mobile-sync.cjs">../mobile-rnc/scripts/test-mobile-sync.cjs</a>.</li>
+<li><a href="../../../../sigworks-mobile/App.tsx">../sigworks-mobile/App.tsx</a>.</li>
+<li><a href="../../../../sigworks-mobile/app.json">../sigworks-mobile/app.json</a>.</li>
+<li><a href="../../../../sigworks-mobile/eas.json">../sigworks-mobile/eas.json</a>.</li>
+<li><a href="../../../../sigworks-mobile/package.json">../sigworks-mobile/package.json</a>.</li>
+<li><a href="../../../../sigworks-mobile/src/types.ts">../sigworks-mobile/src/types.ts</a>.</li>
+<li><a href="../../../../sigworks-mobile/src/config.ts">../sigworks-mobile/src/config.ts</a>.</li>
+<li><a href="../../../../sigworks-mobile/src/services/context.ts">../sigworks-mobile/src/services/context.ts</a>.</li>
+<li><a href="../../../../sigworks-mobile/src/services/sync.ts">../sigworks-mobile/src/services/sync.ts</a>.</li>
+<li><a href="../../../../sigworks-mobile/src/storage/database.ts">../sigworks-mobile/src/storage/database.ts</a>.</li>
+<li><a href="../../../../sigworks-mobile/scripts/test-mobile-sync.cjs">../sigworks-mobile/scripts/test-mobile-sync.cjs</a>.</li>
 </ul>
 </section>
       <footer>SigWorks · Gerado de fontes locais. Consulte auditoria.json e validacao.json no pacote.</footer>

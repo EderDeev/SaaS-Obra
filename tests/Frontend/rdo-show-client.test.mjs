@@ -32,7 +32,7 @@ const React = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { createInertiaApp, router } = await import('@inertiajs/react');
 let submitted;
-router.post = (url, data, options) => { submitted = { url, data }; options?.onFinish?.(); };
+router.post = (url, data, options) => { submitted = { url, data, options }; options?.onFinish?.(); };
 const axios = (await import('axios')).default;
 axios.get = async () => ({ data: { unread_count: 0, items: [] } });
 const Show = (await import(pathToFileURL(resolve(output, 'Show.js')).href)).default;
@@ -62,7 +62,7 @@ const propsFor = editable => ({
         fill_party: 'construtora', fill_parties: ['construtora'], participating_parties: ['construtora', 'gerenciadora', 'cliente'],
         can_edit: editable, can_fill: editable, editable_obra_ids: editable ? [42, 43] : [], flow_obra_ids: [], flow_actions: {},
         submission_deadline_formatted: '30/10/2026', sections: {
-            42: { clima: { manha: 'ensolarado' }, mao_obra: { efetivos: { 1: '4', 7: '2' }, observacoes: 'Efetivo preservado' }, atividades: { atividades: [{ titulo: 'Assentamento de tubos', ocorrencia: '24 metros executados' }] }, comentarios: { construtora: 'Registro preservado da frente' } },
+            42: { clima: { manha: 'ensolarado', dia_impraticavel: '0' }, mao_obra: { efetivos: { 1: '4', 7: '2' }, observacoes: 'Efetivo preservado' }, atividades: { atividades: [{ titulo: 'Assentamento de tubos', ocorrencia: '24 metros executados' }] }, comentarios: { construtora: 'Registro preservado da frente' } },
         },
     },
 });
@@ -75,7 +75,7 @@ try {
         if (editable) props.rdo.activity_subjects = [{value:'engenharia',label:'Engenharia'}, {value:'seguranca_trabalho',label:'Segurança do trabalho'}, {value:'meio_ambiente',label:'Meio ambiente'}];
         if (scenario.startsWith('review')) Object.assign(props.rdo, {
             status: 'em_analise_gerenciadora', status_label: 'Na gerenciadora', active_stage: 'gerenciadora',
-            flow_obra_ids: [42, 43], flow_actions: { approve: { label: 'Aprovar', tone: 'success' }, return: { label: 'Rejeitar e devolver', comment_required: true } },
+            flow_obra_ids: [42, 43], flow_actions: { approve: { label: 'Aprovar', tone: 'success', comment_required: false }, return: { label: 'Rejeitar e devolver', comment_required: true } },
             can_manage_inspection: true, can_create_divergence: true, current_version: 1,
             manager_forward_ready: scenario === 'review',
         });
@@ -109,6 +109,9 @@ try {
         await new Promise(done => setTimeout(done, 150));
         assert.equal(errors.length, 0);
         assert.equal(panel(editable ? 'edit' : 'view').hidden, false);
+        const recordsPanel = panel(editable ? 'edit' : 'view').closest('.rdo-party-panel');
+        assert.equal(recordsPanel.dataset.rdoParty, 'construtora');
+        assert.equal(recordsPanel.querySelector('header h2').textContent, 'Registros da construtora');
         assert.ok(![...document.querySelectorAll('button')].some(button => button.textContent.includes('Preencher RDO')));
         assert.ok([...panel(editable ? 'edit' : 'view').querySelectorAll('details')].every(section => !section.open));
         const downloadButton = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Baixar PDF');
@@ -247,15 +250,14 @@ try {
             await waitFor(() => document.querySelector('[aria-label="Encaminhar RDO ao cliente"]'));
             const approveModal = document.querySelector('[aria-label="Encaminhar RDO ao cliente"]');
             assert.ok(!approveModal.textContent.includes('Título da divergência'));
-            await edit(approveModal.querySelector('textarea'), 'Serviços verificados e aprovados.');
-            await edit(approveModal.querySelectorAll('textarea')[1], 'Pavimentação conferida.');
+            assert.equal(approveModal.querySelectorAll('textarea').length, 0);
+            assert.equal(approveModal.querySelector('button[type="submit"]').textContent, 'Confirmar encaminhamento');
             assert.equal(approveModal.querySelector('[aria-label="Obras desta decisão"]').querySelectorAll('button').length, 0);
             approveModal.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
             await new Promise(done => setTimeout(done, 40));
             assert.equal(submitted.data.action, 'approve');
             assert.equal(submitted.data.divergencia, undefined);
-            assert.equal(submitted.data.comments_by_obra[42], 'Serviços verificados e aprovados.');
-            assert.equal(submitted.data.comments_by_obra[43], 'Pavimentação conferida.');
+            assert.equal(submitted.data.comments_by_obra, undefined);
             assert.deepEqual(submitted.data.obra_ids, [42, 43]);
             approveModal.querySelector('[aria-label="Fechar decisão"]').click();
             await waitFor(() => !document.querySelector('[aria-label="Encaminhar RDO ao cliente"]'));
@@ -379,6 +381,9 @@ try {
         }
         if (editable) {
             assert.ok(!/camada da gerenciadora|rastreabilidade/i.test(document.body.textContent));
+            const impracticable = [...panel('edit').querySelectorAll('label')]
+                .find(label => label.textContent.trim() === 'Dia impraticável').querySelector('input');
+            assert.equal(impracticable.checked, false, 'O valor salvo "0" não marca Dia impraticável.');
             const labor = panel('edit').querySelector('[aria-label="Mão de obra e subcontratadas"]');
             const equipment = panel('edit').querySelector('[aria-label="Equipamentos"]');
             assert.equal(labor.querySelector('[aria-label="Quantidade de Pedreiro"]').value, '4');
@@ -500,7 +505,115 @@ try {
         appRoot.unmount();
         console.log(`PASS: RDO ${scenario}: seleção de frentes, modal completo, fechar e cancelar`);
     }
+    for (const status of ['pendente_comprovacao', 'devolvido_construtora']) {
+        const props = propsFor(true);
+        Object.assign(props.rdo, {
+            status, workflow: { model: 'gerenciadora_construtora', review_parties: ['gerenciadora'] },
+            active_stage: 'construtora', flow_obra_ids: [42, 43],
+            flow_actions: { submit: { label: status === 'pendente_comprovacao' ? 'Enviar comprovação das frentes' : 'Enviar frentes para análise', tone: 'primary', comment_required: false } },
+        });
+        let correctionRoot;
+        await createInertiaApp({
+            page: { component: 'Tenant/Rdo/Show', props, url: location.pathname, version: 'test' }, resolve: () => Show,
+            setup: ({ el, App, props }) => { correctionRoot = createRoot(el); correctionRoot.render(React.createElement(App, props)); },
+        });
+        await waitFor(() => document.body.textContent.includes(props.rdo.flow_actions.submit.label));
+        [...document.querySelectorAll('button')].find(button => button.textContent.includes(props.rdo.flow_actions.submit.label)).click();
+        await waitFor(() => document.querySelector('[data-rdo-flow-confirmation]'));
+        const confirm = document.querySelector('[data-confirm-rdo-action]');
+        assert.equal(confirm.textContent, status === 'pendente_comprovacao' ? 'Confirmar envio da comprovação' : 'Confirmar reenvio');
+        submitted = null;
+        confirm.click();
+        await waitFor(() => submitted?.data.action === 'submit');
+        assert.equal(submitted.data.comment, '');
+        assert.deepEqual(submitted.data.obra_ids, [42, 43]);
+        assert.equal(submitted.options.preserveState, 'errors');
+        submitted.options.onError({ action: 'O prazo de envio terminou. Solicite a reabertura.' });
+        await waitFor(() => document.querySelector('[data-rdo-flow-confirmation] [role="alert"]'));
+        assert.ok(document.querySelector('[data-rdo-flow-confirmation]').textContent.includes('Solicite a reabertura'));
+        correctionRoot.unmount();
+    }
+    console.log('PASS: comprovação e reenvio das correções abrem a confirmação e enviam todas as frentes');
+    for (const state of ['incomplete', 'ready', 'archived']) {
+        const props = propsFor(state !== 'archived');
+        Object.assign(props.rdo, {
+            workflow: { model: 'gerenciadora', fill_parties: ['gerenciadora'], review_parties: [] },
+            fill_party: 'gerenciadora', fill_parties: ['gerenciadora'], participating_parties: ['gerenciadora'],
+            status: state === 'archived' ? 'arquivado' : 'rascunho',
+            flow_obra_ids: state === 'ready' ? [42, 43] : [],
+            flow_actions: state === 'ready' ? { submit: { label: 'Finalizar RDO', comment_required: false } } : {},
+        });
+        let soloRoot;
+        await createInertiaApp({
+            page: { component: 'Tenant/Rdo/Show', props, url: location.pathname, version: 'test' }, resolve: () => Show,
+            setup: ({ el, App, props }) => { soloRoot = createRoot(el); soloRoot.render(React.createElement(App, props)); },
+        });
+        await waitFor(() => document.querySelector('[data-workspace-mode="edit"]'));
+        await new Promise(done => setTimeout(done, 150));
+        const finalize = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Finalizar RDO');
+        if (state === 'ready') {
+            assert.ok(finalize);
+            assert.equal(finalize.disabled, false);
+            finalize.click();
+            await waitFor(() => document.querySelector('[data-rdo-flow-confirmation]'));
+            assert.ok(document.querySelector('[data-rdo-flow-confirmation]').textContent.includes('bloqueados para edição'));
+            assert.equal(document.querySelector('[data-confirm-rdo-action]').textContent, 'Confirmar finalização');
+            [...document.querySelectorAll('[data-rdo-flow-confirmation] button')].find(button => button.textContent === 'Cancelar').click();
+            await waitFor(() => !document.querySelector('[data-rdo-flow-confirmation]'));
+            finalize.click();
+            await waitFor(() => document.querySelector('[data-confirm-rdo-action]'));
+            submitted = null;
+            document.querySelector('[data-confirm-rdo-action]').click();
+            await waitFor(() => submitted?.data.action === 'submit');
+            assert.deepEqual(submitted.data.obra_ids, [42, 43]);
+        } else {
+            assert.equal(finalize, undefined);
+            if (state === 'archived') {
+                assert.ok(document.body.textContent.includes('RDO finalizado'));
+                assert.equal(document.querySelector('[data-workspace-mode="edit"]').hidden, true);
+            }
+        }
+        soloRoot.unmount();
+    }
+    console.log('PASS: gerenciadora finaliza todas as frentes com confirmação e consulta o RDO encerrado');
     const calendarOutput = resolve('tmp/rdo-calendar-ui-regression');
+    const parallelProps = propsFor(true);
+    Object.assign(parallelProps.rdo, {
+        status: 'em_analise_gerenciadora', active_stage: 'gerenciadora', fill_party: 'gerenciadora',
+        fill_parties: ['construtora', 'gerenciadora'], parallel_manager_filling: true, can_manage_inspection: true,
+        flow_obra_ids: [42, 43],
+        inspection_records: [{ id: 1, obra_id: 43, is_current_version: true, evidence: [{ url: '/evidencia.pdf', nome: 'evidencia.pdf', mime_type: 'application/pdf' }] }],
+    });
+    let parallelRoot;
+    await createInertiaApp({
+        page: { component: 'Tenant/Rdo/Show', props: parallelProps, url: location.pathname, version: 'test' }, resolve: () => Show,
+        setup: ({ el, App, props }) => { parallelRoot = createRoot(el); parallelRoot.render(React.createElement(App, props)); },
+    });
+    await waitFor(() => document.querySelector('[data-workspace-mode="edit"]'));
+    const managerPanel = document.querySelector('[data-workspace-mode="edit"]').closest('.rdo-party-panel');
+    assert.equal(managerPanel.dataset.rdoParty, 'gerenciadora');
+    assert.equal(managerPanel.querySelector('header h2').textContent, 'Registros da gerenciadora');
+    const managerSections = [...document.querySelectorAll('[data-workspace-mode="edit"] summary h2')].map(heading => heading.textContent);
+    assert.deepEqual(managerSections, ['Condições do tempo', 'Mão de obra', 'Equipamentos', 'Atividades', 'Comentários', 'Evidências']);
+    assert.equal(document.querySelector('[aria-label="Filtrar registros da gerenciadora por obra"]'), null);
+    const fronts = document.querySelector('[aria-label="Frentes de serviço"]').querySelectorAll('button');
+    await waitFor(() => fronts[0].getAttribute('aria-pressed') === 'true');
+    fronts[1].click();
+    await waitFor(() => fronts[1].getAttribute('aria-pressed') === 'true');
+    const evidenceSection = [...document.querySelectorAll('[data-workspace-mode="edit"] details')].find(section => section.querySelector('summary').textContent === 'Evidências');
+    assert.ok(evidenceSection.querySelector('a[href="/evidencia.pdf"]'));
+    const attachEvidence = [...evidenceSection.querySelectorAll('button')].find(button => button.textContent.includes('Anexar outros arquivos'));
+    assert.ok(attachEvidence, 'As evidências da análise ficam disponíveis junto ao preenchimento.');
+    attachEvidence.click();
+    await waitFor(() => document.querySelector('[role="dialog"][aria-label="Evidências da gerenciadora"]'));
+    const evidenceModal = document.querySelector('[role="dialog"][aria-label="Evidências da gerenciadora"]');
+    assert.equal(evidenceModal.querySelector('[aria-label="Obras do registro da gerenciadora"] button[aria-pressed="true"]').textContent, fronts[1].textContent);
+    assert.ok(evidenceModal.querySelector('input[type="file"]'));
+    assert.ok(!evidenceModal.textContent.includes('Adicionar atividade'));
+    assert.equal(evidenceModal.querySelector('textarea[aria-label="Comentário do registro da gerenciadora"]'), null);
+    parallelRoot.unmount();
+    console.log('PASS: preenchimento em análise e modal de evidências sem campos repetidos');
+
     await build({ logLevel: 'error', build: { ssr: 'resources/js/Pages/Tenant/Rdo/Calendar.jsx', outDir: calendarOutput } });
     const Calendar = (await import(pathToFileURL(resolve(calendarOutput, 'Calendar.js')).href)).default;
     const preferenceKey = 'sigworks:rdo:view:rdo-ui-test:1';
