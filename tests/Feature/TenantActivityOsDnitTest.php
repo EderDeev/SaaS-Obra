@@ -76,18 +76,35 @@ class TenantActivityOsDnitTest extends TestCase
         $replacement = $this->order($this->contract, '002/2026', 'Projeto executivo');
         $this->patch(route('tenant.activities.update', [$this->tenant, $activity]), [...$this->payload(), 'os_dnit_order_id' => $replacement->id])->assertSessionHasNoErrors();
         $this->assertSame($replacement->id, $activity->fresh()->os_dnit_order_id);
+        $this->patch(route('tenant.activities.update', [$this->tenant, $activity]), [...$this->payload(), 'os_dnit_order_id' => ''])->assertSessionHasNoErrors();
+        $this->assertNull($activity->fresh()->os_dnit_order_id);
+        $this->assertSame('os_dnit', $activity->fresh()->category);
         $this->patch(route('tenant.activities.update', [$this->tenant, $activity]), [...$this->payload(), 'category' => 'service_order'])->assertSessionHasNoErrors();
         $this->assertNull($activity->fresh()->os_dnit_order_id);
     }
 
-    public function test_missing_foreign_contract_foreign_tenant_and_deleted_orders_are_rejected_on_create_and_edit(): void
+    public function test_os_activity_can_be_created_without_a_reference_or_access_to_orders(): void
+    {
+        $this->order->delete();
+        $this->link->update(['os_dnit_permissions' => []]);
+        foreach ([null, ''] as $reference) {
+            $this->post(route('tenant.activities.store', $this->tenant), [...$this->payload(), 'os_dnit_order_id' => $reference])
+                ->assertRedirect()->assertSessionHasNoErrors();
+        }
+        $payload = $this->payload();
+        unset($payload['os_dnit_order_id']);
+        $this->post(route('tenant.activities.store', $this->tenant), $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(3, Activity::where('category', 'os_dnit')->whereNull('os_dnit_order_id')->count());
+    }
+
+    public function test_invalid_foreign_contract_foreign_tenant_and_deleted_orders_are_rejected_on_create_and_edit(): void
     {
         $foreignTenant = Tenant::create(['name' => 'Outro tenant', 'slug' => 'other-dnit', 'plan' => 'starter', 'status' => 'active']);
         $foreignContract = $foreignTenant->contracts()->create(['code' => 'foreign', 'name' => 'foreign', 'status' => 'active']);
         $foreign = $this->order($foreignContract, '001/2026', 'Privada');
         $deleted = $this->order($this->contract, '002/2026', 'Excluída');
         $deleted->delete();
-        foreach ([null, $this->otherOrder->id, $foreign->id, $deleted->id] as $id) {
+        foreach ([999999, $this->otherOrder->id, $foreign->id, $deleted->id] as $id) {
             $this->post(route('tenant.activities.store', $this->tenant), [...$this->payload(), 'os_dnit_order_id' => $id])->assertSessionHasErrors('os_dnit_order_id');
         }
         $this->assertDatabaseCount('activities', 0);

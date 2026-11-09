@@ -62,7 +62,7 @@ export default function ActivityOsDnitSelect({ tenantSlug, contractId, value, on
         <label htmlFor={id} className="eyebrow mb-1 block">Ordem de Serviço</label>
         <div className="sig-input flex min-w-0 items-center gap-2">
             <Search size={15} className="shrink-0 text-[var(--ink-500)]" />
-            <input id={id} role="combobox" aria-required="true" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list"
+            <input id={id} role="combobox" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list"
                 aria-activedescendant={open && active >= 0 ? `${id}-option-${active}` : undefined}
                 aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}
                 disabled={disabled || !contractId} value={open ? query : label} maxLength={120}
