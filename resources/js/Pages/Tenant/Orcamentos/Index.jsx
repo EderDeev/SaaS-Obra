@@ -1,6 +1,6 @@
-import { Link, usePage } from '@inertiajs/react';
-import { CalendarClock, ClipboardList, Eye, FilePlus2, FolderOpen, Plane, Scale, Upload, UsersRound } from 'lucide-react';
-import { useState } from 'react';
+import { Link, router, usePage } from '@inertiajs/react';
+import { Eye, FilePlus2, FolderOpen, Plane, Upload, UsersRound } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { startBudgetTour } from '@/Components/BudgetTour';
 import BudgetAccessDialog from './Partials/BudgetAccessDialog';
 import OrcamentoShell from './Partials/OrcamentoShell';
@@ -8,12 +8,37 @@ import OrcamentoShell from './Partials/OrcamentoShell';
 export default function OrcamentosIndex({
     tenant,
     filteredContract = null,
-    orcamentos = [],
-    stats = {},
+    orcamentos = { data: [], links: [] },
+    filters = {},
+    clients = [],
+    contracts = [],
+    types = [],
     canCreateOrcamentos = false,
     canImportOrcamentos = false,
 }) {
     const page = usePage();
+    const [search, setSearch] = useState(filters.search || '');
+    const [tipo, setTipo] = useState(filters.tipo || '');
+    const [client, setClient] = useState(filters.cliente_empresa_id || '');
+    const [contract, setContract] = useState(filters.contract_id || '');
+    const previousSearch = useRef(search);
+    useEffect(() => {
+        const changedSearch = previousSearch.current !== search;
+        previousSearch.current = search;
+        if (search === (filters.search || '') && tipo === (filters.tipo || '')
+            && String(client) === String(filters.cliente_empresa_id || '')
+            && String(contract) === String(filters.contract_id || '')) return;
+        let cancel;
+        const timer = setTimeout(() => router.get(route('tenant.orcamentos.index', tenant.slug), {
+            search, tipo, cliente_empresa_id: client, contract_id: contract,
+        }, { preserveState: true, preserveScroll: true, replace: true,
+            onCancelToken: token => { cancel = token; } }), changedSearch ? 350 : 0);
+        return () => { clearTimeout(timer); cancel?.cancel(); };
+    }, [search, tipo, client, contract, tenant.slug]);
+    useEffect(() => {
+        setSearch(filters.search || ''); setTipo(filters.tipo || '');
+        setClient(filters.cliente_empresa_id || ''); setContract(filters.contract_id || '');
+    }, [filters.search, filters.tipo, filters.cliente_empresa_id, filters.contract_id]);
     const [accessBudget, setAccessBudget] = useState(null);
 
     return (
@@ -32,7 +57,7 @@ export default function OrcamentosIndex({
 
             {filteredContract && (
                 <div className="sig-card mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
-                    <p>Orçamentos utilizados na medição de <strong>{filteredContract.code} · {filteredContract.name}</strong></p>
+                    <p>Orçamentos do contrato <strong>{filteredContract.code} · {filteredContract.name}</strong></p>
                     <Link className="sig-btn sig-btn-secondary" href={route('tenant.orcamentos.index', tenant.slug)}>
                         Ver todos os orçamentos
                     </Link>
@@ -64,26 +89,13 @@ export default function OrcamentosIndex({
                 </div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-3">
-                <InfoCard
-                    description={filteredContract ? 'Orçamentos utilizados na medição do contrato.' : 'Total de orçamentos registrados no tenant.'}
-                    icon={ClipboardList}
-                    title="Total"
-                    value={stats.total ?? 0}
-                />
-                <InfoCard
-                    description="Orçamentos em fase de montagem."
-                    icon={CalendarClock}
-                    title="Em elaboração"
-                    value={stats.draft ?? 0}
-                />
-                <InfoCard
-                    description="Orçamentos liberados para uso."
-                    icon={Scale}
-                    title="Finalizados"
-                    value={stats.closed ?? 0}
-                />
-            </div>
+            <section className="sig-card grid gap-3 p-4 md:grid-cols-2 lg:grid-cols-4" aria-label="Filtros dos orçamentos">
+                <label className="text-xs">Código ou descrição<input className="sig-input mt-1" value={search} onChange={event => setSearch(event.target.value)} placeholder="Pesquisar orçamento" /></label>
+                <label className="text-xs">Contrato<select className="sig-input mt-1" value={contract} onChange={event => { setContract(event.target.value); setClient(''); }}><option value="">Todos os contratos</option>{contracts.map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select></label>
+                <label className="text-xs">Tipo<select className="sig-input mt-1" value={tipo} onChange={event => setTipo(event.target.value)}><option value="">Todos os tipos</option>{types.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+                <label className="text-xs">Cliente<select className="sig-input mt-1" value={client} onChange={event => setClient(event.target.value)}><option value="">Todos os clientes</option>{clients.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>
+                <div className="flex justify-end md:col-span-2 lg:col-span-4"><button className="sig-btn sig-btn-secondary" type="button" onClick={() => { setSearch(''); setTipo(''); setClient(''); setContract(''); }}>Limpar filtros</button></div>
+            </section>
 
             <section className="sig-card mt-5 overflow-hidden">
                 <header className="border-b border-[var(--border)] px-5 py-4">
@@ -93,7 +105,7 @@ export default function OrcamentosIndex({
                     </p>
                 </header>
 
-                {orcamentos.length === 0 ? (
+                {orcamentos.data.length === 0 ? (
                     <div className="p-8 text-center">
                         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
                             <FolderOpen size={22} />
@@ -105,7 +117,7 @@ export default function OrcamentosIndex({
                     </div>
                 ) : (
                     <div className="divide-y divide-[var(--border)]">
-                        {orcamentos.map((orcamento) => (
+                        {orcamentos.data.map((orcamento) => (
                             <article
                                 key={orcamento.id}
                                 className="grid gap-4 px-5 py-4 lg:grid-cols-[120px_minmax(220px,1.5fr)_minmax(180px,1fr)_minmax(160px,0.8fr)_minmax(180px,1fr)] lg:items-center"
@@ -176,6 +188,10 @@ export default function OrcamentosIndex({
                 )}
             </section>
 
+            {orcamentos.last_page > 1 && <nav className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-label="Paginação dos orçamentos">
+                <span className="text-xs text-[var(--ink-500)]">{orcamentos.from}–{orcamentos.to} de {orcamentos.total} orçamentos</span>
+                <div className="flex flex-wrap gap-2">{orcamentos.links.map((link, index) => link.url ? <Link key={index} className={`sig-btn ${link.active ? 'sig-btn-primary' : 'sig-btn-secondary'}`} href={link.url} preserveScroll aria-current={link.active ? 'page' : undefined} dangerouslySetInnerHTML={{ __html: link.label }} /> : <span key={index} className="sig-btn sig-btn-secondary opacity-50" dangerouslySetInnerHTML={{ __html: link.label }} />)}</div>
+            </nav>}
             {accessBudget && (
                 <BudgetAccessDialog
                     key={accessBudget.id}
@@ -185,22 +201,5 @@ export default function OrcamentosIndex({
                 />
             )}
         </OrcamentoShell>
-    );
-}
-
-function InfoCard({ description, icon: Icon, title, value }) {
-    return (
-        <article className="sig-card p-5">
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    <span className="eyebrow">{title}</span>
-                    <strong className="mono mt-3 block text-3xl text-[var(--ink-900)]">{value}</strong>
-                </div>
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
-                    <Icon size={20} />
-                </span>
-            </div>
-            <p className="mt-2 text-sm leading-6 text-[var(--ink-500)]">{description}</p>
-        </article>
     );
 }

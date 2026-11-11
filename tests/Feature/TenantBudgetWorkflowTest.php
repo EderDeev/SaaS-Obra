@@ -17,6 +17,28 @@ class TenantBudgetWorkflowTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_auxiliary_rounding_and_source_precision_are_budget_specific(): void
+    {
+        [$tenant, $admin] = $this->tenantWithAdmin('aux-rounding');
+        $attrs = ['tenant_id' => $tenant->id, 'created_by_id' => $admin->id, 'is_global' => false,
+            'descricao' => 'Composição de teste', 'tipo_composicao' => 'servico', 'unidade' => 'UN', 'uf' => 'PA', 'modelo' => 'PROPRIA', 'metodo_calculo' => 'truncate_2'];
+        $aux = \App\Models\OrcamentoComposicao::create([...$attrs, 'codigo' => 'AUX', 'preco_onerado' => 2.345, 'preco_desonerado' => 2.345]);
+        $parent = \App\Models\OrcamentoComposicao::create([...$attrs, 'codigo' => 'PAI', 'preco_onerado' => 7.035, 'preco_desonerado' => 7.035]);
+        $parent->items()->create(['tenant_id' => $tenant->id, 'created_by_id' => $admin->id, 'item_type' => 'composicao',
+            'child_composicao_id' => $aux->id, 'codigo' => 'AUX', 'descricao' => 'Auxiliar', 'tipo' => 'servico', 'unidade' => 'UN', 'base' => 'PROPRIA',
+            'coeficiente' => 3, 'preco_unitario_onerado' => 2.345, 'preco_unitario_desonerado' => 2.345, 'preco_onerado' => 7.035, 'preco_desonerado' => 7.035]);
+        foreach (['round_all_2' => '7.040000', 'round_compositions_2' => '7.050000', 'none' => '7.035000'] as $rule => $expected) {
+            $budget = $this->budget($tenant, $admin, 'AUX-'.$rule, ['arredondamento' => $rule]);
+            $stage = $this->stage($tenant, $budget, $admin, '1', 'Teste');
+            $this->actingAs($admin)->post(route('tenant.orcamentos.etapas.composicoes.store', [$tenant, $budget, $stage]), [
+                'orcamento_composicao_id' => $parent->id, 'quantidade' => '1', 'aplicar_bdi' => false,
+            ])->assertSessionHasNoErrors();
+            $this->assertSame($expected, $budget->itens()->firstOrFail()->valor_unitario_desonerado);
+        }
+        $this->assertSame('2.345000', $aux->fresh()->preco_desonerado);
+        $this->assertSame('7.035000', $parent->fresh()->preco_desonerado);
+    }
+
     public function test_rounding_methods_change_unit_and_total_values(): void
     {
         [$tenant, $admin] = $this->tenantWithAdmin('rounding-lab');
@@ -143,6 +165,7 @@ class TenantBudgetWorkflowTest extends TestCase
     public function test_every_step_two_configuration_can_create_a_budget(): void
     {
         [$tenant, $admin] = $this->tenantWithAdmin('step-two-create-matrix');
+        $contract = $tenant->contracts()->create(['code' => 'MATRIX', 'name' => 'Contrato de testes']);
         $roundingMethods = [
             'round_all_2',
             'round_compositions_2',
@@ -165,6 +188,7 @@ class TenantBudgetWorkflowTest extends TestCase
                         $this->actingAs($admin)
                             ->post(route('tenant.orcamentos.store', $tenant), [
                                 'codigo' => $code,
+                                'contract_id' => $contract->id,
                                 'descricao' => "Cenario {$code}",
                                 'categoria' => 'Outros',
                                 'permitir_insumos_preco_zerado' => false,
@@ -280,6 +304,7 @@ class TenantBudgetWorkflowTest extends TestCase
     public function test_bdi_percentage_rejects_invalid_or_out_of_range_values(): void
     {
         [$tenant, $admin] = $this->tenantWithAdmin('step-two-bdi-validation');
+        $contract = $tenant->contracts()->create(['code' => 'BDI', 'name' => 'Validação do BDI']);
 
         foreach (['-0,01', '100,01', 'abc', '1.000,00'] as $index => $invalidRate) {
             $this->actingAs($admin)
@@ -288,6 +313,7 @@ class TenantBudgetWorkflowTest extends TestCase
                     'descricao' => 'Cenario com BDI invalido',
                     'categoria' => 'Outros',
                     'permitir_insumos_preco_zerado' => false,
+                    'contract_id' => $contract->id,
                     'arredondamento' => 'truncate_all_2',
                     'encargos_sociais' => 'desonerado',
                     'bdi_tipo' => 'unit_price',

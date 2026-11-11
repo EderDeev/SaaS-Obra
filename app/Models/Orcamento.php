@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'tenant_id',
+    'contract_id',
     'created_by_id',
     'closed_by_id',
     'cliente_empresa_id',
@@ -69,7 +70,7 @@ class Orcamento extends Model
             ->where('contract_id', $contract->id)->select('source_orcamento_id');
 
         return $query->where('orcamentos.tenant_id', $contract->tenant_id)
-            ->where(fn (Builder $budgets) => $budgets->whereIn('orcamentos.id', $items)
+            ->where(fn (Builder $budgets) => $budgets->where('orcamentos.contract_id', $contract->id)->orWhereIn('orcamentos.id', $items)
                 ->orWhereIn('orcamentos.id', $additives));
     }
 

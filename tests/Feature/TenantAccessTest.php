@@ -324,14 +324,15 @@ class TenantAccessTest extends TestCase
             ->assertSee('Tenant\/Tutorials\/Index', false)
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Tenant/Tutorials/Index')
-                ->has('tutorials', 18)
-                ->where('tutorials.6.id', 'atividades')
-                ->where('tutorials.12.id', 'documentacao')
-                ->where('tutorials.13.id', 'projetos')
-                ->where('tutorials.16.id', 'os-dnit')
-                ->where('tutorials.16.route', 'tenant.os-dnit.orders.index')
-                ->where('tutorials.17.id', 'qualidade-ic')
-                ->where('tutorials.17.route', 'tenant.qualidade.ic.index'));
+                ->has('tutorials', 19)
+                ->where('tutorials.0.id', 'sigworks')
+                ->where('tutorials.7.id', 'atividades')
+                ->where('tutorials.13.id', 'documentacao')
+                ->where('tutorials.14.id', 'projetos')
+                ->where('tutorials.17.id', 'os-dnit')
+                ->where('tutorials.17.route', 'tenant.os-dnit.orders.index')
+                ->where('tutorials.18.id', 'qualidade-ic')
+                ->where('tutorials.18.route', 'tenant.qualidade.ic.index'));
     }
 
     public function test_tutorials_describe_current_contract_rdo_rnc_and_ic_rules(): void
@@ -412,6 +413,7 @@ class TenantAccessTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('tenant.orcamentos.store', $tenant), [
+                'contract_id' => $tenant->contracts()->create(['code' => 'ORC-CONTRACT', 'name' => 'Contrato do orçamento', 'cliente_empresa_id' => $cliente->id])->id,
                 'codigo' => '00000001',
                 'descricao' => 'Orcamento executivo',
                 'cliente_empresa_id' => $cliente->id,

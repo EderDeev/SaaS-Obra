@@ -12,6 +12,7 @@ class TutorialCatalogTest extends TestCase
     {
         $guides = collect(TutorialCatalog::all());
         $expected = [
+            'sigworks',
             'primeiros-passos',
             'administracao-plataforma',
             'visao-geral',

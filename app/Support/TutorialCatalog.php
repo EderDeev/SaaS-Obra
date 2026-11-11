@@ -8,6 +8,22 @@ class TutorialCatalog
     {
         return [
             self::guide(
+                'sigworks', 'Comece por aqui', 'SigWorks', 'Building2',
+                'SigWorks', 'dashboard', 'tenant.dashboard',
+                'Conheça a organização do sistema: diretorias, contratos, usuários, módulos e indicadores.',
+                'Todos os usuários', ['Uma conta com acesso ao sistema.'],
+                [
+                    ['Tenants / Diretorias', 'Cada tenant representa uma diretoria, com seu contexto de contratos e acessos. As empresas participantes são cadastradas nos contratos.'],
+                    ['Contratos', 'O contrato reúne as empresas, obras, equipe e parametrizações utilizadas na operação. Cada contrato pode utilizar os módulos de que precisa.'],
+                    ['Usuários', 'Cliente, gerenciadora e construtora participam conforme os vínculos e permissões definidos. Uma conta pode acessar mais de uma diretoria e contrato quando autorizada.'],
+                    ['Módulos', 'Atividades, orçamentos, financeiro, medição, Ordens de Serviço, RDO, IC, RNC, projetos e documentação apoiam o acompanhamento do contrato.'],
+                    ['Indicadores', 'A operação de cada módulo gera informações para acompanhar a evolução, as pendências e os resultados dos contratos.'],
+                ],
+                ['Confira a diretoria e o contrato selecionados antes de trabalhar.'],
+                'Entenda onde os dados ficam organizados e como a equipe participa dos contratos.',
+                ['os-dnit', 'diario-obra', 'qualidade-rnc'], ['sigworks', 'arquitetura', 'diretoria', 'tenant'], assistant: false,
+            ),
+            self::guide(
                 'primeiros-passos', 'Comece por aqui', 'Ordem recomendada de configuração', 'BookOpen',
                 'Visão geral', 'dashboard', 'tenant.dashboard',
                 'Prepare a diretoria, os contratos e os acessos para iniciar a operação.',
@@ -132,7 +148,7 @@ class TutorialCatalog
             self::guide(
                 'atividades', 'Gestão', 'Atividades e checklists', 'Activity',
                 'Atividades', 'activities', 'tenant.activities.index',
-                'Organize tarefas comuns ou checklists em um quadro com responsáveis, comunicação e métricas.',
+                'Crie atividades ou checklists e acompanhe a execução de A fazer até Concluída.',
                 'Equipes operacionais e gestores',
                 ['Usuários vinculados ao contrato.', 'Permissão de visualizar atividades.'],
                 [

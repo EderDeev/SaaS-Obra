@@ -22,6 +22,7 @@ export default function TutorialWalkthrough({ tutorial, step }) {
     const phases = getTutorialScenes(tutorial, step);
     const phase = phases[active];
     const multiple = phases.length > 1;
+    const choosingActivityType = tutorial.id === 'atividades' && step.id === 'atividades-create';
     const evidence = phase.mode === 'evidence';
     const decisionStage = phase.mode === 'decision';
     const forwardReview = decisionStage && /encaminhar/i.test(phase.action || '');
@@ -30,8 +31,8 @@ export default function TutorialWalkthrough({ tutorial, step }) {
         ? step.role === 'Cliente' ? step.modelLabel?.includes('Construtora') ? ['Gerenciadora', 'Construtora'] : ['Gerenciadora'] : ['Construtora']
         : [];
     return <section className="tutorial-guided-walkthrough" data-tutorial-walkthrough={tutorial.id} aria-label={`Passo a passo: ${step.title}`}>
-        {multiple && <nav className="tutorial-walkthrough-tabs" aria-label="Passos da etapa">{phases.map((item, index) => <button type="button" key={item.label} aria-pressed={active === index} onClick={() => setActive(index)}>{item.label}</button>)}</nav>}
-        <div className="tutorial-walkthrough-heading" aria-live="polite">{multiple && <span>{active + 1}</span>}<div><h3>{phase.title}</h3>{phase.description && <p>{phase.description}</p>}</div></div>
+        {multiple && <nav className="tutorial-walkthrough-tabs" aria-label={choosingActivityType ? 'Tipo de atividade' : 'Passos da etapa'}>{phases.map((item, index) => <button type="button" key={item.label} aria-pressed={active === index} onClick={() => setActive(index)}>{item.label}</button>)}</nav>}
+        <div className="tutorial-walkthrough-heading" aria-live="polite">{multiple && !choosingActivityType && <span>{active + 1}</span>}<div><h3>{phase.title}</h3>{phase.description && <p>{phase.description}</p>}</div></div>
         <div className="tutorial-example-fields" data-guided-phase={active}>
             {phase.fields.filter(([label]) => !(evidence && ['Resultado', 'Motivo'].includes(label))).map(([label, value]) => <ExampleField key={label} label={label} value={value} wide={value.length > 42} multiline={value.length > 42} />)}
             {evidence && <>
@@ -47,6 +48,6 @@ export default function TutorialWalkthrough({ tutorial, step }) {
             {phase.action && <div className="tutorial-example-actions wide"><button type="button" disabled className="sig-btn sig-btn-primary sig-btn-sm"><CheckCircle size={16} />{decisionStage ? decision === 'Devolver' ? 'Confirmar devolução' : forwardReview ? 'Confirmar envio' : 'Confirmar aprovação' : phase.action}</button></div>}
 
         </div>
-        {multiple && <div className="tutorial-walkthrough-navigation"><span>Passo {active + 1} de {phases.length}</span><div><button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" disabled={active === 0} onClick={() => setActive(value => value - 1)}><ArrowLeft size={15} />Voltar</button><button type="button" className="sig-btn sig-btn-primary sig-btn-sm" disabled={active === phases.length - 1} onClick={() => setActive(value => value + 1)}>Próximo<ArrowRight size={15} /></button></div></div>}
+        {multiple && !choosingActivityType && <div className="tutorial-walkthrough-navigation"><span>Passo {active + 1} de {phases.length}</span><div><button type="button" className="sig-btn sig-btn-secondary sig-btn-sm" disabled={active === 0} onClick={() => setActive(value => value - 1)}><ArrowLeft size={15} />Voltar</button><button type="button" className="sig-btn sig-btn-primary sig-btn-sm" disabled={active === phases.length - 1} onClick={() => setActive(value => value + 1)}>Próximo<ArrowRight size={15} /></button></div></div>}
     </section>;
 }

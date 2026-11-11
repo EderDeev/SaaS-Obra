@@ -1,0 +1,19 @@
+.quality-tutorial-nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.quality-tutorial-nav button{padding:8px 14px;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--ink-600);background:white}
+.quality-tutorial-nav button[aria-pressed=true]{color:var(--primary);background:var(--primary-50);border-color:var(--primary);font-weight:600}
+.quality-tutorial-nav button:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+.quality-tutorial>.os-tutorial-panel{margin-bottom:26px;scroll-margin-top:90px}
+.quality-overview-scroll{overflow-x:auto;padding:5px 0 15px}
+.quality-overview{position:relative;aspect-ratio:980/660;min-width:760px;margin:0 8px}
+.quality-overview-wires{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.quality-overview-wires text{font-size:12px;fill:var(--ink-600);paint-order:stroke;stroke:white;stroke-width:7px;stroke-linejoin:round}
+.quality-overview .quality-overview-node{position:absolute;grid-area:auto;width:21.43%;height:18.18%;min-height:0;padding:10px;display:flex;flex-direction:column;justify-content:center;gap:6px;cursor:default}
+.quality-overview-node strong{font-size:12px}.quality-overview-node small{font-size:10px;color:var(--ink-500)}
+.quality-overview-node.warning{background:#fffbeb;border-color:#f5ce76;color:#a16207}
+.quality-overview-node.danger{background:#fff1f2;border-color:#fda4af;color:#be123c}
+.quality-overview-node:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+.quality-overview-node .os-tutorial-tooltip{top:calc(100% + 8px);bottom:auto;z-index:10;width:250px}
+.quality-overview-node.danger .os-tutorial-tooltip{left:auto;right:0;transform:none}
+.quality-overview-node[data-quality-node=fim-ic] .os-tutorial-tooltip{bottom:calc(100% + 8px);top:auto}
+.quality-overview-node.warning>svg,.quality-overview-node.danger>svg{color:inherit}
+@media(max-width:540px){.quality-tutorial .os-tutorial-toolbar{align-items:flex-start;gap:8px;flex-direction:column}.quality-overview-scroll{padding-bottom:20px}}
