@@ -38,6 +38,7 @@ export default function CreateOrcamento({ tenant, options = {} }) {
     const form = useForm({
         codigo: options.nextCode ?? '',
         descricao: '',
+        contract_id: '',
         cliente_empresa_id: '',
         categoria: options.categories?.find((category) => category.value === 'Unidades habitacionais - Construcao')?.value
             ?? options.categories?.[0]?.value
@@ -53,11 +54,17 @@ export default function CreateOrcamento({ tenant, options = {} }) {
 
     const updateField = (field, value) => {
         form.clearErrors(field);
+        if (field === 'contract_id') {
+            form.clearErrors('cliente_empresa_id');
+            form.setData(data => ({ ...data, contract_id: value, cliente_empresa_id: '' }));
+            return;
+        }
         form.setData(field, value);
     };
 
     const validateStepOne = () => {
         const errors = {};
+        if (!form.data.contract_id) errors.contract_id = 'Selecione o contrato.';
 
         if (!form.data.codigo.trim()) {
             errors.codigo = 'Informe o código do orçamento.';
@@ -157,7 +164,7 @@ export default function CreateOrcamento({ tenant, options = {} }) {
                 onError: (serverErrors) => {
                     form.setError(serverErrors);
 
-                    const stepOneFields = ['codigo', 'descricao', 'cliente_empresa_id', 'categoria', 'prazo_entrega_at'];
+                    const stepOneFields = ['codigo', 'descricao', 'contract_id', 'cliente_empresa_id', 'categoria', 'prazo_entrega_at'];
                     const stepTwoFields = ['arredondamento', 'encargos_sociais', 'bdi_tipo', 'bdi_percentual'];
                     const hasStepOneError = stepOneFields.some((field) => Boolean(serverErrors[field]));
                     const hasStepTwoError = stepTwoFields.some((field) => Boolean(serverErrors[field]));
@@ -190,7 +197,8 @@ export default function CreateOrcamento({ tenant, options = {} }) {
                 {step === 1 && (
                     <GeneralStep
                         categories={options.categories ?? []}
-                        clients={options.clients ?? []}
+                        contracts={options.contracts ?? []}
+                        clients={(options.contracts ?? []).find(contract => String(contract.id) === String(form.data.contract_id))?.clients ?? []}
                         form={form}
                         onChange={updateField}
                         onNext={() => goToStep(2)}
@@ -264,7 +272,7 @@ function StepTabs({ step, onStepChange }) {
     );
 }
 
-function GeneralStep({ categories, clients, form, onChange, onNext }) {
+function GeneralStep({ categories, contracts, clients, form, onChange, onNext }) {
     return (
         <section className="p-5">
             <div className="grid gap-4 lg:grid-cols-3">
@@ -287,10 +295,17 @@ function GeneralStep({ categories, clients, form, onChange, onNext }) {
                     />
                 </Field>
 
+                <Field label="Contrato*" error={form.errors.contract_id}>
+                    <select className="sig-input" value={form.data.contract_id} onChange={event => onChange('contract_id', event.target.value)}>
+                        <option value="">Selecione o contrato</option>
+                        {contracts.map(contract => <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>)}
+                    </select>
+                </Field>
                 <Field label="Cliente" error={form.errors.cliente_empresa_id}>
                     <select
                         className="sig-input"
                         value={form.data.cliente_empresa_id}
+                        disabled={!form.data.contract_id}
                         onChange={(event) => onChange('cliente_empresa_id', event.target.value)}
                     >
                         <option value="">Selecione o cliente</option>

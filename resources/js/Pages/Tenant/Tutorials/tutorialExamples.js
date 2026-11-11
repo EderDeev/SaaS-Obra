@@ -88,5 +88,5 @@ export function getWalkthroughExample(tutorial, step) {
 // These nodes describe system behavior or a resulting state, rather than a user action.
 export const informationalSteps = {
     'orcamentos': [4, 5], 'administracao-plataforma': [2], 'atividades': [5], 'documentacao': [1], 'notificacoes-perfil': [2], 'assistente-deming': [5],
-    'qualidade-rnc': [6], 'qualidade-ic': [4],
+    'qualidade-rnc': [1, 5, 6], 'qualidade-ic': [1, 3, 4],
 };

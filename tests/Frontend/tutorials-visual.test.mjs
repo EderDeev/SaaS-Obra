@@ -26,12 +26,17 @@ const root=createRoot(document.getElementById('app'),{onUncaughtError:error=>err
 const wait=async predicate=>{for(let n=0;n<100;n++){if(errors.length)throw errors[0];if(predicate())return;await new Promise(done=>setTimeout(done,10));}assert.fail('Estado da interface não estabilizou');};
 const pointer=(element,type,pointerType='mouse',relatedTarget=null)=>{const event=new window.MouseEvent(type,{bubbles:true,relatedTarget});Object.defineProperty(event,'pointerType',{value:pointerType});element.dispatchEvent(event);};
 let checked=0;
-assert.equal(guides.length,18);
+assert.equal(guides.length,19);
 for(const guide of guides){
  root.render(React.createElement(Visual,{key:guide.id,tutorial:guide}));
  await wait(()=>document.querySelector('.os-tutorial')?.getAttribute('aria-label')===(guide.id==='os-dnit'?'Tutorial visual de Ordem de Serviço':`Tutorial visual: ${guide.title}`));
  const cards=[...document.querySelectorAll('[data-flow-index],[data-os-node]')];
  assert.ok(cards.length>=2,guide.id);
+ if(guide.id==='atividades'){
+  assert.deepEqual(cards.map(card=>card.querySelector('strong').textContent),['Atividade ou checklist','Visibilidade','Fluxo da atividade','Métricas']);
+  assert.deepEqual([...document.querySelectorAll('.tutorial-flow-statuses>span')].map(status=>status.textContent),['A fazer','Em andamento','Em revisão','Concluída']);
+  assert.equal(cards.at(-1).dataset.informational,'true');
+ }
  assert.equal(document.querySelector('.os-tutorial-route'),null,'A faixa inferior deve estar removida');
  if(guide.id==='os-dnit'){assert.equal(document.querySelectorAll('[data-os-node][aria-haspopup=dialog]').length,3);assert.equal(document.querySelectorAll('[data-informational=true]').length,5);}
  assert.equal(document.querySelectorAll('.os-tutorial-edge').length,cards.length===8&&guide.id==='os-dnit'?5:cards.length-1);
@@ -50,7 +55,26 @@ for(const guide of guides){
   card.click();await wait(()=>document.querySelector('dialog[open]'));
   assert.equal(document.getElementById('tutorial-stage-title').textContent,card.querySelector('strong').textContent);
   assert.ok(document.querySelector('.tutorial-stage-body').textContent.length>50);
-  assert.ok(document.querySelector('.tutorial-demo,.tutorial-demand-walkthrough,.tutorial-os-walkthrough,.tutorial-guided-walkthrough'));
+  assert.ok(document.querySelector('.tutorial-demo,.tutorial-demand-walkthrough,.tutorial-os-walkthrough,.tutorial-guided-walkthrough,.sigworks-overview'));
+  if(guide.id==='sigworks'){
+   const expected=[['CMAT N/NE','CMAT S/SE','CMAT Projetos'],['FIS-MA-2026','615/2025 - DNIT','002/2026'],['Cliente','Gerenciadora · Concremat','Construtoras']];
+   const titles=[...document.querySelectorAll('.sigworks-overview-cards h3')].map(item=>item.textContent);
+   if(Number(card.dataset.flowIndex)<3)assert.deepEqual(titles,expected[Number(card.dataset.flowIndex)]);
+   else if(Number(card.dataset.flowIndex)===3){assert.equal(titles.length,10);assert.ok(titles.includes('Ordem de Serviço'));assert.ok(titles.includes('Qualidade · IC e RNC'));}
+   else {
+    assert.equal(card.querySelector('strong').textContent,'Indicadores');
+    assert.doesNotMatch(document.querySelector('.sigworks-indicators').textContent,/Dados ilustrativos|Dashboards de exemplo/);
+    assert.equal(document.querySelectorAll('.sigworks-indicator').length,2);
+    const contracts=document.querySelectorAll('[aria-label="Contratos dos indicadores"] button');
+    assert.equal(contracts.length,3);
+    for(const [index,expected] of ['Diário de Obra · RDO','Ordem de Serviço','Projetos'].entries()){
+     contracts[index].click();await wait(()=>document.querySelector('.sigworks-indicator h3').textContent===expected);
+     assert.equal(document.querySelectorAll('.sigworks-indicator-ring').length,2);
+     assert.match(document.querySelector('.sigworks-indicators-source').textContent,/Registros da operação.*Indicadores do contrato/);
+    }
+   }
+   assert.equal(document.querySelector('.sigworks-overview form'),null);
+  }
   assert.equal(document.querySelectorAll('.tutorial-demo form').length,0,'Prévia não opera documentos reais');
   for (const control of document.querySelectorAll('.tutorial-demo button,.tutorial-demo input,.tutorial-demo select,.tutorial-demo textarea')) assert.ok(control.matches(':disabled'), 'Controles da demonstração não operam registros');
   if (document.querySelector('.tutorial-demand-walkthrough')) {
@@ -87,14 +111,25 @@ for(const guide of guides){
   }
   if(document.querySelector('[data-tutorial-walkthrough]')) {
     const walkthrough=document.querySelector('[data-tutorial-walkthrough]');
-    const tabs=walkthrough.querySelectorAll('[aria-label="Passos da etapa"] button');
+    const tabs=walkthrough.querySelectorAll('[aria-label="Passos da etapa"] button,[aria-label="Tipo de atividade"] button');
     const sceneCount=tabs.length || 1;
     if(guide.id==='orcamentos' && card.dataset.flowIndex==='0') {assert.equal(sceneCount,1);assert.equal(walkthrough.querySelector('.tutorial-walkthrough-navigation'),null);assert.ok(walkthrough.querySelector('[aria-label="Seleção demonstrativa de insumos"]'));}
     if(guide.id==='orcamentos' && card.dataset.flowIndex==='3') {assert.equal(sceneCount,7);assert.deepEqual([...tabs].map(button=>button.textContent),['Dados gerais','Cálculo','Bases','Etapa','Insumo','Composição','Acessos']);}
     if(guide.id==='diario-obra' && card.dataset.flowIndex==='0')assert.equal(sceneCount,6);
-    if(guide.id==='atividades' && card.dataset.flowIndex==='1')assert.equal(sceneCount,1);
+    if(guide.id==='atividades' && card.dataset.flowIndex==='0'){
+     assert.equal(sceneCount,2);assert.deepEqual([...tabs].map(button=>button.textContent),['Atividade normal','Checklist']);
+     assert.equal(walkthrough.querySelector('.tutorial-walkthrough-navigation'),null);
+    }
+    if(guide.id==='atividades' && card.dataset.flowIndex==='2'){
+     assert.deepEqual([...tabs].map(button=>button.textContent),['A fazer','Em andamento','Em revisão','Concluída']);
+    }
     for(let phase=0;phase<sceneCount;phase++) {
       tabs[phase]?.click();await wait(()=>walkthrough.querySelector(`[data-guided-phase="${phase}"]`));
+      if(guide.id==='atividades' && card.dataset.flowIndex==='0'){
+       assert.match(walkthrough.textContent,/Título.*Descrição.*Contrato.*Categoria.*Prioridade.*Prazo/);
+       assert.doesNotMatch(walkthrough.textContent,/Responsáveis|Notificações/);
+       assert.equal(walkthrough.textContent.includes('Itens do checklist'),phase===1);
+      }
       for(const field of walkthrough.querySelectorAll('input:not([type=checkbox]),textarea')) {assert.ok(field.readOnly);assert.ok(field.value.length>0);assert.doesNotMatch(field.value,/Informação desta etapa|Contrato selecionado/);}
       const picker=walkthrough.querySelector('.tutorial-example-picker');
       if(picker){const first=picker.querySelector('input');const before=first.checked;first.click();await wait(()=>first.checked!==before);}
@@ -106,14 +141,8 @@ for(const guide of guides){
     assert.equal(walkthrough.querySelectorAll('form,img,input[type=file]').length,0);
   }
   assert.equal(document.body.style.overflow,'hidden');
-  if(guide.id==='primeiros-passos' && card===cards[0]){
-   document.getElementById('tutorial-tab-media').click();
-   await wait(()=>document.getElementById('tutorial-panel-media').hidden===false);
-   assert.equal(document.getElementById('tutorial-panel-stage').hidden,true);
-   assert.ok(document.querySelector('.tutorial-stage-media img'));
-   document.getElementById('tutorial-tab-stage').click();
-   await wait(()=>document.getElementById('tutorial-panel-media').hidden===true);
-  }
+  assert.equal(document.querySelector('.tutorial-stage-tabs'),null);
+  assert.equal(document.getElementById('tutorial-panel-media'),null);
   document.querySelector('[aria-label="Fechar detalhes da etapa"]').click();
   await wait(()=>!document.querySelector('dialog'));
   assert.equal(document.body.style.overflow,'');checked++;
@@ -121,9 +150,13 @@ for(const guide of guides){
 }
 const rdo=guides.find(guide=>guide.id==='diario-obra');
 root.render(React.createElement(Visual,{key:'rdo-models',tutorial:rdo}));
-await wait(()=>document.querySelector('.tutorial-model-picker select'));
+await wait(()=>document.querySelector('.tutorial-model-picker button'));
+assert.equal(document.querySelector('.tutorial-model-picker select'),null);
+assert.equal(document.querySelectorAll('.tutorial-model-picker button').length,4);
+assert.doesNotMatch(document.querySelector('.os-tutorial').textContent,/Parametrização e geração/);
 for(const [model,count] of [['construtora_gerenciadora_cliente',5],['gerenciadora_construtora',4],['gerenciadora_cliente',4],['gerenciadora',2]]){
- const select=document.querySelector('.tutorial-model-picker select');select.value=model;select.dispatchEvent(new window.Event('change',{bubbles:true}));
+ document.querySelector(`[data-rdo-model="${model}"]`).click();
+ await wait(()=>document.querySelector(`[data-rdo-model="${model}"]`).getAttribute('aria-pressed')==='true');
  await wait(()=>document.querySelectorAll('[data-flow-index]').length===count);
  const titles=[...document.querySelectorAll('[data-flow-index] strong')].map(el=>el.textContent).join(' ');
  if(model==='gerenciadora')assert.doesNotMatch(titles,/aprova|analisa|Assinaturas/i);
@@ -133,14 +166,11 @@ for(const [model,count] of [['construtora_gerenciadora_cliente',5],['gerenciador
  assert.deepEqual(tabs.map(button=>button.textContent),['Tempo','Mão de obra','Equipamentos','Atividades','Comentário','Fotos']);
  tabs.at(-1).click();await wait(()=>document.querySelector('[data-guided-phase="5"]'));
  if(model==='gerenciadora')assert.ok(document.querySelector('.tutorial-example-actions').textContent.includes('Salvar o RDO completo'));
- document.querySelector('[aria-label="Fechar detalhes da etapa"]').click();await wait(()=>!document.querySelector('dialog'));
+ if(model==='gerenciadora')document.querySelector('dialog').dispatchEvent(new window.Event('cancel',{cancelable:true}));
+ else document.querySelector('[aria-label="Fechar detalhes da etapa"]').click();
+ await wait(()=>!document.querySelector('dialog'));
 
 }
-document.querySelector('.tutorial-model-picker button').click();await wait(()=>document.querySelector('dialog[open]'));
-assert.equal(document.getElementById('tutorial-stage-title').textContent,'Parametrização e geração');
-assert.ok([...document.querySelectorAll('input,textarea')].some(field=>field.value==='Somente Gerenciadora'));
-assert.equal(document.querySelectorAll('[aria-label="Passos da etapa"] button').length,3);
-document.querySelector('dialog').dispatchEvent(new window.Event('cancel',{cancelable:true}));await wait(()=>!document.querySelector('dialog'));
 const os=guides.find(guide=>guide.id==='os-dnit');
 root.render(React.createElement(Visual,{key:'os-touch',tutorial:os}));
 await wait(()=>document.querySelector('[data-os-node="analista"]'));
@@ -162,16 +192,68 @@ await build({logLevel:'error',plugins:[{name:'tutorial-context-test',enforce:'pr
 const Workspace=(await import(pathToFileURL(resolve(workspaceOutput,'TutorialWorkspace.js')).href)).default;
 const pageRoot=createRoot(document.getElementById('app'));
 pageRoot.render(React.createElement(Workspace,{tenant:{id:1,slug:'tests'},tutorials:guides}));
-await wait(()=>document.querySelectorAll('.tutorial-menu-item').length===18);
+await wait(()=>document.querySelectorAll('.tutorial-menu-item').length===12);
+assert.equal(document.querySelector('.tutorial-menu-item').getAttribute('aria-label'),'SigWorks');
+for(const id of ['primeiros-passos','administracao-plataforma','visao-geral','contratos','notificacoes-perfil','assistente-deming']){
+ const title=guides.find(guide=>guide.id===id).title;
+ assert.equal([...document.querySelectorAll('.tutorial-menu-item')].some(item=>item.getAttribute('aria-label')===title),false);
+}
+assert.equal([...document.querySelectorAll('.tutorial-menu-group h2')].some(title=>['Plataforma','Ajuda'].includes(title.textContent)),false);
 const toggle=()=>document.querySelector('[aria-controls="tutorial-menu"]');
 toggle().click();await wait(()=>toggle().getAttribute('aria-expanded')==='false');
 assert.equal(localStorage.getItem('sigworks:tutorials:menu:1:7'),'collapsed');
-document.querySelector('.tutorial-menu-item[aria-label="Instrução de Campo — IC"]').click();
-await wait(()=>document.querySelector('[data-optional=true]'));
-assert.equal(location.hash,'#qualidade-ic');
+document.querySelector('.tutorial-menu-item[aria-label="Qualidade"]').click();
+await wait(()=>document.querySelector('#qualidade-geral'));
+assert.equal(location.hash,'#qualidade');
+assert.equal(document.querySelector('.tutorial-menu-item[aria-label="Instrução de Campo — IC"]'),null);
+assert.equal(document.querySelector('.tutorial-menu-item[aria-label="Qualidade e RNC"]'),null);
+assert.deepEqual([...document.querySelectorAll('.quality-tutorial>.os-tutorial-panel')].map(section=>section.id),['qualidade-geral']);
+assert.equal(document.querySelectorAll('[data-quality-node]').length,8);
+const qualityNode=document.querySelector('[data-quality-node="resolvido"]');
+pointer(qualityNode,'pointerover');await wait(()=>document.querySelector('[role=tooltip]'));
+assert.match(document.querySelector('[role=tooltip]').textContent,/Parcialmente/);
+pointer(qualityNode,'pointerout');await wait(()=>!document.querySelector('[role=tooltip]'));
+for(const sectionId of ['qualidade-fluxo-ic','qualidade-fluxo-rnc']){
+ const label=sectionId.endsWith('-ic')?'IC':'RNC';
+ [...document.querySelectorAll('.quality-tutorial-nav button')].find(button=>button.textContent===label).click();
+ await wait(()=>document.getElementById(sectionId));
+ assert.equal(document.querySelectorAll('.quality-tutorial>.os-tutorial-panel').length,1);
+ assert.equal(document.querySelector('.quality-tutorial-nav [aria-pressed=true]').textContent,label);
+ assert.equal(document.getElementById('qualidade-geral'),null);
+ const section=document.getElementById(sectionId);
+ assert.ok(section.querySelector('[data-informational=true]'));
+ assert.equal(section.querySelectorAll('[aria-haspopup=dialog]').length,label==='IC'?2:4);
+ const passiveTitles=label==='IC'?['Comunicação','Finalização']:['Comunicação','Assinaturas'];
+ for(const title of passiveTitles){
+  const card=[...section.querySelectorAll('[data-flow-index]')].find(node=>node.querySelector('strong')?.textContent===title);
+  assert.equal(card.dataset.informational,'true');
+  card.click();assert.equal(document.querySelector('dialog'),null);
+ }
+ section.querySelector('[aria-haspopup=dialog]').click();await wait(()=>document.querySelector('dialog[open]'));
+ assert.equal(document.querySelector('.tutorial-stage-tabs'),null);
+ assert.equal(document.getElementById('tutorial-panel-media'),null);
+ assert.match(document.querySelector('[data-tutorial-walkthrough]').dataset.tutorialWalkthrough,/qualidade-(ic|rnc)/);
+ assert.ok([...document.querySelectorAll('.tutorial-stage-body input')].some(input=>input.value.includes('Obstrução na saída de drenagem')));
+ document.querySelector('[aria-label="Fechar detalhes da etapa"]').click();await wait(()=>!document.querySelector('dialog'));
+}
+const proposalChoices=document.querySelector('[aria-label="Decisão da supervisão sobre a proposta"]');
+proposalChoices.querySelectorAll('button')[1].click();
+await wait(()=>document.querySelector('#qualidade-fluxo-rnc .os-tutorial-edge.return'));
+assert.equal(document.querySelector('#qualidade-fluxo-rnc [data-return=true] strong').textContent,'Proposta');
+proposalChoices.querySelectorAll('button')[0].click();
+await wait(()=>!document.querySelector('#qualidade-fluxo-rnc .os-tutorial-edge.return'));
+document.querySelector('.quality-tutorial-nav button').click();
+await wait(()=>document.querySelector('#qualidade-geral'));
+assert.equal(document.querySelectorAll('.quality-tutorial>.os-tutorial-panel').length,1);
+window.location.hash='#qualidade-fluxo-rnc';
+await wait(()=>document.querySelector('#qualidade-fluxo-rnc'));
+window.location.hash='#qualidade-ic';
+await wait(()=>document.querySelector('#qualidade-fluxo-ic'));
+window.location.hash='#qualidade-rnc';
+await wait(()=>document.querySelector('#qualidade-fluxo-rnc'));
 toggle().click();await wait(()=>toggle().getAttribute('aria-expanded')==='true');
 assert.equal(document.querySelector('[aria-label="Buscar tutorial"]'),null);
 assert.ok(document.getElementById('tutorial-menu').contains(toggle()));
-assert.equal(document.querySelectorAll('.tutorial-menu-item').length,18);
+assert.equal(document.querySelectorAll('.tutorial-menu-item').length,12);
 pageRoot.unmount();assert.deepEqual(errors,[]);dom.window.close();
 console.log(`PASS: ${guides.length} guides; ${checked} stage modals; hover/focus/touch; close/cancel/outside; 4 RDO models; removed footer; collapsible scoped menu; menu without search and navigation.`);

@@ -1,4 +1,5 @@
 import { informationalSteps } from './tutorialExamples';
+import { sigWorksSteps } from './SigWorksOverview';
 import { Activity, Bell, BookOpen, Bot, Building2, Calculator, ClipboardCheck, ClipboardList, FileText, Flag, FolderOpen, GitBranch, HardHat, Image, LayoutDashboard, ListChecks, LockKeyhole, ScanText, Send, Settings2, ShieldCheck, Signature, SlidersHorizontal, Users } from 'lucide-react';
 
 export const tutorialIcons = { Activity, Bell, BookOpen, Bot, Building2, Calculator, ClipboardCheck, ClipboardList, FileText, FolderOpen, HardHat, LayoutDashboard, ShieldCheck, SlidersHorizontal, Users };
@@ -73,6 +74,13 @@ export const osExamples = {
 };
 
 export function getTutorialFlow(tutorial, model = rdoModels[0].id) {
+    if (tutorial.id === 'sigworks') return sigWorksSteps;
+    if (tutorial.id === 'atividades') return [
+        { id: 'atividades-create', title: 'Atividade ou checklist', role: 'Criação da tarefa', icon: ListChecks, description: 'Escolha Atividade normal ou Checklist e preencha os dados da tarefa no mesmo formulário. No checklist, inclua os itens que precisam ser conferidos.' },
+        { id: 'atividades-visibility', title: 'Visibilidade', role: 'Acesso à atividade', icon: LockKeyhole, description: 'Defina se a atividade será pública para os usuários autorizados do contrato ou restrita ao criador e aos usuários vinculados.' },
+        { id: 'atividades-flow', title: 'Fluxo da atividade', role: 'Quadro de atividades', icon: Activity, statuses: ['A fazer', 'Em andamento', 'Em revisão', 'Concluída'], description: 'Acompanhe a atividade no quadro: A fazer, Em andamento, Em revisão e Concluída. Durante a execução, registre comentários, anexe arquivos e confira os itens do checklist.' },
+        { id: 'atividades-metrics', title: 'Métricas', role: 'Indicadores das atividades', icon: LayoutDashboard, informational: true, description: 'Consulte as métricas para acompanhar atividades em aberto, vencidas e concluídas, produtividade, categorias e cumprimento dos prazos, conforme seu acesso.' },
+    ];
     if (tutorial.id === 'diario-obra') {
         const fillRole = ['gerenciadora_cliente', 'gerenciadora'].includes(model) ? 'Gerenciadora' : 'Construtora';
         const steps = [{ title: `${fillRole} preenche`, role: fillRole, description: tutorial.steps[2][1], icon: HardHat, fields: ['Obra / frente', 'Clima', 'Atividades', 'Recursos', 'Comentário'], type: 'resources', action: model === 'gerenciadora' ? 'Salvar o RDO completo' : 'Encaminhar o RDO completo' }];

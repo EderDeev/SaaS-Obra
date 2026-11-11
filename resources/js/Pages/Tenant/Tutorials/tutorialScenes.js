@@ -30,6 +30,29 @@ function budgetScreens(index) {
 
 export function getTutorialScenes(tutorial, step) {
     const index = Number(step.id.split('-').at(-1));
+    if (tutorial.id === 'atividades') {
+        const activityFields = [
+            ['Título', 'Vistoria dos dispositivos de drenagem'],
+            ['Descrição', 'Verificar o escoamento e as condições das saídas de drenagem do trecho TR-01. Registrar os pontos que precisam de limpeza.'],
+            contract, ['Categoria', 'Qualidade'], ['Prioridade', 'Alta'], ['Prazo', '20/11/2026'], ['Visibilidade', 'Pública'],
+        ];
+        if (step.id === 'atividades-create') return [
+            screen('Atividade normal', 'Preencha os dados da atividade', activityFields, { action: 'Criar atividade' }),
+            screen('Checklist', 'Preencha os dados e os itens do checklist', [
+                ...activityFields,
+                ['Itens do checklist', 'Conferir as entradas e saídas de drenagem.\nVerificar obstruções e acúmulo de material.\nRegistrar fotos dos pontos inspecionados.'],
+            ], { action: 'Criar checklist' }),
+        ];
+        if (step.id === 'atividades-visibility') return [screen('Visibilidade', 'Defina quem pode visualizar', [
+            ['Atividade', 'Vistoria dos dispositivos de drenagem'], ['Pública', 'Visível aos usuários autorizados do contrato'], ['Restrita', 'Visível ao criador e aos usuários vinculados'],
+        ], { action: 'Salvar visibilidade' })];
+        if (step.id === 'atividades-flow') return [
+            screen('A fazer', 'Atividade aguardando início', [['Título', 'Vistoria dos dispositivos de drenagem'], ['Situação', 'A fazer'], ['Descrição', 'Vistoria programada para verificar os dispositivos do trecho TR-01.']], { action: 'Mover para Em andamento' }),
+            screen('Em andamento', 'Registre a execução', [['Título', 'Vistoria dos dispositivos de drenagem'], ['Situação', 'Em andamento'], ['Comentário', 'Inspeção iniciada. Identificados dois pontos com acúmulo de material.'], ['Arquivo', 'Vistoria de drenagem — trecho TR-01.jpg']], { action: 'Mover para Em revisão' }),
+            screen('Em revisão', 'Confira o que foi executado', [['Título', 'Vistoria dos dispositivos de drenagem'], ['Situação', 'Em revisão'], ['Comentário', 'Vistoria concluída em campo. Fotos e registros disponíveis para conferência.']], { action: 'Mover para Concluída' }),
+            screen('Concluída', 'Atividade concluída', [['Título', 'Vistoria dos dispositivos de drenagem'], ['Situação', 'Concluída'], ['Comentário', 'Registros conferidos e itens do checklist concluídos.']], { action: 'Consultar atividade' }),
+        ];
+    }
     if (tutorial.id === 'orcamentos') return budgetScreens(index);
     if (tutorial.id === 'diario-obra') {
         if (step.id === 'rdo-settings') return [

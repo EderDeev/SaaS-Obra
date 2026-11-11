@@ -146,22 +146,33 @@ class OrcamentoController extends Controller
             $orcamentosQuery->usedInContract($contract);
         }
 
-        $orcamentos = BudgetPermissions::scopeVisibleTo($orcamentosQuery, $request->user(), $tenant)->get();
+        $visible = BudgetPermissions::scopeVisibleTo($orcamentosQuery, $request->user(), $tenant);
+        $clients = Empresa::query()->where('tenant_id', $tenant->id)
+            ->whereIn('id', (clone $visible)->reorder()->select('cliente_empresa_id'))
+            ->orderBy('nome')->get(['id', 'nome']);
+        $filters = $request->only(['search', 'tipo', 'cliente_empresa_id', 'contract_id']);
+        if ($request->filled('search')) {
+            $search = mb_strtolower(trim((string) $request->query('search')));
+            $visible->where(fn (Builder $query) => $query->whereRaw('LOWER(codigo) LIKE ?', ['%'.$search.'%'])
+                ->orWhereRaw('LOWER(descricao) LIKE ?', ['%'.$search.'%']));
+        }
+        if ($request->filled('tipo')) $visible->where('categoria', $request->query('tipo'));
+        if ($request->filled('cliente_empresa_id')) $visible->where('cliente_empresa_id', $request->query('cliente_empresa_id'));
+        $orcamentos = $visible->paginate(15)->withQueryString();
 
         return Inertia::render('Tenant/Orcamentos/Index', [
             'tenant' => $tenant,
             'filteredContract' => $contract?->only(['code', 'name']),
             'orcamentos' => $orcamentos
-                ->map(fn (Orcamento $orcamento): array => [
+                ->through(fn (Orcamento $orcamento): array => [
                     ...$this->serializeOrcamento($orcamento),
                     'can_manage_accesses' => BudgetPermissions::canManageAccesses($request->user(), $tenant, $orcamento),
-                ])
-                ->values(),
-            'stats' => [
-                'total' => $orcamentos->count(),
-                'draft' => $orcamentos->where('status', 'draft')->count(),
-                'closed' => $orcamentos->where('status', 'closed')->count(),
-            ],
+                ]),
+            'filters' => $filters,
+            'contracts' => $tenant->contracts()->orderBy('code')->get(['id', 'code', 'name'])
+                ->filter(fn ($item) => ContractPermissions::can($request->user(), $tenant, ContractPermissions::VIEW, $item))->values(),
+            'clients' => $clients,
+            'types' => self::ORCAMENTO_CATEGORIES,
             'canCreateOrcamentos' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::CREATE),
             'canImportOrcamentos' => BudgetPermissions::can($request->user(), $tenant, BudgetPermissions::IMPORT),
         ]);
@@ -216,6 +227,7 @@ class OrcamentoController extends Controller
         $this->authorizeBudgetPermission($request, $tenant, BudgetPermissions::CREATE);
 
         $data = $request->validate([
+            'contract_id' => ['required', 'integer', Rule::exists('contracts', 'id')->where('tenant_id', $tenant->id)],
             'codigo' => ['required', 'string', 'max:50', Rule::unique('orcamentos', 'codigo')->where('tenant_id', $tenant->id)->whereNull('deleted_at')],
             'descricao' => ['required', 'string', 'max:255'],
             'cliente_empresa_id' => [
@@ -241,6 +253,10 @@ class OrcamentoController extends Controller
             'base_references.*.data' => ['required', 'string', 'max:20'],
         ]);
 
+        $contract = $tenant->contracts()->findOrFail($data['contract_id']);
+        if (! empty($data['cliente_empresa_id']) && ! $this->budgetContractClients($tenant, $contract)->contains('id', (int) $data['cliente_empresa_id'])) {
+            throw ValidationException::withMessages(['cliente_empresa_id' => 'Selecione um cliente vinculado ao contrato.']);
+        }
         $bdiPercentual = $this->parseDecimal($data['bdi_percentual']);
 
         if ($bdiPercentual === null || (float) $bdiPercentual < 0 || (float) $bdiPercentual > 100) {
@@ -263,6 +279,7 @@ class OrcamentoController extends Controller
 
         $orcamento = Orcamento::create([
             'tenant_id' => $tenant->id,
+            'contract_id' => $contract->id,
             'created_by_id' => $request->user()->id,
             'cliente_empresa_id' => $data['cliente_empresa_id'] ?? null,
             'codigo' => trim($data['codigo']),
@@ -6624,12 +6641,22 @@ class OrcamentoController extends Controller
                 ['value' => 'URBA - URBANIZACAO', 'label' => 'URBA - Urbanizacao'],
             ],
             'calculationMethods' => [
-                ['value' => 'truncate_2', 'label' => 'Truncar em 2 casas decimais', 'badge' => 'Padrao TCU'],
+                ['value' => 'truncate_2', 'label' => 'Truncar em 2 casas decimais'],
                 ['value' => 'round_2', 'label' => 'Arredondar em 2 casas decimais', 'badge' => null],
                 ['value' => 'none', 'label' => 'Nao arredondar', 'badge' => null],
             ],
             'baseReferences' => $this->compositionBaseReferences($tenant),
         ];
+    }
+
+    private function budgetContractClients(Tenant $tenant, \App\Models\Contract $contract): Collection
+    {
+        return Empresa::query()->where('tenant_id', $tenant->id)
+            ->where(function (Builder $query) use ($contract) {
+                $query->whereKey($contract->cliente_empresa_id)
+                    ->orWhere(fn (Builder $linked) => $linked->where('contract_id', $contract->id)
+                        ->whereHas('tipoEmpresa', fn (Builder $type) => $type->whereRaw('LOWER(nome) = ?', ['cliente'])));
+            })->orderBy('nome')->get(['id', 'nome', 'sigla']);
     }
 
     private function orcamentoFormOptions(Tenant $tenant): array
@@ -6640,6 +6667,10 @@ class OrcamentoController extends Controller
 
         return [
             'nextCode' => $this->nextOrcamentoCode($tenant),
+            'contracts' => $tenant->contracts()->orderBy('code')->get()->map(fn ($contract) => [
+                'id' => $contract->id, 'code' => $contract->code, 'name' => $contract->name,
+                'clients' => $this->budgetContractClients($tenant, $contract)->values()->all(),
+            ])->all(),
             'clients' => Empresa::query()
                 ->where('tenant_id', $tenant->id)
                 ->when($clienteTipoId, fn (Builder $query): Builder => $query->where('tipo_empresa_id', $clienteTipoId))
@@ -6660,12 +6691,12 @@ class OrcamentoController extends Controller
                 ['value' => 'round_all_2', 'label' => 'Arredondar tudo em 2 casas decimais'],
                 ['value' => 'round_compositions_2', 'label' => 'Arredondar em 2 casas decimais incluindo as composicoes auxiliares'],
                 ['value' => 'round_and_truncate_unit', 'label' => 'Arredondar em 2 casas decimais e truncar os precos unitarios'],
-                ['value' => 'truncate_all_2', 'label' => 'Truncar tudo em 2 casas decimais', 'badge' => 'Padrao TCU'],
+                ['value' => 'truncate_all_2', 'label' => 'Truncar tudo em 2 casas decimais'],
                 ['value' => 'none', 'label' => 'Nao arredondar'],
             ],
             'bdiTypes' => [
-                ['value' => 'unit_price', 'label' => 'Incidir sobre o preco unitario da composicao', 'badge' => 'TCU recomenda'],
-                ['value' => 'total_budget', 'label' => 'Incidir sobre o preco final do orcamento'],
+                ['value' => 'unit_price', 'label' => 'Incidir sobre o preço unitário da composição'],
+                ['value' => 'total_budget', 'label' => 'Incidir sobre o total de cada item (quantidade × custo unitário)'],
             ],
             'encargosOptions' => [
                 ['value' => 'desonerado', 'label' => 'Desonerado'],
@@ -7171,16 +7202,49 @@ class OrcamentoController extends Controller
         OrcamentoComposicao $composicao,
         ?Orcamento $orcamento = null,
     ): array {
+        if ($orcamento?->arredondamento === 'round_compositions_2' && ! $composicao->is_global && mb_strtoupper((string) $composicao->modelo) !== 'SICRO3' && $composicao->items()->exists()) {
+            return $this->budgetOwnCompositionPrices($tenant, $composicao, $orcamento);
+        }
         $summary = $this->composicaoListPriceSummaries($tenant, collect([$composicao]))[$composicao->id]
             ?? $this->fastComposicaoPriceSummary($composicao);
         $method = $orcamento
             ? $this->orcamentoUnitCalculationMethod($orcamento)
             : $this->calculationMethodForComposicao($composicao);
+        // SICRO retains its specific production, utilization and intermediate precision rules.
+        $useSourcePrice = mb_strtoupper((string) $composicao->modelo) !== 'SICRO3';
 
         return [
-            'nao_desonerado' => $this->storeMoney($this->calculateMoney($summary['effective_preco_onerado'] ?? 0, $method)),
-            'desonerado' => $this->storeMoney($this->calculateMoney($summary['effective_preco_desonerado'] ?? 0, $method)),
+            'nao_desonerado' => $this->storeMoney($this->calculateMoney($useSourcePrice && (float) $composicao->preco_onerado > 0 ? $composicao->preco_onerado : ($summary['effective_preco_onerado'] ?? 0), $method)),
+            'desonerado' => $this->storeMoney($this->calculateMoney($useSourcePrice && (float) $composicao->preco_desonerado > 0 ? $composicao->preco_desonerado : ($summary['effective_preco_desonerado'] ?? 0), $method)),
         ];
+    }
+
+    private function budgetOwnCompositionPrices(Tenant $tenant, OrcamentoComposicao $composition, Orcamento $budget, array $visited = []): array
+    {
+        if (isset($visited[$composition->id])) {
+            throw ValidationException::withMessages(['orcamento_composicao_id' => 'A composição contém uma referência circular entre auxiliares.']);
+        }
+        $visited[$composition->id] = true;
+        $method = $this->orcamentoUnitCalculationMethod($budget);
+        $totals = ['nao_desonerado' => 0.0, 'desonerado' => 0.0];
+        foreach ($composition->items()->with(['insumo', 'childComposicao'])->get() as $component) {
+            $child = $component->childComposicao;
+            $childPrices = null;
+            if ($child && ! $child->is_global && (int) $child->tenant_id !== (int) $tenant->id) {
+                throw ValidationException::withMessages(['orcamento_composicao_id' => 'Composição auxiliar indisponível nesta diretoria.']);
+            }
+            if ($child && $budget->arredondamento === 'round_compositions_2'
+                && ! $child->is_global && mb_strtoupper((string) $child->modelo) !== 'SICRO3' && $child->items()->exists()) {
+                $childPrices = $this->budgetOwnCompositionPrices($tenant, $child, $budget, $visited);
+            }
+            foreach (['nao_desonerado' => 'onerado', 'desonerado' => 'desonerado'] as $key => $suffix) {
+                $price = $childPrices[$key] ?? ($child?->{'preco_'.$suffix} ?? $component->insumo?->{'preco_'.$key} ?? $component->{'preco_unitario_'.$suffix});
+                // Auxiliary costs retain their source precision unless explicitly included in rounding.
+                $unit = $child && $budget->arredondamento === 'round_all_2' ? (float) $price : $this->calculateMoney($price, $method);
+                $totals[$key] += $this->calculateMoney($unit * (float) $component->coeficiente, $method);
+            }
+        }
+        return array_map(fn ($total) => $this->storeMoney($this->calculateMoney($total, $method)), $totals);
     }
 
     private function orcamentoInsumoPrices(OrcamentoInsumo $insumo, ?Orcamento $orcamento = null): array
