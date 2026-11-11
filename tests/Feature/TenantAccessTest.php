@@ -412,6 +412,7 @@ class TenantAccessTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('tenant.orcamentos.store', $tenant), [
+                'contract_id' => $tenant->contracts()->create(['code' => 'ORC-CONTRACT', 'name' => 'Contrato do orçamento', 'cliente_empresa_id' => $cliente->id])->id,
                 'codigo' => '00000001',
                 'descricao' => 'Orcamento executivo',
                 'cliente_empresa_id' => $cliente->id,

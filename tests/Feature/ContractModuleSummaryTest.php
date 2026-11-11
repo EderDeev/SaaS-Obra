@@ -140,9 +140,9 @@ class ContractModuleSummaryTest extends TestCase
         $filteredList = route('tenant.orcamentos.index', ['tenant' => $tenant, 'contract_id' => $contract->id]);
         $this->actingAs($admin)->get($filteredList)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('filteredContract.code', 'A')
-                ->has('orcamentos', 1)->where('orcamentos.0.id', $budget->id));
+                ->has('orcamentos.data', 1)->where('orcamentos.data.0.id', $budget->id));
         $this->actingAs($member)->get($filteredList)->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->has('orcamentos', 0));
+            ->assertInertia(fn (Assert $page) => $page->has('orcamentos.data', 0));
         $this->get(route('tenant.orcamentos.index', ['tenant' => $tenant, 'contract_id' => $other->id]))->assertForbidden();
     }
 
