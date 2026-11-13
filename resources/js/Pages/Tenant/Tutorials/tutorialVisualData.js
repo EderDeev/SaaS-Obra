@@ -70,7 +70,9 @@ export const osExamples = {
     'ajuste-supervisao': { preview: 'os-stage', role: 'Supervisão', fields: ['Motivo recebido', 'Produtos', 'Quantidades', 'Análise'], action: 'Reencaminhar ao fiscal', type: 'products' },
     decisao: { preview: 'os-stage', role: 'Fiscal do contrato', fields: ['Decisão', 'Motivo', 'Destino da devolução'], action: 'Confirmar decisão', type: 'decision' },
     aprovada: { preview: 'os-stage', role: 'Equipe responsável', fields: ['Situação da OS', 'Execução do serviço'], action: 'Acompanhar a execução', note: 'Aprovada não significa finalizada.' },
-    finalizada: { preview: 'os-stage', role: 'Fiscal do contrato', fields: ['Serviço concluído', 'Conclusão registrada'], action: 'Finalizar OS', type: 'document' },
+    finalizada: { preview: 'os-stage', role: 'Analista DNIT solicitante', fields: ['Entrega aprovada', 'Conclusão registrada'], action: 'Finalizar OS', type: 'document' },
+    entrega: { preview: 'os-stage', role: 'Supervisão', action: 'Enviar entrega ao analista DNIT' },
+    avaliacao: { preview: 'os-stage', role: 'Analista DNIT solicitante', action: 'Avaliar entrega do produto' },
 };
 
 export function getTutorialFlow(tutorial, model = rdoModels[0].id) {

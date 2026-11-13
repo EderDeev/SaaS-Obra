@@ -9,13 +9,14 @@ class OsDnitOrderHistory
 {
     public function record(OsDnitOrder $order, User $actor, string $action, ?string $from, ?string $comment = null): void
     {
-        $order->load(['items', 'attachments']);
+        $order->load(['items', 'attachments', 'deliveries']);
         $snapshot = $order->only(['request_number', 'supervision_lot', 'highway_name', 'km_start', 'km_end', 'subject',
             'technical_need', 'justification', 'sei_reference', 'review_comment', 'review_items', 'workflow_version', 'supervision_lot_id', 'finalized_at', 'finalized_by_id']);
         $snapshot['desired_deadline'] = $order->desired_deadline->format('Y-m-d');
         $snapshot['estimated_deadline'] = $order->estimated_deadline?->format('Y-m-d');
         $snapshot['items'] = $order->items->map->only(['product_id', 'product_code', 'product_name', 'unit', 'frequency', 'quantity'])->all();
         $snapshot['attachments'] = $order->attachments->map->only(['id', 'original_name'])->all();
+        $snapshot['deliveries'] = $order->deliveries->map->only(['id', 'revision', 'original_name', 'created_by_id', 'comment', 'decision', 'review_comment', 'reviewed_by_id', 'reviewed_at'])->all();
         $event = $order->events()->create(['actor_id' => $actor->id, 'action' => $action, 'from_status' => $from,
             'to_status' => $order->status, 'comment' => $comment, 'snapshot' => $snapshot]);
         app(OsDnitFlowNotifier::class)->enqueue($event);

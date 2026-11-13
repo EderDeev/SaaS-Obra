@@ -56,8 +56,8 @@ export default function TenantDashboard({ tenant, role, stats, charts, capabilit
                         </section>
                         <div className="overview-quick-grid">
                             {osSummary && <ModuleCard compact icon={ClipboardList} title="Ordem de Serviço" tone="cyan" href={url('tenant.os-dnit.orders.index')}
-                                value={osSummary.pending} label="pendentes de análise" total={`${osSummary.total} no total`}
-                                metrics={[[osSummary.stages.approved, 'Aguardam conclusão'], [osSummary.stages.completed, 'Finalizadas']]}
+                                value={osSummary.pending} label="pendentes" total={`${osSummary.total} no total`}
+                                metrics={[[osSummary.stages.approved, 'Aguardam entrega'], [osSummary.stages.completed, 'Finalizadas']]}
                                 note={`${osSummary.overdue} com prazo vencido`} />}
                             {capabilities.rncs && <ModuleCard compact icon={FileWarning} title="RNC" tone="rose" href={url('tenant.qualidade.rnc.index')}
                                 value={stats.openRncs} label="RNCs pendentes" total="Não conformidades"

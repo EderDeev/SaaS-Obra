@@ -15,7 +15,7 @@ class OsDnitFlowRecipients
     {
         $roles = match ($event->action) {
             'submitted' => ['concremat'],
-            'forwarded', 'returned', 'approved', 'completed' => ['concremat', 'contract_inspector'],
+            'forwarded', 'returned', 'approved', 'completed', 'product_delivered', 'delivery_rejected', 'delivery_accepted' => ['concremat', 'contract_inspector'],
             default => [],
         };
         if ($roles === []) {

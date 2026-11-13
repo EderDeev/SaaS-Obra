@@ -6,7 +6,7 @@ import { Link, useForm, usePage } from '@inertiajs/react';
 import { CheckCircle, Pencil, Send, X } from 'lucide-react';
 
 export function StatusBadge({ status, statuses }) {
-    const color = ['approved', 'completed'].includes(status) ? 'bg-emerald-50 text-emerald-800' : status.startsWith('returned') ? 'bg-amber-50 text-amber-900' : status === 'draft' ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-700';
+    const color = ['delivery_accepted', 'completed'].includes(status) ? 'bg-emerald-50 text-emerald-800' : (status.startsWith('returned') || status === 'delivery_revision') ? 'bg-amber-50 text-amber-900' : status === 'draft' ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-700';
     return <span className={`h-fit rounded-full px-3 py-1 text-xs font-semibold ${color}`}>{statuses[status] || status}</span>;
 }
 
@@ -15,15 +15,6 @@ export function SupervisionAnalysis({ items, deadline, comment }) {
         <div><p className="text-xs text-slate-500">Prazo estimado pela Supervisão</p><p className="mt-1 text-sm font-semibold">{dateLabel(deadline)}</p></div>
         <div><h3 className="text-sm font-semibold">Produtos solicitados</h3><ul className="mt-2 divide-y divide-slate-100">{items.map((item) => <li key={item.product_id} className="flex flex-wrap items-center justify-between gap-3 py-3"><p className="min-w-0 flex-1 break-words text-sm"><strong className="mr-2 font-mono text-blue-700">{item.product_code}</strong>{item.product_name}</p><span className="text-sm font-semibold">{numberLabel(item.quantity)} {item.unit}</span></li>)}</ul>{!items.length && <p className="mt-2 text-sm text-slate-500">Nenhum produto definido na análise.</p>}</div>
         {comment !== undefined && <div className="rounded-xl bg-blue-50 p-4"><h3 className="text-sm font-semibold text-blue-900">Comentário da análise</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm">{comment || 'Análise ainda não registrada.'}</p></div>}
-    </div>;
-}
-
-export function FinalizeAction({ order, tenantSlug }) {
-    const [confirm, setConfirm] = useState(false);
-    const form = useForm({ version: order.workflow_version });
-    return <div><button type="button" disabled={form.processing} className="sig-btn sig-btn-primary" onClick={() => setConfirm(true)}><CheckCircle size={16} />Finalizar OS</button>
-        <Errors errors={form.errors} />
-        <OsDnitConfirmDialog open={confirm} title="Finalizar OS?" message={`Confirma que o serviço da OS ${order.request_number} foi concluído? A finalização será registrada no fluxo e comunicada aos responsáveis.`} confirmLabel="Finalizar OS" disabled={form.processing} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); form.post(route('tenant.os-dnit.orders.finalize', [tenantSlug, order.id]), { preserveScroll: true }); }} />
     </div>;
 }
 
@@ -96,7 +87,7 @@ export function DecisionForm({ order }) {
         }} /></section>;
 }
 
-const actions = { created: 'Demanda criada', legacy_draft: 'Demanda anterior preservada', draft_updated: 'Solicitação corrigida', submitted: 'Enviada à Supervisão', analysis_saved: 'Análise salva', forwarded: 'Encaminhada ao fiscal do contrato', returned: 'Reprovada e devolvida', approved: 'Demanda aprovada', completed: 'OS finalizada — serviço concluído' };
+const actions = { created: 'Demanda criada', legacy_draft: 'Demanda anterior preservada', draft_updated: 'Solicitação corrigida', submitted: 'Enviada à Supervisão', analysis_saved: 'Análise salva', forwarded: 'Encaminhada ao fiscal do contrato', returned: 'Reprovada e devolvida', approved: 'Demanda aprovada', product_delivered: 'Produto entregue', delivery_rejected: 'Revisão solicitada pelo analista DNIT', delivery_accepted: 'Entrega aprovada — OS finalizada automaticamente', completed: 'OS finalizada — serviço concluído' };
 const timeLabel = (value) => new Date(value).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
 export function OrderHistory({ events, statuses }) {
@@ -109,7 +100,7 @@ export function OrderHistory({ events, statuses }) {
                     <time dateTime={event.created_at} className="text-xs text-slate-500">{timeLabel(event.created_at)}</time>
                 </div>
                 <p className="text-xs text-slate-500">{event.actor?.name || 'Usuário indisponível'} · {statuses[event.to_status] || event.to_status}</p>
-                {event.comment && <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm">{event.comment}</p>}
+                {event.comment && <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm">{event.action === 'product_delivered' ? event.comment.replace(/^Entrega inicial:\s*/, '') : event.comment}</p>}
             </li>)}
             {events.length === 0 && <li className="py-5 text-sm text-slate-500">OS cadastrada antes da implantação deste fluxo. O histórico será registrado a partir da próxima ação.</li>}
         </ol>

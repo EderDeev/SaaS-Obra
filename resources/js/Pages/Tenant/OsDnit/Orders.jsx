@@ -1,5 +1,6 @@
 import OsDnitPdfDownload from '@/Components/OsDnitPdfDownload';
-import { StatusBadge, FinalizeAction } from '@/Components/OsDnitWorkflow';
+import { OsDnitDeliveryAction } from '@/Components/OsDnitDelivery';
+import { StatusBadge } from '@/Components/OsDnitWorkflow';
 import OsDnitAnalysisModal from '@/Components/OsDnitAnalysisModal';
 import OsDnitConfirmDialog from '@/Components/OsDnitConfirmDialog';
 import OsDnitDeleteButton from '@/Components/OsDnitDeleteButton';
@@ -18,7 +19,8 @@ function OrderActions({ order, tenantSlug, onAnalyze }) {
             <Link href={route('tenant.os-dnit.orders.show', [tenantSlug, order.id])} className="sig-btn sig-btn-secondary" aria-label={`Acessar OS ${order.request_number}`}><Eye size={16} />Acessar</Link>
             <OsDnitPdfDownload order={order} tenantSlug={tenantSlug} />
             {order.can_delete && <OsDnitDeleteButton url={route('tenant.os-dnit.orders.destroy', [tenantSlug, order.id])} data={{ version: order.workflow_version }} label={`Excluir OS ${order.request_number}`} title="Excluir demanda?" message={`Deseja excluir a demanda da OS ${order.request_number}? Ele deixará de aparecer nas listagens.`} />}
-            {order.can_finalize && <FinalizeAction order={order} tenantSlug={tenantSlug} />}
+            {order.can_deliver && <OsDnitDeliveryAction order={order} tenantSlug={tenantSlug} />}
+            {order.can_review_delivery && <OsDnitDeliveryAction order={order} tenantSlug={tenantSlug} review />}
             {order.can_analyze && <button type="button" onClick={() => onAnalyze(order.id)} className="sig-btn sig-btn-primary" aria-label={`Analisar OS ${order.request_number}`}><Eye size={16} />Analisar OS</button>}
             {order.can_submit && <button type="button" disabled={form.processing} onClick={() => setConfirmSubmit(true)} className="sig-btn sig-btn-primary" aria-label={`Enviar OS ${order.request_number} para análise`}><Send size={16} />{form.processing ? 'Enviando…' : 'Enviar para análise'}</button>}
         </div>
@@ -32,7 +34,7 @@ function OrderActions({ order, tenantSlug, onAnalyze }) {
     </div>;
 }
 
-export default function Orders({ orders, contracts, lots, highways, filters, canCreate, statuses, stageCounts, analysisOrderId = null, emptyTenantSetup = false, canCreateContract = false }) {
+export default function Orders({ orders, contracts, lots, highways, filters, canCreate, statuses, statusOptions, stageCounts, analysisOrderId = null, emptyTenantSetup = false, canCreateContract = false }) {
     const { currentTenant, flash = {} } = usePage().props;
     const search = useForm({ q: filters.q || '', contract_id: filters.contract_id || '', supervision_lot_id: filters.supervision_lot_id || '', highway_id: filters.highway_id || '', status: filters.status || '', pending: filters.pending ? 1 : 0, stage: filters.stage || 'all' });
     const indexUrl = route('tenant.os-dnit.orders.index', currentTenant.slug);
@@ -81,7 +83,7 @@ export default function Orders({ orders, contracts, lots, highways, filters, can
         <Head title={`Ordem de Serviço · ${title}`} />
         <div className="sig-content os-dnit-page space-y-6">
             <header className="flex flex-wrap items-start justify-between gap-4">
-                <div><div className="eyebrow">Ordem de Serviço</div><h1 className="mt-2 text-2xl font-semibold">{title}</h1><p className="mt-2 text-sm text-[var(--ink-500)]">Solicitações, análise e autorização dos serviços por contrato.</p></div>
+                <div><div className="eyebrow">Ordem de Serviço</div><h1 className="mt-2 text-2xl font-semibold">{title}</h1><p className="mt-2 text-sm text-[var(--ink-500)]">Solicitações, análise, entrega e avaliação dos serviços por contrato.</p></div>
                 <div className="flex flex-wrap gap-2"><OsDnitTourButton tenantSlug={currentTenant.slug} />{canCreate && <Link href={route('tenant.os-dnit.orders.create', currentTenant.slug)} className="sig-btn sig-btn-primary"><Plus size={16} />Criar OS</Link>}</div>
             </header>
             {flash.success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{flash.success}</div>}
@@ -91,24 +93,24 @@ export default function Orders({ orders, contracts, lots, highways, filters, can
                 {canCreateContract && <Link href={route('tenant.contracts.index', currentTenant.slug)} className="sig-btn sig-btn-primary"><Plus size={16} />Ir para Contratos</Link>}
             </section> : <>
             <nav className="flex flex-wrap gap-2" aria-label="Filtrar OSs por etapa">{[
-                ['all', 'Todas as OSs'], ['analyst', 'Demanda (Analista DNIT)'], ['concremat', 'Análise Supervisão'], ['contract_inspector', 'Fiscal do Contrato'], ['approved', 'Aprovadas'], ['completed', 'Finalizadas'],
+                ['all', 'Todas as OSs'], ['analyst', 'Demanda'], ['concremat', 'Análise Supervisão'], ['contract_inspector', 'Fiscal do Contrato'], ['approved', 'Entrega Supervisão'], ['delivery_review', 'Avaliação DNIT'], ['delivery_revision', 'Em revisão'], ['completed', 'Finalizadas'],
             ].map(([stage, label]) => {
                 const active = search.data.stage === stage && !search.data.pending;
                 return <button type="button" key={stage} onClick={() => filterOrders({ ...search.data, stage, status: '', pending: 0 })} className={`sig-btn ${active ? 'sig-btn-primary' : 'sig-btn-secondary'}`} aria-pressed={active}>{label}<span className={`rounded-full px-2 py-0.5 tabular-nums ${active ? 'bg-white/20' : 'bg-slate-100 text-slate-700'}`}>{stageCounts[stage]}</span></button>;
             })}</nav>
             <form onSubmit={(event) => { event.preventDefault(); filterOrders(search.data); }} className="sig-card grid min-w-0 items-end gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
                 <div className="min-w-0"><label htmlFor="order-search" className="mb-1.5 block text-xs font-medium">Buscar OS</label><input id="order-search" value={search.data.q} onChange={(event) => filterOrders({ ...search.data, q: event.target.value }, 350)} maxLength={120} placeholder="Número ou assunto da solicitação" className="w-full rounded-lg border-slate-300 text-sm" /></div>
-                <div className="min-w-0"><label htmlFor="order-contract" className="mb-1.5 block text-xs font-medium">Contrato de supervisão</label><select id="order-contract" value={search.data.contract_id} onChange={(event) => filterOrders({ ...search.data, contract_id: event.target.value, supervision_lot_id: '', highway_id: '' })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todos os contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>)}</select></div>
-                <div className="min-w-0"><label htmlFor="order-lot" className="mb-1.5 block text-xs font-medium">Lote de supervisão</label><select id="order-lot" value={search.data.supervision_lot_id} onChange={(event) => filterOrders({ ...search.data, supervision_lot_id: event.target.value })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todos os lotes</option>{availableLots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}{!search.data.contract_id && contracts.length > 1 ? ` · ${lot.contract.code}` : ''}</option>)}</select></div>
-                <div className="min-w-0"><label htmlFor="order-highway" className="mb-1.5 block text-xs font-medium">Rodovia</label><select id="order-highway" value={search.data.highway_id} onChange={(event) => filterOrders({ ...search.data, highway_id: event.target.value })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todas as rodovias</option>{availableHighways.map((highway) => <option key={highway.id} value={highway.id}>{highway.name}{!search.data.contract_id && contracts.length > 1 ? ` · ${highway.contract.code}` : ''}</option>)}</select></div>
-                <div className="min-w-0"><label htmlFor="order-status" className="mb-1.5 block text-xs font-medium">Situação</label><select id="order-status" value={search.data.status} onChange={(event) => filterOrders({ ...search.data, status: event.target.value })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todas as situações</option>{Object.entries(statuses).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></div>
+                <div className="min-w-0"><label htmlFor="order-contract" className="mb-1.5 block text-xs font-medium">Contrato</label><select id="order-contract" value={search.data.contract_id} onChange={(event) => filterOrders({ ...search.data, contract_id: event.target.value, supervision_lot_id: '', highway_id: '' })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todos os contratos</option>{contracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>)}</select></div>
+                <div className="min-w-0"><label htmlFor="order-lot" className="mb-1.5 block text-xs font-medium">Lote de supervisão</label><select id="order-lot" value={search.data.supervision_lot_id} onChange={(event) => filterOrders({ ...search.data, supervision_lot_id: event.target.value })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todos os lotes</option>{availableLots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}</option>)}</select></div>
+                <div className="min-w-0"><label htmlFor="order-highway" className="mb-1.5 block text-xs font-medium">Rodovia</label><select id="order-highway" value={search.data.highway_id} onChange={(event) => filterOrders({ ...search.data, highway_id: event.target.value })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todas as rodovias</option>{availableHighways.map((highway) => <option key={highway.id} value={highway.id}>{highway.name}</option>)}</select></div>
+                <div className="min-w-0"><label htmlFor="order-status" className="mb-1.5 block text-xs font-medium">Situação</label><select id="order-status" value={search.data.status} onChange={(event) => filterOrders({ ...search.data, status: event.target.value })} className="w-full rounded-lg border-slate-300 text-sm"><option value="">Todas as situações</option>{Object.entries(statusOptions).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></div>
                 {hasFilters && <button type="button" onClick={() => filterOrders({ q: '', contract_id: '', supervision_lot_id: '', highway_id: '', status: '', pending: 0, stage: 'all' })} className="sig-btn sig-btn-secondary col-span-full justify-self-start">Limpar</button>}
             </form>
             <div role="status" aria-live="polite" className="text-sm text-[var(--ink-500)]">{filtering ? 'Atualizando resultados…' : `${orders.total} ${orders.total === 1 ? 'OS encontrada' : 'OS encontradas'}`}</div>
             <Pagination data={orders} disabled={filtering} />
             <div className="space-y-3" aria-busy={filtering}>
                 {orders.data.map((order) => <article key={order.id} className="rounded-xl border border-slate-200 bg-white p-5">
-                    <div className="flex flex-wrap justify-between gap-3"><div className="min-w-0"><span className="font-mono text-xs font-bold text-[var(--primary)]">OS {order.request_number}</span><h2 className="mt-1 break-words font-semibold">{order.subject}</h2></div><StatusBadge status={order.status} statuses={statuses} /></div>
+                    <div className="flex flex-wrap justify-between gap-3"><div className="min-w-0"><span className="font-mono text-xs font-bold text-[var(--primary)]">OS {order.request_number}</span><h2 className="mt-1 break-words font-semibold">{order.subject}</h2></div><div className="flex flex-wrap items-center gap-2">{order.deliveries_max_revision !== null && order.deliveries_max_revision !== undefined && <span className="text-xs font-semibold text-slate-600">{order.status === 'delivery_revision' ? `Revisão ${Number(order.deliveries_max_revision) + 1}` : Number(order.deliveries_max_revision) > 0 ? `Revisão ${order.deliveries_max_revision}` : null}</span>}<StatusBadge status={order.status} statuses={statuses} /></div></div>
                     <p className="mt-3 text-sm text-[var(--ink-500)]">{order.contract.code} · Lote {order.supervision_lot} · {order.highway_name} · Km {numberLabel(order.km_start)} a {numberLabel(order.km_end)}</p>
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
                         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--ink-500)]"><span>Prazo: {dateLabel(order.desired_deadline)}</span>{order.products_count > 0 && <span>{order.products_count} produto(s)</span>}<span>{order.attachments_count} anexo(s)</span><span>Criada em {dateLabel(order.created_at)}</span></div>

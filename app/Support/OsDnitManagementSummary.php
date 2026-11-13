@@ -30,8 +30,8 @@ class OsDnitManagementSummary
         return [
             'total' => (int) $counts->sum(),
             'stages' => $stages,
-            'pending' => $stages['concremat'] + $stages['contract_inspector'],
-            'returned' => (int) $counts->only(['returned_analyst', 'returned_concremat'])->sum(),
+            'pending' => $stages['concremat'] + $stages['contract_inspector'] + $stages['approved'] + $stages['delivery_review'] + $stages['delivery_revision'] + $stages['delivery_accepted'],
+            'returned' => (int) $counts->only(['returned_analyst', 'returned_concremat', 'delivery_revision'])->sum(),
             'overdue' => (clone $orders)->whereNotIn('status', ['draft', 'completed'])
                 ->whereRaw('COALESCE(estimated_deadline, desired_deadline) < ?', [today()->toDateString()])->count(),
             'recent' => (clone $orders)->with('contract:id,code')->orderByDesc('updated_at')->orderByDesc('id')->limit(4)
@@ -56,7 +56,7 @@ class OsDnitManagementSummary
 
             return [$id => [
                 'total' => (int) $statuses->sum(),
-                'pending' => (int) $statuses->only([...OsDnitOrder::STAGES['concremat'], ...OsDnitOrder::STAGES['contract_inspector']])->sum(),
+                'pending' => (int) $statuses->only([...OsDnitOrder::STAGES['concremat'], ...OsDnitOrder::STAGES['contract_inspector'], 'approved', 'awaiting_delivery_review', 'delivery_revision', 'delivery_accepted'])->sum(),
                 'completed' => (int) ($statuses['completed'] ?? 0),
             ]];
         });

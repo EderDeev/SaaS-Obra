@@ -43,9 +43,9 @@ class OsDnitDashboardTest extends TestCase
 
         $this->actingAs($user)->get($this->url($tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('Tenant/OsDnit/Dashboard')->has('contracts', 1)->has('highways', 1)
-            ->where('stats', ['total' => 7, 'draft' => 1, 'concremat' => 1, 'inspector' => 1, 'approved' => 1, 'completed' => 1,
+            ->where('stats', ['total' => 10, 'draft' => 1, 'concremat' => 1, 'inspector' => 1, 'approved' => 1, 'completed' => 1, 'delivery_review' => 1, 'delivery_revision' => 1, 'delivery_accepted' => 1,
                 'returned' => 2, 'returned_analyst' => 1, 'returned_concremat' => 1])
-            ->has('pending.data', 6)->where('pending.total', 6)->where('monthly.0.submitted', 0)->where('monthly.0.approved', 0)
+            ->has('pending.data', 9)->where('pending.total', 9)->where('monthly.0.submitted', 0)->where('monthly.0.approved', 0)
             ->where('pending.data.0.can_analyze', false));
         $this->get($this->url($tenant, ['contract_id' => $hidden->id]))->assertSessionHasErrors('contract_id');
         $this->get($this->url($tenant, ['highway_id' => $hiddenRoad->id]))->assertSessionHasErrors('highway_id');
@@ -145,11 +145,11 @@ class OsDnitDashboardTest extends TestCase
 
         $this->actingAs($user)->get($this->url($tenant, ['supervision_lot_id' => $lot->id, 'page' => 2]))
             ->assertOk()->assertInertia(fn (Assert $page) => $page->has('lots', 3)
-                ->where('filters.supervision_lot_id', (string) $lot->id)
-                ->where('stats.total', 12)->where('stats.approved', 0)
-                ->where('monthly.0.submitted', 1)->where('monthly.0.approved', 1)
-                ->where('pending.total', 12)->where('pending.current_page', 2)->has('pending.data', 2)
-                ->where('pending.first_page_url', fn ($url) => str_contains($url, 'supervision_lot_id='.$lot->id)));
+            ->where('filters.supervision_lot_id', (string) $lot->id)
+            ->where('stats.total', 12)->where('stats.approved', 0)
+            ->where('monthly.0.submitted', 1)->where('monthly.0.approved', 1)
+            ->where('pending.total', 12)->where('pending.current_page', 2)->has('pending.data', 2)
+            ->where('pending.first_page_url', fn ($url) => str_contains($url, 'supervision_lot_id='.$lot->id)));
         $this->get($this->url($tenant, ['contract_id' => $contract->id, 'highway_id' => $road->id, 'supervision_lot_id' => $lot->id]))
             ->assertOk()->assertInertia(fn (Assert $page) => $page->has('lots', 2)->where('stats.total', 12));
     }
@@ -183,6 +183,86 @@ class OsDnitDashboardTest extends TestCase
         $this->get($this->url($tenant, ['date_from' => '2024-01-01']))->assertSessionHasErrors('date_from');
     }
 
+    public function test_dashboard_reuses_configured_contracts_and_the_five_status_groups(): void
+    {
+        [$tenant, $user, $contract, $road] = $this->context();
+        foreach (array_keys(OsDnitOrder::STATUSES) as $status) {
+            $this->order($contract, $road, $user, $status);
+        }
+        $empty = Contract::create(['tenant_id' => $tenant->id, 'code' => 'EMPTY', 'name' => 'Sem configuração OS', 'status' => 'active']);
+        ContractParticipant::create(['tenant_id' => $tenant->id, 'contract_id' => $empty->id, 'user_id' => $user->id, 'side' => 'client', 'role' => 'manager', 'status' => 'active']);
+        $this->actingAs($user)->get($this->url($tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('contracts', 1)->has('statusOptions', 5)->has('distribution', 5)->where('stats.total', 10));
+        $this->get($this->url($tenant, ['contract_id' => $empty->id]))->assertSessionHasErrors('contract_id');
+        foreach (OsDnitOrder::STATUS_FILTERS as $filter => $states) {
+            $this->get($this->url($tenant, ['status' => $filter]))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('filters.status', $filter)->where('stats.total', count($states))
+                ->where('pending.total', $filter === 'completed' ? 0 : count($states))
+                ->where('monthly.0.opened', count($states)));
+        }
+        $this->get($this->url($tenant, ['status' => 'invalid']))->assertSessionHasErrors('status');
+    }
+
+    public function test_deadlines_use_only_the_fiscal_approved_snapshot_include_the_whole_day_and_preserve_unknown_dates(): void
+    {
+        [$tenant, $user, $contract, $road] = $this->context();
+        $this->order($contract, $road, $user, 'completed')->update(['desired_deadline' => '2026-10-01', 'estimated_deadline' => '2026-10-20', 'finalized_at' => '2026-10-20 23:59:59']);
+        $this->order($contract, $road, $user, 'completed')->update(['estimated_deadline' => '2026-10-20', 'finalized_at' => '2026-10-21 00:00:00']);
+        $this->order($contract, $road, $user, 'awaiting_concremat')->update(['desired_deadline' => '2026-10-21']);
+        $late = $this->order($contract, $road, $user, 'awaiting_concremat');
+        $late->update(['estimated_deadline' => '2026-10-20']);
+        $this->order($contract, $road, $user, 'completed');
+        foreach (OsDnitOrder::where('contract_id', $contract->id)->get() as $order) {
+            $this->approveDeadline($order, $order->estimated_deadline?->toDateString() ?? '2026-10-21');
+        }
+        $unapproved = $this->order($contract, $road, $user, 'draft');
+        $unapproved->update(['desired_deadline' => '2026-10-01', 'estimated_deadline' => '2026-10-01']);
+        $this->actingAs($user)->get($this->url($tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('deadlines.5.total', 1)
+            ->where('deadlines.0.total', 1)->where('deadlines.1.total', 1)->where('deadlines.2.total', 1)
+            ->where('deadlines.3.total', 1)->where('deadlines.4.total', 1)
+            ->where('monthly.0.completed_on_time', 1)->where('monthly.0.completed_late', 1)
+            ->where('waiting.1.total', 2)->where('waiting.1.overdue', 1)->where('waiting.1.max_overdue_days', 1)
+            ->where('pending.data', fn ($rows) => $rows->firstWhere('id', $late->id)['overdue_days'] === 1));
+    }
+
+    public function test_monthly_completion_uses_the_actual_date_and_includes_older_orders_without_double_counting(): void
+    {
+        [$tenant, $user, $contract, $road] = $this->context();
+        $older = $this->order($contract, $road, $user, 'completed', '2026-09-01');
+        $older->update(['finalized_at' => '2026-10-05 15:00:00']);
+        $this->approveDeadline($older, '2026-11-01');
+        $current = $this->order($contract, $road, $user, 'completed');
+        $this->approveDeadline($current, '2026-10-14');
+        $current->update(['estimated_deadline' => '2026-10-14', 'finalized_at' => '2026-10-15 10:00:00']);
+        $this->event($current, 'delivery_accepted', '2026-10-15 10:00:00', 'awaiting_delivery_review', 'completed');
+        $this->event($current, 'completed', '2026-10-15 10:00:00', 'delivery_accepted', 'completed');
+        [$hidden, $hiddenRoad] = $this->contract($tenant, null);
+        $this->order($hidden, $hiddenRoad, $user, 'completed')->update(['finalized_at' => '2026-10-12']);
+        $this->actingAs($user)->get($this->url($tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('stats.total', 1)->where('monthly.0.opened', 1)->where('monthly.0.completed', 2)
+            ->where('monthly.0.completed_on_time', 1)->where('monthly.0.completed_late', 1)->where('pending.total', 0));
+        $this->get($this->url($tenant, ['status' => 'draft']))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('stats.total', 0)->where('monthly.0.opened', 0)->where('monthly.0.completed', 0));
+    }
+
+    public function test_overdue_stage_chart_includes_all_orders_not_just_the_first_page(): void
+    {
+        [$tenant, $user, $contract, $road] = $this->context();
+        for ($i = 0; $i < 13; $i++) {
+            $order = $this->order($contract, $road, $user, 'awaiting_concremat');
+            $this->approveDeadline($order, $i < 12 ? '2026-10-11' : '2026-10-20');
+        }
+        $this->actingAs($user)->get($this->url($tenant))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('pending.total', 13)->has('pending.data', 10)->where('waiting.1.total', 13)
+            ->where('waiting.1.overdue', 13)->where('waiting.1.average_overdue_days', 9.3)->where('waiting.1.max_overdue_days', 10));
+    }
+
+    private function approveDeadline(OsDnitOrder $order, string $deadline): void
+    {
+        $this->event($order, 'approved', '2026-10-10', 'awaiting_contract', 'approved', ['estimated_deadline' => $deadline]);
+    }
+
     private function context(): array
     {
         $tenant = Tenant::create(['name' => 'Empresa DNIT', 'slug' => 'dash-'.str()->random(8), 'status' => 'active', 'plan' => 'starter']);
@@ -214,10 +294,10 @@ class OsDnitDashboardTest extends TestCase
         return $order->forceFill(['created_at' => Carbon::parse($created), 'updated_at' => Carbon::parse($created)])->save() ? $order : throw new \RuntimeException('Order fixture failed.');
     }
 
-    private function event(OsDnitOrder $order, string $action, string $date, string $from, string $to): void
+    private function event(OsDnitOrder $order, string $action, string $date, string $from, string $to, array $snapshot = []): void
     {
         $event = new OsDnitOrderEvent(['order_id' => $order->id, 'actor_id' => $order->created_by_id, 'action' => $action,
-            'from_status' => $from, 'to_status' => $to, 'snapshot' => []]);
+            'from_status' => $from, 'to_status' => $to, 'snapshot' => $snapshot]);
         $event->created_at = Carbon::parse($date);
         $event->updated_at = Carbon::parse($date);
         $event->save();

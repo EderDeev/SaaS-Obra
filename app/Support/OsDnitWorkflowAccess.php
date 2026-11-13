@@ -26,10 +26,12 @@ class OsDnitWorkflowAccess
     public static function pendingOrders(User $user, Tenant $tenant): Builder
     {
         return OsDnitOrder::where('tenant_id', $tenant->id)->where(function (Builder $query) use ($user, $tenant) {
-            $query->where(fn (Builder $query) => $query->whereIn('status', ['awaiting_concremat', 'returned_concremat'])
+            $query->where(fn (Builder $query) => $query->whereIn('status', ['awaiting_concremat', 'returned_concremat', 'approved', 'delivery_revision'])
                 ->whereIn('contract_id', self::contracts($user, $tenant, 'concremat')->select('contracts.id')))
                 ->orWhere(fn (Builder $query) => $query->where('status', 'awaiting_contract')
-                    ->whereIn('contract_id', self::contracts($user, $tenant, 'contract_inspector')->select('contracts.id')));
+                    ->whereIn('contract_id', self::contracts($user, $tenant, 'contract_inspector')->select('contracts.id')))
+                ->orWhere(fn (Builder $query) => $query->where('status', 'awaiting_delivery_review')->where('created_by_id', $user->id)
+                    ->whereIn('contract_id', self::contracts($user, $tenant, 'analyst')->select('contracts.id')));
         });
     }
 
@@ -50,9 +52,16 @@ class OsDnitWorkflowAccess
             && self::hasRole($user, $tenant, $order->contract_id, 'analyst');
     }
 
-    public static function canFinalize(User $user, Tenant $tenant, OsDnitOrder $order): bool
+    public static function canDeliver(User $user, Tenant $tenant, OsDnitOrder $order): bool
     {
-        return $order->status === 'approved' && self::hasRole($user, $tenant, $order->contract_id, 'contract_inspector');
+        return in_array($order->status, ['approved', 'delivery_revision'], true)
+            && self::hasRole($user, $tenant, $order->contract_id, 'concremat');
+    }
+
+    public static function canReviewDelivery(User $user, Tenant $tenant, OsDnitOrder $order): bool
+    {
+        return $order->status === 'awaiting_delivery_review' && (int) $order->created_by_id === (int) $user->id
+            && self::hasRole($user, $tenant, $order->contract_id, 'analyst');
     }
 
     public static function hasRecipient(Tenant $tenant, int $contractId, string $role): bool
