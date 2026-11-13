@@ -24,6 +24,7 @@ use App\Http\Controllers\Tenant\OrdemServicoController;
 use App\Http\Controllers\Tenant\OrdemServicoMetricsController;
 use App\Http\Controllers\Tenant\OsDnitProductController;
 use App\Http\Controllers\Tenant\OsDnitDashboardController;
+use App\Http\Controllers\Tenant\OsDnitStageDashboardController;
 use App\Http\Controllers\Tenant\OsDnitOrderController;
 use App\Http\Controllers\Tenant\OsDnitSettingsController;
 use App\Http\Controllers\Tenant\OsDnitWorkflowController;
@@ -115,6 +116,7 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
         Route::prefix('os-dnit')->name('os-dnit.')->middleware('os-dnit.permission:view_orders')->group(function () {
             Route::get('/tour-preview', OsDnitTourController::class)->name('tour-preview');
             Route::get('/dashboard', OsDnitDashboardController::class)->middleware('os-dnit.permission:view_dashboard')->name('dashboard');
+            Route::get('/dashboard/prazos', OsDnitStageDashboardController::class)->middleware('os-dnit.permission:view_dashboard')->name('dashboard.stage-deadlines');
             Route::get('/', [OsDnitOrderController::class, 'index'])->name('orders.index');
             Route::get('/criar', [OsDnitOrderController::class, 'create'])->middleware('os-dnit.permission:create_orders')->name('orders.create');
             Route::get('/analise', [OsDnitOrderController::class, 'index'])->name('analysis.index');
@@ -127,7 +129,10 @@ Route::middleware(['auth', 'verified', 'password.changed', 'tenant.resolve', 'te
             Route::patch('/ordens/{order}', [OsDnitOrderController::class, 'update'])->middleware('os-dnit.permission:edit_orders')->name('orders.update');
             Route::post('/ordens/{order}/enviar', [OsDnitWorkflowController::class, 'submit'])->name('orders.submit');
             Route::post('/ordens/{order}/analise', [OsDnitWorkflowController::class, 'review'])->name('orders.review');
-            Route::post('/ordens/{order}/finalizar', [OsDnitWorkflowController::class, 'finalize'])->name('orders.finalize');
+            Route::post('/ordens/{order}/entregas', [OsDnitWorkflowController::class, 'deliver'])->name('orders.deliver');
+            Route::get('/ordens/{order}/entregas', [OsDnitOrderController::class, 'deliveryForm'])->name('orders.delivery-form');
+            Route::post('/ordens/{order}/avaliar-entrega', [OsDnitWorkflowController::class, 'reviewDelivery'])->name('orders.review-delivery');
+            Route::get('/ordens/{order}/entregas/{delivery}/arquivo', [OsDnitOrderController::class, 'downloadDelivery'])->name('orders.deliveries.download');
             Route::post('/ordens/{order}/decisao', [OsDnitWorkflowController::class, 'decide'])->name('orders.decide');
             Route::get('/ordens/{order}/anexos/{attachment}', [OsDnitOrderController::class, 'download'])->name('orders.attachments.download');
             Route::get('/produtos', [OsDnitProductController::class, 'index'])->middleware('os-dnit.permission:view_products')->name('products.index');

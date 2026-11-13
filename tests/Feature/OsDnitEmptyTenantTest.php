@@ -64,7 +64,7 @@ class OsDnitEmptyTenantTest extends TestCase
         $this->get(route('tenant.os-dnit.orders.index', $tenant))->assertForbidden();
         $link->update(['os_dnit_permissions' => [P::VIEW]]);
         $this->get(route('tenant.os-dnit.orders.index', $tenant))->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('emptyTenantSetup', false)->has('contracts', 1)
+            ->assertInertia(fn (Assert $page) => $page->where('emptyTenantSetup', false)->has('contracts', 0)
                 ->where('osDnitPermissions.can.view_orders', true)->where('osDnitPermissions.can.view_settings', false));
         $link->update(['status' => 'inactive']);
         $this->get(route('tenant.os-dnit.orders.index', $tenant))->assertForbidden();

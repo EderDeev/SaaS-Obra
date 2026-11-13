@@ -14,9 +14,11 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\OsDnitFlowChangedNotification;
 use App\Services\OsDnitFlowRecipients;
+use App\Services\OsDnitOrderHistory;
 use App\Services\OsDnitPdfRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
@@ -247,12 +249,12 @@ class OsDnitWorkflowTest extends TestCase
     {
         Storage::fake('local');
         $this->actingAs($this->analyst)->post(route('tenant.os-dnit.orders.store', $this->tenant), [...$this->demand,
-            'attachments' => [UploadedFile::fake()->create('original.pdf', 2, 'application/pdf')]])->assertSessionHasNoErrors();
+            'attachments' => [UploadedFile::fake()->create('original.pdf', 30720, 'application/pdf')]])->assertSessionHasNoErrors();
         $order = OsDnitOrder::sole();
         $originalPath = $order->attachments()->sole()->path;
         $this->post($this->url('update', $order), [...$this->demand, '_method' => 'patch', 'version' => 1,
             'request_number' => '999/1999', 'status' => 'approved', 'subject' => 'Pedido atualizado',
-            'attachments' => [UploadedFile::fake()->create('complemento.pdf', 2, 'application/pdf')]])->assertSessionHasNoErrors();
+            'attachments' => [UploadedFile::fake()->create('complemento.pdf', 30720, 'application/pdf')]])->assertSessionHasNoErrors();
         $this->assertSame('draft', $order->fresh()->status);
         $this->assertSame($order->request_number, $order->fresh()->request_number);
         $this->assertSame('Pedido atualizado', $order->fresh()->subject);
@@ -504,18 +506,20 @@ class OsDnitWorkflowTest extends TestCase
         $assertRecipients('forwarded', 19);
         $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
         $assertRecipients('approved', 22);
-        $this->act('finalize', $order, $this->inspector)->assertSessionHasNoErrors();
-        $assertRecipients('completed', 25);
+        $this->deliverAndAccept($order);
+        $assertRecipients('product_delivered', 28);
+        $assertRecipients('delivery_accepted', 28);
+
         $this->assertStringContainsString('OS finalizada', $this->analyst->notifications()->where('data->os_dnit_event_id', $order->events()->reorder('id', 'desc')->value('id'))->sole()->data['title']);
         $this->assertSame(0, $anotherAnalyst->notifications()->count());
         $this->assertSame(0, $this->viewer->notifications()->count());
         $this->assertSame('awaiting_concremat', $notice->fresh()->data['status']);
-        $this->assertDatabaseCount('jobs', 25);
+        $this->assertDatabaseCount('jobs', 28);
         $this->assertCount(0, Mail::mailer()->getSymfonyTransport()->messages());
         $this->deliverPendingEmails();
-        $this->assertDatabaseCount('notifications', 25);
+        $this->assertDatabaseCount('notifications', 28);
         $this->assertDatabaseCount('jobs', 0);
-        $this->assertCount(25, Mail::mailer()->getSymfonyTransport()->messages());
+        $this->assertCount(28, Mail::mailer()->getSymfonyTransport()->messages());
     }
 
     private function deliverPendingEmails(): void
@@ -671,6 +675,50 @@ class OsDnitWorkflowTest extends TestCase
         $this->get($index.'?pending=0')->assertOk()->assertInertia(fn (Assert $page) => $page->where('filters.pending', false));
     }
 
+    public function test_status_filter_has_five_options_and_includes_returns_and_delivery_revisions_in_their_stage(): void
+    {
+        $order = $this->draft();
+        foreach (array_diff(array_keys(OsDnitOrder::STATUSES), ['draft']) as $index => $status) {
+            $copy = $order->replicate();
+            $copy->request_number = sprintf('%03d/%d', $index + 2, now()->year);
+            $copy->status = $status;
+            $copy->save();
+        }
+        $index = route('tenant.os-dnit.orders.index', $this->tenant);
+        $this->actingAs($this->viewer)->get($index)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('statusOptions', ['draft' => 'Demanda', 'awaiting_concremat' => 'Em análise Supervisão',
+                'awaiting_contract' => 'Aguardando fiscal do contrato', 'approved' => 'Aguardando entrega do produto', 'completed' => 'Finalizada'])
+            ->where('orders.total', count(OsDnitOrder::STATUSES)));
+        foreach (OsDnitOrder::STATUS_FILTERS as $filter => $states) {
+            $this->get($index.'?status='.$filter)->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('filters.status', $filter)->where('orders.total', count($states))
+                ->where('orders.data', fn ($rows) => $rows->pluck('status')->sort()->values()->all() === collect($states)->sort()->values()->all()));
+        }
+    }
+
+    public function test_contract_filter_excludes_unconfigured_contracts_and_keeps_existing_orders_accessible(): void
+    {
+        $order = $this->draft();
+        $empty = Contract::create(['tenant_id' => $this->tenant->id, 'code' => 'EMPTY', 'name' => 'Sem parametrização OS', 'status' => 'active']);
+        ContractParticipant::create(['tenant_id' => $this->tenant->id, 'contract_id' => $empty->id, 'user_id' => $this->analyst->id,
+            'side' => 'client', 'role' => 'manager', 'status' => 'active']);
+        $index = route('tenant.os-dnit.orders.index', $this->tenant);
+        $this->actingAs($this->analyst)->get($index)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('contracts', 1)->where('contracts.0.id', $this->contract->id));
+        $this->get($index.'?contract_id='.$empty->id)->assertSessionHasErrors('contract_id');
+        OsDnitSupervisionLot::create(['tenant_id' => $this->tenant->id, 'contract_id' => $empty->id, 'name' => 'Lote configurado', 'active' => true]);
+        $this->get($index.'?contract_id='.$empty->id)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('contracts', 2)->where('orders.total', 0)->has('lots', 1));
+        $historical = Contract::create(['tenant_id' => $this->tenant->id, 'code' => 'HIST', 'name' => 'Histórico', 'status' => 'active']);
+        ContractParticipant::create(['tenant_id' => $this->tenant->id, 'contract_id' => $historical->id, 'user_id' => $this->analyst->id,
+            'side' => 'client', 'role' => 'manager', 'status' => 'active']);
+        $copy = $order->replicate();
+        $copy->contract_id = $historical->id;
+        $copy->save();
+        $this->get($index.'?contract_id='.$historical->id)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('contracts', 3)->where('orders.total', 1)->where('orders.data.0.id', $copy->id));
+    }
+
     public function test_stage_filters_and_counters_group_returns_and_respect_contract_and_tenant_access(): void
     {
         $order = $this->draft();
@@ -694,7 +742,7 @@ class OsDnitWorkflowTest extends TestCase
         // Stage lists are visible to contract members, even without an analysis role.
         $this->actingAs($this->viewer)->get($index)->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('filters.stage', 'all')->where('orders.total', 6)
-            ->where('stageCounts', ['all' => 6, 'analyst' => 2, 'concremat' => 2, 'contract_inspector' => 1, 'approved' => 1, 'completed' => 0]));
+            ->where('stageCounts', ['all' => 6, 'analyst' => 2, 'concremat' => 2, 'contract_inspector' => 1, 'approved' => 1, 'delivery_review' => 0, 'delivery_revision' => 0, 'delivery_accepted' => 0, 'completed' => 0]));
         foreach ([
             'analyst' => ['returned_analyst', 'draft'],
             'concremat' => ['returned_concremat', 'awaiting_concremat'],
@@ -707,13 +755,13 @@ class OsDnitWorkflowTest extends TestCase
                 ->where('stageCounts.all', 6));
         }
         $this->get($index.'?stage=concremat&q=003')->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('orders.total', 1)->where('stageCounts', ['all' => 1, 'analyst' => 0, 'concremat' => 1, 'contract_inspector' => 0, 'approved' => 0, 'completed' => 0]));
+            ->where('orders.total', 1)->where('stageCounts', ['all' => 1, 'analyst' => 0, 'concremat' => 1, 'contract_inspector' => 0, 'approved' => 0, 'delivery_review' => 0, 'delivery_revision' => 0, 'delivery_accepted' => 0, 'completed' => 0]));
         $this->get($index.'?contract_id='.$other->id)->assertSessionHasErrors('contract_id');
         ContractParticipant::create(['tenant_id' => $this->tenant->id, 'contract_id' => $other->id,
             'user_id' => $this->viewer->id, 'side' => 'client', 'role' => 'manager', 'status' => 'active']);
         $this->get($index.'?contract_id='.$other->id)->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('orders.total', 1)->where('orders.data.0.id', $copy->id)
-            ->where('stageCounts', ['all' => 1, 'analyst' => 1, 'concremat' => 0, 'contract_inspector' => 0, 'approved' => 0, 'completed' => 0]));
+            ->where('stageCounts', ['all' => 1, 'analyst' => 1, 'concremat' => 0, 'contract_inspector' => 0, 'approved' => 0, 'delivery_review' => 0, 'delivery_revision' => 0, 'delivery_accepted' => 0, 'completed' => 0]));
         $this->get($index.'?stage=invalid')->assertSessionHasErrors('stage');
     }
 
@@ -744,38 +792,39 @@ class OsDnitWorkflowTest extends TestCase
         $this->actingAs($this->viewer)->post(route('tenant.os-dnit.settings.lots.store', $this->tenant), ['contract_id' => $this->contract->id, 'name' => 'Negado'])->assertForbidden();
     }
 
-    public function test_only_the_contract_inspector_can_finalize_an_approved_order_with_history_and_notifications(): void
+    public function test_analyst_acceptance_finalizes_the_order_atomically_with_history_and_one_notification_per_recipient(): void
     {
         Notification::fake();
         $order = $this->awaitingDecision();
-        $this->act('finalize', $order, $this->inspector)->assertSessionHasErrors('status');
         $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
         $this->assertSame('approved', $order->fresh()->status);
         $this->assertNull($order->fresh()->finalized_at);
-        $this->get($this->url('show', $order))->assertInertia(fn (Assert $p) => $p->where('capabilities.finalize', true));
-        foreach ([$this->analyst, $this->concremat, $this->viewer] as $u) {
-            $this->act('finalize', $order, $u)->assertForbidden();
-        }
-        $this->act('finalize', $order, $this->inspector, ['version' => 1])->assertSessionHasErrors('version');
-        $this->act('finalize', $order, $this->inspector)->assertSessionHasNoErrors();
-        $this->assertSame('completed', $order->fresh()->status);
-        $this->assertNotNull($order->fresh()->finalized_at);
-        $this->assertSame($this->inspector->id, $order->fresh()->finalized_by_id);
-        $event = $order->events()->where('action', 'completed')->sole();
-        $this->assertSame('approved', $event->from_status);
+        $this->get($this->url('show', $order))->assertInertia(fn (Assert $page) => $page->missing('capabilities.finalize'));
+        Notification::fake();
+        $this->deliverAndAccept($order);
+        $order->refresh();
+        $this->assertSame('completed', $order->status);
+        $this->assertSame($this->analyst->id, $order->finalized_by_id);
+        $this->assertTrue($order->finalized_at->equalTo($order->deliveries()->sole()->reviewed_at));
+        $event = $order->events()->where('action', 'delivery_accepted')->sole();
+        $this->assertSame('awaiting_delivery_review', $event->from_status);
         $this->assertSame('completed', $event->to_status);
-        foreach ([$this->analyst, $this->concremat, $this->inspector] as $u) {
-            Notification::assertSentTo($u, OsDnitFlowChangedNotification::class, fn ($notification) => $notification->eventId === $event->id);
+        $this->assertSame($this->analyst->id, $event->actor_id);
+        $this->assertSame($this->analyst->id, $event->snapshot['finalized_by_id']);
+        foreach ([$this->analyst, $this->concremat, $this->inspector] as $user) {
+            Notification::assertSentTo($user, OsDnitFlowChangedNotification::class, fn ($notification) => $notification->eventId === $event->id);
         }
-        $this->act('finalize', $order, $this->inspector)->assertSessionHasErrors('status');
-        $this->assertSame(1, $order->events()->where('action', 'completed')->count());
-        $this->get(route('tenant.os-dnit.orders.index', [$this->tenant, 'stage' => 'completed']))->assertInertia(fn (Assert $p) => $p
-            ->where('orders.total', 1)->where('stageCounts.completed', 1)->where('stageCounts.approved', 0)->where('orders.data.0.can_finalize', false));
+        $this->assertSame(0, $order->events()->where('action', 'completed')->count());
+        $this->act('review-delivery', $order, $this->analyst, ['decision' => 'approve', 'comment' => 'Duplicada.'])->assertSessionHasErrors('status');
+        $this->act('review-delivery', $order, $this->analyst, ['version' => $order->workflow_version - 1, 'decision' => 'approve', 'comment' => 'Duplicada.'])->assertSessionHasErrors('version');
+        $this->post('/t/'.$this->tenant->slug.'/os-dnit/ordens/'.$order->id.'/finalizar')->assertNotFound();
+        $this->assertSame(1, $order->events()->where('action', 'delivery_accepted')->count());
+        $this->get(route('tenant.os-dnit.orders.index', [$this->tenant, 'stage' => 'completed']))->assertInertia(fn (Assert $page) => $page
+            ->where('orders.total', 1)->where('stageCounts.completed', 1)->where('stageCounts.approved', 0)->missing('orders.data.0.can_finalize'));
         $renderer = app(OsDnitPdfRenderer::class);
         $html = view('pdf.os-dnit', $renderer->data($this->tenant, $order->fresh()))->render();
         $this->assertStringContainsString('OS FINALIZADA', $html);
-        $this->assertStringContainsString('Análise Supervisão', $html);
-        $this->assertStringNotContainsString('solicitação do analista ×', $html);
+        $this->assertStringContainsString('OS finalizada automaticamente', $html);
         if (getenv('OS_PDF_QA') === '1') {
             $path = base_path('tmp/pdfs');
             if (! is_dir($path)) {
@@ -783,6 +832,253 @@ class OsDnitWorkflowTest extends TestCase
             }
             file_put_contents($path.'/ordem-servico-concluida.pdf', $renderer->render($renderer->data($this->tenant, $order->fresh()))->output());
         }
+    }
+
+    public function test_existing_accepted_deliveries_are_completed_once_using_the_original_acceptance(): void
+    {
+        Notification::fake();
+        $order = $this->awaitingDecision();
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $this->deliverAndAccept($order);
+        $order->update(['status' => 'delivery_accepted', 'finalized_at' => null, 'finalized_by_id' => null]);
+        $version = $order->fresh()->workflow_version;
+        $events = $order->events()->count();
+        $migration = require database_path('migrations/2026_11_12_210000_finalize_previously_accepted_os_deliveries.php');
+        $migration->up();
+        $migration->up();
+        $this->assertSame('completed', $order->fresh()->status);
+        $this->assertSame($this->analyst->id, $order->fresh()->finalized_by_id);
+        $this->assertTrue($order->fresh()->finalized_at->equalTo($order->deliveries()->sole()->reviewed_at));
+        $this->assertSame($version + 1, $order->fresh()->workflow_version);
+        $this->assertSame($events + 1, $order->events()->count());
+        $this->assertSame(1, $order->deliveries()->count());
+    }
+
+    public function test_delivery_revisions_keep_files_reviews_and_original_request_until_acceptance(): void
+    {
+        Notification::fake();
+        Storage::fake('local');
+        config(['os_dnit.attachment_disk' => 'local']);
+        $order = $this->awaitingDecision();
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $anotherAnalyst = $this->actor('analyst');
+        for ($revision = 0; $revision < 3; $revision++) {
+            $this->act('deliver', $order, $this->concremat, ['file' => UploadedFile::fake()->create("produto-{$revision}.pdf", 30720, 'application/pdf'),
+                'comment' => "Relatório de drenagem, entrega {$revision}."])->assertSessionHasNoErrors();
+            $this->assertSame('awaiting_delivery_review', $order->fresh()->status);
+            $this->assertSame($revision, $order->deliveries()->reorder()->orderByDesc('revision')->first()->revision);
+            $this->actingAs($this->analyst)->get($this->url('show', $order))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('capabilities.reviewDelivery', true)->has('order.deliveries', $revision + 1)->missing('order.deliveries.0.path'));
+            $this->actingAs($this->analyst)->get(route('tenant.os-dnit.orders.index', [$this->tenant, 'pending' => 1]))
+                ->assertInertia(fn (Assert $page) => $page->where('orders.total', 1)->where('orders.data.0.can_review_delivery', true));
+            $this->act('review-delivery', $order, $anotherAnalyst, ['decision' => 'approve', 'comment' => 'Indevido.'])->assertForbidden();
+            $this->act('review-delivery', $order, $this->analyst, ['decision' => $revision === 2 ? 'approve' : 'reject',
+                'comment' => $revision === 2 ? 'Atendeu à demanda.' : 'Falta memória de cálculo.'])->assertSessionHasNoErrors();
+            $this->assertSame($revision === 2 ? 'completed' : 'delivery_revision', $order->fresh()->status);
+            if ($revision < 2) {
+                $this->assertNull($order->fresh()->finalized_at);
+            }
+        }
+        $this->assertSame(3, $order->deliveries()->count());
+        foreach ($order->deliveries()->get() as $delivery) {
+            Storage::disk('local')->assertExists($delivery->path);
+            $this->assertSame($this->analyst->id, $delivery->reviewed_by_id);
+            $this->assertNotNull($delivery->reviewed_at);
+        }
+        $this->assertSame('Pedido inicial', $order->fresh()->subject);
+        $renderer = app(OsDnitPdfRenderer::class);
+        $html = view('pdf.os-dnit', $renderer->data($this->tenant, $order->fresh()))->render();
+        $this->assertStringContainsString('Revisão 2', $html);
+        $this->assertStringContainsString('produto-0.pdf', $html);
+        $this->assertStringContainsString('Falta memória de cálculo.', $html);
+        $this->assertStringContainsString('Atendeu à demanda.', $html);
+        $this->assertSame('completed', $order->fresh()->status);
+        foreach (['product_delivered', 'delivery_rejected', 'delivery_accepted'] as $action) {
+            $event = $order->events()->where('action', $action)->firstOrFail();
+            foreach ([$this->analyst, $this->concremat, $this->inspector] as $user) {
+                Notification::assertSentTo($user, OsDnitFlowChangedNotification::class, fn ($notification) => $notification->eventId === $event->id);
+            }
+        }
+        Notification::assertNotSentTo($anotherAnalyst, OsDnitFlowChangedNotification::class);
+    }
+
+    public function test_delivery_requires_file_comment_correct_stage_and_active_roles(): void
+    {
+        Notification::fake();
+        Storage::fake('local');
+        config(['os_dnit.attachment_disk' => 'local']);
+        $order = $this->awaitingDecision();
+        $payload = ['file' => UploadedFile::fake()->create('produto.pdf', 20, 'application/pdf'), 'comment' => 'Memorial entregue.'];
+        $this->act('deliver', $order, $this->concremat, $payload)->assertSessionHasErrors('status');
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        foreach ([$this->analyst, $this->inspector, $this->viewer] as $user) {
+            $this->act('deliver', $order, $user, $payload)->assertForbidden();
+        }
+        $this->act('deliver', $order, $this->concremat, ['comment' => 'Sem arquivo.'])->assertSessionHasErrors('file');
+        $this->act('deliver', $order, $this->concremat, [...$payload, 'comment' => '   '])->assertSessionHasErrors('comment');
+        $this->act('deliver', $order, $this->concremat, [...$payload, 'file' => UploadedFile::fake()->create('grande.pdf', 30721)])->assertSessionHasErrors('file');
+        $this->act('deliver', $order, $this->concremat, [...$payload, 'file' => UploadedFile::fake()->create('script.html', 10, 'text/html')])->assertSessionHasErrors('file');
+        $version = $order->fresh()->workflow_version;
+        $this->act('deliver', $order, $this->concremat, $payload)->assertSessionHasNoErrors();
+        $this->act('deliver', $order, $this->concremat, [...$payload, 'version' => $version])->assertSessionHasErrors('version');
+        $this->assertSame(1, $order->deliveries()->count());
+        $this->assertCount(1, Storage::disk('local')->allFiles());
+        $this->act('review-delivery', $order, $this->analyst, ['decision' => 'reject', 'comment' => '  '])->assertSessionHasErrors('comment');
+        $this->act('review-delivery', $order, $this->analyst, ['decision' => 'approve'])->assertSessionHasErrors('comment');
+        foreach ([$this->concremat, $this->inspector, $this->viewer] as $user) {
+            $this->act('review-delivery', $order, $user, ['decision' => 'approve', 'comment' => 'Indevido.'])->assertForbidden();
+        }
+        OsDnitResponsible::where('user_id', $this->analyst->id)->update(['active' => false]);
+        $this->act('review-delivery', $order, $this->analyst, ['decision' => 'approve', 'comment' => 'Sem papel ativo.'])->assertForbidden();
+        $this->assertNull($order->deliveries()->sole()->decision);
+    }
+
+    public function test_delivery_downloads_are_private_and_scoped_to_the_accessible_order(): void
+    {
+        Notification::fake();
+        $order = $this->awaitingDecision();
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $this->deliverAndAccept($order);
+        $delivery = $order->deliveries()->sole();
+        $url = route('tenant.os-dnit.orders.deliveries.download', [$this->tenant, $order, $delivery]);
+        $this->actingAs($this->viewer)->get($url)->assertOk()->assertDownload('produto.pdf')->assertHeader('X-Content-Type-Options', 'nosniff');
+        $otherOrder = $order->replicate();
+        $otherOrder->request_number = '999/2026';
+        $otherOrder->save();
+        $this->get(route('tenant.os-dnit.orders.deliveries.download', [$this->tenant, $otherOrder, $delivery]))->assertNotFound();
+        ContractParticipant::where('user_id', $this->viewer->id)->update(['status' => 'inactive']);
+        $this->get($url)->assertNotFound();
+        $outsider = User::factory()->create();
+        $this->actingAs($outsider)->get($url)->assertForbidden();
+    }
+
+    public function test_failed_delivery_rolls_back_the_file_event_and_order(): void
+    {
+        Notification::fake();
+        Storage::fake('local');
+        config(['os_dnit.attachment_disk' => 'local']);
+        $order = $this->awaitingDecision();
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $version = $order->fresh()->workflow_version;
+        $this->mock(OsDnitOrderHistory::class)->shouldReceive('record')->once()->andThrow(new \RuntimeException('Simulated failure'));
+        $this->withoutExceptionHandling();
+        try {
+            $this->act('deliver', $order, $this->concremat, ['file' => UploadedFile::fake()->create('produto.pdf', 20, 'application/pdf'), 'comment' => 'Entrega.']);
+            $this->fail('Expected transaction failure.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated failure', $exception->getMessage());
+        }
+        $this->assertSame('approved', $order->fresh()->status);
+        $this->assertSame($version, $order->fresh()->workflow_version);
+        $this->assertSame(0, $order->deliveries()->count());
+        $this->assertCount(0, Storage::disk('local')->allFiles());
+        $this->assertSame(0, $order->events()->where('action', 'product_delivered')->count());
+    }
+
+    public function test_delivery_modal_data_is_scoped_to_the_current_responsible_and_stage(): void
+    {
+        Notification::fake();
+        $order = $this->awaitingDecision();
+        $url = $this->url('delivery-form', $order);
+        $this->actingAs($this->concremat)->getJson($url)->assertForbidden();
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $this->actingAs($this->concremat)->getJson($url)->assertOk()->assertJsonPath('order.id', $order->id)
+            ->assertJsonPath('order.status', 'approved')->assertJsonPath('order.deliveries', [])
+            ->assertHeader('Cache-Control', 'no-store, private');
+        foreach ([$this->analyst, $this->inspector, $this->viewer] as $user) {
+            $this->actingAs($user)->getJson($url)->assertForbidden();
+        }
+        Storage::fake('local');
+        config(['os_dnit.attachment_disk' => 'local']);
+        $this->act('deliver', $order, $this->concremat, ['file' => UploadedFile::fake()->create('entrega.pdf', 30720, 'application/pdf'), 'comment' => 'Entrega para avaliação.'])->assertSessionHasNoErrors();
+        $this->actingAs($this->analyst)->getJson($url)->assertOk()->assertJsonPath('order.status', 'awaiting_delivery_review')
+            ->assertJsonCount(1, 'order.deliveries')->assertJsonMissingPath('order.deliveries.0.path');
+        $this->actingAs($this->concremat)->getJson($url)->assertForbidden();
+        $this->actingAs($this->actor('analyst'))->getJson($url)->assertForbidden();
+        ContractParticipant::where('user_id', $this->concremat->id)->update(['status' => 'inactive']);
+        $this->actingAs($this->concremat)->getJson($url)->assertNotFound();
+    }
+
+    public function test_stage_deadline_details_keep_revision_dates_and_approval_duration_without_double_counting_orders(): void
+    {
+        Notification::fake();
+        Storage::fake('local');
+        config(['os_dnit.attachment_disk' => 'local']);
+        $this->travelTo(Carbon::parse('2026-11-01 10:00:00'));
+        $order = $this->draft();
+        $this->travelTo(Carbon::parse('2026-11-01 11:00:00'));
+        $this->act('submit', $order, $this->analyst)->assertSessionHasNoErrors();
+        $this->travelTo(Carbon::parse('2026-11-01 20:00:00'));
+        $analysis = [...$this->analysis('save'), 'estimated_deadline' => '2026-11-04'];
+        $this->act('review', $order, $this->concremat, $analysis)->assertSessionHasNoErrors();
+        $this->travelTo(Carbon::parse('2026-11-02 10:00:00'));
+        $this->act('review', $order, $this->concremat, [...$analysis, 'mode' => 'forward'])->assertSessionHasNoErrors();
+        $this->travelTo(Carbon::parse('2026-11-02 12:00:00'));
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $this->travelTo(Carbon::parse('2026-11-05 12:00:00'));
+        $this->act('deliver', $order, $this->concremat, ['file' => UploadedFile::fake()->create('produto.pdf', 20, 'application/pdf'), 'comment' => 'Relatório.'])->assertSessionHasNoErrors();
+        $this->travelTo(Carbon::parse('2026-11-07 12:00:00'));
+        $this->act('review-delivery', $order, $this->analyst, ['decision' => 'reject', 'comment' => 'Rever cálculos.'])->assertSessionHasNoErrors();
+        $this->travelTo(Carbon::parse('2026-11-08 12:00:00'));
+        $this->act('deliver', $order, $this->concremat, ['file' => UploadedFile::fake()->create('revisao.pdf', 20, 'application/pdf'), 'comment' => 'Cálculos corrigidos.'])->assertSessionHasNoErrors();
+        $this->travelTo(Carbon::parse('2026-11-10 12:00:00'));
+        $this->act('review-delivery', $order, $this->analyst, ['decision' => 'approve', 'comment' => 'Atendido.'])->assertSessionHasNoErrors();
+        $order->update(['estimated_deadline' => '2026-12-30']);
+        $version = $order->fresh()->workflow_version;
+        $events = $order->events()->count();
+        $url = route('tenant.os-dnit.dashboard.stage-deadlines', $this->tenant);
+        $filters = ['stage' => 'delivery', 'date_from' => '2026-11-07', 'date_to' => '2026-11-12'];
+        $response = $this->actingAs($this->analyst)->getJson($url.'?'.http_build_query($filters));
+        $response->assertOk()->assertJsonPath('totals.missed', 1)->assertJsonPath('totals.attended', 0)->assertJsonCount(1, 'items')
+            ->assertJsonPath('items.0.id', $order->id)->assertJsonPath('items.0.revision', 1)
+            ->assertJsonPath('items.0.elapsed_minutes', 1440)->assertJsonPath('items.0.evaluation_minutes', 2880)
+            ->assertJsonPath('items.0.evaluation_result', 'approve')->assertJsonMissingPath('items.0.path');
+        $this->assertSame('2026-11-08 12:00', Carbon::parse($response->json('items.0.delivered_at'))->format('Y-m-d H:i'));
+        $this->assertSame('2026-11-10 12:00', Carbon::parse($response->json('items.0.evaluated_at'))->format('Y-m-d H:i'));
+        $this->assertSame('2026-11-04', Carbon::parse($response->json('items.0.deadline_at'))->toDateString());
+        $this->getJson($url.'?'.http_build_query([...$filters, 'stage' => 'supervision', 'date_from' => '2026-11-01']))
+            ->assertOk()->assertJsonPath('items.0.elapsed_minutes', 1380);
+        $this->getJson($url.'?'.http_build_query([...$filters, 'stage' => 'evaluation']))
+            ->assertOk()->assertJsonPath('items.0.elapsed_minutes', 2880)->assertJsonPath('items.0.revision', 1);
+        $this->getJson($url.'?'.http_build_query([...$filters, 'stage' => 'invalid']))->assertUnprocessable()->assertJsonValidationErrors('stage');
+        $this->getJson($url.'?'.http_build_query([...$filters, 'contract_id' => 999999]))->assertUnprocessable()->assertJsonValidationErrors('contract_id');
+        $this->assertSame($version, $order->fresh()->workflow_version);
+        $this->assertSame($events, $order->events()->count());
+        ContractParticipant::where('user_id', $this->analyst->id)->update(['status' => 'inactive']);
+        $this->getJson($url.'?'.http_build_query($filters))->assertForbidden();
+    }
+
+    public function test_stage_deadlines_do_not_mark_an_ongoing_stage_as_attended(): void
+    {
+        Notification::fake();
+        $this->travelTo(Carbon::parse('2026-11-01 12:00:00'));
+        $order = $this->awaitingDecision();
+        $this->act('decide', $order, $this->inspector, ['decision' => 'approve', 'comment' => 'Autorizado.'])->assertSessionHasNoErrors();
+        $url = route('tenant.os-dnit.dashboard.stage-deadlines', [$this->tenant, 'stage' => 'delivery', 'date_from' => '2026-11-01', 'date_to' => '2026-12-31']);
+        $this->actingAs($this->analyst)->getJson($url)->assertOk()->assertJsonPath('totals.pending', 1)
+            ->assertJsonPath('totals.attended', 0)->assertJsonPath('totals.missed', 0)->assertJsonPath('items.0.finished_at', null);
+        $this->travelTo(Carbon::parse('2026-12-11 12:00:00'));
+        $this->getJson($url)->assertOk()->assertJsonPath('totals.pending', 0)->assertJsonPath('totals.missed', 1)
+            ->assertJsonPath('items.0.delivered_at', null);
+    }
+
+    public function test_stage_deadlines_do_not_use_tentative_dates_before_fiscal_approval(): void
+    {
+        Notification::fake();
+        $order = $this->awaitingDecision();
+        $order->update(['desired_deadline' => '2020-01-01', 'estimated_deadline' => '2020-01-01']);
+        $url = route('tenant.os-dnit.dashboard.stage-deadlines', [$this->tenant, 'stage' => 'inspector', 'date_from' => now()->startOfMonth()->toDateString(), 'date_to' => now()->endOfMonth()->toDateString()]);
+        $this->actingAs($this->analyst)->getJson($url)->assertOk()->assertJsonPath('totals.unapproved', 1)
+            ->assertJsonPath('totals.attended', 0)->assertJsonPath('totals.missed', 0)
+            ->assertJsonPath('items.0.deadline_at', null);
+    }
+
+    private function deliverAndAccept(OsDnitOrder $order): void
+    {
+        Storage::fake('local');
+        config(['os_dnit.attachment_disk' => 'local']);
+        $this->act('deliver', $order, $this->concremat, ['file' => UploadedFile::fake()->create('produto.pdf', 20, 'application/pdf'), 'comment' => 'Memorial e relatório de drenagem.'])->assertSessionHasNoErrors();
+        $this->act('review-delivery', $order, $this->analyst, ['decision' => 'approve', 'comment' => 'A entrega atendeu à demanda.'])->assertSessionHasNoErrors();
     }
 
     private function actor(?string $role): User

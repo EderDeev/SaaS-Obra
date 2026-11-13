@@ -15,7 +15,7 @@ window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener()
 window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
 window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
 globalThis.ResizeObserver=class{observe(){}disconnect(){}};
-const positions={analista:[0,0],supervisao:[260,0],fiscal:[520,0],'ajuste-analista':[0,165],'ajuste-supervisao':[260,165],decisao:[520,165],aprovada:[260,330],finalizada:[520,330]};
+const positions={analista:[0,0],supervisao:[260,0],fiscal:[520,0],'ajuste-analista':[0,165],'ajuste-supervisao':[260,165],decisao:[520,165],aprovada:[260,330],entrega:[520,330],avaliacao:[520,495],atendeu:[520,660],revisao:[260,495],finalizada:[260,660]};
 HTMLElement.prototype.getBoundingClientRect=function(){let point=positions[this.dataset.osNode];if(this.dataset.flowIndex!==undefined){const n=Number(this.dataset.flowIndex),r=Math.floor(n/3),c=r%2?2-n%3:n%3;point=[c*260,r*165];}return point?{left:point[0],top:point[1],right:point[0]+205,bottom:point[1]+115,width:205,height:115}:{left:0,top:0,right:740,bottom:445,width:740,height:445};};
 const errors=[];
 window.addEventListener('error',event=>errors.push(event.error));
@@ -38,8 +38,8 @@ for(const guide of guides){
   assert.equal(cards.at(-1).dataset.informational,'true');
  }
  assert.equal(document.querySelector('.os-tutorial-route'),null,'A faixa inferior deve estar removida');
- if(guide.id==='os-dnit'){assert.equal(document.querySelectorAll('[data-os-node][aria-haspopup=dialog]').length,3);assert.equal(document.querySelectorAll('[data-informational=true]').length,5);}
- assert.equal(document.querySelectorAll('.os-tutorial-edge').length,cards.length===8&&guide.id==='os-dnit'?5:cards.length-1);
+ if(guide.id==='os-dnit'){assert.equal(document.querySelectorAll('[data-os-node][aria-haspopup=dialog]').length,5);assert.equal(document.querySelectorAll('[data-informational=true]').length,7);}
+ assert.equal(document.querySelectorAll('.os-tutorial-edge').length,guide.id==='os-dnit'?8:cards.length-1);
  for(const card of cards){
   pointer(card,'pointerover');await wait(()=>document.querySelector('[role=tooltip]'));
   assert.equal(card.getAttribute('aria-describedby'),document.querySelector('[role=tooltip]').id);
@@ -94,10 +94,14 @@ for(const guide of guides){
   if (document.querySelector('[data-os-walkthrough]')) {
     const walkthrough=document.querySelector('[data-os-walkthrough]');
     const phases=walkthrough.querySelectorAll('[aria-label="Passos da etapa"] button');
-    assert.equal(phases.length,3);
-    for(let phase=0;phase<3;phase++) {
-      phases[phase].click();await wait(()=>walkthrough.querySelector(`[data-example-phase="${phase}"]`));
+    const compact=['entrega','avaliacao'].includes(walkthrough.dataset.osWalkthrough);
+    assert.equal(phases.length,compact?0:3);
+    if(compact){assert.equal(walkthrough.querySelector('.tutorial-walkthrough-navigation'),null);assert.equal(walkthrough.querySelectorAll('.tutorial-example-field').length,walkthrough.dataset.osWalkthrough==='entrega'?2:3);}
+    for(let phase=0;phase<(compact?1:3);phase++) {
+      phases[phase]?.click();await wait(()=>walkthrough.querySelector(`[data-example-phase="${phase}"]`));
       for(const field of walkthrough.querySelectorAll('input,textarea')) {assert.ok(field.readOnly);assert.ok(field.value.length>0);}
+      const deliveryChoices=walkthrough.querySelectorAll('[aria-label="Avaliação da entrega do produto"] button');
+      if(deliveryChoices.length){deliveryChoices[1].click();await wait(()=>walkthrough.textContent.includes('Considerações e motivo da revisão'));assert.ok([...walkthrough.querySelectorAll('textarea')].some(field=>field.value.includes('não contempla duas saídas')));deliveryChoices[0].click();await wait(()=>walkthrough.textContent.includes('Considerações sobre a entrega'));}
       const choices=walkthrough.querySelectorAll('[aria-label="Exemplo de decisão"] button');
       if(choices.length){
         choices[1].click();await wait(()=>walkthrough.textContent.includes('Motivo da reprovação'));
@@ -107,7 +111,7 @@ for(const guide of guides){
       }
     }
     assert.equal(walkthrough.querySelectorAll('form,img,input[type=file]').length,0);
-    assert.ok(walkthrough.querySelectorAll('.tutorial-walkthrough-navigation button')[1].disabled);
+    if(!compact)assert.ok(walkthrough.querySelectorAll('.tutorial-walkthrough-navigation button')[1].disabled);
   }
   if(document.querySelector('[data-tutorial-walkthrough]')) {
     const walkthrough=document.querySelector('[data-tutorial-walkthrough]');
@@ -184,6 +188,13 @@ for(const label of ['Corrigir produtos','Corrigir demanda','Aprovar']){
  [...document.querySelectorAll('.os-tutorial-choice')].find(button=>button.textContent.includes(label)).click();
  await wait(()=>document.querySelectorAll('.os-tutorial-edge.return').length===(label==='Aprovar'?0:2));
 }
+const deliveryButtons=document.querySelectorAll('[aria-label="Decisão sobre a entrega"] button');
+deliveryButtons[1].click();await wait(()=>document.querySelector('[data-os-node="revisao"] strong').textContent==='Revisão 1');
+assert.equal(document.querySelector('[data-os-node="finalizada"]').dataset.dim,'true');
+assert.equal(document.querySelectorAll('.os-tutorial-edge.return').length,2);
+deliveryButtons[1].click();await wait(()=>document.querySelector('[data-os-node="revisao"] strong').textContent==='Revisão 2');
+deliveryButtons[0].click();await wait(()=>document.querySelectorAll('.os-tutorial-edge.return').length===0);
+assert.equal(document.querySelector('[data-os-node="finalizada"]').dataset.dim,'false');
 root.unmount();
 
 // Test the page shell with only global chrome and Inertia's context stubbed.

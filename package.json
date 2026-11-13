@@ -8,8 +8,8 @@
         "test:tutorial-ui": "node tests/Frontend/tutorials-visual.test.mjs",
         "dev": "vite",
         "dev:app": "composer run dev",
-        "serve:php": "php -d upload_max_filesize=100M -d post_max_size=128M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 127.0.0.1:8000 server.php",
-        "serve:mobile": "php -d upload_max_filesize=100M -d post_max_size=128M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 0.0.0.0:8000 server.php"
+        "serve:php": "php -d upload_max_filesize=100M -d post_max_size=320M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 127.0.0.1:8000 server.php",
+        "serve:mobile": "php -d upload_max_filesize=100M -d post_max_size=320M -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 -S 0.0.0.0:8000 server.php"
     },
     "devDependencies": {
         "@tailwindcss/forms": "^0.5.3",

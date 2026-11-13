@@ -24,7 +24,7 @@ php artisan queue:work database --queue=ged --sleep=3 --tries=1 --timeout="${GED
 
 exec php \
     -d upload_max_filesize=100M \
-    -d post_max_size=128M \
+    -d post_max_size=320M \
     -d memory_limit=512M \
     -d max_execution_time=0 \
     -d max_input_time=0 \

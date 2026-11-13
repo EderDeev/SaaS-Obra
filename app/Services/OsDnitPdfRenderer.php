@@ -22,14 +22,16 @@ class OsDnitPdfRenderer
         'draft_updated' => 'Demanda atualizada', 'submitted' => 'Enviada à Supervisão',
         'analysis_saved' => 'Análise salva', 'forwarded' => 'Encaminhada ao fiscal do contrato',
         'returned' => 'Reprovada e devolvida', 'approved' => 'Demanda aprovada', 'completed' => 'OS finalizada - serviço concluído',
+        'product_delivered' => 'Produto entregue para avaliação', 'delivery_rejected' => 'Entrega não aprovada - revisão solicitada',
+        'delivery_accepted' => 'Entrega aprovada - OS finalizada automaticamente',
     ];
 
     /** Build the document while the controller holds a shared order lock. */
     public function data(Tenant $tenant, OsDnitOrder $order, string $scope = 'complete'): array
     {
-        $order->load(['contract', 'creator', 'items', 'attachments', 'analystReview', 'events.actor']);
+        $order->load(['contract', 'creator', 'items', 'attachments', 'analystReview', 'events.actor', 'deliveries.creator', 'deliveries.reviewer']);
         $events = $order->events;
-        $approval = in_array($order->status, ['approved', 'completed'], true) ? $events->last(fn ($event) => $event->action === 'approved') : null;
+        $approval = in_array($order->status, ['approved', 'awaiting_delivery_review', 'delivery_revision', 'delivery_accepted', 'completed'], true) ? $events->last(fn ($event) => $event->action === 'approved') : null;
         $decision = $events->last(fn ($event) => in_array($event->action, ['returned', 'approved'], true));
         $requested = $order->items->map->only(['product_id', 'product_code', 'product_name', 'unit', 'quantity'])->values()->all();
         $reviewed = $approval ? ($approval->snapshot['review_items'] ?? []) : ($order->review_items ?? []);
@@ -63,7 +65,7 @@ class OsDnitPdfRenderer
         $logoPath = public_path('brand/dnit-logo.png');
 
         return [
-            'tenant' => $tenant, 'order' => $order, 'approved' => in_array($order->status, ['approved', 'completed'], true),
+            'tenant' => $tenant, 'order' => $order, 'approved' => in_array($order->status, ['approved', 'awaiting_delivery_review', 'delivery_revision', 'delivery_accepted', 'completed'], true),
             'scope' => $scope, 'includeConcremat' => $scope !== 'analyst',
             'includeInspector' => in_array($scope, ['inspector', 'complete'], true), 'includeFlow' => $scope === 'complete',
             'decision' => $decision, 'decisionItems' => $decision?->snapshot['review_items'] ?? [],

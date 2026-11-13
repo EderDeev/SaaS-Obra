@@ -89,7 +89,7 @@ class TenantAssistantOsDnitTest extends TestCase
             ['Como analisar uma Ordem de Serviço e reprovar no fiscal do contrato?', 'Ordem de Serviço: análise Supervisão e decisão do fiscal', ['comentário obrigatório', 'Devolução não libera edição']],
             ['Como baixar o PDF completo Ordem de Serviço?', 'Ordem de Serviço: baixar PDF e consultar o fluxo', ['última página', 'A4']],
             ['Como cadastrar produtos Ordem de Serviço?', 'Ordem de Serviço: produtos e rodovias', ['modal', '15 itens']],
-            ['Como funciona o dashboard Ordem de Serviço?', 'Ordem de Serviço: dashboard', ['depois de Produtos', 'finalização é uma etapa separada']],
+            ['Como funciona o dashboard Ordem de Serviço?', 'Ordem de Serviço: dashboard', ['depois de Produtos', 'finaliza a OS automaticamente']],
             ['Como configurar responsáveis e permissões Ordem de Serviço?', 'Ordem de Serviço: responsáveis, permissões e avisos', ['permissões para Ordem de Serviço', 'Revogar visualizar']],
             ['Como vincular atividade com Ordem de Serviço?', 'Atividades: vínculo com Ordem de Serviço', ['seletor pesquisável', 'mesmo contrato']],
         ] as [$question, $title, $expected]) {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\OsDnitHighway;
 use App\Models\OsDnitOrder;
 use App\Models\OsDnitOrderAttachment;
+use App\Models\OsDnitOrderDelivery;
 use App\Models\OsDnitProduct;
 use App\Models\OsDnitSupervisionLot;
 use App\Models\Tenant;
@@ -36,7 +37,7 @@ class OsDnitOrderController extends Controller
         if ($request->routeIs('tenant.os-dnit.analysis.index')) {
             return to_route('tenant.os-dnit.orders.index', [$tenant->slug, ...$request->only(['q', 'contract_id', 'supervision_lot_id', 'highway_id', 'status', 'page']), 'pending' => 1]);
         }
-        $contracts = $this->contracts($request, $tenant)->orderBy('code')->get(['id', 'code', 'name', 'status']);
+        $contracts = OsDnitContractAccess::configuredContracts($request->user(), $tenant, Permissions::VIEW)->orderBy('code')->get(['id', 'code', 'name', 'status']);
         $filters = $request->validate(['q' => ['nullable', 'string', 'max:120'], 'contract_id' => ['nullable', Rule::in($contracts->pluck('id')->all())], 'status' => ['nullable', Rule::in(array_keys(OsDnitOrder::STATUSES))], 'pending' => ['nullable', 'boolean'], 'stage' => ['nullable', Rule::in(['all', ...array_keys(OsDnitOrder::STAGES)])]]);
         $lots = OsDnitSupervisionLot::where('tenant_id', $tenant->id)->whereIn('contract_id', $contracts->pluck('id'))
             ->when($filters['contract_id'] ?? null, fn ($query, $id) => $query->where('contract_id', $id))
@@ -69,13 +70,14 @@ class OsDnitOrderController extends Controller
             'orders' => $orders
                 ->when($filters['pending'] ?? false, fn ($query) => $query->whereIn('id', $analysisIds))
                 ->when($filters['stage'] !== 'all', fn ($query) => $query->whereIn('status', OsDnitOrder::STAGES[$filters['stage']]))
-                ->with('contract:id,code,name')->withCount(['items', 'attachments'])
-                ->when($filters['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+                ->with('contract:id,code,name')->withCount(['items', 'attachments'])->withMax('deliveries', 'revision')
+                ->when($filters['status'] ?? null, fn ($query, $status) => $query->whereIn('status', OsDnitOrder::STATUS_FILTERS[$status] ?? [$status]))
                 ->latest('id')->paginate(10)->withQueryString()
                 ->through(fn (OsDnitOrder $order) => $order->setAttribute('can_submit', Workflow::canSubmit($request->user(), $tenant, $order))
                     ->setAttribute('products_count', count($order->review_items ?? []))
-                    ->setAttribute('can_finalize', Workflow::canFinalize($request->user(), $tenant, $order))
-                    ->setAttribute('can_analyze', in_array($order->id, $analysisIds, true))
+                    ->setAttribute('can_analyze', in_array($order->status, ['awaiting_concremat', 'returned_concremat', 'awaiting_contract'], true) && in_array($order->id, $analysisIds, true))
+                    ->setAttribute('can_deliver', Workflow::canDeliver($request->user(), $tenant, $order))
+                    ->setAttribute('can_review_delivery', Workflow::canReviewDelivery($request->user(), $tenant, $order))
                     ->setAttribute('can_delete', $this->canDelete($request, $tenant, $order))),
             'contracts' => $contracts, 'lots' => $lots, 'highways' => $highways, 'filters' => $filters,
             'emptyTenantSetup' => Permissions::canSetUpEmptyTenant($request->user(), $tenant),
@@ -84,6 +86,7 @@ class OsDnitOrderController extends Controller
             'analysisOrderId' => $request->filled('analysis_order_id') ? (int) $request->input('analysis_order_id') : null,
             'canCreate' => Workflow::contracts($request->user(), $tenant, 'analyst')->whereIn('id', Permissions::contractIds($request->user(), $tenant, Permissions::CREATE))->exists(),
             'statuses' => OsDnitOrder::STATUSES,
+            'statusOptions' => array_intersect_key(OsDnitOrder::STATUSES, OsDnitOrder::STATUS_FILTERS),
         ]);
     }
 
@@ -264,12 +267,13 @@ class OsDnitOrderController extends Controller
         if ($analysisMode && ! $request->expectsJson()) {
             return to_route('tenant.os-dnit.orders.index', [$tenant->slug, 'analysis_order_id' => $order->id]);
         }
-        $order->load(['contract:id,code,name', 'creator:id,name', 'items', 'attachments', 'analystReview:id,name', 'events.actor:id,name']);
+        $order->load(['contract:id,code,name', 'creator:id,name', 'items', 'attachments', 'analystReview:id,name', 'events.actor:id,name', 'deliveries.creator:id,name', 'deliveries.reviewer:id,name']);
 
         $data = [
             'order' => $order, 'statuses' => OsDnitOrder::STATUSES, 'analysisMode' => $analysisMode,
             'capabilities' => [
-                'finalize' => Workflow::canFinalize($request->user(), $tenant, $order),
+                'deliver' => Workflow::canDeliver($request->user(), $tenant, $order),
+                'reviewDelivery' => Workflow::canReviewDelivery($request->user(), $tenant, $order),
                 'delete' => $this->canDelete($request, $tenant, $order),
                 'edit' => Workflow::canEdit($request->user(), $tenant, $order),
                 'submit' => Workflow::canSubmit($request->user(), $tenant, $order),
@@ -280,6 +284,7 @@ class OsDnitOrderController extends Controller
             'categories' => OsDnitProduct::CATEGORIES,
             'frequencies' => OsDnitProduct::FREQUENCIES,
             'attachmentLinks' => $order->attachments->mapWithKeys(fn ($attachment) => [$attachment->id => route('tenant.os-dnit.orders.attachments.download', [$tenant->slug, $order, $attachment])]),
+            'deliveryLinks' => $order->deliveries->mapWithKeys(fn ($delivery) => [$delivery->id => route('tenant.os-dnit.orders.deliveries.download', [$tenant->slug, $order, $delivery])]),
         ];
 
         return $analysisMode ? response()->json($data)->header('Cache-Control', 'private, no-store')
@@ -294,6 +299,28 @@ class OsDnitOrderController extends Controller
         abort_unless($disk->exists($attachment->path), 404);
 
         return $disk->download($attachment->path, $attachment->original_name, ['X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store']);
+    }
+
+    public function downloadDelivery(Request $request, Tenant $tenant, OsDnitOrder $order, OsDnitOrderDelivery $delivery): StreamedResponse
+    {
+        $this->authorizeOrder($request, $tenant, $order);
+        abort_unless((int) $delivery->order_id === (int) $order->id, 404);
+        $disk = Storage::disk($delivery->storage_disk);
+        abort_unless($disk->exists($delivery->path), 404);
+
+        return $disk->download($delivery->path, $delivery->original_name, ['X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store']);
+    }
+
+    public function deliveryForm(Request $request, Tenant $tenant, OsDnitOrder $order): JsonResponse
+    {
+        $this->authorizeOrder($request, $tenant, $order);
+        abort_unless(Workflow::canDeliver($request->user(), $tenant, $order) || Workflow::canReviewDelivery($request->user(), $tenant, $order), 403);
+        $order->load('deliveries');
+
+        return response()->json([
+            'order' => $order,
+            'deliveryLinks' => $order->deliveries->mapWithKeys(fn ($delivery) => [$delivery->id => route('tenant.os-dnit.orders.deliveries.download', [$tenant->slug, $order, $delivery])]),
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     private function validateDemand(Request $request, Tenant $tenant, int $contractId, array $contractIds): array
@@ -316,7 +343,7 @@ class OsDnitOrderController extends Controller
             'sei_reference' => ['nullable', 'string', 'max:255'],
             'items' => ['prohibited'],
             'attachments' => ['nullable', 'array', 'max:10'],
-            'attachments.*' => ['required', 'file', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,zip', 'max:10240'],
+            'attachments.*' => ['required', 'file', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,zip', 'max:30720'],
         ], [
             'contract_id.in' => 'Selecione um contrato ao qual você tenha acesso.',
             'highway_id.exists' => 'Selecione uma rodovia ativa do contrato da OS.',
@@ -329,7 +356,7 @@ class OsDnitOrderController extends Controller
             'items.*.quantity.min' => 'A quantidade deve ser maior que zero.',
             'attachments.array' => 'Anexos: selecione uma lista de arquivos válidos.',
             'attachments.max' => 'Anexos: selecione no máximo 10 arquivos.',
-            'attachments.*.max' => 'Cada anexo pode ter no máximo 10 MB.',
+            'attachments.*.max' => 'Cada anexo pode ter no máximo 30 MB.',
         ], [
             'request_number' => 'número da solicitação', 'contract_id' => 'contrato de supervisão',
             'supervision_lot_id' => 'lote de supervisão', 'highway_id' => 'rodovia',

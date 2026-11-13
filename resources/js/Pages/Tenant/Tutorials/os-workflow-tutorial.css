@@ -5,3 +5,10 @@
 .os-tutorial-tooltip:after{content:'';position:absolute;top:100%;left:0;right:0;height:12px}.os-tutorial-node.analyst .os-tutorial-tooltip:after,.os-tutorial-node.supervision .os-tutorial-tooltip:after,.os-tutorial-node.inspector .os-tutorial-tooltip:after{top:auto;bottom:100%}
 
 .os-tutorial-node[data-informational=true]{cursor:default}
+.os-tutorial-node.delivery{grid-area:3/3}
+.os-tutorial-node.delivery-review{grid-area:4/3}
+.os-tutorial-node.delivery-decision{grid-area:5/3;background:var(--primary-50);border-style:dashed}
+.os-tutorial-node.product-revision{grid-area:4/2}
+.os-tutorial-map .os-tutorial-node.finished{grid-area:5/1}
+.os-delivery-choices{padding-top:15px;border-top:1px solid var(--border)}
+@media(max-width:540px){.os-tutorial-node.delivery{order:7}.os-tutorial-node.delivery-review{order:8}.os-tutorial-node.delivery-decision{order:9}.os-tutorial-node.product-revision{order:10}.os-tutorial-map .os-tutorial-node.finished{order:11}}

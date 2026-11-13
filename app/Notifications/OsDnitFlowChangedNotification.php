@@ -92,6 +92,9 @@ class OsDnitFlowChangedNotification extends Notification implements ShouldQueue
             'forwarded' => 'Análise encaminhada ao fiscal do contrato',
             'returned' => $event->to_status === 'returned_concremat' ? 'OS reprovada e devolvida à Supervisão' : 'OS reprovada e devolvida ao analista DNIT',
             'approved' => 'Demanda aprovada',
+            'product_delivered' => 'Produto entregue para avaliação',
+            'delivery_rejected' => 'Entrega não aprovada: revisão solicitada',
+            'delivery_accepted' => 'Entrega aprovada: OS finalizada automaticamente',
             'completed' => 'OS finalizada: serviço concluído',
             default => 'Atualização da OS',
         };
@@ -104,8 +107,11 @@ class OsDnitFlowChangedNotification extends Notification implements ShouldQueue
             'awaiting_contract' => 'O fiscal do contrato deve consultar a demanda e a Análise Supervisão para decidir sobre a autorização.',
             'returned_concremat' => 'A Supervisão deve consultar a justificativa, revisar a análise e encaminhá-la novamente.',
             'returned_analyst' => 'O analista DNIT deve consultar a justificativa da devolução. O pedido original permanece bloqueado para edição.',
-            'completed' => 'O fiscal do contrato registrou a conclusão do serviço e finalizou a OS.',
-            'approved' => 'O serviço foi aprovado pelo fiscal do contrato. Consulte a OS e a análise autorizada no sistema.',
+            'completed' => 'A conclusão do serviço foi registrada e a OS está finalizada.',
+            'approved' => 'A Supervisão deve entregar o produto com arquivo e comentário para avaliação do analista DNIT solicitante.',
+            'awaiting_delivery_review' => 'O analista DNIT solicitante deve avaliar o arquivo e as considerações da entrega.',
+            'delivery_revision' => 'A Supervisão deve consultar a justificativa e enviar uma nova revisão do produto.',
+            'delivery_accepted' => 'O analista DNIT aceitou a entrega e a OS foi finalizada automaticamente.',
             default => 'Consulte o andamento da OS no sistema.',
         };
     }

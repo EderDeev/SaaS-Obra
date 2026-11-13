@@ -18,7 +18,9 @@ class OsDnitOrder extends Model
     public const STATUSES = [
         'draft' => 'Demanda', 'awaiting_concremat' => 'Em análise Supervisão',
         'awaiting_contract' => 'Aguardando fiscal do contrato', 'returned_concremat' => 'Devolvida à Supervisão',
-        'returned_analyst' => 'Devolvida ao analista DNIT', 'approved' => 'Aprovada', 'completed' => 'Finalizada',
+        'returned_analyst' => 'Devolvida ao analista DNIT', 'approved' => 'Aguardando entrega do produto',
+        'awaiting_delivery_review' => 'Aguardando avaliação do analista DNIT',
+        'delivery_revision' => 'Produto em revisão', 'delivery_accepted' => 'Entrega aprovada', 'completed' => 'Finalizada',
     ];
 
     public const STAGES = [
@@ -26,6 +28,17 @@ class OsDnitOrder extends Model
         'concremat' => ['awaiting_concremat', 'returned_concremat'],
         'contract_inspector' => ['awaiting_contract'],
         'approved' => ['approved'],
+        'delivery_review' => ['awaiting_delivery_review'],
+        'delivery_revision' => ['delivery_revision'],
+        'delivery_accepted' => ['delivery_accepted'],
+        'completed' => ['completed'],
+    ];
+
+    public const STATUS_FILTERS = [
+        'draft' => ['draft', 'returned_analyst'],
+        'awaiting_concremat' => ['awaiting_concremat', 'returned_concremat'],
+        'awaiting_contract' => ['awaiting_contract'],
+        'approved' => ['approved', 'awaiting_delivery_review', 'delivery_revision', 'delivery_accepted'],
         'completed' => ['completed'],
     ];
 
@@ -64,5 +77,10 @@ class OsDnitOrder extends Model
     public function events(): HasMany
     {
         return $this->hasMany(OsDnitOrderEvent::class, 'order_id')->orderBy('id');
+    }
+
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(OsDnitOrderDelivery::class, 'order_id')->orderBy('revision');
     }
 }

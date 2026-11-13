@@ -26,7 +26,7 @@ class OsDnitOrdersTest extends TestCase
         Storage::fake('local');
         [$tenant, $user, $contract, $highway, $product] = $this->context();
         [$otherTenant] = $this->context();
-        $file = UploadedFile::fake()->create('demanda.pdf', 10, 'application/pdf');
+        $file = UploadedFile::fake()->create('demanda.pdf', 30720, 'application/pdf');
 
         $this->actingAs($user)->post(route('tenant.os-dnit.orders.store', $tenant), [
             ...$this->payload($contract, $highway, $product), 'tenant_id' => $otherTenant->id,
@@ -145,7 +145,7 @@ class OsDnitOrdersTest extends TestCase
         [$tenant, $user, $contract, $highway, $product] = $this->context();
         $payload = $this->payload($contract, $highway, $product);
         $this->actingAs($user)->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload,
-            'attachments' => [UploadedFile::fake()->create('large.pdf', 10241, 'application/pdf')],
+            'attachments' => [UploadedFile::fake()->create('large.pdf', 30721, 'application/pdf')],
         ])->assertSessionHasErrors('attachments.0');
         $this->post(route('tenant.os-dnit.orders.store', $tenant), [...$payload,
             'attachments' => [UploadedFile::fake()->create('script.php', 1, 'text/x-php')],

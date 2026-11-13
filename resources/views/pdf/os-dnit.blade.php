@@ -46,6 +46,7 @@
         .record { border-top: .5pt solid #d8e1e8; margin-top: 12pt; padding-top: 2pt; }
         .record .caption { page-break-after: avoid; }
         .stage-heading { page-break-inside: avoid; }
+        .stage-label { background: #eef4f8; border-left: 3pt solid #244d6a; padding: 8pt 10pt; color: #163348; font-size: 10.5pt; font-weight: bold; line-height: 1.3; text-transform: uppercase; margin-bottom: 10pt; }
         .stage-heading h1 { font-size: 21pt; margin: 4pt 0 7pt; }
         .stage-heading .meta td { padding: 4pt 8pt 6pt 0; font-size: 8pt; }
         .stage-heading .label { font-size: 6.5pt; margin-bottom: 3pt; }
@@ -56,6 +57,18 @@
         .flow-entry .flow-state { font-size: 7pt; color: #56687a; page-break-after: avoid; }
         .flow-entry .muted { font-size: 7.3pt; }
         .stage-person { font-size: 8pt; color: #56687a; margin-bottom: 12pt; }
+        .inspector-stage h2 { margin: 12pt 0 7pt; padding-bottom: 5pt; }
+        .inspector-stage h3 { margin: 9pt 0 5pt; }
+        .inspector-stage .stage-person { margin-bottom: 8pt; }
+        .inspector-stage .intro { margin-bottom: 10pt; }
+        .inspector-stage .os-products td { padding: 6pt 7pt; }
+        .inspector-stage .os-products th { padding: 7pt; }
+        .inspector-summary { margin-top: 12pt; page-break-inside: avoid; }
+        .inspector-summary td { background: #eef4f8; padding: 10pt; border: none; vertical-align: middle; }
+        .inspector-summary .completion { border-left: 1pt solid #c3d3df; }
+        .inspector-summary p { margin-bottom: 0; }
+        .inspector-summary .decision-title { margin-bottom: 6pt; font-size: 8pt; }
+        .inspector-summary .deadline { margin: 0; }
     </style>
 </head>
 <body>
@@ -87,7 +100,8 @@
 
     @if($includeInspector)
     <div class="page-break"></div>
-    @include('pdf.os-dnit-stage-header', ['sectionTitle' => 'Análise do fiscal do contrato'])
+    <div class="inspector-stage">
+    @include('pdf.os-dnit-stage-header', ['sectionTitle' => 'Análise do fiscal do contrato', 'compact' => true])
     <h2>Decisão do fiscal do contrato</h2>
     @if($decision)
         <p class="stage-person">{{ $decision->actor?->name ?? 'Responsável não registrado' }} · Fiscal do contrato · {{ $time($decision->created_at) }}</p>
@@ -102,17 +116,34 @@
         <p class="prose">{{ filled($decision->comment) ? $decision->comment : 'Comentário da decisão não registrado.' }}</p>
         <h2>{{ $decision->action === 'approved' ? 'Serviços autorizados' : 'Produtos avaliados nesta decisão' }}</h2>
         @include('pdf.os-dnit-products', ['items' => $decisionItems])
-        <div style="margin-top: 16pt"><span class="label">{{ $decision->action === 'approved' ? 'Prazo autorizado' : 'Prazo avaliado nesta decisão' }}</span><p class="deadline">{{ $date($decisionDeadline) }}</p></div>
     @else
         <p>Decisão do fiscal do contrato ainda não registrada. A execução ainda não foi autorizada pelo fiscal do contrato.</p>
     @endif
+    @if($decision || $order->status === 'completed')
+        <table class="inspector-summary"><tr>
+            @if($decision)<td style="width: {{ $order->status === 'completed' ? '32%' : '100%' }}"><span class="label">{{ $decision->action === 'approved' ? 'Prazo autorizado' : 'Prazo avaliado nesta decisão' }}</span><p class="deadline">{{ $date($decisionDeadline) }}</p></td>@endif
+            @if($order->status === 'completed')<td class="completion"><p class="decision-title">OS FINALIZADA - SERVIÇO CONCLUÍDO</p><p>Conclusão registrada em {{ $time($order->finalized_at) }}.</p></td>@endif
+        </tr></table>
     @endif
-
-    @if($includeInspector && $order->status === 'completed')
-        <div class="decision"><p class="decision-title">OS FINALIZADA - SERVIÇO CONCLUÍDO</p><p>Conclusão registrada em {{ $time($order->finalized_at) }}.</p></div>
+    </div>
     @endif
 
     @if($includeFlow)
+    @if($order->deliveries->isNotEmpty())
+    <div class="page-break"></div>
+    @include('pdf.os-dnit-stage-header', ['sectionTitle' => 'Entrega e avaliação do produto', 'compact' => true])
+    @foreach($order->deliveries as $delivery)
+        @if($delivery->revision)<h2>Revisão {{ $delivery->revision }}</h2>@endif
+        <p class="stage-person">{{ $delivery->creator?->name }} · Supervisão · {{ $time($delivery->created_at) }}</p>
+        <p><strong>Arquivo entregue:</strong> {{ $delivery->original_name }}</p>
+        <p class="prose">{{ $delivery->comment }}</p>
+        @if($delivery->decision)
+            <h3>{{ $delivery->decision === 'approve' ? 'Entrega aprovada' : 'Entrega não aprovada — revisão solicitada' }}</h3>
+            <p class="stage-person">{{ $delivery->reviewer?->name }} · Analista DNIT · {{ $time($delivery->reviewed_at) }}</p>
+            <p class="prose">{{ $delivery->review_comment }}</p>
+        @else<p class="muted">Aguardando avaliação do analista DNIT solicitante.</p>@endif
+    @endforeach
+    @endif
     <div class="page-break"></div>
     @include('pdf.os-dnit-stage-header', ['sectionTitle' => 'Histórico do fluxo', 'compact' => true])
     <h2>Histórico das movimentações</h2>
@@ -122,7 +153,7 @@
             <p class="flow-caption">{{ $time($event->created_at) }} · {{ $actions[$event->action] ?? $event->action }} · {{ $event->actor?->name ?? 'Usuário não disponível' }}</p>
             <p class="flow-state">{{ $statuses[$event->to_status] ?? $event->to_status }}</p>
             @if($record)
-                @if(filled($event->comment))<p class="prose">{{ $event->comment }}</p>@endif
+                @if(filled($event->comment))<p class="prose">{{ $event->action === 'product_delivered' ? preg_replace('/^Entrega inicial:\s*/u', '', $event->comment) : $event->comment }}</p>@endif
                 @if($event->action === 'draft_updated')
                     <p><strong>Assunto:</strong> {{ $event->snapshot['subject'] ?? 'Não registrado' }} · <strong>Prazo solicitado:</strong> {{ $date($event->snapshot['desired_deadline'] ?? null) }}</p>
                     <p class="prose">{{ $event->snapshot['technical_need'] ?? '' }}</p><p class="prose">{{ $event->snapshot['justification'] ?? '' }}</p>

@@ -32,20 +32,20 @@ class OsDnitManagementSummaryTest extends TestCase
         $this->order($foreignContract, $foreignUser, 'approved');
 
         $this->actingAs($user)->get(route('tenant.dashboard', $tenant))->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('osSummary.total', 7)
-                ->where('osSummary.stages', ['analyst' => 2, 'concremat' => 2, 'contract_inspector' => 1, 'approved' => 1, 'completed' => 1])
-                ->where('osSummary.pending', 3)->where('osSummary.returned', 2)->where('osSummary.overdue', 0)
+            ->assertInertia(fn (Assert $page) => $page->where('osSummary.total', 10)
+                ->where('osSummary.stages', ['analyst' => 2, 'concremat' => 2, 'contract_inspector' => 1, 'approved' => 1, 'delivery_review' => 1, 'delivery_revision' => 1, 'delivery_accepted' => 1, 'completed' => 1])
+                ->where('osSummary.pending', 7)->where('osSummary.returned', 3)->where('osSummary.overdue', 0)
                 ->has('osSummary.recent', 4)
                 ->where('osSummary.recent.0.status_label', 'Finalizada')
                 ->where('osSummary.recent.0.contract', $contract->code));
 
         $this->get(route('tenant.contracts.show', [$tenant, $contract]))->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('osSummary.total', 7)->where('osSummary.pending', 3));
+            ->assertInertia(fn (Assert $page) => $page->where('osSummary.total', 10)->where('osSummary.pending', 7));
         $this->get(route('tenant.contracts.show', [$tenant, $hidden]))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('osSummary', null));
         $this->get(route('tenant.contracts.index', $tenant))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('contracts', fn ($items) => collect($items)
-                ->firstWhere('id', $contract->id)['os_summary'] === ['total' => 7, 'pending' => 3, 'completed' => 1]
+                ->firstWhere('id', $contract->id)['os_summary'] === ['total' => 10, 'pending' => 7, 'completed' => 1]
                 && collect($items)->firstWhere('id', $hidden->id)['os_summary'] === null));
         $this->get(route('tenant.dashboard', $foreignTenant))->assertForbidden();
     }

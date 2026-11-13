@@ -161,6 +161,28 @@ class OsDnitPdfTest extends TestCase
         }
     }
 
+    public function test_inspector_deadline_and_completion_share_the_stage_page_with_a_detailed_decision(): void
+    {
+        [$tenant, $user, $contract, $order, $extra] = $this->context();
+        $second = OsDnitProduct::create(['tenant_id' => $tenant->id, 'contract_id' => $contract->id,
+            'code' => '02.PATO', 'name' => 'Elaboração de Plano de Trabalho e Orçamento - PATO (parcela do Produto 02)',
+            'unit' => 'und', 'category' => 'levantamentos_estudos', 'frequency' => 'on_demand']);
+        $this->action($tenant, $order, 'submit');
+        $this->action($tenant, $order, 'review', ['mode' => 'forward', 'review_comment' => 'Produtos e quantitativos conferidos.',
+            'estimated_deadline' => '2026-11-30', 'items' => [['product_id' => $extra->id, 'quantity' => 1], ['product_id' => $second->id, 'quantity' => 1]]]);
+        $this->action($tenant, $order, 'decide', ['decision' => 'approve',
+            'comment' => str_repeat('A documentação foi conferida e os quantitativos estão autorizados. ', 10)]);
+        $order->update(['status' => 'completed', 'finalized_at' => now(), 'finalized_by_id' => $user->id]);
+        $renderer = app(OsDnitPdfRenderer::class);
+        $data = $renderer->data($tenant, $order->fresh(), 'inspector');
+        $html = view('pdf.os-dnit', $data)->render();
+        $this->assertSame(3, substr_count($html, '<div class="stage-label">'));
+        $this->assertStringContainsString('class="inspector-summary"', $html);
+        $this->assertStringContainsString('OS FINALIZADA - SERVIÇO CONCLUÍDO', $html);
+        $this->assertStringContainsString('30/11/2026', $html);
+        $this->assertSame(3, $renderer->render($data)->getDomPDF()->getCanvas()->get_page_count());
+    }
+
     public function test_inspector_section_preserves_the_reason_and_scope_of_the_last_return(): void
     {
         [$tenant, $user, $contract, $order, $extra] = $this->context();

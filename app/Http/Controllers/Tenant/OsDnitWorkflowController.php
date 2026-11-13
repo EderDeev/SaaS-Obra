@@ -12,6 +12,7 @@ use App\Support\OsDnitPermissions;
 use App\Support\OsDnitWorkflowAccess as Access;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -99,14 +100,74 @@ class OsDnitWorkflowController extends Controller
         }, $request->input('decision') === 'approve' ? 'Serviço aprovado.' : 'OS devolvida com justificativa.');
     }
 
-    public function finalize(Request $request, Tenant $tenant, OsDnitOrder $order)
+    public function deliver(Request $request, Tenant $tenant, OsDnitOrder $order)
+    {
+        $path = null;
+        $disk = config('os_dnit.attachment_disk', 'local');
+        try {
+            return $this->mutate($request, $tenant, $order, function ($order) use ($request, $tenant, $disk, &$path) {
+                abort_unless(Access::hasRole($request->user(), $tenant, $order->contract_id, 'concremat'), 403);
+                $this->state($order, ['approved', 'delivery_revision']);
+                $this->recipient($tenant, $order, 'analyst');
+                if (is_string($request->input('comment'))) {
+                    $request->merge(['comment' => trim($request->input('comment'))]);
+                }
+                $data = $request->validate([
+                    'file' => ['required', 'file', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,zip', 'max:30720'],
+                    'comment' => ['required', 'string', 'max:20000'],
+                ], ['file.max' => 'O arquivo da entrega pode ter no máximo 30 MB.'], ['file' => 'arquivo da entrega', 'comment' => 'comentário da entrega']);
+                $revision = (int) ($order->deliveries()->max('revision') ?? -1) + 1;
+                $file = $request->file('file');
+                $path = $file->store("os-dnit/{$tenant->id}/{$order->id}/deliveries", $disk);
+                if (! $path) {
+                    throw ValidationException::withMessages(['file' => 'Não foi possível armazenar o arquivo. Tente novamente.']);
+                }
+                $order->deliveries()->create([
+                    'revision' => $revision, 'created_by_id' => $request->user()->id,
+                    'storage_disk' => $disk, 'path' => $path, 'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(), 'size_bytes' => $file->getSize(), 'comment' => $data['comment'],
+                ]);
+                $from = $order->status;
+                $order->update(['status' => 'awaiting_delivery_review']);
+                $this->record($order, $request, 'product_delivered', $from, ($revision ? "Revisão {$revision}: " : '').$data['comment']);
+            }, 'Produto entregue para avaliação do analista DNIT solicitante.');
+        } catch (\Throwable $exception) {
+            if ($path) {
+                Storage::disk($disk)->delete($path);
+            }
+            throw $exception;
+        }
+    }
+
+    public function reviewDelivery(Request $request, Tenant $tenant, OsDnitOrder $order)
     {
         return $this->mutate($request, $tenant, $order, function ($order) use ($request, $tenant) {
-            abort_unless(Access::hasRole($request->user(), $tenant, $order->contract_id, 'contract_inspector'), 403);
-            $this->state($order, ['approved']);
-            $order->update(['status' => 'completed', 'finalized_at' => now(), 'finalized_by_id' => $request->user()->id]);
-            $this->record($order, $request, 'completed', 'approved', 'Serviço concluído. OS finalizada pelo fiscal do contrato.');
-        }, 'OS finalizada. Serviço concluído.');
+            abort_unless((int) $order->created_by_id === (int) $request->user()->id
+                && Access::hasRole($request->user(), $tenant, $order->contract_id, 'analyst'), 403);
+            $this->state($order, ['awaiting_delivery_review']);
+            if (is_string($request->input('comment'))) {
+                $request->merge(['comment' => trim($request->input('comment'))]);
+            }
+            $data = $request->validate([
+                'decision' => ['required', Rule::in(['approve', 'reject'])],
+                'comment' => ['required', 'string', 'max:20000'],
+            ], ['comment.required' => $request->input('decision') === 'reject'
+                ? 'Informe por que a entrega não atendeu à demanda.' : 'Informe suas considerações sobre a entrega.']);
+            if ($data['decision'] === 'reject') {
+                $this->recipient($tenant, $order, 'concremat');
+            }
+            $delivery = $order->deliveries()->reorder()->orderByDesc('revision')->lockForUpdate()->firstOrFail();
+            if ($delivery->decision !== null) {
+                throw ValidationException::withMessages(['status' => 'Esta entrega já foi avaliada. Atualize a página.']);
+            }
+            $delivery->update(['decision' => $data['decision'], 'review_comment' => $data['comment'],
+                'reviewed_by_id' => $request->user()->id, 'reviewed_at' => now()]);
+            $order->update($data['decision'] === 'approve'
+                ? ['status' => 'completed', 'finalized_at' => $delivery->reviewed_at, 'finalized_by_id' => $request->user()->id]
+                : ['status' => 'delivery_revision']);
+            $this->record($order, $request, $data['decision'] === 'approve' ? 'delivery_accepted' : 'delivery_rejected',
+                'awaiting_delivery_review', $data['comment']);
+        }, $request->input('decision') === 'approve' ? 'Entrega aprovada. OS finalizada automaticamente.' : 'Entrega devolvida à Supervisão para revisão.');
     }
 
     private function mutate(Request $request, Tenant $tenant, OsDnitOrder $order, callable $action, string $message)
